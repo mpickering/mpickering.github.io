@@ -1,0 +1,351 @@
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+<style type="text/css">
+span.lineno { color: white; background: #aaaaaa; border-right: solid white 12px }
+span.nottickedoff { background: yellow}
+span.istickedoff { background: white }
+span.tickonlyfalse { margin: -1px; border: 1px solid #f20913; background: #f20913 }
+span.tickonlytrue  { margin: -1px; border: 1px solid #60de51; background: #60de51 }
+span.funcount { font-size: small; color: orange; z-index: 2; position: absolute; right: 20 }
+span.decl { font-weight: bold }
+span.spaces    { background: white }
+</style>
+</head>
+<body>
+<pre>
+<span class="lineno">    1 </span>{-# LANGUAGE FlexibleContexts #-}
+<span class="lineno">    2 </span>{-# LANGUAGE FlexibleInstances #-}
+<span class="lineno">    3 </span>{-# LANGUAGE NamedFieldPuns #-}
+<span class="lineno">    4 </span>{-# LANGUAGE ScopedTypeVariables #-}
+<span class="lineno">    5 </span>{-# LANGUAGE UndecidableInstances #-} -- for GHC.DataId
+<span class="lineno">    6 </span>module Language.Haskell.GHC.ExactPrint.Utils
+<span class="lineno">    7 </span>  (
+<span class="lineno">    8 </span>
+<span class="lineno">    9 </span>  srcSpanStartLine
+<span class="lineno">   10 </span>  , srcSpanEndLine
+<span class="lineno">   11 </span>  , srcSpanStartColumn
+<span class="lineno">   12 </span>  , srcSpanEndColumn
+<span class="lineno">   13 </span>
+<span class="lineno">   14 </span>  , ss2span
+<span class="lineno">   15 </span>  , ss2pos
+<span class="lineno">   16 </span>  , ss2posEnd
+<span class="lineno">   17 </span>  , span2ss
+<span class="lineno">   18 </span>  , undelta
+<span class="lineno">   19 </span>  , undeltaComment
+<span class="lineno">   20 </span>  , rdrName2String
+<span class="lineno">   21 </span>  , isSymbolRdrName
+<span class="lineno">   22 </span>  , deltaFromSrcSpans
+<span class="lineno">   23 </span>  , ghcCommentText
+<span class="lineno">   24 </span>  , isPointSrcSpan
+<span class="lineno">   25 </span>  , ss2deltaP
+<span class="lineno">   26 </span>  , isGoodDelta
+<span class="lineno">   27 </span>
+<span class="lineno">   28 </span>  , isListComp
+<span class="lineno">   29 </span>
+<span class="lineno">   30 </span>  , showGhc
+<span class="lineno">   31 </span>  , showAnnData
+<span class="lineno">   32 </span>
+<span class="lineno">   33 </span>
+<span class="lineno">   34 </span>  -- * For tests
+<span class="lineno">   35 </span>  , debug
+<span class="lineno">   36 </span>  , debugM
+<span class="lineno">   37 </span>  , warn
+<span class="lineno">   38 </span>
+<span class="lineno">   39 </span>
+<span class="lineno">   40 </span>  , ghead
+<span class="lineno">   41 </span>  , glast
+<span class="lineno">   42 </span>  , gtail
+<span class="lineno">   43 </span>  , gfromJust
+<span class="lineno">   44 </span>
+<span class="lineno">   45 </span>  ) where
+<span class="lineno">   46 </span>
+<span class="lineno">   47 </span>
+<span class="lineno">   48 </span>import Control.Monad.State
+<span class="lineno">   49 </span>import Data.Data
+<span class="lineno">   50 </span>import Data.Generics
+<span class="lineno">   51 </span>import Data.List
+<span class="lineno">   52 </span>
+<span class="lineno">   53 </span>import Language.Haskell.GHC.ExactPrint.Types
+<span class="lineno">   54 </span>
+<span class="lineno">   55 </span>import qualified Bag            as GHC
+<span class="lineno">   56 </span>import qualified BasicTypes     as GHC
+<span class="lineno">   57 </span>import qualified DynFlags       as GHC
+<span class="lineno">   58 </span>import qualified FastString     as GHC
+<span class="lineno">   59 </span>import qualified GHC            as GHC
+<span class="lineno">   60 </span>import qualified Name           as GHC
+<span class="lineno">   61 </span>import qualified NameSet        as GHC
+<span class="lineno">   62 </span>import qualified Outputable     as GHC
+<span class="lineno">   63 </span>import qualified RdrName        as GHC
+<span class="lineno">   64 </span>import qualified Var            as GHC
+<span class="lineno">   65 </span>
+<span class="lineno">   66 </span>import qualified OccName(occNameString)
+<span class="lineno">   67 </span>
+<span class="lineno">   68 </span>import Debug.Trace
+<span class="lineno">   69 </span>
+<span class="lineno">   70 </span>-- ---------------------------------------------------------------------
+<span class="lineno">   71 </span>
+<span class="lineno">   72 </span>-- |Global switch to enable debug tracing in ghc-exactprint
+<span class="lineno">   73 </span>debugEnabledFlag :: Bool
+<span class="lineno">   74 </span>-- debugEnabledFlag = True
+<span class="lineno">   75 </span><span class="decl"><span class="istickedoff">debugEnabledFlag = False</span></span>
+<span class="lineno">   76 </span>
+<span class="lineno">   77 </span>-- |Provide a version of trace the comes at the end of the line, so it can
+<span class="lineno">   78 </span>-- easily be commented out when debugging different things.
+<span class="lineno">   79 </span>debug :: c -&gt; String -&gt; c
+<span class="lineno">   80 </span><span class="decl"><span class="istickedoff">debug c s = if <span class="tickonlyfalse">debugEnabledFlag</span></span>
+<span class="lineno">   81 </span><span class="spaces">              </span><span class="istickedoff">then <span class="nottickedoff">trace s c</span></span>
+<span class="lineno">   82 </span><span class="spaces">              </span><span class="istickedoff">else c</span></span>
+<span class="lineno">   83 </span>
+<span class="lineno">   84 </span>debugM :: Monad m =&gt; String -&gt; m () 
+<span class="lineno">   85 </span><span class="decl"><span class="istickedoff">debugM s = when debugEnabledFlag $ <span class="nottickedoff">traceM s</span></span></span>
+<span class="lineno">   86 </span>
+<span class="lineno">   87 </span>-- ---------------------------------------------------------------------
+<span class="lineno">   88 </span>
+<span class="lineno">   89 </span>warn :: c -&gt; String -&gt; c
+<span class="lineno">   90 </span>-- warn = flip trace
+<span class="lineno">   91 </span><span class="decl"><span class="istickedoff">warn c _ = c</span></span>
+<span class="lineno">   92 </span>
+<span class="lineno">   93 </span>isGoodDelta :: DeltaPos -&gt; Bool
+<span class="lineno">   94 </span><span class="decl"><span class="istickedoff">isGoodDelta (DP (ro,co)) = ro &gt;= 0 &amp;&amp; co &gt;= 0</span></span>
+<span class="lineno">   95 </span>
+<span class="lineno">   96 </span>-- | Apply the delta to the current position, taking into account the
+<span class="lineno">   97 </span>-- current column offset
+<span class="lineno">   98 </span>undeltaComment :: Pos -&gt; Int -&gt; DComment -&gt; Comment
+<span class="lineno">   99 </span><span class="decl"><span class="nottickedoff">undeltaComment l con (DComment (dps,dpe) s) = r</span>
+<span class="lineno">  100 </span><span class="spaces">    </span><span class="nottickedoff">-- `debug` (&quot;undeltaComment:(l,con,dcomment,r)=&quot; ++ show (l,con,dco,r))</span>
+<span class="lineno">  101 </span><span class="spaces">  </span><span class="nottickedoff">where</span>
+<span class="lineno">  102 </span><span class="spaces">    </span><span class="nottickedoff">r = Comment ((adj dps $ undelta l dps co),(adj dps $ undelta l dpe co)) s</span>
+<span class="lineno">  103 </span><span class="spaces">    </span><span class="nottickedoff">co = con</span>
+<span class="lineno">  104 </span><span class="spaces">    </span><span class="nottickedoff">dc = - con -- + (coo - con)</span>
+<span class="lineno">  105 </span><span class="spaces"></span><span class="nottickedoff"></span>
+<span class="lineno">  106 </span><span class="spaces">    </span><span class="nottickedoff">-- adj makes provision for the possible movement of the</span>
+<span class="lineno">  107 </span><span class="spaces">    </span><span class="nottickedoff">-- surrounding context, and so applies the difference between the</span>
+<span class="lineno">  108 </span><span class="spaces">    </span><span class="nottickedoff">-- original and current offsets</span>
+<span class="lineno">  109 </span><span class="spaces">    </span><span class="nottickedoff">adj (DP (   0,_dco)) (row,c) = (row,c)</span>
+<span class="lineno">  110 </span><span class="spaces">    </span><span class="nottickedoff">adj (DP (_dro,_dco)) (row,c) = (row,c + dc)</span></span>
+<span class="lineno">  111 </span>
+<span class="lineno">  112 </span>-- | Create a delta covering the gap between the end of the first
+<span class="lineno">  113 </span>-- @SrcSpan@ and the start of the second.
+<span class="lineno">  114 </span>deltaFromSrcSpans :: GHC.SrcSpan -&gt; GHC.SrcSpan -&gt; DeltaPos
+<span class="lineno">  115 </span><span class="decl"><span class="istickedoff">deltaFromSrcSpans ss1 ss2 = ss2delta (ss2posEnd ss1) ss2</span></span>
+<span class="lineno">  116 </span>
+<span class="lineno">  117 </span>ss2delta :: Pos -&gt; GHC.SrcSpan -&gt; DeltaPos
+<span class="lineno">  118 </span><span class="decl"><span class="istickedoff">ss2delta ref ss = ss2deltaP ref (ss2pos ss)</span></span>
+<span class="lineno">  119 </span>
+<span class="lineno">  120 </span>-- | Convert the start of the second @Pos@ to be an offset from the
+<span class="lineno">  121 </span>-- first. The assumption is the reference starts before the second @Pos@
+<span class="lineno">  122 </span>ss2deltaP :: Pos -&gt; Pos -&gt; DeltaPos
+<span class="lineno">  123 </span><span class="decl"><span class="istickedoff">ss2deltaP (refl,refc) (l,c) = DP (lo,co)</span>
+<span class="lineno">  124 </span><span class="spaces">  </span><span class="istickedoff">where</span>
+<span class="lineno">  125 </span><span class="spaces">    </span><span class="istickedoff">lo = l - refl</span>
+<span class="lineno">  126 </span><span class="spaces">    </span><span class="istickedoff">co = if lo == 0 then c - refc</span>
+<span class="lineno">  127 </span><span class="spaces">                    </span><span class="istickedoff">else c</span></span>
+<span class="lineno">  128 </span>
+<span class="lineno">  129 </span>-- | Apply the delta to the current position, taking into account the
+<span class="lineno">  130 </span>-- current column offset if advancing to a new line
+<span class="lineno">  131 </span>undelta :: Pos -&gt; DeltaPos -&gt; ColOffset -&gt; Pos
+<span class="lineno">  132 </span><span class="decl"><span class="istickedoff">undelta (l,c) (DP (dl,dc)) co = (fl,fc)</span>
+<span class="lineno">  133 </span><span class="spaces">  </span><span class="istickedoff">where</span>
+<span class="lineno">  134 </span><span class="spaces">    </span><span class="istickedoff">fl = l + dl</span>
+<span class="lineno">  135 </span><span class="spaces">    </span><span class="istickedoff">fc = if dl == 0 then c  + dc</span>
+<span class="lineno">  136 </span><span class="spaces">                    </span><span class="istickedoff">else co + dc</span></span>
+<span class="lineno">  137 </span>
+<span class="lineno">  138 </span>-- ---------------------------------------------------------------------
+<span class="lineno">  139 </span>
+<span class="lineno">  140 </span>ss2pos :: GHC.SrcSpan -&gt; Pos
+<span class="lineno">  141 </span><span class="decl"><span class="istickedoff">ss2pos ss = (srcSpanStartLine ss,srcSpanStartColumn ss)</span></span>
+<span class="lineno">  142 </span>
+<span class="lineno">  143 </span>ss2posEnd :: GHC.SrcSpan -&gt; Pos
+<span class="lineno">  144 </span><span class="decl"><span class="istickedoff">ss2posEnd ss = (srcSpanEndLine ss,srcSpanEndColumn ss)</span></span>
+<span class="lineno">  145 </span>
+<span class="lineno">  146 </span>ss2span :: GHC.SrcSpan -&gt; Span
+<span class="lineno">  147 </span><span class="decl"><span class="istickedoff">ss2span ss = (ss2pos ss,ss2posEnd ss)</span></span>
+<span class="lineno">  148 </span>
+<span class="lineno">  149 </span>srcSpanEndColumn :: GHC.SrcSpan -&gt; Int
+<span class="lineno">  150 </span><span class="decl"><span class="istickedoff">srcSpanEndColumn (GHC.RealSrcSpan s) = GHC.srcSpanEndCol s</span>
+<span class="lineno">  151 </span><span class="spaces"></span><span class="istickedoff">srcSpanEndColumn _ = <span class="nottickedoff">0</span></span></span>
+<span class="lineno">  152 </span>
+<span class="lineno">  153 </span>srcSpanStartColumn :: GHC.SrcSpan -&gt; Int
+<span class="lineno">  154 </span><span class="decl"><span class="istickedoff">srcSpanStartColumn (GHC.RealSrcSpan s) = GHC.srcSpanStartCol s</span>
+<span class="lineno">  155 </span><span class="spaces"></span><span class="istickedoff">srcSpanStartColumn _ = 0</span></span>
+<span class="lineno">  156 </span>
+<span class="lineno">  157 </span>srcSpanEndLine :: GHC.SrcSpan -&gt; Int
+<span class="lineno">  158 </span><span class="decl"><span class="istickedoff">srcSpanEndLine (GHC.RealSrcSpan s) = GHC.srcSpanEndLine s</span>
+<span class="lineno">  159 </span><span class="spaces"></span><span class="istickedoff">srcSpanEndLine _ = <span class="nottickedoff">0</span></span></span>
+<span class="lineno">  160 </span>
+<span class="lineno">  161 </span>srcSpanStartLine :: GHC.SrcSpan -&gt; Int
+<span class="lineno">  162 </span><span class="decl"><span class="istickedoff">srcSpanStartLine (GHC.RealSrcSpan s) = GHC.srcSpanStartLine s</span>
+<span class="lineno">  163 </span><span class="spaces"></span><span class="istickedoff">srcSpanStartLine _ = 0</span></span>
+<span class="lineno">  164 </span>
+<span class="lineno">  165 </span>-- ---------------------------------------------------------------------
+<span class="lineno">  166 </span>
+<span class="lineno">  167 </span>span2ss :: Span -&gt; GHC.SrcSpan
+<span class="lineno">  168 </span><span class="decl"><span class="istickedoff">span2ss ((sr,sc),(er,ec)) = l</span>
+<span class="lineno">  169 </span><span class="spaces">  </span><span class="istickedoff">where</span>
+<span class="lineno">  170 </span><span class="spaces">   </span><span class="istickedoff">filename = (GHC.mkFastString &quot;f&quot;)</span>
+<span class="lineno">  171 </span><span class="spaces">   </span><span class="istickedoff">l = GHC.mkSrcSpan (GHC.mkSrcLoc filename sr sc) (GHC.mkSrcLoc <span class="nottickedoff">filename</span> er ec)</span></span>
+<span class="lineno">  172 </span>
+<span class="lineno">  173 </span>-- ---------------------------------------------------------------------
+<span class="lineno">  174 </span>
+<span class="lineno">  175 </span>isPointSrcSpan :: GHC.SrcSpan -&gt; Bool
+<span class="lineno">  176 </span><span class="decl"><span class="istickedoff">isPointSrcSpan ss = s == e where (s,e) = ss2span ss</span></span>
+<span class="lineno">  177 </span>
+<span class="lineno">  178 </span>-- ---------------------------------------------------------------------
+<span class="lineno">  179 </span>
+<span class="lineno">  180 </span>isListComp :: GHC.HsStmtContext name -&gt; Bool
+<span class="lineno">  181 </span><span class="decl"><span class="istickedoff">isListComp cts = case cts of</span>
+<span class="lineno">  182 </span><span class="spaces">          </span><span class="istickedoff">GHC.ListComp  -&gt; True</span>
+<span class="lineno">  183 </span><span class="spaces">          </span><span class="istickedoff">GHC.MonadComp -&gt; True</span>
+<span class="lineno">  184 </span><span class="spaces">          </span><span class="istickedoff">GHC.PArrComp  -&gt; True</span>
+<span class="lineno">  185 </span><span class="spaces"></span><span class="istickedoff"></span>
+<span class="lineno">  186 </span><span class="spaces">          </span><span class="istickedoff">GHC.DoExpr       -&gt; False</span>
+<span class="lineno">  187 </span><span class="spaces">          </span><span class="istickedoff">GHC.MDoExpr      -&gt; <span class="nottickedoff">False</span></span>
+<span class="lineno">  188 </span><span class="spaces">          </span><span class="istickedoff">GHC.ArrowExpr    -&gt; <span class="nottickedoff">False</span></span>
+<span class="lineno">  189 </span><span class="spaces">          </span><span class="istickedoff">GHC.GhciStmtCtxt -&gt; <span class="nottickedoff">False</span></span>
+<span class="lineno">  190 </span><span class="spaces"></span><span class="istickedoff"></span>
+<span class="lineno">  191 </span><span class="spaces">          </span><span class="istickedoff">GHC.PatGuard {}      -&gt; <span class="nottickedoff">False</span></span>
+<span class="lineno">  192 </span><span class="spaces">          </span><span class="istickedoff">GHC.ParStmtCtxt {}   -&gt; <span class="nottickedoff">False</span></span>
+<span class="lineno">  193 </span><span class="spaces">          </span><span class="istickedoff">GHC.TransStmtCtxt {} -&gt; <span class="nottickedoff">False</span></span></span>
+<span class="lineno">  194 </span>
+<span class="lineno">  195 </span>-- ---------------------------------------------------------------------
+<span class="lineno">  196 </span>
+<span class="lineno">  197 </span>ghcCommentText :: GHC.Located GHC.AnnotationComment -&gt; String
+<span class="lineno">  198 </span><span class="decl"><span class="istickedoff">ghcCommentText (GHC.L _ (GHC.AnnDocCommentNext s))  = <span class="nottickedoff">s</span></span>
+<span class="lineno">  199 </span><span class="spaces"></span><span class="istickedoff">ghcCommentText (GHC.L _ (GHC.AnnDocCommentPrev s))  = <span class="nottickedoff">s</span></span>
+<span class="lineno">  200 </span><span class="spaces"></span><span class="istickedoff">ghcCommentText (GHC.L _ (GHC.AnnDocCommentNamed s)) = <span class="nottickedoff">s</span></span>
+<span class="lineno">  201 </span><span class="spaces"></span><span class="istickedoff">ghcCommentText (GHC.L _ (GHC.AnnDocSection _ s))    = <span class="nottickedoff">s</span></span>
+<span class="lineno">  202 </span><span class="spaces"></span><span class="istickedoff">ghcCommentText (GHC.L _ (GHC.AnnDocOptions s))      = <span class="nottickedoff">s</span></span>
+<span class="lineno">  203 </span><span class="spaces"></span><span class="istickedoff">ghcCommentText (GHC.L _ (GHC.AnnDocOptionsOld s))   = <span class="nottickedoff">s</span></span>
+<span class="lineno">  204 </span><span class="spaces"></span><span class="istickedoff">ghcCommentText (GHC.L _ (GHC.AnnLineComment s))     = s</span>
+<span class="lineno">  205 </span><span class="spaces"></span><span class="istickedoff">ghcCommentText (GHC.L _ (GHC.AnnBlockComment s))    = &quot;{-&quot; ++ s ++ &quot;-}&quot;</span></span>
+<span class="lineno">  206 </span>
+<span class="lineno">  207 </span>-- ---------------------------------------------------------------------
+<span class="lineno">  208 </span>
+<span class="lineno">  209 </span>isSymbolRdrName :: GHC.RdrName -&gt; Bool
+<span class="lineno">  210 </span><span class="decl"><span class="nottickedoff">isSymbolRdrName n = GHC.isSymOcc $ GHC.rdrNameOcc n</span></span>
+<span class="lineno">  211 </span>
+<span class="lineno">  212 </span>rdrName2String :: GHC.RdrName -&gt; String
+<span class="lineno">  213 </span><span class="decl"><span class="istickedoff">rdrName2String r =</span>
+<span class="lineno">  214 </span><span class="spaces">  </span><span class="istickedoff">case GHC.isExact_maybe r of</span>
+<span class="lineno">  215 </span><span class="spaces">    </span><span class="istickedoff">Just n  -&gt; name2String n</span>
+<span class="lineno">  216 </span><span class="spaces">    </span><span class="istickedoff">Nothing -&gt;</span>
+<span class="lineno">  217 </span><span class="spaces">      </span><span class="istickedoff">case r of</span>
+<span class="lineno">  218 </span><span class="spaces">        </span><span class="istickedoff">GHC.Unqual _occ -&gt; GHC.occNameString $ GHC.rdrNameOcc r</span>
+<span class="lineno">  219 </span><span class="spaces">        </span><span class="istickedoff">GHC.Qual modname _occ -&gt; GHC.moduleNameString modname ++ &quot;.&quot;</span>
+<span class="lineno">  220 </span><span class="spaces">                            </span><span class="istickedoff">++ (GHC.occNameString $ GHC.rdrNameOcc r)</span></span>
+<span class="lineno">  221 </span>
+<span class="lineno">  222 </span>name2String :: GHC.Name -&gt; String
+<span class="lineno">  223 </span><span class="decl"><span class="istickedoff">name2String name = showGhc name</span></span>
+<span class="lineno">  224 </span>
+<span class="lineno">  225 </span>-- |Show a GHC API structure
+<span class="lineno">  226 </span>showGhc :: (GHC.Outputable a) =&gt; a -&gt; String
+<span class="lineno">  227 </span><span class="decl"><span class="istickedoff">showGhc x = GHC.showPpr GHC.unsafeGlobalDynFlags x</span></span>
+<span class="lineno">  228 </span>
+<span class="lineno">  229 </span>{-
+<span class="lineno">  230 </span>-- |Show a GHC API structure
+<span class="lineno">  231 </span>showGhcDebug :: (GHC.Outputable a) =&gt; a -&gt; String
+<span class="lineno">  232 </span>showGhcDebug x = GHC.showSDocDebug GHC.unsafeGlobalDynFlags (GHC.ppr x)
+<span class="lineno">  233 </span>-}
+<span class="lineno">  234 </span>-- ---------------------------------------------------------------------
+<span class="lineno">  235 </span>
+<span class="lineno">  236 </span>-- ---------------------------------------------------------------------
+<span class="lineno">  237 </span>{-
+<span class="lineno">  238 </span>pp :: GHC.Outputable a =&gt; a -&gt; String
+<span class="lineno">  239 </span>pp a = GHC.showPpr GHC.unsafeGlobalDynFlags a
+<span class="lineno">  240 </span>-}
+<span class="lineno">  241 </span>-- ---------------------------------------------------------------------
+<span class="lineno">  242 </span>
+<span class="lineno">  243 </span>-- Based on ghc-syb-utils version, but adding the annotation
+<span class="lineno">  244 </span>-- information to each SrcLoc.
+<span class="lineno">  245 </span>showAnnData :: Data a =&gt; Anns -&gt; Int -&gt; a -&gt; String
+<span class="lineno">  246 </span><span class="decl"><span class="istickedoff">showAnnData anns n =</span>
+<span class="lineno">  247 </span><span class="spaces">  </span><span class="istickedoff"><span class="nottickedoff">generic -- `ext1Q` located</span></span>
+<span class="lineno">  248 </span><span class="spaces">          </span><span class="istickedoff"><span class="nottickedoff">`ext1Q` list</span></span>
+<span class="lineno">  249 </span><span class="spaces">          </span><span class="istickedoff"><span class="nottickedoff">`extQ` string `extQ` fastString `extQ` srcSpan</span></span>
+<span class="lineno">  250 </span><span class="spaces">          </span><span class="istickedoff"><span class="nottickedoff">`extQ` name `extQ` occName `extQ` moduleName `extQ` var `extQ` dataCon</span></span>
+<span class="lineno">  251 </span><span class="spaces">          </span><span class="istickedoff"><span class="nottickedoff">`extQ` overLit</span></span>
+<span class="lineno">  252 </span><span class="spaces">          </span><span class="istickedoff"><span class="nottickedoff">`extQ` bagName `extQ` bagRdrName `extQ` bagVar `extQ` nameSet</span></span>
+<span class="lineno">  253 </span><span class="spaces">          </span><span class="istickedoff"><span class="nottickedoff">`extQ` fixity</span></span>
+<span class="lineno">  254 </span><span class="spaces">          </span><span class="istickedoff">`ext2Q` located</span>
+<span class="lineno">  255 </span><span class="spaces">  </span><span class="istickedoff">where generic :: Data a =&gt; a -&gt; String</span>
+<span class="lineno">  256 </span><span class="spaces">        </span><span class="istickedoff"><span class="nottickedoff">generic t = indent n ++ &quot;(&quot; ++ showConstr (toConstr t)</span></span>
+<span class="lineno">  257 </span><span class="spaces">                 </span><span class="istickedoff"><span class="nottickedoff">++ space (concat (intersperse &quot; &quot; (gmapQ (showAnnData anns (n+1)) t))) ++ &quot;)&quot;</span></span>
+<span class="lineno">  258 </span><span class="spaces">        </span><span class="istickedoff"><span class="nottickedoff">space &quot;&quot; = &quot;&quot;</span></span>
+<span class="lineno">  259 </span><span class="spaces">        </span><span class="istickedoff"><span class="nottickedoff">space s  = ' ':s</span></span>
+<span class="lineno">  260 </span><span class="spaces">        </span><span class="istickedoff">indent i = &quot;\n&quot; ++ replicate i ' '</span>
+<span class="lineno">  261 </span><span class="spaces">        </span><span class="istickedoff"><span class="nottickedoff">string     = show :: String -&gt; String</span></span>
+<span class="lineno">  262 </span><span class="spaces">        </span><span class="istickedoff"><span class="nottickedoff">fastString = (&quot;{FastString: &quot;++) . (++&quot;}&quot;) . show :: GHC.FastString -&gt; String</span></span>
+<span class="lineno">  263 </span><span class="spaces">        </span><span class="istickedoff"><span class="nottickedoff">list l     = indent n ++ &quot;[&quot;</span></span>
+<span class="lineno">  264 </span><span class="spaces">                              </span><span class="istickedoff"><span class="nottickedoff">++ concat (intersperse &quot;,&quot; (map (showAnnData anns (n+1)) l)) ++ &quot;]&quot;</span></span>
+<span class="lineno">  265 </span><span class="spaces"></span><span class="istickedoff"></span>
+<span class="lineno">  266 </span><span class="spaces">        </span><span class="istickedoff"><span class="nottickedoff">name       = (&quot;{Name: &quot;++) . (++&quot;}&quot;) . showSDoc_ . GHC.ppr :: GHC.Name -&gt; String</span></span>
+<span class="lineno">  267 </span><span class="spaces">        </span><span class="istickedoff"><span class="nottickedoff">occName    = (&quot;{OccName: &quot;++) . (++&quot;}&quot;) .  OccName.occNameString</span></span>
+<span class="lineno">  268 </span><span class="spaces">        </span><span class="istickedoff"><span class="nottickedoff">moduleName = (&quot;{ModuleName: &quot;++) . (++&quot;}&quot;) . showSDoc_ . GHC.ppr :: GHC.ModuleName -&gt; String</span></span>
+<span class="lineno">  269 </span><span class="spaces"></span><span class="istickedoff"></span>
+<span class="lineno">  270 </span><span class="spaces">        </span><span class="istickedoff">-- srcSpan    = (&quot;{&quot;++) . (++&quot;}&quot;) . showSDoc_ . GHC.ppr :: GHC.SrcSpan -&gt; String</span>
+<span class="lineno">  271 </span><span class="spaces">        </span><span class="istickedoff">srcSpan :: GHC.SrcSpan -&gt; String</span>
+<span class="lineno">  272 </span><span class="spaces">        </span><span class="istickedoff">srcSpan ss = &quot;{ &quot;++ (showSDoc_ (GHC.hang (GHC.ppr ss) (n+2)</span>
+<span class="lineno">  273 </span><span class="spaces">                                                 </span><span class="istickedoff">-- (GHC.ppr (Map.lookup ss anns)</span>
+<span class="lineno">  274 </span><span class="spaces">                                                 </span><span class="istickedoff">(GHC.text &quot;&quot;)</span>
+<span class="lineno">  275 </span><span class="spaces">                                                 </span><span class="istickedoff">))</span>
+<span class="lineno">  276 </span><span class="spaces">                      </span><span class="istickedoff">++&quot;}&quot;</span>
+<span class="lineno">  277 </span><span class="spaces"></span><span class="istickedoff"></span>
+<span class="lineno">  278 </span><span class="spaces">        </span><span class="istickedoff"><span class="nottickedoff">var        = (&quot;{Var: &quot;++) . (++&quot;}&quot;) . showSDoc_ . GHC.ppr :: GHC.Var -&gt; String</span></span>
+<span class="lineno">  279 </span><span class="spaces">        </span><span class="istickedoff"><span class="nottickedoff">dataCon    = (&quot;{DataCon: &quot;++) . (++&quot;}&quot;) . showSDoc_ . GHC.ppr :: GHC.DataCon -&gt; String</span></span>
+<span class="lineno">  280 </span><span class="spaces"></span><span class="istickedoff"></span>
+<span class="lineno">  281 </span><span class="spaces">        </span><span class="istickedoff">overLit :: (GHC.HsOverLit GHC.RdrName) -&gt; String</span>
+<span class="lineno">  282 </span><span class="spaces">        </span><span class="istickedoff"><span class="nottickedoff">overLit    = (&quot;{HsOverLit:&quot;++) . (++&quot;}&quot;) . showSDoc_ . GHC.ppr</span></span>
+<span class="lineno">  283 </span><span class="spaces"></span><span class="istickedoff"></span>
+<span class="lineno">  284 </span><span class="spaces">        </span><span class="istickedoff">bagRdrName:: GHC.Bag (GHC.Located (GHC.HsBind GHC.RdrName)) -&gt; String</span>
+<span class="lineno">  285 </span><span class="spaces">        </span><span class="istickedoff"><span class="nottickedoff">bagRdrName = (&quot;{Bag(Located (HsBind RdrName)): &quot;++) . (++&quot;}&quot;) . list . GHC.bagToList</span></span>
+<span class="lineno">  286 </span><span class="spaces">        </span><span class="istickedoff">bagName   :: GHC.Bag (GHC.Located (GHC.HsBind GHC.Name)) -&gt; String</span>
+<span class="lineno">  287 </span><span class="spaces">        </span><span class="istickedoff"><span class="nottickedoff">bagName    = (&quot;{Bag(Located (HsBind Name)): &quot;++) . (++&quot;}&quot;) . list . GHC.bagToList</span></span>
+<span class="lineno">  288 </span><span class="spaces">        </span><span class="istickedoff">bagVar    :: GHC.Bag (GHC.Located (GHC.HsBind GHC.Var)) -&gt; String</span>
+<span class="lineno">  289 </span><span class="spaces">        </span><span class="istickedoff"><span class="nottickedoff">bagVar     = (&quot;{Bag(Located (HsBind Var)): &quot;++) . (++&quot;}&quot;) . list . GHC.bagToList</span></span>
+<span class="lineno">  290 </span><span class="spaces"></span><span class="istickedoff"></span>
+<span class="lineno">  291 </span><span class="spaces">        </span><span class="istickedoff"><span class="nottickedoff">nameSet = (&quot;{NameSet: &quot;++) . (++&quot;}&quot;) . list . GHC.nameSetElems</span></span>
+<span class="lineno">  292 </span><span class="spaces"></span><span class="istickedoff"></span>
+<span class="lineno">  293 </span><span class="spaces">        </span><span class="istickedoff"><span class="nottickedoff">fixity = (&quot;{Fixity: &quot;++) . (++&quot;}&quot;) . showSDoc_ . GHC.ppr :: GHC.Fixity -&gt; String</span></span>
+<span class="lineno">  294 </span><span class="spaces"></span><span class="istickedoff"></span>
+<span class="lineno">  295 </span><span class="spaces">        </span><span class="istickedoff">located :: (Data b,Data loc) =&gt; GHC.GenLocated loc b -&gt; String</span>
+<span class="lineno">  296 </span><span class="spaces">        </span><span class="istickedoff">-- located la = show (getAnnotationEP la anns)</span>
+<span class="lineno">  297 </span><span class="spaces">        </span><span class="istickedoff">located (GHC.L ss a) =</span>
+<span class="lineno">  298 </span><span class="spaces">          </span><span class="istickedoff">indent n ++ &quot;(&quot;</span>
+<span class="lineno">  299 </span><span class="spaces">            </span><span class="istickedoff">++ case (cast ss) of</span>
+<span class="lineno">  300 </span><span class="spaces">                    </span><span class="istickedoff">Just (s :: GHC.SrcSpan) -&gt;</span>
+<span class="lineno">  301 </span><span class="spaces">                      </span><span class="istickedoff">srcSpan s</span>
+<span class="lineno">  302 </span><span class="spaces">                      </span><span class="istickedoff">++ indent (n + 1) ++</span>
+<span class="lineno">  303 </span><span class="spaces">                      </span><span class="istickedoff">show (getAnnotationEP (GHC.L s a) anns)</span>
+<span class="lineno">  304 </span><span class="spaces">                    </span><span class="istickedoff">Nothing -&gt; <span class="nottickedoff">&quot;nnnnnnnn&quot;</span></span>
+<span class="lineno">  305 </span><span class="spaces">                      </span><span class="istickedoff"><span class="nottickedoff">++ showAnnData anns (n+1) a</span></span>
+<span class="lineno">  306 </span><span class="spaces">                      </span><span class="istickedoff"><span class="nottickedoff">++ &quot;)&quot;</span></span></span>
+<span class="lineno">  307 </span>
+<span class="lineno">  308 </span>-- ---------------------------------------------------------------------
+<span class="lineno">  309 </span>
+<span class="lineno">  310 </span>showSDoc_ :: GHC.SDoc -&gt; String
+<span class="lineno">  311 </span><span class="decl"><span class="istickedoff">showSDoc_ = GHC.showSDoc GHC.unsafeGlobalDynFlags</span></span>
+<span class="lineno">  312 </span>
+<span class="lineno">  313 </span>-- ---------------------------------------------------------------------
+<span class="lineno">  314 </span>-- Putting these here for the time being, to avoid import loops
+<span class="lineno">  315 </span>
+<span class="lineno">  316 </span>ghead :: String -&gt; [a] -&gt; a
+<span class="lineno">  317 </span><span class="decl"><span class="nottickedoff">ghead  info []    = error $ &quot;ghead &quot;++info++&quot; []&quot;</span>
+<span class="lineno">  318 </span><span class="spaces"></span><span class="nottickedoff">ghead _info (h:_) = h</span></span>
+<span class="lineno">  319 </span>
+<span class="lineno">  320 </span>glast :: String -&gt; [a] -&gt; a
+<span class="lineno">  321 </span><span class="decl"><span class="nottickedoff">glast  info []    = error $ &quot;glast &quot; ++ info ++ &quot; []&quot;</span>
+<span class="lineno">  322 </span><span class="spaces"></span><span class="nottickedoff">glast _info h     = last h</span></span>
+<span class="lineno">  323 </span>
+<span class="lineno">  324 </span>gtail :: String -&gt; [a] -&gt; [a]
+<span class="lineno">  325 </span><span class="decl"><span class="nottickedoff">gtail  info []   = error $ &quot;gtail &quot; ++ info ++ &quot; []&quot;</span>
+<span class="lineno">  326 </span><span class="spaces"></span><span class="nottickedoff">gtail _info h    = tail h</span></span>
+<span class="lineno">  327 </span>
+<span class="lineno">  328 </span>gfromJust :: [Char] -&gt; Maybe a -&gt; a
+<span class="lineno">  329 </span><span class="decl"><span class="nottickedoff">gfromJust _info (Just h) = h</span>
+<span class="lineno">  330 </span><span class="spaces"></span><span class="nottickedoff">gfromJust  info Nothing = error $ &quot;gfromJust &quot; ++ info ++ &quot; Nothing&quot;</span></span>
+<span class="lineno">  331 </span>
+
+</pre>
+</body>
+</html>
