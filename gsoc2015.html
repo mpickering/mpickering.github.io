@@ -40,23 +40,22 @@ code > span.er { color: #ff0000; font-weight: bold; }
 <p>I'd really like HLint to have an &quot;automatically replace&quot; flag, but I want to do it preserving whitespace and style, which is quite hard.</p>
 <p><a href="https://github.com/chrisdone/hindent/issues/75#issuecomment-70427343">Neil Mitchell</a></p>
 </blockquote>
-<p>Whilst the eye-catching end-goal of any refactoring tool is the source injection or transformation another key tenet of refactoring is that the change doesn't affect any irrelevant parts of the program. It follows that if no transformation is applied then one should expect <em>no</em> changes to the source file. This is the challenge which <code>ghc-exactprint</code> attempts to solve.</p>
-<p><code>ghc-exactprint</code> works in two phases. The first transforms the GHC AST such that all absolute positions are replaces with relative positions. The second performs the inverse transformation and prints the desired output. Now to perform transformations, you only need to specify where your elements should be located relative to each other and the preceding element. This makes performing transformations whilst retaining layout much easier than ever before.</p>
-<p>Until recently an approach like this was difficult to achieve. The GHC parser threw away important positional information about the location of keywords which made it difficult to exactly reprint the parsed source file.<a href="#fn1" class="footnoteRef" id="fnref1"><sup>1</sup></a> Alan Zimmerman recently worked to add this positional information back in the form of annotations.</p>
+<p>Whilst the eye-catching end-goal of any refactoring tool is the transformation another key tenet of refactoring is that the changes don't affect any irrelevant parts of the program. It follows that if no transformation is applied then one should expect <em>no</em> changes to the source file. This is the challenge which <code>ghc-exactprint</code> attempts to solve.</p>
+<p><code>ghc-exactprint</code> works in two phases. The first transforms the GHC AST such that all absolute positions are replaced with relative positions. The second printing phase performs the inverse transformation and prints the desired output. Now to perform transformations, you only need to specify where your elements should be located relative to each other and the preceding element. This makes performing transformations whilst retaining layout much easier than ever before.</p>
 <h2 id="api-annotations">API Annotations</h2>
-<p>Before GHC 7.10 the parser discarded all information about the location of keywords after parsing. This made tools such as <code>haskell-src-exts</code> necessary if you wanted to precisely print a source file. Now, whilst parsing, the GHC parser records the information of these keywords in a map indexed by the annotation type (<a href="http://haskell.inf.elte.hu/docs/7.11.20150318.noWin32/html/libraries/ghc-7.11.20150318/ApiAnnotation.html#t:AnnKeywordId"><code>AnnKeywordId</code></a>i) and the <code>SrcSpan</code> of the element it came from. This information can then be used to recreate the original document with sufficient care.</p>
+<p>This approach is only feasible now<a href="#fn1" class="footnoteRef" id="fnref1"><sup>1</sup></a> as before GHC 7.10 the parser discarded all information about the location of keywords. This made tools such as <code>haskell-src-exts</code> necessary if you wanted to precisely print a source file. Now, whilst parsing, the GHC parser records the information of these keywords in a map indexed by the annotation type (<a href="http://haskell.inf.elte.hu/docs/7.11.20150318.noWin32/html/libraries/ghc-7.11.20150318/ApiAnnotation.html#t:AnnKeywordId"><code>AnnKeywordId</code></a>) and the <code>SrcSpan</code> of the element it came from. This information can then be used to recreate the original document with sufficient care.</p>
 <p>Using this new and powerful machinery writing robust mechanical transformations is much easier that before.</p>
 <h1 id="hlint">HLint</h1>
-<p>HLint is a very widely used linting tool. It suggests an increasingly wide array of refactorings, most of which are trivial for a programmer to perform. The README on the HLint homepage talks briefly about the possibility of refactoring.</p>
+<p>HLint is a very widely used linting tool. It suggests a wide array of refactorings, most of which are trivial for a programmer to perform. The README on the HLint homepage talks briefly about the possibility of refactoring.</p>
 <blockquote>
 <p>If you want to automatically apply suggestions, ... , there are a number of reasons that HLint itself doesn't have an option to automatically apply suggestions:</p>
 </blockquote>
 <blockquote>
 <p>The underlying Haskell parser library makes it hard to modify the code, then print it similarly to the original. Sometimes multiple transformations may apply. After applying one transformation, others that were otherwise suggested may become inappropriate. I am intending to develop such a feature, but the above reasons mean it is likely to take some time.</p>
 </blockquote>
-<p>I will address firstly the feasibility of using HaRe to perform these refactorings and then the possibility that refactorings may interfere with each other.</p>
+<p>I will firstly address the feasibility of using HaRe to perform these refactorings and then the possibility that refactorings may interfere with each other.</p>
 <h2 id="flavours-of-refactoring">Flavours of refactoring</h2>
-<p>I categorise the types of refactorings found in HLint into three different categories. A classification of the different types of refactoring which HLint offers is provided in Appendix A.</p>
+<p>I categorise the types of refactorings found in HLint into three different categories. A full classification is provided in <a href="#appendix-a">Appendix A</a>.</p>
 <ol style="list-style-type: decimal">
 <li><p>Direct substitutions - these are listed in a source file and then a naive search of the AST is performed to check if there are any matches. Below is a simple example from the default definitions.</p>
 <pre class="sourceCode haskell"><code class="sourceCode haskell">error <span class="fu">=</span> putStrLn (show x) <span class="fu">==&gt;</span> print x
@@ -64,57 +63,80 @@ code > span.er { color: #ff0000; font-weight: bold; }
 <span class="fu">|</span> <span class="dt">Severity</span>                    <span class="fu">|</span>
         <span class="fu">|</span> <span class="dt">Expression</span> to replace
                               <span class="fu">|</span> <span class="dt">Expression</span> to insert</code></pre></li>
-<li><p>Simple transformations - Other simple transformations are achieved by simple traversals over the HSE AST. The simplest is the one which checks for a redundant dollar sign.<a href="#fn2" class="footnoteRef" id="fnref2"><sup>2</sup></a></p>
+<li><p>Simple transformations - Other simple transformations are achieved by traversing over the HSE AST. The simplest is the one which checks for a redundant dollar sign.<a href="#fn2" class="footnoteRef" id="fnref2"><sup>2</sup></a></p>
 <pre class="sourceCode haskell"><code class="sourceCode haskell">[msg x y <span class="fu">|</span> <span class="dt">InfixApp</span> _ a d b <span class="ot">&lt;-</span> [x], opExp d <span class="fu">~=</span> <span class="st">&quot;$&quot;</span>
           ,<span class="kw">let</span> y <span class="fu">=</span> <span class="dt">App</span> an a b, not <span class="fu">$</span> needBracket <span class="dv">0</span> y a
           , not <span class="fu">$</span> needBracket <span class="dv">1</span> y b]</code></pre></li>
-<li><p>Complex type sensitive transformations - The most complicated transformation in HLint is the check for duplicated expressions. This is performed by maintaining a map of previously seen expressions and checking whether the current expression appears in the map. Details can be seen in <a href="https://github.com/ndmitchell/hlint/blob/master/src/Hint/Duplicate.hs"><code>src/Hint/Duplicate.hs</code></a></p></li>
+<li><p>Complex type sensitive transformations - The most complicated transformation in HLint is the check for duplicated expressions. This is performed by maintaining a map of previously seen expressions and checking whether the current expression appears in the map. Details can be seen in <a href="https://github.com/ndmitchell/hlint/blob/master/src/Hint/Duplicate.hs"><code>src/Hint/Duplicate.hs</code></a>.</p></li>
 </ol>
-<p>I predict that automating both (1) and (2) are easy to achieve with further development of <code>ghc-exactprint</code> and HaRe. It has been proven that a combination of these programs can be used to perform these kinds of simple substitutions already. (3) requires more care to avoid name clashes but would be achievable using a type-aware refactoring.</p>
+<p>I predict that automating both (1) and (2) are easy to achieve with further development of <code>ghc-exactprint</code> and HaRe. It has already been proved that a combination of these programs can be used to perform these kinds of simple substitutions.</p>
+<p>(3) requires more care to avoid name clashes but would be achievable using a type-aware refactoring. Additionally, HLint does not suggest how to avoid the code duplication (as it does not know any semantic information) which means that implementing this suggestion would require additional machinery only found in HaRe.<a href="#fn3" class="footnoteRef" id="fnref3"><sup>3</sup></a></p>
 <h2 id="conflicting-suggestions">Conflicting Suggestions</h2>
-<p>There are certain situations where HLint suggests refactorings which would conflict. Consider the following simple example</p>
-<pre class="sourceCode haskell"><code class="sourceCode haskell">example <span class="fu">=</span> concat <span class="fu">.</span> map f <span class="fu">.</span> map g</code></pre>
+<p>There are certain situations where HLint suggests refactorings which would conflict with each other. Consider the following simple example<a href="#fn4" class="footnoteRef" id="fnref4"><sup>4</sup></a></p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell">example <span class="fu">=</span> f <span class="fu">$</span> (x y)</code></pre>
 <p>which generates the following warnings.</p>
-<pre><code>example.hs:6:10: Error: Use concatMap
+<pre><code>example.hs:1:11: Warning: Redundant bracket
 Found:
-  concat . map f . map g
+  f $ (x y)
 Why not:
-  concatMap f . map g
+  f $ x y
 
-example.hs:6:19: Warning: Use map once
+example.hs:1:11: Warning: Redundant $
 Found:
-  map f . map g
+  f $ (x y)
 Why not:
-  map (f . g)
+  f (x y)
 
 2 suggestions</code></pre>
-<p>Clearly as the suggestions overlap each other, choosing to apply either one first results in the other becoming invalid. A simple way to deal with this is to detect when two suggestions are overlapping. If so, then it can only be safe to perform one of the transformations. In this case it would seem sensible to prioritise the <em>error</em> rather than the <em>warning</em> but it would be possible explore different heuristics for this rare occurrence.</p>
+<p>Clearly as the suggestions overlap each other, choosing to apply either one first results in the other becoming invalid but both reduce to an equivalent normal form.</p>
+<p>One simple way to deal with this is to detect when two suggestions are overlapping. If so, then it can only be safe to perform one of the transformations. In general it would seem sensible to prioritise <em>errors</em> rather than the <em>warnings</em> but it would be possible explore different heuristics for this rare occurrence. Another possibility would be to provide an interface for the user to decide which suggestion they would like to apply.</p>
 <h1 id="connecting-hlint-and-hare">Connecting HLint and HaRe</h1>
-<p>So far we have discussed how it is both possible to perform source transformations which preserver layout with <code>ghc-exactprint</code> and also the possibility of applying HLint suggestions. The final piece of the puzzle is how to link the two together.</p>
+<p>So far we have discussed how it is both possible to perform source transformations which preserve layout with <code>ghc-exactprint</code> and also the possibility of applying HLint suggestions. The final piece of the puzzle is how to link the two together.</p>
 <h2 id="depending-directly-on-hare">Depending directly on HaRe</h2>
-<p>These transformations could easily be achieved by depending directly on HaRe and calling API methods in order to perform the necessary transformations. This approach would perhaps be simple but is undesirable due to HaRe's dependency on the GHC API. Depending on the GHC API is rather undesirable as it ties your users to a particular version of GHC. For a project in as wide user as HLint, this is unacceptable.</p>
+<p>These transformations could easily be achieved by depending directly on HaRe and calling API methods in order to perform the necessary transformations. This approach would perhaps be simple but is undesirable due to HaRe's dependency on the GHC API. Said dependency is rather undesirable as it ties your users to a particular version of GHC. For a project in as wide use as HLint, this is unacceptable.</p>
 <h2 id="intermediate-specification-format">Intermediate specification format</h2>
-<p>Much like <code>pandoc-types</code> separates document synthesis from document generation. Perhaps the cleanest solution would be to separate refactoring specification from transformation. Designing a DSL for easily specifying without a dependency on HaRe would mean that external libraries could specify transformations before invoking HaRe and piping in their desired transformation. A typical invocation might then be as follows. This could be folded inside HLint as a system call.</p>
+<p>Much like <code>pandoc-types</code> separates document synthesis from document generation. Perhaps the cleanest solution would be to separate refactoring specification from transformation. Designing a DSL for specifying refactorings without a dependency on HaRe would mean that external libraries could specify transformations before invoking HaRe and piping in their desired transformation. A typical invocation might then be as follows. This could be folded inside HLint as a system call.</p>
 <pre><code>hlint --refactor | ghc-hare</code></pre>
-<p>An obvious problem with this approach is how to specify Haskell AST elements to use in the transformations. For variable renaming, one need only provide a new name for the variable but say we want to inject more complicated expressions the problem becomes more difficult. The solution would be to only allow the replacing of expressions with expressions and then using the <code>parseExpression</code> endpoint exposed by GHC 7.10<a href="#fn3" class="footnoteRef" id="fnref3"><sup>3</sup></a> and rely on your user to be able to at least give you a valid string representation of the construct they wanted to insert.</p>
+<p>An obvious problem with this approach is how to specify Haskell AST elements to use in the transformations. For variable renaming, one need only provide a new name for the variable but say we want to inject more complicated expressions the problem becomes more difficult. A solution is to use the <code>parseExpression</code> endpoint exposed by GHC 7.10<a href="#fn5" class="footnoteRef" id="fnref5"><sup>5</sup></a> and rely on your user to be able to at least give you a valid string representation of the construct they wanted to insert.</p>
+<p>For example, if a user wanted to replace <code>concat . map f</code> with <code>concatMap</code> then the program may look as follows.</p>
+<ol style="list-style-type: decimal">
+<li><p>The types of refactorings allowed are specified in a separate module.</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="co">-- In a separate library, not depending on GHC.</span>
+<span class="kw">data</span> <span class="dt">Refactor</span> <span class="fu">=</span> <span class="dt">Replace</span> <span class="dt">SrcSpan</span> <span class="dt">String</span> <span class="fu">|</span> <span class="fu">...</span></code></pre></li>
+<li><p>The refactoring is specified inside HLint.</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="co">-- In HLint</span>
+<span class="ot">findReplacement ::</span> <span class="fu">...</span> <span class="ot">-&gt;</span> <span class="dt">Refactor</span>
+findReplacement expr <span class="fu">=</span> <span class="dt">Replace</span> sspan <span class="st">&quot;concatMap&quot;</span>
+  <span class="kw">where</span>
+<span class="ot">    sspan ::</span> <span class="dt">GHC.SrcSpan</span>
+    sspan <span class="fu">=</span> findReplacementLocation expr</code></pre></li>
+<li><p>The refactoring is interpreted inside HaRe.</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="co">-- In HaRe</span>
+<span class="ot">replaceExpr ::</span> <span class="dt">GHC.SrcSpan</span> <span class="ot">-&gt;</span> <span class="dt">GHC.LHsExpr</span> <span class="ot">-&gt;</span> <span class="fu">...</span>
+
+<span class="ot">refactor ::</span> <span class="dt">Refactor</span> <span class="ot">-&gt;</span> <span class="fu">...</span>
+refactor (<span class="dt">Replace</span> span expr) <span class="fu">=</span>
+  <span class="kw">let</span> parsedExpr <span class="fu">=</span> parseExpression expr
+    <span class="kw">in</span> replaceExpr span parsedExpr</code></pre></li>
+</ol>
+<p>Designing the intermediate library will be initially difficult. It isn't clear which refactoring operations should be atomic and even then there are clear overheads to performing composite refactorings without informed optimisation. For that reason I propose a very naive intermediate layer which is only intended to work between HLint and HaRe. Constructors should directly correspond to refactorings offered by HaRe as to simulate calling the API without causing a dependency on GHC.</p>
 <h3 id="higher-level-dsl">Higher-level DSL</h3>
-<p>Coming full circle, after HaRe, Thompson and Li went on to design a second refactoring tool, this time for Erlang. The community uptake was much greater and as a result they designed such a DSL for scripting refactorings.<span class="citation">(Li and Thompson 2012)</span> If time permitted it would be productive to extend this specification format to a more fully featured DSL which enabled users to specify their refactorings. Using Li and Thompson's work could provide a useful starting point.</p>
+<p>Coming full circle, after HaRe, Thompson and Li went on to design a second refactoring tool, this time for Erlang. The community uptake was much greater and as a result they designed such a DSL for scripting refactorings. <span class="citation">(Li and Thompson 2012)</span> If time permitted it would be productive to extend my proposed specification format to a more fully featured DSL which enabled users to specify their refactorings. Using Li and Thompson's work could provide a useful starting point. This design work is most likely outside the scope of this project.</p>
 <h1 id="longer-term-vision">Longer term vision</h1>
-<h2 id="the-ghc-api-problem">The GHC API Problem</h2>
-<p>Between major releases there are always changes to the GHC API. This is expected and welcomed by the author but the current best practices (i.e. CPP) leave projects which rely on this API difficult to maintain and understand. Separating the specification and usage of HaRe and it's dependency on the GHC API should ease this pain considerably. When a new version of GHC is released, if designed suitably, HaRe will still understand the old serialisation format and be able to perform at least the older set of refactorings for users still using an older version of the compiler.</p>
-<h2 id="caching-a-loaded-module">Caching a loaded module</h2>
-<p>Applying many small disjoint operations individually could get very expensive. A better approach would be to inspect each transformation and apply disjoint transformations without reloading the file.</p>
-<h2 id="updated-vim-and-emacs-bindings">Updated vim and Emacs bindings</h2>
-<p>Most haskell refactoring tools provide bindings to both vim and Emacs, it is also important that HaRe provides such bindings. Once the HaRe API stabilises in the next year this is something I could provide towards the tail end of the summer.</p>
 <h2 id="propagating-api-changes">Propagating API changes</h2>
 <p>Similar to the <a href="https://www.youtube.com/watch?v=Ae-6uIMQPmU">idea</a> that Roman Cheplyaka suggested at HIW 2012. With the capability to read a serialisation format, library authors could distribute a changes file which would then be used by HaRe to perform the necessary changes.</p>
+<p>Name resolution would be an important and difficult challenge to overcome. Under the influence of <code>NoImplicitPrelude</code>, HLint already provides erroneous suggestions as the substitution mechanism performs syntactic rather than semantic matching. I think that extending HLints matching mechanism to perform semantic matching would be difficult. <code>haskell-src-exts</code> doesn't immediately resolve names, it would be necessary to use <code>haskell-names</code> to provide name resolution which in turn relies on the interface files generated by <code>hs-gen-interface</code>. These kinds of changes can lead you down a rabbit hole so are not something I plan to pursue in detail this summer.</p>
+<h2 id="caching-a-loaded-module">Caching a loaded module</h2>
+<p>Applying many small disjoint operations individually could get very expensive as the source file is reloaded by HaRe on each separate transformation. A better approach would be to inspect each transformation and apply disjoint transformations without reloading the file.</p>
+<h2 id="updated-vim-and-emacs-bindings">Updated vim and Emacs bindings</h2>
+<p>Most Haskell refactoring tools provide bindings to both vim and Emacs, it is also important that HaRe provides such bindings. Once the HaRe API stabilises in the next year this is something I could provide towards the tail end of the summer.</p>
 <h2 id="promotion">Promotion</h2>
-<p>It is well-known that the secret to the success of any library is a mixture of solving a cool problem and a suitable level of promotion. HaRe has been around for ever but the user interface has been too cumbersome to use. Once it is easy to write your own transformations then I would look to write a series of blog posts demonstrating how easy Haskell program synthesis can be.<a href="#fn4" class="footnoteRef" id="fnref4"><sup>4</sup></a></p>
+<p>It is well-known that the secret to the success of any library is a mixture of solving a cool problem and a suitable level of promotion. HaRe has been around for a number of years but has not gained very much traction. Once it is easy to write your own transformations then I would look to write a series of blog posts demonstrating how easy Haskell program synthesis can be.<a href="#fn6" class="footnoteRef" id="fnref6"><sup>6</sup></a></p>
 <p></p>
 <h1 id="about-me">About Me</h1>
 <p>Since successfully completing a <a href="https://www.google-melange.com/gsoc/project/details/google/gsoc2014/mattpickering/5757334940811264">project</a> working on Pandoc last year I have remained involved in the Haskell community. I have continued to contribute to Pandoc through triaging bug reports and contributing infrastructure patches.</p>
 <p>Over the winter I completed an internship at the social media startup <a href="http://www.borde.rs/">Borders</a> where I worked on writing <a href="https://hackage.haskell.org/package/slack-api-0.3">slack-api</a> and contributing to internal admin tools.</p>
-<p>In the last two months I have already been working closely with alanz on primarily <code>ghc-exactprint</code> and recently completed a significant rewrite of the core machinery.</p>
+<p>I am already intimately familiar with <code>ghc-exactprint</code> after recently completing a significant refactoring of the core machinery. This work has made me well aware of how fiddly these kind of foundational tools can be! Something to be conscious of when committing a summer to a project.</p>
 <h1 id="timeline">Timeline</h1>
 <p>Due to university exams, I plan to start a month late and finish a month late. This arrangement worked well last summer.</p>
 <table>
@@ -134,17 +156,17 @@ Why not:
 <tr class="odd">
 <td align="left">25th May</td>
 <td align="left">20th June</td>
-<td align="left">Inactive due to university exams</td>
+<td align="left">Inactive due to university exams.</td>
 </tr>
 <tr class="even">
 <td align="left">20th June</td>
 <td align="left">20th July</td>
-<td align="left">Work on <code>ghc-exactprint</code> and HaRe to provide robust transformations for simple refactorings like those found in HLint</td>
+<td align="left">Work on <code>ghc-exactprint</code> and HaRe to provide robust transformations for simple refactorings like those found in HLint.</td>
 </tr>
 <tr class="odd">
 <td align="left">20th July</td>
 <td align="left">20th August</td>
-<td align="left">Link together HLint and HaRe using a suitable intermediate library.</td>
+<td align="left">Design a simple intermediate library which can be used to bridge between HLint and HaRe.</td>
 </tr>
 <tr class="even">
 <td align="left">20th August</td>
@@ -153,8 +175,15 @@ Why not:
 </tr>
 </tbody>
 </table>
+<h1 id="deliverables">Deliverables</h1>
+<ol style="list-style-type: decimal">
+<li>Solidify the relationship between HaRe and <code>ghc-exactprint</code> by providing primitive refactorings in <code>ghc-exactprint</code>.</li>
+<li>A standalone refactoring DSL (provided by a separate library) based on expression replacements.</li>
+<li>Modifying HLint to produce suggestions in this format.</li>
+<li>Modify HaRe to understand this DSL and perform the replacements.</li>
+</ol>
 <p></p>
-<h1 id="appendix-a----hlint-refactorings-classified">Appendix A -- HLint refactorings classified</h1>
+<h1 id="appendix-a">Appendix A - HLint refactorings classified</h1>
 <table>
 <colgroup>
 <col width="23%" />
@@ -235,7 +264,7 @@ Why not:
 <td align="left">Check for camel case variable name</td>
 <td align="left"><code>Naming.hs</code></td>
 <td align="left">(3)</td>
-<td align="left">Renaming requires knowledge of types but HLint currently doesn't suggest names which will class with definitions in the module.</td>
+<td align="left">Renaming requires knowledge of types but HLint currently doesn't suggest names which will clash with definitions in the module.</td>
 </tr>
 <tr class="even">
 <td align="left">Checks for <code>OPTIONS</code> and <code>LANGUAGE</code> pragmas which should be expressed differently.</td>
@@ -257,8 +286,6 @@ Why not:
 </tr>
 </tbody>
 </table>
-<h1 id="appendix-b---transforming-an-ast-with-ghc-exactprint">Appendix B - Transforming an AST with <code>ghc-exactprint</code></h1>
-<p>Is this necessary?</p>
 <div class="references">
 <h1 id="references" class="unnumbered">References</h1>
 <p>Li, Huiqing. 2006. “Refactoring Haskell Programs.” PhD thesis. <a href="http://kar.kent.ac.uk/14425/" class="uri">http://kar.kent.ac.uk/14425/</a>.</p>
@@ -269,8 +296,10 @@ Why not:
 <ol>
 <li id="fn1"><p>Previously HaRe used an extremely brittle mechanism which performed transformations on the AST but printed using the token stream produced by the lexer. This meant that performing any transformation it was necessary to update both. <span class="citation">(see Li 2006, 57 - 59)</span><a href="#fnref1">↩</a></p></li>
 <li id="fn2"><p>A dollar sign (<code>$</code>) is redundant when both arguments do not require parentheses.<a href="#fnref2">↩</a></p></li>
-<li id="fn3"><p>A full list of newly exposed endpoints is: <code>parseModule</code>, <code>parseImport</code>, <code>parseStatement</code>, <code>parseDeclaration</code>, <code>parseExpression</code>, <code>parseTypeSignature</code>, <code>parseFullStmt</code>, <code>parseStmt</code>, <code>parseIdentifier</code>, <code>parseType</code> and <code>parseHeader</code>.<a href="#fnref3">↩</a></p></li>
-<li id="fn4"><p>or maybe just how you can now simultaneously change you names of all your cost centres at once. The reader can decide which she finds more appealing.<a href="#fnref4">↩</a></p></li>
+<li id="fn3"><p>Such as a fresh supply of variable names and the ability to check for name capture.<a href="#fnref3">↩</a></p></li>
+<li id="fn4"><p>As suggested by Neil Mitchell.<a href="#fnref4">↩</a></p></li>
+<li id="fn5"><p>A full list of newly exposed endpoints is: <code>parseModule</code>, <code>parseImport</code>, <code>parseStatement</code>, <code>parseDeclaration</code>, <code>parseExpression</code>, <code>parseTypeSignature</code>, <code>parseFullStmt</code>, <code>parseStmt</code>, <code>parseIdentifier</code>, <code>parseType</code> and <code>parseHeader</code>.<a href="#fnref5">↩</a></p></li>
+<li id="fn6"><p>or maybe just how you can now simultaneously change you names of all your cost centres at once. The reader can decide which she finds more appealing.<a href="#fnref6">↩</a></p></li>
 </ol>
 </div>
 </div>
