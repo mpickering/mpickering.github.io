@@ -26,184 +26,168 @@ span.spaces    { background: white }
 <span class="lineno">   10 </span>  , PosToken
 <span class="lineno">   11 </span>  , DeltaPos(..)
 <span class="lineno">   12 </span>  , ColOffset,ColDelta,Col
-<span class="lineno">   13 </span>  , LineChanged(..)
-<span class="lineno">   14 </span>  , Annotation(..)
-<span class="lineno">   15 </span>  , combineAnns
-<span class="lineno">   16 </span>  , annNone
-<span class="lineno">   17 </span>  , Anns,AnnKey(..)
-<span class="lineno">   18 </span>  , KeywordId(..)
-<span class="lineno">   19 </span>  , mkAnnKey
-<span class="lineno">   20 </span>  , AnnConName(..)
-<span class="lineno">   21 </span>  , annGetConstr
-<span class="lineno">   22 </span>  , unConName
+<span class="lineno">   13 </span>  , Annotation(..)
+<span class="lineno">   14 </span>  , combineAnns
+<span class="lineno">   15 </span>  , annNone
+<span class="lineno">   16 </span>  , Anns,AnnKey(..)
+<span class="lineno">   17 </span>  , KeywordId(..)
+<span class="lineno">   18 </span>  , mkAnnKey
+<span class="lineno">   19 </span>  , AnnConName(..)
+<span class="lineno">   20 </span>  , annGetConstr
+<span class="lineno">   21 </span>
+<span class="lineno">   22 </span>  , ResTyGADTHook(..)
 <span class="lineno">   23 </span>
-<span class="lineno">   24 </span>  , ResTyGADTHook(..)
-<span class="lineno">   25 </span>
-<span class="lineno">   26 </span>  , getAnnotationEP
-<span class="lineno">   27 </span>  , getAndRemoveAnnotationEP
+<span class="lineno">   24 </span>  , getAnnotationEP
+<span class="lineno">   25 </span>  , getAndRemoveAnnotationEP
+<span class="lineno">   26 </span>
+<span class="lineno">   27 </span>  , LayoutFlag(..)
 <span class="lineno">   28 </span>
-<span class="lineno">   29 </span>  , LayoutFlag(..)
+<span class="lineno">   29 </span>  ) where
 <span class="lineno">   30 </span>
-<span class="lineno">   31 </span>  ) where
+<span class="lineno">   31 </span>import Data.Data
 <span class="lineno">   32 </span>
-<span class="lineno">   33 </span>import Data.Data
-<span class="lineno">   34 </span>
-<span class="lineno">   35 </span>import qualified GHC           as GHC
-<span class="lineno">   36 </span>import qualified Outputable    as GHC
+<span class="lineno">   33 </span>import qualified GHC           as GHC
+<span class="lineno">   34 </span>import qualified Outputable    as GHC
+<span class="lineno">   35 </span>
+<span class="lineno">   36 </span>import qualified Data.Map as Map
 <span class="lineno">   37 </span>
-<span class="lineno">   38 </span>import qualified Data.Map as Map
+<span class="lineno">   38 </span>-- ---------------------------------------------------------------------
 <span class="lineno">   39 </span>
-<span class="lineno">   40 </span>-- ---------------------------------------------------------------------
-<span class="lineno">   41 </span>
-<span class="lineno">   42 </span>-- | A Haskell comment.
-<span class="lineno">   43 </span>data Comment = Comment Span String
-<span class="lineno">   44 </span>  deriving (<span class="decl"><span class="nottickedoff"><span class="decl"><span class="nottickedoff">Eq</span></span></span></span>,<span class="decl"><span class="nottickedoff"><span class="decl"><span class="nottickedoff">Show</span></span></span></span>,<span class="decl"><span class="nottickedoff">Typeable</span></span>,<span class="decl"><span class="nottickedoff"><span class="decl"><span class="nottickedoff"><span class="decl"><span class="nottickedoff"><span class="decl"><span class="nottickedoff"><span class="decl"><span class="nottickedoff"><span class="decl"><span class="nottickedoff">Data</span></span></span></span></span></span></span></span></span></span></span></span>)
-<span class="lineno">   45 </span>
-<span class="lineno">   46 </span>instance GHC.Outputable Comment where
-<span class="lineno">   47 </span>  <span class="decl"><span class="nottickedoff">ppr x = GHC.text (show x)</span></span>
-<span class="lineno">   48 </span>
-<span class="lineno">   49 </span>-- |Delta version of the comment.
-<span class="lineno">   50 </span>data DComment = DComment (DeltaPos,DeltaPos) String
-<span class="lineno">   51 </span>  deriving (<span class="decl"><span class="nottickedoff"><span class="decl"><span class="nottickedoff">Eq</span></span></span></span>,<span class="decl"><span class="istickedoff"><span class="decl"><span class="nottickedoff">Show</span></span></span></span>,<span class="decl"><span class="nottickedoff">Typeable</span></span>,<span class="decl"><span class="nottickedoff"><span class="decl"><span class="nottickedoff"><span class="decl"><span class="nottickedoff"><span class="decl"><span class="nottickedoff"><span class="decl"><span class="nottickedoff"><span class="decl"><span class="nottickedoff">Data</span></span></span></span></span></span></span></span></span></span></span></span>,<span class="decl"><span class="nottickedoff"><span class="decl"><span class="nottickedoff"><span class="decl"><span class="nottickedoff"><span class="decl"><span class="nottickedoff"><span class="decl"><span class="nottickedoff">Ord</span></span></span></span></span></span></span></span></span></span>)
-<span class="lineno">   52 </span>
-<span class="lineno">   53 </span>instance Ord Comment where
-<span class="lineno">   54 </span>  <span class="decl"><span class="nottickedoff">compare (Comment p1 _) (Comment p2 _) = compare p1 p2</span></span>
+<span class="lineno">   40 </span>-- | A Haskell comment.
+<span class="lineno">   41 </span>data Comment = Comment Span String
+<span class="lineno">   42 </span>  deriving (<span class="decl"><span class="nottickedoff"><span class="decl"><span class="nottickedoff">Eq</span></span></span></span>,<span class="decl"><span class="nottickedoff"><span class="decl"><span class="nottickedoff">Show</span></span></span></span>,<span class="decl"><span class="nottickedoff">Typeable</span></span>,<span class="decl"><span class="nottickedoff"><span class="decl"><span class="nottickedoff"><span class="decl"><span class="nottickedoff"><span class="decl"><span class="nottickedoff"><span class="decl"><span class="nottickedoff"><span class="decl"><span class="nottickedoff">Data</span></span></span></span></span></span></span></span></span></span></span></span>)
+<span class="lineno">   43 </span>
+<span class="lineno">   44 </span>instance GHC.Outputable Comment where
+<span class="lineno">   45 </span>  <span class="decl"><span class="nottickedoff">ppr x = GHC.text (show x)</span></span>
+<span class="lineno">   46 </span>
+<span class="lineno">   47 </span>-- |Delta version of the comment.
+<span class="lineno">   48 </span>data DComment = DComment (DeltaPos,DeltaPos) String
+<span class="lineno">   49 </span>  deriving (<span class="decl"><span class="nottickedoff"><span class="decl"><span class="nottickedoff">Eq</span></span></span></span>,<span class="decl"><span class="istickedoff"><span class="decl"><span class="nottickedoff">Show</span></span></span></span>,<span class="decl"><span class="nottickedoff">Typeable</span></span>,<span class="decl"><span class="nottickedoff"><span class="decl"><span class="nottickedoff"><span class="decl"><span class="nottickedoff"><span class="decl"><span class="nottickedoff"><span class="decl"><span class="nottickedoff"><span class="decl"><span class="nottickedoff">Data</span></span></span></span></span></span></span></span></span></span></span></span>,<span class="decl"><span class="nottickedoff"><span class="decl"><span class="nottickedoff"><span class="decl"><span class="nottickedoff"><span class="decl"><span class="nottickedoff"><span class="decl"><span class="nottickedoff">Ord</span></span></span></span></span></span></span></span></span></span>)
+<span class="lineno">   50 </span>
+<span class="lineno">   51 </span>instance Ord Comment where
+<span class="lineno">   52 </span>  <span class="decl"><span class="nottickedoff">compare (Comment p1 _) (Comment p2 _) = compare p1 p2</span></span>
+<span class="lineno">   53 </span>
+<span class="lineno">   54 </span>type PosToken = (GHC.Located GHC.Token, String)
 <span class="lineno">   55 </span>
-<span class="lineno">   56 </span>type PosToken = (GHC.Located GHC.Token, String)
-<span class="lineno">   57 </span>
-<span class="lineno">   58 </span>type Pos = (Int,Int)
-<span class="lineno">   59 </span>type Span = (Pos,Pos)
-<span class="lineno">   60 </span>
-<span class="lineno">   61 </span>data DeltaPos = DP (Int,Int) deriving (<span class="decl"><span class="istickedoff"><span class="decl"><span class="nottickedoff">Show</span></span></span></span>,<span class="decl"><span class="nottickedoff"><span class="decl"><span class="nottickedoff">Eq</span></span></span></span>,<span class="decl"><span class="nottickedoff"><span class="decl"><span class="nottickedoff"><span class="decl"><span class="nottickedoff"><span class="decl"><span class="nottickedoff"><span class="decl"><span class="nottickedoff">Ord</span></span></span></span></span></span></span></span></span></span>,<span class="decl"><span class="nottickedoff">Typeable</span></span>,<span class="decl"><span class="nottickedoff"><span class="decl"><span class="nottickedoff"><span class="decl"><span class="nottickedoff"><span class="decl"><span class="nottickedoff"><span class="decl"><span class="nottickedoff"><span class="decl"><span class="nottickedoff">Data</span></span></span></span></span></span></span></span></span></span></span></span>)
-<span class="lineno">   62 </span>type ColOffset = Int -- ^ indentation point for a new line
-<span class="lineno">   63 </span>type ColDelta  = Int -- ^ difference between two cols
-<span class="lineno">   64 </span>type Col       = Int
-<span class="lineno">   65 </span>
-<span class="lineno">   66 </span>annNone :: Annotation
-<span class="lineno">   67 </span><span class="decl"><span class="istickedoff">annNone = Ann (DP (<span class="nottickedoff">0</span>,<span class="nottickedoff">0</span>)) LineSame 0 0 []</span></span>
-<span class="lineno">   68 </span>
-<span class="lineno">   69 </span>combineAnns :: Annotation -&gt; Annotation -&gt; Annotation
-<span class="lineno">   70 </span><span class="decl"><span class="istickedoff">combineAnns (Ann ed1 nl1 c1 dp1 dps1) (Ann _ed2 _nl2 _c2 _dp2 dps2)</span>
-<span class="lineno">   71 </span><span class="spaces">  </span><span class="istickedoff">= Ann ed1 nl1 c1 dp1 (dps1 ++ dps2)</span></span>
-<span class="lineno">   72 </span>
-<span class="lineno">   73 </span>data LineChanged = LineSame | LineChanged
-<span class="lineno">   74 </span>                 | KeepOffset -- ^ For use in AST editing
-<span class="lineno">   75 </span>                 | LayoutLineSame | LayoutLineChanged -- experimental, may replace LineSame and LineChanged
-<span class="lineno">   76 </span>                 deriving (<span class="decl"><span class="istickedoff"><span class="decl"><span class="nottickedoff">Show</span></span></span></span>,<span class="decl"><span class="nottickedoff"><span class="decl"><span class="nottickedoff">Eq</span></span></span></span>,<span class="decl"><span class="nottickedoff"><span class="decl"><span class="nottickedoff"><span class="decl"><span class="nottickedoff"><span class="decl"><span class="nottickedoff"><span class="decl"><span class="nottickedoff"><span class="decl"><span class="nottickedoff">Typeable</span></span></span></span></span></span></span></span></span></span></span></span>)
-<span class="lineno">   77 </span>
-<span class="lineno">   78 </span>data Annotation = Ann
-<span class="lineno">   79 </span>  {
-<span class="lineno">   80 </span>    <span class="nottickedoff"><span class="decl"><span class="nottickedoff">ann_entry_delta</span></span></span>  :: !DeltaPos -- ^ Offset used to get to the start
-<span class="lineno">   81 </span>                                  -- of the SrcSpan, during the
-<span class="lineno">   82 </span>                                  -- annotatePC phase
-<span class="lineno">   83 </span>  , <span class="nottickedoff"><span class="decl"><span class="nottickedoff">ann_original_nl</span></span></span>  :: !LineChanged -- ^ Did the original span start
-<span class="lineno">   84 </span>                                     -- on a new line wrt to the prior
-<span class="lineno">   85 </span>                                     -- one?
-<span class="lineno">   86 </span>  , <span class="nottickedoff"><span class="decl"><span class="nottickedoff">ann_original_col</span></span></span> :: !Col      -- ^ Start of the SrcSpan, as used
-<span class="lineno">   87 </span>                                  -- during the annotatePC phase
-<span class="lineno">   88 </span>  , <span class="nottickedoff"><span class="decl"><span class="nottickedoff">ann_delta</span></span></span>        :: !ColOffset -- ^ Indentation level introduced
-<span class="lineno">   89 </span>                                   -- by this SrcSpan, for other items
-<span class="lineno">   90 </span>                                   -- at same layout level
-<span class="lineno">   91 </span>  , <span class="nottickedoff"><span class="decl"><span class="nottickedoff">anns</span></span></span>             :: [(KeywordId, DeltaPos)] -- TODO:AZ change this to ann_dps
-<span class="lineno">   92 </span>
-<span class="lineno">   93 </span>  } deriving (<span class="decl"><span class="nottickedoff">Typeable</span></span>,<span class="decl"><span class="nottickedoff"><span class="decl"><span class="nottickedoff">Eq</span></span></span></span>)
-<span class="lineno">   94 </span>
-<span class="lineno">   95 </span>instance Show Annotation where
-<span class="lineno">   96 </span>  <span class="decl"><span class="istickedoff">show (Ann dp nl c d ans) = &quot;(Ann (&quot; ++ show dp ++ &quot;) &quot; ++ show nl ++ &quot; &quot; ++ show c ++ &quot; &quot; ++ show d ++ &quot; &quot; ++ show ans ++ &quot;)&quot;</span></span>
-<span class="lineno">   97 </span>
-<span class="lineno">   98 </span>instance Monoid Annotation where
-<span class="lineno">   99 </span>  <span class="decl"><span class="nottickedoff">mempty = annNone</span></span>
-<span class="lineno">  100 </span>  <span class="decl"><span class="istickedoff">mappend = combineAnns</span></span>
-<span class="lineno">  101 </span>
-<span class="lineno">  102 </span>type Anns = Map.Map AnnKey Annotation
+<span class="lineno">   56 </span>type Pos = (Int,Int)
+<span class="lineno">   57 </span>type Span = (Pos,Pos)
+<span class="lineno">   58 </span>
+<span class="lineno">   59 </span>data DeltaPos = DP (Int,Int) deriving (<span class="decl"><span class="istickedoff"><span class="decl"><span class="nottickedoff">Show</span></span></span></span>,<span class="decl"><span class="nottickedoff"><span class="decl"><span class="nottickedoff">Eq</span></span></span></span>,<span class="decl"><span class="nottickedoff"><span class="decl"><span class="nottickedoff"><span class="decl"><span class="nottickedoff"><span class="decl"><span class="nottickedoff"><span class="decl"><span class="nottickedoff">Ord</span></span></span></span></span></span></span></span></span></span>,<span class="decl"><span class="nottickedoff">Typeable</span></span>,<span class="decl"><span class="nottickedoff"><span class="decl"><span class="nottickedoff"><span class="decl"><span class="nottickedoff"><span class="decl"><span class="nottickedoff"><span class="decl"><span class="nottickedoff"><span class="decl"><span class="nottickedoff">Data</span></span></span></span></span></span></span></span></span></span></span></span>)
+<span class="lineno">   60 </span>type ColOffset = Int -- ^ indentation point for a new line
+<span class="lineno">   61 </span>type ColDelta  = Int -- ^ difference between two cols
+<span class="lineno">   62 </span>type Col       = Int
+<span class="lineno">   63 </span>
+<span class="lineno">   64 </span>annNone :: Annotation
+<span class="lineno">   65 </span><span class="decl"><span class="istickedoff">annNone = Ann (DP (<span class="nottickedoff">0</span>,<span class="nottickedoff">0</span>)) 0 []</span></span>
+<span class="lineno">   66 </span>
+<span class="lineno">   67 </span>combineAnns :: Annotation -&gt; Annotation -&gt; Annotation
+<span class="lineno">   68 </span><span class="decl"><span class="istickedoff">combineAnns (Ann ed1 c1 dps1) (Ann _ed2  _c2  dps2)</span>
+<span class="lineno">   69 </span><span class="spaces">  </span><span class="istickedoff">= Ann ed1 c1 (dps1 ++ dps2)</span></span>
+<span class="lineno">   70 </span>
+<span class="lineno">   71 </span>data Annotation = Ann
+<span class="lineno">   72 </span>  {
+<span class="lineno">   73 </span>    <span class="nottickedoff"><span class="decl"><span class="nottickedoff">annEntryDelta</span></span></span>      :: !DeltaPos -- ^ Offset used to get to the start
+<span class="lineno">   74 </span>                                  --    of the SrcSpan.
+<span class="lineno">   75 </span>  , <span class="nottickedoff"><span class="decl"><span class="nottickedoff">annDelta</span></span></span>           :: !ColOffset -- ^ Offset from the start of the current layout
+<span class="lineno">   76 </span>                                   --  block. This is used when moving onto new
+<span class="lineno">   77 </span>                                   --  lines when layout rules must be obeyed.
+<span class="lineno">   78 </span>  , <span class="nottickedoff"><span class="decl"><span class="nottickedoff">annsDP</span></span></span>             :: [(KeywordId, DeltaPos)]  -- ^ Annotations associated with this element.
+<span class="lineno">   79 </span>
+<span class="lineno">   80 </span>  } deriving (<span class="decl"><span class="nottickedoff">Typeable</span></span>,<span class="decl"><span class="nottickedoff"><span class="decl"><span class="nottickedoff">Eq</span></span></span></span>)
+<span class="lineno">   81 </span>
+<span class="lineno">   82 </span>instance Show Annotation where
+<span class="lineno">   83 </span>  <span class="decl"><span class="istickedoff">show (Ann dp c ans) = &quot;(Ann (&quot; ++ show dp ++ &quot;) &quot; ++ show c ++ &quot; &quot; ++ &quot; &quot; ++ show ans ++ &quot;)&quot;</span></span>
+<span class="lineno">   84 </span>
+<span class="lineno">   85 </span>instance Monoid Annotation where
+<span class="lineno">   86 </span>  <span class="decl"><span class="nottickedoff">mempty = annNone</span></span>
+<span class="lineno">   87 </span>  <span class="decl"><span class="istickedoff">mappend = combineAnns</span></span>
+<span class="lineno">   88 </span>
+<span class="lineno">   89 </span>type Anns = Map.Map AnnKey Annotation
+<span class="lineno">   90 </span>
+<span class="lineno">   91 </span>-- | For every @Located a@, use the @SrcSpan@ and constructor name of
+<span class="lineno">   92 </span>-- a as the key, to store the standard annotation.
+<span class="lineno">   93 </span>-- These are used to maintain context in the AP and EP monads
+<span class="lineno">   94 </span>data AnnKey   = AnnKey GHC.SrcSpan AnnConName
+<span class="lineno">   95 </span>                  deriving (<span class="decl"><span class="nottickedoff"><span class="decl"><span class="nottickedoff">Eq</span></span></span></span>, <span class="decl"><span class="nottickedoff"><span class="decl"><span class="nottickedoff">Show</span></span></span></span>, <span class="decl"><span class="istickedoff"><span class="decl"><span class="nottickedoff"><span class="decl"><span class="nottickedoff"><span class="decl"><span class="nottickedoff"><span class="decl"><span class="nottickedoff">Ord</span></span></span></span></span></span></span></span></span></span>)
+<span class="lineno">   96 </span>
+<span class="lineno">   97 </span>mkAnnKey :: (Data a) =&gt; GHC.Located a -&gt; AnnKey
+<span class="lineno">   98 </span><span class="decl"><span class="nottickedoff">mkAnnKey (GHC.L l a) = AnnKey l (annGetConstr a)</span></span>
+<span class="lineno">   99 </span>
+<span class="lineno">  100 </span>-- Holds the name of a constructor
+<span class="lineno">  101 </span>data AnnConName = CN { <span class="nottickedoff"><span class="decl"><span class="nottickedoff">unConName</span></span></span> :: String }
+<span class="lineno">  102 </span>                 deriving (<span class="decl"><span class="nottickedoff"><span class="decl"><span class="nottickedoff">Eq</span></span></span></span>,<span class="decl"><span class="nottickedoff"><span class="decl"><span class="nottickedoff">Show</span></span></span></span>,<span class="decl"><span class="istickedoff"><span class="decl"><span class="nottickedoff"><span class="decl"><span class="nottickedoff"><span class="decl"><span class="nottickedoff"><span class="decl"><span class="nottickedoff">Ord</span></span></span></span></span></span></span></span></span></span>)
 <span class="lineno">  103 </span>
-<span class="lineno">  104 </span>-- | For every @Located a@, use the @SrcSpan@ and constructor name of
-<span class="lineno">  105 </span>-- a as the key, to store the standard annotation.
-<span class="lineno">  106 </span>-- These are used to maintain context in the AP and EP monads
-<span class="lineno">  107 </span>data AnnKey   = AnnKey GHC.SrcSpan AnnConName
-<span class="lineno">  108 </span>                  deriving (<span class="decl"><span class="nottickedoff"><span class="decl"><span class="nottickedoff">Eq</span></span></span></span>, <span class="decl"><span class="nottickedoff"><span class="decl"><span class="nottickedoff">Show</span></span></span></span>, <span class="decl"><span class="istickedoff"><span class="decl"><span class="nottickedoff"><span class="decl"><span class="nottickedoff"><span class="decl"><span class="nottickedoff"><span class="decl"><span class="nottickedoff">Ord</span></span></span></span></span></span></span></span></span></span>)
-<span class="lineno">  109 </span>
-<span class="lineno">  110 </span>mkAnnKey :: (Data a) =&gt; GHC.Located a -&gt; AnnKey
-<span class="lineno">  111 </span><span class="decl"><span class="nottickedoff">mkAnnKey (GHC.L l a) = AnnKey l (annGetConstr a)</span></span>
-<span class="lineno">  112 </span>
-<span class="lineno">  113 </span>-- Holds the name of a constructor
-<span class="lineno">  114 </span>data AnnConName = CN String
-<span class="lineno">  115 </span>                 deriving (<span class="decl"><span class="nottickedoff"><span class="decl"><span class="nottickedoff">Eq</span></span></span></span>,<span class="decl"><span class="nottickedoff"><span class="decl"><span class="nottickedoff">Show</span></span></span></span>,<span class="decl"><span class="istickedoff"><span class="decl"><span class="nottickedoff"><span class="decl"><span class="nottickedoff"><span class="decl"><span class="nottickedoff"><span class="decl"><span class="nottickedoff">Ord</span></span></span></span></span></span></span></span></span></span>)
-<span class="lineno">  116 </span>
-<span class="lineno">  117 </span>annGetConstr :: (Data a) =&gt; a -&gt; AnnConName
-<span class="lineno">  118 </span><span class="decl"><span class="istickedoff">annGetConstr a = CN (show $ toConstr a)</span></span>
-<span class="lineno">  119 </span>
-<span class="lineno">  120 </span>unConName :: AnnConName -&gt; String
-<span class="lineno">  121 </span><span class="decl"><span class="nottickedoff">unConName (CN s) = s</span></span>
+<span class="lineno">  104 </span>annGetConstr :: (Data a) =&gt; a -&gt; AnnConName
+<span class="lineno">  105 </span><span class="decl"><span class="istickedoff">annGetConstr a = CN (show $ toConstr a)</span></span>
+<span class="lineno">  106 </span>
+<span class="lineno">  107 </span>-- |We need our own version of keywordid to distinguish between a
+<span class="lineno">  108 </span>-- semi-colon appearing within an AST element and one separating AST
+<span class="lineno">  109 </span>-- elements in a list.
+<span class="lineno">  110 </span>data KeywordId = G GHC.AnnKeywordId
+<span class="lineno">  111 </span>               | AnnSemiSep
+<span class="lineno">  112 </span>               | AnnComment DComment
+<span class="lineno">  113 </span>               | AnnList GHC.SrcSpan -- ^ In some circumstances we
+<span class="lineno">  114 </span>                                     -- need to annotate a list of
+<span class="lineno">  115 </span>                                     -- statements (e.g. HsDo) and
+<span class="lineno">  116 </span>                                     -- must synthesise a SrcSpan to
+<span class="lineno">  117 </span>                                     -- hang the annotations off. This
+<span class="lineno">  118 </span>                                     -- needs to be preserved so that
+<span class="lineno">  119 </span>                                     -- exactPC can find it, after
+<span class="lineno">  120 </span>                                     -- potential AST edits.
+<span class="lineno">  121 </span>               deriving (<span class="decl"><span class="istickedoff"><span class="decl"><span class="nottickedoff">Eq</span></span></span></span>,<span class="decl"><span class="istickedoff"><span class="decl"><span class="nottickedoff">Show</span></span></span></span>,<span class="decl"><span class="nottickedoff">Ord</span></span>)
 <span class="lineno">  122 </span>
-<span class="lineno">  123 </span>-- |We need our own version of keywordid to distinguish between a
-<span class="lineno">  124 </span>-- semi-colon appearing within an AST element and one separating AST
-<span class="lineno">  125 </span>-- elements in a list.
-<span class="lineno">  126 </span>data KeywordId = G GHC.AnnKeywordId
-<span class="lineno">  127 </span>               | AnnSemiSep
-<span class="lineno">  128 </span>               | AnnComment DComment
-<span class="lineno">  129 </span>               | AnnList GHC.SrcSpan -- ^ In some circumstances we
-<span class="lineno">  130 </span>                                     -- need to annotate a list of
-<span class="lineno">  131 </span>                                     -- statements (e.g. HsDo) and
-<span class="lineno">  132 </span>                                     -- must synthesise a SrcSpan to
-<span class="lineno">  133 </span>                                     -- hang the annotations off. This
-<span class="lineno">  134 </span>                                     -- needs to be preserved so that
-<span class="lineno">  135 </span>                                     -- exactPC can find it, after
-<span class="lineno">  136 </span>                                     -- potential AST edits.
-<span class="lineno">  137 </span>               deriving (<span class="decl"><span class="istickedoff"><span class="decl"><span class="nottickedoff">Eq</span></span></span></span>,<span class="decl"><span class="istickedoff"><span class="decl"><span class="nottickedoff">Show</span></span></span></span>,<span class="decl"><span class="nottickedoff">Ord</span></span>)
+<span class="lineno">  123 </span>data LayoutFlag = LayoutRules | NoLayoutRules deriving (<span class="decl"><span class="nottickedoff"><span class="decl"><span class="nottickedoff">Show</span></span></span></span>, <span class="decl"><span class="nottickedoff"><span class="decl"><span class="nottickedoff">Eq</span></span></span></span>)
+<span class="lineno">  124 </span>
+<span class="lineno">  125 </span>instance Monoid LayoutFlag where
+<span class="lineno">  126 </span>  <span class="decl"><span class="nottickedoff">mempty = NoLayoutRules</span></span>
+<span class="lineno">  127 </span>  <span class="decl"><span class="istickedoff">LayoutRules `mappend` _ = LayoutRules</span>
+<span class="lineno">  128 </span><span class="spaces">  </span><span class="istickedoff">_ `mappend` LayoutRules = <span class="nottickedoff">LayoutRules</span></span>
+<span class="lineno">  129 </span><span class="spaces">  </span><span class="istickedoff">_ `mappend` _           = NoLayoutRules</span></span>
+<span class="lineno">  130 </span>
+<span class="lineno">  131 </span>-- ---------------------------------------------------------------------
+<span class="lineno">  132 </span>
+<span class="lineno">  133 </span>instance GHC.Outputable KeywordId where
+<span class="lineno">  134 </span>  <span class="decl"><span class="nottickedoff">ppr k     = GHC.text (show k)</span></span>
+<span class="lineno">  135 </span>
+<span class="lineno">  136 </span>instance GHC.Outputable (AnnConName) where
+<span class="lineno">  137 </span>  <span class="decl"><span class="nottickedoff">ppr tr     = GHC.text (show tr)</span></span>
 <span class="lineno">  138 </span>
-<span class="lineno">  139 </span>data LayoutFlag = LayoutRules | NoLayoutRules deriving (<span class="decl"><span class="nottickedoff"><span class="decl"><span class="nottickedoff">Show</span></span></span></span>, <span class="decl"><span class="nottickedoff"><span class="decl"><span class="nottickedoff">Eq</span></span></span></span>)
-<span class="lineno">  140 </span>
-<span class="lineno">  141 </span>instance Monoid LayoutFlag where
-<span class="lineno">  142 </span>  <span class="decl"><span class="istickedoff">mempty = NoLayoutRules</span></span>
-<span class="lineno">  143 </span>  <span class="decl"><span class="istickedoff">LayoutRules `mappend` _ = LayoutRules</span>
-<span class="lineno">  144 </span><span class="spaces">  </span><span class="istickedoff">_ `mappend` LayoutRules = LayoutRules</span>
-<span class="lineno">  145 </span><span class="spaces">  </span><span class="istickedoff">_ `mappend` _           = NoLayoutRules</span></span>
-<span class="lineno">  146 </span>
-<span class="lineno">  147 </span>-- ---------------------------------------------------------------------
-<span class="lineno">  148 </span>
-<span class="lineno">  149 </span>instance GHC.Outputable KeywordId where
-<span class="lineno">  150 </span>  <span class="decl"><span class="nottickedoff">ppr k     = GHC.text (show k)</span></span>
-<span class="lineno">  151 </span>
-<span class="lineno">  152 </span>instance GHC.Outputable (AnnConName) where
-<span class="lineno">  153 </span>  <span class="decl"><span class="nottickedoff">ppr tr     = GHC.text (show tr)</span></span>
-<span class="lineno">  154 </span>
-<span class="lineno">  155 </span>instance GHC.Outputable Annotation where
-<span class="lineno">  156 </span>  <span class="decl"><span class="nottickedoff">ppr a     = GHC.text (show a)</span></span>
-<span class="lineno">  157 </span>
-<span class="lineno">  158 </span>instance GHC.Outputable AnnKey where
-<span class="lineno">  159 </span>  <span class="decl"><span class="nottickedoff">ppr a     = GHC.text (show a)</span></span>
-<span class="lineno">  160 </span>
-<span class="lineno">  161 </span>instance GHC.Outputable DeltaPos where
-<span class="lineno">  162 </span>  <span class="decl"><span class="nottickedoff">ppr a     = GHC.text (show a)</span></span>
-<span class="lineno">  163 </span>
-<span class="lineno">  164 </span>-- ---------------------------------------------------------------------
+<span class="lineno">  139 </span>instance GHC.Outputable Annotation where
+<span class="lineno">  140 </span>  <span class="decl"><span class="nottickedoff">ppr a     = GHC.text (show a)</span></span>
+<span class="lineno">  141 </span>
+<span class="lineno">  142 </span>instance GHC.Outputable AnnKey where
+<span class="lineno">  143 </span>  <span class="decl"><span class="nottickedoff">ppr a     = GHC.text (show a)</span></span>
+<span class="lineno">  144 </span>
+<span class="lineno">  145 </span>instance GHC.Outputable DeltaPos where
+<span class="lineno">  146 </span>  <span class="decl"><span class="nottickedoff">ppr a     = GHC.text (show a)</span></span>
+<span class="lineno">  147 </span>
+<span class="lineno">  148 </span>-- ---------------------------------------------------------------------
+<span class="lineno">  149 </span>
+<span class="lineno">  150 </span>-- ResTyGADT has a SrcSpan for the original sigtype, we need to create
+<span class="lineno">  151 </span>-- a type for exactPC and annotatePC
+<span class="lineno">  152 </span>data ResTyGADTHook name = ResTyGADTHook [GHC.LHsTyVarBndr name]
+<span class="lineno">  153 </span>                   deriving (<span class="decl"><span class="nottickedoff">Typeable</span></span>)
+<span class="lineno">  154 </span><span class="decl"><span class="istickedoff"><span class="decl"><span class="nottickedoff"><span class="decl"><span class="nottickedoff"><span class="decl"><span class="nottickedoff"><span class="decl"><span class="istickedoff"><span class="decl"><span class="nottickedoff"><span class="decl"><span class="nottickedoff">deriving instance (GHC.DataId name) =&gt; Data (ResTyGADTHook name)</span></span></span></span></span></span></span></span></span></span></span></span></span></span>
+<span class="lineno">  155 </span><span class="decl"><span class="nottickedoff"><span class="decl"><span class="nottickedoff">deriving instance (Show (GHC.LHsTyVarBndr name)) =&gt; Show (ResTyGADTHook name)</span></span></span></span>
+<span class="lineno">  156 </span>
+<span class="lineno">  157 </span>instance (GHC.OutputableBndr name) =&gt; GHC.Outputable (ResTyGADTHook name) where
+<span class="lineno">  158 </span>  <span class="decl"><span class="nottickedoff">ppr (ResTyGADTHook bs) = GHC.text &quot;ResTyGADTHook&quot; GHC.&lt;+&gt; GHC.ppr bs</span></span>
+<span class="lineno">  159 </span>
+<span class="lineno">  160 </span>-- ---------------------------------------------------------------------
+<span class="lineno">  161 </span>
+<span class="lineno">  162 </span>getAnnotationEP :: (Data a) =&gt;  GHC.Located a -&gt; Anns -&gt; Maybe Annotation
+<span class="lineno">  163 </span><span class="decl"><span class="istickedoff">getAnnotationEP  (GHC.L ss a) annotations =</span>
+<span class="lineno">  164 </span><span class="spaces">  </span><span class="istickedoff">Map.lookup (AnnKey ss (annGetConstr a)) annotations</span></span>
 <span class="lineno">  165 </span>
-<span class="lineno">  166 </span>-- ResTyGADT has a SrcSpan for the original sigtype, we need to create
-<span class="lineno">  167 </span>-- a type for exactPC and annotatePC
-<span class="lineno">  168 </span>data ResTyGADTHook name = ResTyGADTHook [GHC.LHsTyVarBndr name]
-<span class="lineno">  169 </span>                   deriving (<span class="decl"><span class="nottickedoff">Typeable</span></span>)
-<span class="lineno">  170 </span><span class="decl"><span class="istickedoff"><span class="decl"><span class="nottickedoff"><span class="decl"><span class="nottickedoff"><span class="decl"><span class="nottickedoff"><span class="decl"><span class="istickedoff"><span class="decl"><span class="nottickedoff"><span class="decl"><span class="nottickedoff">deriving instance (GHC.DataId name) =&gt; Data (ResTyGADTHook name)</span></span></span></span></span></span></span></span></span></span></span></span></span></span>
-<span class="lineno">  171 </span><span class="decl"><span class="nottickedoff"><span class="decl"><span class="nottickedoff">deriving instance (Show (GHC.LHsTyVarBndr name)) =&gt; Show (ResTyGADTHook name)</span></span></span></span>
-<span class="lineno">  172 </span>
-<span class="lineno">  173 </span>instance (GHC.OutputableBndr name) =&gt; GHC.Outputable (ResTyGADTHook name) where
-<span class="lineno">  174 </span>  <span class="decl"><span class="nottickedoff">ppr (ResTyGADTHook bs) = GHC.text &quot;ResTyGADTHook&quot; GHC.&lt;+&gt; GHC.ppr bs</span></span>
-<span class="lineno">  175 </span>
-<span class="lineno">  176 </span>-- ---------------------------------------------------------------------
-<span class="lineno">  177 </span>
-<span class="lineno">  178 </span>getAnnotationEP :: (Data a) =&gt;  GHC.Located a -&gt; Anns -&gt; Maybe Annotation
-<span class="lineno">  179 </span><span class="decl"><span class="istickedoff">getAnnotationEP  (GHC.L ss a) annotations =</span>
-<span class="lineno">  180 </span><span class="spaces">  </span><span class="istickedoff">Map.lookup (AnnKey ss (annGetConstr a)) annotations</span></span>
-<span class="lineno">  181 </span>
-<span class="lineno">  182 </span>getAndRemoveAnnotationEP :: (Data a)
-<span class="lineno">  183 </span>                         =&gt; GHC.Located a -&gt; Anns -&gt; (Maybe Annotation,Anns)
-<span class="lineno">  184 </span><span class="decl"><span class="istickedoff">getAndRemoveAnnotationEP (GHC.L ss a) annotations</span>
-<span class="lineno">  185 </span><span class="spaces"> </span><span class="istickedoff">= let key = AnnKey ss (annGetConstr a) in</span>
-<span class="lineno">  186 </span><span class="spaces">    </span><span class="istickedoff">case Map.lookup key annotations of</span>
-<span class="lineno">  187 </span><span class="spaces">         </span><span class="istickedoff">Nothing  -&gt; (Nothing, annotations)</span>
-<span class="lineno">  188 </span><span class="spaces">         </span><span class="istickedoff">Just av -&gt; (Just av, Map.delete key annotations)</span></span>
-<span class="lineno">  189 </span>
-<span class="lineno">  190 </span>-- ---------------------------------------------------------------------
+<span class="lineno">  166 </span>getAndRemoveAnnotationEP :: (Data a)
+<span class="lineno">  167 </span>                         =&gt; GHC.Located a -&gt; Anns -&gt; (Maybe Annotation,Anns)
+<span class="lineno">  168 </span><span class="decl"><span class="istickedoff">getAndRemoveAnnotationEP (GHC.L ss a) annotations</span>
+<span class="lineno">  169 </span><span class="spaces"> </span><span class="istickedoff">= let key = AnnKey ss (annGetConstr a) in</span>
+<span class="lineno">  170 </span><span class="spaces">    </span><span class="istickedoff">case Map.lookup key annotations of</span>
+<span class="lineno">  171 </span><span class="spaces">         </span><span class="istickedoff">Nothing  -&gt; (Nothing, annotations)</span>
+<span class="lineno">  172 </span><span class="spaces">         </span><span class="istickedoff">Just av -&gt; (Just av, Map.delete key annotations)</span></span>
+<span class="lineno">  173 </span>
+<span class="lineno">  174 </span>-- ---------------------------------------------------------------------
 
 </pre>
 </body>
