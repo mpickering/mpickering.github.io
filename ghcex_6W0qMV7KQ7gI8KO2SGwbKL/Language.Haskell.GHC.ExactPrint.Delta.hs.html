@@ -41,399 +41,391 @@ span.spaces    { background: white }
 <span class="lineno">   25 </span>
 <span class="lineno">   26 </span>
 <span class="lineno">   27 </span>-- ---------------------------------------------------------------------
-<span class="lineno">   28 </span>
-<span class="lineno">   29 </span>-- | Transform concrete annotations into relative annotations which are
-<span class="lineno">   30 </span>-- more useful when transforming an AST.
-<span class="lineno">   31 </span>relativiseApiAnns :: Annotate ast
-<span class="lineno">   32 </span>                  =&gt; GHC.Located ast
-<span class="lineno">   33 </span>                  -&gt; GHC.ApiAnns
-<span class="lineno">   34 </span>                  -&gt; Anns
-<span class="lineno">   35 </span><span class="decl"><span class="istickedoff">relativiseApiAnns modu@(GHC.L ss _) ghcAnns</span>
-<span class="lineno">   36 </span><span class="spaces">   </span><span class="istickedoff">= runDelta (markLocated modu) ghcAnns ss</span></span>
-<span class="lineno">   37 </span>
-<span class="lineno">   38 </span>-- ---------------------------------------------------------------------
-<span class="lineno">   39 </span>
-<span class="lineno">   40 </span>data DeltaState = DeltaState
-<span class="lineno">   41 </span>             { <span class="istickedoff"><span class="decl"><span class="istickedoff">priorEndPosition</span></span></span> :: GHC.SrcSpan
-<span class="lineno">   42 </span>               -- | Ordered list of comments still to be allocated
-<span class="lineno">   43 </span>             , <span class="istickedoff"><span class="decl"><span class="istickedoff">apComments</span></span></span> :: [Comment]
-<span class="lineno">   44 </span>               -- | The original GHC Delta Annotations
-<span class="lineno">   45 </span>             , <span class="istickedoff"><span class="decl"><span class="istickedoff">apAnns</span></span></span> :: GHC.ApiAnns
-<span class="lineno">   46 </span>             }
-<span class="lineno">   47 </span>
-<span class="lineno">   48 </span>data DeltaStack = DeltaStack
-<span class="lineno">   49 </span>               { -- | Current `SrcSpan`
-<span class="lineno">   50 </span>                 <span class="istickedoff"><span class="decl"><span class="istickedoff">curSrcSpan</span></span></span> :: GHC.SrcSpan
-<span class="lineno">   51 </span>                 -- | Constuctor of current AST element, useful for
-<span class="lineno">   52 </span>                 -- debugging
-<span class="lineno">   53 </span>               , <span class="nottickedoff"><span class="decl"><span class="nottickedoff">annConName</span></span></span> :: AnnConName
-<span class="lineno">   54 </span>                 -- | Start column of the current layout block
-<span class="lineno">   55 </span>               , <span class="istickedoff"><span class="decl"><span class="istickedoff">layoutStart</span></span></span> :: Int
-<span class="lineno">   56 </span>               }
-<span class="lineno">   57 </span>
-<span class="lineno">   58 </span>initialDeltaStack :: DeltaStack
-<span class="lineno">   59 </span><span class="decl"><span class="istickedoff">initialDeltaStack =</span>
-<span class="lineno">   60 </span><span class="spaces">  </span><span class="istickedoff">DeltaStack</span>
-<span class="lineno">   61 </span><span class="spaces">    </span><span class="istickedoff">{ curSrcSpan = <span class="nottickedoff">GHC.noSrcSpan</span></span>
-<span class="lineno">   62 </span><span class="spaces">    </span><span class="istickedoff">, annConName = <span class="nottickedoff">annGetConstr ()</span></span>
-<span class="lineno">   63 </span><span class="spaces">    </span><span class="istickedoff">, layoutStart = 0</span>
-<span class="lineno">   64 </span><span class="spaces">    </span><span class="istickedoff">}</span></span>
-<span class="lineno">   65 </span>
-<span class="lineno">   66 </span>defaultDeltaState :: GHC.SrcSpan -&gt; GHC.ApiAnns -&gt; DeltaState
-<span class="lineno">   67 </span><span class="decl"><span class="istickedoff">defaultDeltaState priorEnd ga =</span>
-<span class="lineno">   68 </span><span class="spaces">  </span><span class="istickedoff">let cs = flattenedComments ga in</span>
-<span class="lineno">   69 </span><span class="spaces">    </span><span class="istickedoff">DeltaState</span>
-<span class="lineno">   70 </span><span class="spaces">      </span><span class="istickedoff">{ priorEndPosition = priorEnd</span>
-<span class="lineno">   71 </span><span class="spaces">      </span><span class="istickedoff">, apComments = cs</span>
-<span class="lineno">   72 </span><span class="spaces">      </span><span class="istickedoff">, apAnns     = ga    -- $</span>
-<span class="lineno">   73 </span><span class="spaces">      </span><span class="istickedoff">}</span></span>
-<span class="lineno">   74 </span>
-<span class="lineno">   75 </span>data DeltaWriter = DeltaWriter
-<span class="lineno">   76 </span>  { -- Final list of annotations
-<span class="lineno">   77 </span>    <span class="istickedoff"><span class="decl"><span class="istickedoff">finalAnns</span></span></span> :: Endo (Map.Map AnnKey Annotation)
-<span class="lineno">   78 </span>    -- Used locally to pass Keywords, delta pairs relevant to a specific
-<span class="lineno">   79 </span>    -- subtree to the parent.
-<span class="lineno">   80 </span>  , <span class="istickedoff"><span class="decl"><span class="istickedoff">annKds</span></span></span> :: [(KeywordId, DeltaPos)]
-<span class="lineno">   81 </span>    -- Used locally to report a subtrees aderhence to haskell's layout
-<span class="lineno">   82 </span>    -- rules.
-<span class="lineno">   83 </span>  , <span class="istickedoff"><span class="decl"><span class="istickedoff">propOffset</span></span></span> :: First Int -- Used to pass the offset upwards
-<span class="lineno">   84 </span>  }
-<span class="lineno">   85 </span>
-<span class="lineno">   86 </span>
-<span class="lineno">   87 </span>tellFinalAnn :: (AnnKey, Annotation) -&gt; Delta ()
-<span class="lineno">   88 </span><span class="decl"><span class="istickedoff">tellFinalAnn (k, v) =</span>
-<span class="lineno">   89 </span><span class="spaces">  </span><span class="istickedoff">tell (mempty { finalAnns = Endo (Map.insertWith (&lt;&gt;) k v) })</span></span>
-<span class="lineno">   90 </span>
-<span class="lineno">   91 </span>tellKd :: (KeywordId, DeltaPos) -&gt; Delta ()
-<span class="lineno">   92 </span><span class="decl"><span class="istickedoff">tellKd kd = tell (mempty { annKds = [kd] })</span></span>
-<span class="lineno">   93 </span>
-<span class="lineno">   94 </span>setLayoutFlag :: GHC.AnnKeywordId -&gt; Delta () -&gt; Delta ()
-<span class="lineno">   95 </span><span class="decl"><span class="istickedoff">setLayoutFlag kwid action = do</span>
-<span class="lineno">   96 </span><span class="spaces">  </span><span class="istickedoff">c &lt;-  srcSpanStartColumn . head &lt;$&gt; getAnnotationDelta kwid</span>
-<span class="lineno">   97 </span><span class="spaces">  </span><span class="istickedoff">tell (mempty { propOffset = <span class="nottickedoff">First (Just c)</span> })</span>
-<span class="lineno">   98 </span><span class="spaces">  </span><span class="istickedoff">local (\s -&gt; s { layoutStart = c }) action</span></span>
+<span class="lineno">   28 </span>--
+<span class="lineno">   29 </span>-- | Type used in the Delta Monad. The state variables maintain
+<span class="lineno">   30 </span>--    - the current SrcSpan and the constructor of the thing it encloses
+<span class="lineno">   31 </span>--      as a stack to the root of the AST as it is traversed,
+<span class="lineno">   32 </span>--    - the srcspan of the last thing annotated, to calculate delta's from
+<span class="lineno">   33 </span>--    - extra data needing to be stored in the monad
+<span class="lineno">   34 </span>--    - the annotations provided by GHC
+<span class="lineno">   35 </span>type Delta a = RWS DeltaStack DeltaWriter DeltaState a
+<span class="lineno">   36 </span>
+<span class="lineno">   37 </span>-- | Transform concrete annotations into relative annotations which are
+<span class="lineno">   38 </span>-- more useful when transforming an AST.
+<span class="lineno">   39 </span>relativiseApiAnns :: Annotate ast
+<span class="lineno">   40 </span>                  =&gt; GHC.Located ast
+<span class="lineno">   41 </span>                  -&gt; GHC.ApiAnns
+<span class="lineno">   42 </span>                  -&gt; Anns
+<span class="lineno">   43 </span><span class="decl"><span class="istickedoff">relativiseApiAnns modu@(GHC.L ss _) ghcAnns</span>
+<span class="lineno">   44 </span><span class="spaces">   </span><span class="istickedoff">= runDelta (markLocated modu) ghcAnns ss</span></span>
+<span class="lineno">   45 </span>
+<span class="lineno">   46 </span>
+<span class="lineno">   47 </span>runDelta :: Annotated () -&gt; GHC.ApiAnns -&gt; GHC.SrcSpan -&gt; Anns
+<span class="lineno">   48 </span><span class="decl"><span class="istickedoff">runDelta action ga priorEnd =</span>
+<span class="lineno">   49 </span><span class="spaces">  </span><span class="istickedoff">($ mempty) . appEndo . finalAnns . snd</span>
+<span class="lineno">   50 </span><span class="spaces">  </span><span class="istickedoff">. (\next -&gt; execRWS next initialDeltaStack (defaultDeltaState priorEnd ga))</span>
+<span class="lineno">   51 </span><span class="spaces">  </span><span class="istickedoff">. simpleInterpret $ action</span></span>
+<span class="lineno">   52 </span>
+<span class="lineno">   53 </span>-- ---------------------------------------------------------------------
+<span class="lineno">   54 </span>
+<span class="lineno">   55 </span>data DeltaState = DeltaState
+<span class="lineno">   56 </span>             { -- | Position reached when processing the last element
+<span class="lineno">   57 </span>               <span class="istickedoff"><span class="decl"><span class="istickedoff">priorEndPosition</span></span></span> :: GHC.SrcSpan
+<span class="lineno">   58 </span>               -- | Ordered list of comments still to be allocated
+<span class="lineno">   59 </span>             , <span class="istickedoff"><span class="decl"><span class="istickedoff">apComments</span></span></span> :: [Comment]
+<span class="lineno">   60 </span>               -- | The original GHC Delta Annotations
+<span class="lineno">   61 </span>             , <span class="istickedoff"><span class="decl"><span class="istickedoff">apAnns</span></span></span> :: GHC.ApiAnns
+<span class="lineno">   62 </span>             }
+<span class="lineno">   63 </span>
+<span class="lineno">   64 </span>data DeltaStack = DeltaStack
+<span class="lineno">   65 </span>               { -- | Current `SrcSpan`
+<span class="lineno">   66 </span>                 <span class="istickedoff"><span class="decl"><span class="istickedoff">curSrcSpan</span></span></span> :: GHC.SrcSpan
+<span class="lineno">   67 </span>                 -- | Constuctor of current AST element, useful for
+<span class="lineno">   68 </span>                 -- debugging
+<span class="lineno">   69 </span>               , <span class="nottickedoff"><span class="decl"><span class="nottickedoff">annConName</span></span></span> :: AnnConName
+<span class="lineno">   70 </span>                 -- | Start column of the current layout block
+<span class="lineno">   71 </span>               , <span class="istickedoff"><span class="decl"><span class="istickedoff">layoutStart</span></span></span> :: Int
+<span class="lineno">   72 </span>               }
+<span class="lineno">   73 </span>
+<span class="lineno">   74 </span>initialDeltaStack :: DeltaStack
+<span class="lineno">   75 </span><span class="decl"><span class="istickedoff">initialDeltaStack =</span>
+<span class="lineno">   76 </span><span class="spaces">  </span><span class="istickedoff">DeltaStack</span>
+<span class="lineno">   77 </span><span class="spaces">    </span><span class="istickedoff">{ curSrcSpan = <span class="nottickedoff">GHC.noSrcSpan</span></span>
+<span class="lineno">   78 </span><span class="spaces">    </span><span class="istickedoff">, annConName = <span class="nottickedoff">annGetConstr ()</span></span>
+<span class="lineno">   79 </span><span class="spaces">    </span><span class="istickedoff">, layoutStart = 0</span>
+<span class="lineno">   80 </span><span class="spaces">    </span><span class="istickedoff">}</span></span>
+<span class="lineno">   81 </span>
+<span class="lineno">   82 </span>defaultDeltaState :: GHC.SrcSpan -&gt; GHC.ApiAnns -&gt; DeltaState
+<span class="lineno">   83 </span><span class="decl"><span class="istickedoff">defaultDeltaState priorEnd ga =</span>
+<span class="lineno">   84 </span><span class="spaces">    </span><span class="istickedoff">DeltaState</span>
+<span class="lineno">   85 </span><span class="spaces">      </span><span class="istickedoff">{ priorEndPosition = priorEnd</span>
+<span class="lineno">   86 </span><span class="spaces">      </span><span class="istickedoff">, apComments = cs</span>
+<span class="lineno">   87 </span><span class="spaces">      </span><span class="istickedoff">, apAnns     = ga    -- $</span>
+<span class="lineno">   88 </span><span class="spaces">      </span><span class="istickedoff">}</span>
+<span class="lineno">   89 </span><span class="spaces">  </span><span class="istickedoff">where</span>
+<span class="lineno">   90 </span><span class="spaces">    </span><span class="istickedoff">cs :: [Comment]</span>
+<span class="lineno">   91 </span><span class="spaces">    </span><span class="istickedoff">cs = flattenedComments ga</span>
+<span class="lineno">   92 </span><span class="spaces"></span><span class="istickedoff"></span>
+<span class="lineno">   93 </span><span class="spaces">    </span><span class="istickedoff">flattenedComments :: GHC.ApiAnns -&gt; [Comment]</span>
+<span class="lineno">   94 </span><span class="spaces">    </span><span class="istickedoff">flattenedComments (_,cm) =</span>
+<span class="lineno">   95 </span><span class="spaces">      </span><span class="istickedoff">map tokComment . GHC.sortLocated . concat $ Map.elems cm</span>
+<span class="lineno">   96 </span><span class="spaces"></span><span class="istickedoff"></span>
+<span class="lineno">   97 </span><span class="spaces">    </span><span class="istickedoff">tokComment :: GHC.Located GHC.AnnotationComment -&gt; Comment</span>
+<span class="lineno">   98 </span><span class="spaces">    </span><span class="istickedoff">tokComment t@(GHC.L lt _) = Comment (ss2span lt) (ghcCommentText t)</span></span>
 <span class="lineno">   99 </span>
-<span class="lineno">  100 </span>instance Monoid DeltaWriter where
-<span class="lineno">  101 </span>  <span class="decl"><span class="istickedoff">mempty = DeltaWriter mempty mempty mempty</span></span>
-<span class="lineno">  102 </span>  <span class="decl"><span class="istickedoff">(DeltaWriter a b e) `mappend` (DeltaWriter c d f) = DeltaWriter (a &lt;&gt; c) (b &lt;&gt; d) (e &lt;&gt; f)</span></span>
-<span class="lineno">  103 </span>
-<span class="lineno">  104 </span>
-<span class="lineno">  105 </span>-- | Type used in the Delta Monad. The state variables maintain
-<span class="lineno">  106 </span>--    - the current SrcSpan and the constructor of the thing it encloses
-<span class="lineno">  107 </span>--      as a stack to the root of the AST as it is traversed,
-<span class="lineno">  108 </span>--    - the srcspan of the last thing annotated, to calculate delta's from
-<span class="lineno">  109 </span>--    - extra data needing to be stored in the monad
-<span class="lineno">  110 </span>--    - the annotations provided by GHC
-<span class="lineno">  111 </span>type Delta a = RWS DeltaStack DeltaWriter DeltaState a
-<span class="lineno">  112 </span>
-<span class="lineno">  113 </span>runDelta :: Annotated () -&gt; GHC.ApiAnns -&gt; GHC.SrcSpan -&gt; Anns
-<span class="lineno">  114 </span><span class="decl"><span class="istickedoff">runDelta action ga priorEnd =</span>
-<span class="lineno">  115 </span><span class="spaces">  </span><span class="istickedoff">($ mempty) . appEndo . finalAnns . snd</span>
-<span class="lineno">  116 </span><span class="spaces">  </span><span class="istickedoff">. (\next -&gt; execRWS next initialDeltaStack (defaultDeltaState priorEnd ga))</span>
-<span class="lineno">  117 </span><span class="spaces">  </span><span class="istickedoff">. simpleInterpret $ action</span></span>
-<span class="lineno">  118 </span>
-<span class="lineno">  119 </span>
-<span class="lineno">  120 </span>simpleInterpret :: Annotated a -&gt; Delta a
-<span class="lineno">  121 </span><span class="decl"><span class="istickedoff">simpleInterpret = iterTM go</span>
-<span class="lineno">  122 </span><span class="spaces">  </span><span class="istickedoff">where</span>
-<span class="lineno">  123 </span><span class="spaces">    </span><span class="istickedoff">go :: AnnotationF (Delta a) -&gt; Delta a</span>
-<span class="lineno">  124 </span><span class="spaces">    </span><span class="istickedoff">go (MarkEOF next) = addEofAnnotation &gt;&gt; next</span>
-<span class="lineno">  125 </span><span class="spaces">    </span><span class="istickedoff">go (MarkPrim kwid _ next) =</span>
-<span class="lineno">  126 </span><span class="spaces">      </span><span class="istickedoff">addDeltaAnnotation kwid &gt;&gt; next</span>
-<span class="lineno">  127 </span><span class="spaces">    </span><span class="istickedoff">go (MarkOutside akwid kwid next) =</span>
-<span class="lineno">  128 </span><span class="spaces">      </span><span class="istickedoff">addDeltaAnnotationsOutside akwid kwid &gt;&gt; next</span>
-<span class="lineno">  129 </span><span class="spaces">    </span><span class="istickedoff">go (MarkInside akwid next) =</span>
-<span class="lineno">  130 </span><span class="spaces">      </span><span class="istickedoff">addDeltaAnnotationsInside akwid &gt;&gt; next</span>
-<span class="lineno">  131 </span><span class="spaces">    </span><span class="istickedoff">go (MarkMany akwid next) = addDeltaAnnotations akwid &gt;&gt; next</span>
-<span class="lineno">  132 </span><span class="spaces">    </span><span class="istickedoff">go (MarkOffsetPrim akwid n _ next) = addDeltaAnnotationLs akwid n &gt;&gt; next</span>
-<span class="lineno">  133 </span><span class="spaces">    </span><span class="istickedoff">go (MarkAfter akwid next) = addDeltaAnnotationAfter akwid &gt;&gt; next</span>
-<span class="lineno">  134 </span><span class="spaces">    </span><span class="istickedoff">go (WithAST lss layoutflag prog next) =</span>
-<span class="lineno">  135 </span><span class="spaces">      </span><span class="istickedoff">withAST lss layoutflag (simpleInterpret prog) &gt;&gt; next</span>
-<span class="lineno">  136 </span><span class="spaces">    </span><span class="istickedoff">go (OutputKD (kwid, (_, dp)) next) = tellKd (dp, kwid) &gt;&gt; next</span>
-<span class="lineno">  137 </span><span class="spaces">    </span><span class="istickedoff">go (CountAnns kwid next) = countAnnsDelta kwid &gt;&gt;= next</span>
-<span class="lineno">  138 </span><span class="spaces">    </span><span class="istickedoff">go (SetLayoutFlag kwid action next) = setLayoutFlag kwid (simpleInterpret action)  &gt;&gt; next</span>
-<span class="lineno">  139 </span><span class="spaces">    </span><span class="istickedoff">go (MarkExternal ss akwid _ next) = addDeltaAnnotationExt ss akwid &gt;&gt; next</span></span>
-<span class="lineno">  140 </span>
-<span class="lineno">  141 </span>
-<span class="lineno">  142 </span>-- ---------------------------------------------------------------------
-<span class="lineno">  143 </span>
-<span class="lineno">  144 </span>flattenedComments :: GHC.ApiAnns -&gt; [Comment]
-<span class="lineno">  145 </span><span class="decl"><span class="istickedoff">flattenedComments (_,cm) = map tokComment . GHC.sortLocated . concat $ Map.elems cm</span></span>
-<span class="lineno">  146 </span>
-<span class="lineno">  147 </span>-- -------------------------------------
-<span class="lineno">  148 </span>
-<span class="lineno">  149 </span>getSrcSpanDelta :: Delta GHC.SrcSpan
-<span class="lineno">  150 </span><span class="decl"><span class="istickedoff">getSrcSpanDelta = asks curSrcSpan</span></span>
-<span class="lineno">  151 </span>
-<span class="lineno">  152 </span>withSrcSpanDelta :: Data a =&gt; (GHC.Located a) -&gt; Delta b -&gt; Delta b
-<span class="lineno">  153 </span><span class="decl"><span class="istickedoff">withSrcSpanDelta (GHC.L l a) =</span>
-<span class="lineno">  154 </span><span class="spaces">  </span><span class="istickedoff">local (\s -&gt; s { curSrcSpan = l</span>
-<span class="lineno">  155 </span><span class="spaces">                 </span><span class="istickedoff">, annConName = annGetConstr a</span>
-<span class="lineno">  156 </span><span class="spaces">                 </span><span class="istickedoff">})</span></span>
+<span class="lineno">  100 </span>
+<span class="lineno">  101 </span>data DeltaWriter = DeltaWriter
+<span class="lineno">  102 </span>  { -- Final list of annotations
+<span class="lineno">  103 </span>    <span class="istickedoff"><span class="decl"><span class="istickedoff">finalAnns</span></span></span> :: Endo (Map.Map AnnKey Annotation)
+<span class="lineno">  104 </span>    -- Used locally to pass Keywords, delta pairs relevant to a specific
+<span class="lineno">  105 </span>    -- subtree to the parent.
+<span class="lineno">  106 </span>  , <span class="istickedoff"><span class="decl"><span class="istickedoff">annKds</span></span></span> :: [(KeywordId, DeltaPos)]
+<span class="lineno">  107 </span>    -- Used locally to report a subtrees aderhence to haskell's layout
+<span class="lineno">  108 </span>    -- rules.
+<span class="lineno">  109 </span>  , <span class="istickedoff"><span class="decl"><span class="istickedoff">propOffset</span></span></span> :: First Int -- Used to pass the offset upwards
+<span class="lineno">  110 </span>  }
+<span class="lineno">  111 </span>
+<span class="lineno">  112 </span>-- Writer helpers
+<span class="lineno">  113 </span>
+<span class="lineno">  114 </span>tellFinalAnn :: (AnnKey, Annotation) -&gt; Delta ()
+<span class="lineno">  115 </span><span class="decl"><span class="istickedoff">tellFinalAnn (k, v) =</span>
+<span class="lineno">  116 </span><span class="spaces">  </span><span class="istickedoff">tell (mempty { finalAnns = Endo (Map.insertWith (&lt;&gt;) k v) })</span></span>
+<span class="lineno">  117 </span>
+<span class="lineno">  118 </span>tellKd :: (KeywordId, DeltaPos) -&gt; Delta ()
+<span class="lineno">  119 </span><span class="decl"><span class="istickedoff">tellKd kd = tell (mempty { annKds = [kd] })</span></span>
+<span class="lineno">  120 </span>
+<span class="lineno">  121 </span>
+<span class="lineno">  122 </span>instance Monoid DeltaWriter where
+<span class="lineno">  123 </span>  <span class="decl"><span class="istickedoff">mempty = DeltaWriter mempty mempty mempty</span></span>
+<span class="lineno">  124 </span>  <span class="decl"><span class="istickedoff">(DeltaWriter a b e) `mappend` (DeltaWriter c d f) = DeltaWriter (a &lt;&gt; c) (b &lt;&gt; d) (e &lt;&gt; f)</span></span>
+<span class="lineno">  125 </span>
+<span class="lineno">  126 </span>-----------------------------------
+<span class="lineno">  127 </span>-- Interpretation code
+<span class="lineno">  128 </span>
+<span class="lineno">  129 </span>simpleInterpret :: Annotated a -&gt; Delta a
+<span class="lineno">  130 </span><span class="decl"><span class="istickedoff">simpleInterpret = iterTM go</span>
+<span class="lineno">  131 </span><span class="spaces">  </span><span class="istickedoff">where</span>
+<span class="lineno">  132 </span><span class="spaces">    </span><span class="istickedoff">go :: AnnotationF (Delta a) -&gt; Delta a</span>
+<span class="lineno">  133 </span><span class="spaces">    </span><span class="istickedoff">go (MarkEOF next) = addEofAnnotation &gt;&gt; next</span>
+<span class="lineno">  134 </span><span class="spaces">    </span><span class="istickedoff">go (MarkPrim kwid _ next) =</span>
+<span class="lineno">  135 </span><span class="spaces">      </span><span class="istickedoff">addDeltaAnnotation kwid &gt;&gt; next</span>
+<span class="lineno">  136 </span><span class="spaces">    </span><span class="istickedoff">go (MarkOutside akwid kwid next) =</span>
+<span class="lineno">  137 </span><span class="spaces">      </span><span class="istickedoff">addDeltaAnnotationsOutside akwid kwid &gt;&gt; next</span>
+<span class="lineno">  138 </span><span class="spaces">    </span><span class="istickedoff">go (MarkInside akwid next) =</span>
+<span class="lineno">  139 </span><span class="spaces">      </span><span class="istickedoff">addDeltaAnnotationsInside akwid &gt;&gt; next</span>
+<span class="lineno">  140 </span><span class="spaces">    </span><span class="istickedoff">go (MarkMany akwid next) = addDeltaAnnotations akwid &gt;&gt; next</span>
+<span class="lineno">  141 </span><span class="spaces">    </span><span class="istickedoff">go (MarkOffsetPrim akwid n _ next) = addDeltaAnnotationLs akwid n &gt;&gt; next</span>
+<span class="lineno">  142 </span><span class="spaces">    </span><span class="istickedoff">go (MarkAfter akwid next) = addDeltaAnnotationAfter akwid &gt;&gt; next</span>
+<span class="lineno">  143 </span><span class="spaces">    </span><span class="istickedoff">go (WithAST lss layoutflag prog next) =</span>
+<span class="lineno">  144 </span><span class="spaces">      </span><span class="istickedoff">withAST lss layoutflag (simpleInterpret prog) &gt;&gt; next</span>
+<span class="lineno">  145 </span><span class="spaces">    </span><span class="istickedoff">go (OutputKD (kwid, (_, dp)) next) = tellKd (dp, kwid) &gt;&gt; next</span>
+<span class="lineno">  146 </span><span class="spaces">    </span><span class="istickedoff">go (CountAnns kwid next) = countAnnsDelta kwid &gt;&gt;= next</span>
+<span class="lineno">  147 </span><span class="spaces">    </span><span class="istickedoff">go (SetLayoutFlag kwid action next) = setLayoutFlag kwid (simpleInterpret action)  &gt;&gt; next</span>
+<span class="lineno">  148 </span><span class="spaces">    </span><span class="istickedoff">go (MarkExternal ss akwid _ next) = addDeltaAnnotationExt ss akwid &gt;&gt; next</span></span>
+<span class="lineno">  149 </span>
+<span class="lineno">  150 </span>
+<span class="lineno">  151 </span>-- | Used specifically for &quot;HsLet&quot;
+<span class="lineno">  152 </span>setLayoutFlag :: GHC.AnnKeywordId -&gt; Delta () -&gt; Delta ()
+<span class="lineno">  153 </span><span class="decl"><span class="istickedoff">setLayoutFlag kwid action = do</span>
+<span class="lineno">  154 </span><span class="spaces">  </span><span class="istickedoff">c &lt;-  srcSpanStartColumn . head &lt;$&gt; getAnnotationDelta kwid</span>
+<span class="lineno">  155 </span><span class="spaces">  </span><span class="istickedoff">tell (mempty { propOffset = <span class="nottickedoff">First (Just c)</span> })</span>
+<span class="lineno">  156 </span><span class="spaces">  </span><span class="istickedoff">local (\s -&gt; s { layoutStart = c }) action</span></span>
 <span class="lineno">  157 </span>
-<span class="lineno">  158 </span>getUnallocatedComments :: Delta [Comment]
-<span class="lineno">  159 </span><span class="decl"><span class="istickedoff">getUnallocatedComments = gets apComments</span></span>
+<span class="lineno">  158 </span>
+<span class="lineno">  159 </span>-- -------------------------------------
 <span class="lineno">  160 </span>
-<span class="lineno">  161 </span>putUnallocatedComments :: [Comment] -&gt; Delta ()
-<span class="lineno">  162 </span><span class="decl"><span class="istickedoff">putUnallocatedComments cs = modify (\s -&gt; s { apComments = cs } )</span></span>
+<span class="lineno">  161 </span>getSrcSpan :: Delta GHC.SrcSpan
+<span class="lineno">  162 </span><span class="decl"><span class="istickedoff">getSrcSpan = asks curSrcSpan</span></span>
 <span class="lineno">  163 </span>
-<span class="lineno">  164 </span>-- ---------------------------------------------------------------------
-<span class="lineno">  165 </span>
-<span class="lineno">  166 </span>adjustDeltaForOffsetM :: DeltaPos -&gt; Delta DeltaPos
-<span class="lineno">  167 </span><span class="decl"><span class="istickedoff">adjustDeltaForOffsetM dp = do</span>
-<span class="lineno">  168 </span><span class="spaces">  </span><span class="istickedoff">colOffset &lt;- asks layoutStart</span>
-<span class="lineno">  169 </span><span class="spaces">  </span><span class="istickedoff">return (adjustDeltaForOffset colOffset dp)</span></span>
+<span class="lineno">  164 </span>withSrcSpanDelta :: Data a =&gt; (GHC.Located a) -&gt; Delta b -&gt; Delta b
+<span class="lineno">  165 </span><span class="decl"><span class="istickedoff">withSrcSpanDelta (GHC.L l a) =</span>
+<span class="lineno">  166 </span><span class="spaces">  </span><span class="istickedoff">local (\s -&gt; s { curSrcSpan = l</span>
+<span class="lineno">  167 </span><span class="spaces">                 </span><span class="istickedoff">, annConName = annGetConstr a</span>
+<span class="lineno">  168 </span><span class="spaces">                 </span><span class="istickedoff">})</span></span>
+<span class="lineno">  169 </span>
 <span class="lineno">  170 </span>
-<span class="lineno">  171 </span>adjustDeltaForOffset :: Int -&gt; DeltaPos -&gt; DeltaPos
-<span class="lineno">  172 </span><span class="decl"><span class="istickedoff">adjustDeltaForOffset _colOffset dp@(DP (0,_)) = dp -- same line</span>
-<span class="lineno">  173 </span><span class="spaces"></span><span class="istickedoff">adjustDeltaForOffset  colOffset    (DP (l,c)) = DP (l,c - colOffset)</span></span>
+<span class="lineno">  171 </span>
+<span class="lineno">  172 </span>getUnallocatedComments :: Delta [Comment]
+<span class="lineno">  173 </span><span class="decl"><span class="istickedoff">getUnallocatedComments = gets apComments</span></span>
 <span class="lineno">  174 </span>
-<span class="lineno">  175 </span>-- ---------------------------------------------------------------------
-<span class="lineno">  176 </span>
-<span class="lineno">  177 </span>getPriorEnd :: Delta GHC.SrcSpan
-<span class="lineno">  178 </span><span class="decl"><span class="istickedoff">getPriorEnd = gets priorEndPosition</span></span>
+<span class="lineno">  175 </span>putUnallocatedComments :: [Comment] -&gt; Delta ()
+<span class="lineno">  176 </span><span class="decl"><span class="istickedoff">putUnallocatedComments cs = modify (\s -&gt; s { apComments = cs } )</span></span>
+<span class="lineno">  177 </span>
+<span class="lineno">  178 </span>-- ---------------------------------------------------------------------
 <span class="lineno">  179 </span>
-<span class="lineno">  180 </span>setPriorEnd :: GHC.SrcSpan -&gt; Delta ()
-<span class="lineno">  181 </span><span class="decl"><span class="istickedoff">setPriorEnd pe = modify (\s -&gt; s { priorEndPosition = pe })</span></span>
-<span class="lineno">  182 </span>
-<span class="lineno">  183 </span>-- -------------------------------------
+<span class="lineno">  180 </span>adjustDeltaForOffsetM :: DeltaPos -&gt; Delta DeltaPos
+<span class="lineno">  181 </span><span class="decl"><span class="istickedoff">adjustDeltaForOffsetM dp = do</span>
+<span class="lineno">  182 </span><span class="spaces">  </span><span class="istickedoff">colOffset &lt;- asks layoutStart</span>
+<span class="lineno">  183 </span><span class="spaces">  </span><span class="istickedoff">return (adjustDeltaForOffset colOffset dp)</span></span>
 <span class="lineno">  184 </span>
-<span class="lineno">  185 </span>getAnnotationDelta :: GHC.AnnKeywordId -&gt; Delta [GHC.SrcSpan]
-<span class="lineno">  186 </span><span class="decl"><span class="istickedoff">getAnnotationDelta an = do</span>
-<span class="lineno">  187 </span><span class="spaces">    </span><span class="istickedoff">ga &lt;- gets apAnns</span>
-<span class="lineno">  188 </span><span class="spaces">    </span><span class="istickedoff">ss &lt;- getSrcSpanDelta</span>
-<span class="lineno">  189 </span><span class="spaces">    </span><span class="istickedoff">return $ GHC.getAnnotation ga ss an</span></span>
+<span class="lineno">  185 </span>adjustDeltaForOffset :: Int -&gt; DeltaPos -&gt; DeltaPos
+<span class="lineno">  186 </span><span class="decl"><span class="istickedoff">adjustDeltaForOffset _colOffset dp@(DP (0,_)) = dp -- same line</span>
+<span class="lineno">  187 </span><span class="spaces"></span><span class="istickedoff">adjustDeltaForOffset  colOffset    (DP (l,c)) = DP (l,c - colOffset)</span></span>
+<span class="lineno">  188 </span>
+<span class="lineno">  189 </span>-- ---------------------------------------------------------------------
 <span class="lineno">  190 </span>
-<span class="lineno">  191 </span>getAndRemoveAnnotationDelta :: GHC.SrcSpan -&gt; GHC.AnnKeywordId -&gt; Delta [GHC.SrcSpan]
-<span class="lineno">  192 </span><span class="decl"><span class="istickedoff">getAndRemoveAnnotationDelta sp an = do</span>
-<span class="lineno">  193 </span><span class="spaces">    </span><span class="istickedoff">ga &lt;- gets apAnns</span>
-<span class="lineno">  194 </span><span class="spaces">    </span><span class="istickedoff">let (r,ga') = GHC.getAndRemoveAnnotation ga sp an</span>
-<span class="lineno">  195 </span><span class="spaces">    </span><span class="istickedoff">r &lt;$ modify (\s -&gt; s { apAnns = ga' })</span></span>
+<span class="lineno">  191 </span>getPriorEnd :: Delta GHC.SrcSpan
+<span class="lineno">  192 </span><span class="decl"><span class="istickedoff">getPriorEnd = gets priorEndPosition</span></span>
+<span class="lineno">  193 </span>
+<span class="lineno">  194 </span>setPriorEnd :: GHC.SrcSpan -&gt; Delta ()
+<span class="lineno">  195 </span><span class="decl"><span class="istickedoff">setPriorEnd pe = modify (\s -&gt; s { priorEndPosition = pe })</span></span>
 <span class="lineno">  196 </span>
-<span class="lineno">  197 </span>
-<span class="lineno">  198 </span>tokComment :: GHC.Located GHC.AnnotationComment -&gt; Comment
-<span class="lineno">  199 </span><span class="decl"><span class="istickedoff">tokComment t@(GHC.L lt _) = Comment (ss2span lt) (ghcCommentText t)</span></span>
-<span class="lineno">  200 </span>
-<span class="lineno">  201 </span>-- -------------------------------------
-<span class="lineno">  202 </span>
-<span class="lineno">  203 </span>-- |Add some annotation to the currently active SrcSpan
-<span class="lineno">  204 </span>addAnnotationsDelta :: Annotation -&gt; Delta ()
-<span class="lineno">  205 </span><span class="decl"><span class="istickedoff">addAnnotationsDelta ann = do</span>
-<span class="lineno">  206 </span><span class="spaces">    </span><span class="istickedoff">l &lt;- ask</span>
-<span class="lineno">  207 </span><span class="spaces">    </span><span class="istickedoff">tellFinalAnn ((getAnnKey l),ann)</span></span>
-<span class="lineno">  208 </span>
-<span class="lineno">  209 </span>getAnnKey :: DeltaStack -&gt; AnnKey
-<span class="lineno">  210 </span><span class="decl"><span class="istickedoff">getAnnKey DeltaStack {curSrcSpan, annConName} = AnnKey curSrcSpan annConName</span></span>
-<span class="lineno">  211 </span>
-<span class="lineno">  212 </span>-- -------------------------------------
+<span class="lineno">  197 </span>setLayoutOffset :: Int -&gt; Delta a -&gt; Delta a
+<span class="lineno">  198 </span><span class="decl"><span class="istickedoff">setLayoutOffset lhs = local (\s -&gt; s { layoutStart = lhs })</span></span>
+<span class="lineno">  199 </span>
+<span class="lineno">  200 </span>-- -------------------------------------
+<span class="lineno">  201 </span>
+<span class="lineno">  202 </span>getAnnotationDelta :: GHC.AnnKeywordId -&gt; Delta [GHC.SrcSpan]
+<span class="lineno">  203 </span><span class="decl"><span class="istickedoff">getAnnotationDelta an = do</span>
+<span class="lineno">  204 </span><span class="spaces">    </span><span class="istickedoff">ga &lt;- gets apAnns</span>
+<span class="lineno">  205 </span><span class="spaces">    </span><span class="istickedoff">ss &lt;- getSrcSpan</span>
+<span class="lineno">  206 </span><span class="spaces">    </span><span class="istickedoff">return $ GHC.getAnnotation ga ss an</span></span>
+<span class="lineno">  207 </span>
+<span class="lineno">  208 </span>getAndRemoveAnnotationDelta :: GHC.SrcSpan -&gt; GHC.AnnKeywordId -&gt; Delta [GHC.SrcSpan]
+<span class="lineno">  209 </span><span class="decl"><span class="istickedoff">getAndRemoveAnnotationDelta sp an = do</span>
+<span class="lineno">  210 </span><span class="spaces">    </span><span class="istickedoff">ga &lt;- gets apAnns</span>
+<span class="lineno">  211 </span><span class="spaces">    </span><span class="istickedoff">let (r,ga') = GHC.getAndRemoveAnnotation ga sp an</span>
+<span class="lineno">  212 </span><span class="spaces">    </span><span class="istickedoff">r &lt;$ modify (\s -&gt; s { apAnns = ga' })</span></span>
 <span class="lineno">  213 </span>
-<span class="lineno">  214 </span>addAnnDeltaPos :: (GHC.SrcSpan,KeywordId) -&gt; DeltaPos -&gt; Delta ()
-<span class="lineno">  215 </span><span class="decl"><span class="istickedoff">addAnnDeltaPos (_s,kw) dp = tellKd (kw, dp)</span></span>
-<span class="lineno">  216 </span>
-<span class="lineno">  217 </span>-- -------------------------------------
-<span class="lineno">  218 </span>
-<span class="lineno">  219 </span>setLayoutOffset :: Int -&gt; Delta a -&gt; Delta a
-<span class="lineno">  220 </span><span class="decl"><span class="istickedoff">setLayoutOffset lhs = local (\s -&gt; s { layoutStart = lhs })</span></span>
+<span class="lineno">  214 </span>-- -------------------------------------
+<span class="lineno">  215 </span>
+<span class="lineno">  216 </span>-- |Add some annotation to the currently active SrcSpan
+<span class="lineno">  217 </span>addAnnotationsDelta :: Annotation -&gt; Delta ()
+<span class="lineno">  218 </span><span class="decl"><span class="istickedoff">addAnnotationsDelta ann = do</span>
+<span class="lineno">  219 </span><span class="spaces">    </span><span class="istickedoff">l &lt;- ask</span>
+<span class="lineno">  220 </span><span class="spaces">    </span><span class="istickedoff">tellFinalAnn ((getAnnKey l),ann)</span></span>
 <span class="lineno">  221 </span>
-<span class="lineno">  222 </span>-- | Enter a new AST element. Maintain SrcSpan stack
-<span class="lineno">  223 </span>withAST :: Data a =&gt; GHC.Located a -&gt; LayoutFlag -&gt; Delta b -&gt; Delta b
-<span class="lineno">  224 </span><span class="decl"><span class="istickedoff">withAST lss@(GHC.L ss _) layout action = do</span>
-<span class="lineno">  225 </span><span class="spaces">  </span><span class="istickedoff">-- Calculate offset required to get to the start of the SrcSPan</span>
-<span class="lineno">  226 </span><span class="spaces">  </span><span class="istickedoff">pe &lt;- getPriorEnd</span>
-<span class="lineno">  227 </span><span class="spaces">  </span><span class="istickedoff">off &lt;- asks layoutStart</span>
-<span class="lineno">  228 </span><span class="spaces">  </span><span class="istickedoff">let whenLayout = case layout of</span>
-<span class="lineno">  229 </span><span class="spaces">                        </span><span class="istickedoff">LayoutRules -&gt; setLayoutOffset (srcSpanStartColumn ss)</span>
-<span class="lineno">  230 </span><span class="spaces">                        </span><span class="istickedoff">NoLayoutRules -&gt; id</span>
-<span class="lineno">  231 </span><span class="spaces">  </span><span class="istickedoff">(whenLayout .  withSrcSpanDelta lss) (do</span>
-<span class="lineno">  232 </span><span class="spaces"></span><span class="istickedoff"></span>
-<span class="lineno">  233 </span><span class="spaces">    </span><span class="istickedoff">let maskWriter s = s { annKds = []</span>
-<span class="lineno">  234 </span><span class="spaces">                         </span><span class="istickedoff">, propOffset = First Nothing }</span>
-<span class="lineno">  235 </span><span class="spaces"></span><span class="istickedoff"></span>
-<span class="lineno">  236 </span><span class="spaces">    </span><span class="istickedoff">(res, w) &lt;-</span>
-<span class="lineno">  237 </span><span class="spaces">      </span><span class="istickedoff">(censor maskWriter (listen action))</span>
-<span class="lineno">  238 </span><span class="spaces">    </span><span class="istickedoff">let edp = adjustDeltaForOffset (fromMaybe off (getFirst $ propOffset w))</span>
-<span class="lineno">  239 </span><span class="spaces">                </span><span class="istickedoff">(deltaFromSrcSpans pe ss)</span>
-<span class="lineno">  240 </span><span class="spaces"></span><span class="istickedoff">--    let (dp) = getCurrentDP layout  ss prior</span>
-<span class="lineno">  241 </span><span class="spaces">    </span><span class="istickedoff">let kds = annKds w</span>
-<span class="lineno">  242 </span><span class="spaces">    </span><span class="istickedoff">addAnnotationsDelta (Ann edp (srcSpanStartColumn ss - off) kds)</span>
-<span class="lineno">  243 </span><span class="spaces">    </span><span class="istickedoff">--  `debug` (&quot;leaveAST:(ss,finaledp,dp,nl,kds)=&quot; ++ show (showGhc ss,edp,dp,nl,kds))</span>
-<span class="lineno">  244 </span><span class="spaces">    </span><span class="istickedoff">return <span class="nottickedoff">res</span>)</span></span>
-<span class="lineno">  245 </span>
-<span class="lineno">  246 </span>-- ---------------------------------------------------------------------
-<span class="lineno">  247 </span>{-
-<span class="lineno">  248 </span>-- |Get the difference between the current and the previous
-<span class="lineno">  249 </span>-- colOffsets, if they are on the same line
-<span class="lineno">  250 </span>getCurrentDP :: LayoutFlag -&gt; GHC.SrcSpan -&gt; GHC.SrcSpan -&gt; (ColOffset,LineChanged)
-<span class="lineno">  251 </span>getCurrentDP layoutOn ss ps =
-<span class="lineno">  252 </span>  -- Note: the current col offsets are not needed here, any
-<span class="lineno">  253 </span>  -- indentation should be fully nested in an AST element
-<span class="lineno">  254 </span>  let
-<span class="lineno">  255 </span>      colOffset = if srcSpanStartLine ss == srcSpanStartLine ps
-<span class="lineno">  256 </span>                    then srcSpanStartColumn ss - srcSpanStartColumn ps
-<span class="lineno">  257 </span>                    else srcSpanStartColumn ss
-<span class="lineno">  258 </span>
-<span class="lineno">  259 </span>  in colOffset
-<span class="lineno">  260 </span>    `debug` (&quot;getCurrentDP:(layoutOn=&quot; ++ show layoutOn)
-<span class="lineno">  261 </span>    -}
+<span class="lineno">  222 </span>getAnnKey :: DeltaStack -&gt; AnnKey
+<span class="lineno">  223 </span><span class="decl"><span class="istickedoff">getAnnKey DeltaStack {curSrcSpan, annConName} = AnnKey curSrcSpan annConName</span></span>
+<span class="lineno">  224 </span>
+<span class="lineno">  225 </span>-- -------------------------------------
+<span class="lineno">  226 </span>
+<span class="lineno">  227 </span>addAnnDeltaPos :: KeywordId -&gt; DeltaPos -&gt; Delta ()
+<span class="lineno">  228 </span><span class="decl"><span class="istickedoff">addAnnDeltaPos kw dp = tellKd (kw, dp)</span></span>
+<span class="lineno">  229 </span>
+<span class="lineno">  230 </span>-- -------------------------------------
+<span class="lineno">  231 </span>
+<span class="lineno">  232 </span>
+<span class="lineno">  233 </span>-- | Enter a new AST element. Maintain SrcSpan stack
+<span class="lineno">  234 </span>withAST :: Data a =&gt; GHC.Located a -&gt; LayoutFlag -&gt; Delta b -&gt; Delta b
+<span class="lineno">  235 </span><span class="decl"><span class="istickedoff">withAST lss@(GHC.L ss _) layout action = do</span>
+<span class="lineno">  236 </span><span class="spaces">  </span><span class="istickedoff">-- Calculate offset required to get to the start of the SrcSPan</span>
+<span class="lineno">  237 </span><span class="spaces">  </span><span class="istickedoff">pe &lt;- getPriorEnd</span>
+<span class="lineno">  238 </span><span class="spaces">  </span><span class="istickedoff">off &lt;- asks layoutStart</span>
+<span class="lineno">  239 </span><span class="spaces">  </span><span class="istickedoff">let whenLayout = case layout of</span>
+<span class="lineno">  240 </span><span class="spaces">                        </span><span class="istickedoff">LayoutRules -&gt; setLayoutOffset (srcSpanStartColumn ss)</span>
+<span class="lineno">  241 </span><span class="spaces">                        </span><span class="istickedoff">NoLayoutRules -&gt; id</span>
+<span class="lineno">  242 </span><span class="spaces">  </span><span class="istickedoff">(whenLayout .  withSrcSpanDelta lss) (do</span>
+<span class="lineno">  243 </span><span class="spaces"></span><span class="istickedoff"></span>
+<span class="lineno">  244 </span><span class="spaces">    </span><span class="istickedoff">let maskWriter s = s { annKds = []</span>
+<span class="lineno">  245 </span><span class="spaces">                         </span><span class="istickedoff">, propOffset = First Nothing }</span>
+<span class="lineno">  246 </span><span class="spaces"></span><span class="istickedoff"></span>
+<span class="lineno">  247 </span><span class="spaces">    </span><span class="istickedoff">(res, w) &lt;-</span>
+<span class="lineno">  248 </span><span class="spaces">      </span><span class="istickedoff">(censor maskWriter (listen action))</span>
+<span class="lineno">  249 </span><span class="spaces">    </span><span class="istickedoff">let edp = adjustDeltaForOffset</span>
+<span class="lineno">  250 </span><span class="spaces">                </span><span class="istickedoff">-- Use the propagated offset if one is set</span>
+<span class="lineno">  251 </span><span class="spaces">                </span><span class="istickedoff">(fromMaybe off (getFirst $ propOffset w))</span>
+<span class="lineno">  252 </span><span class="spaces">                  </span><span class="istickedoff">(deltaFromSrcSpans pe ss)</span>
+<span class="lineno">  253 </span><span class="spaces">    </span><span class="istickedoff">let kds = annKds w</span>
+<span class="lineno">  254 </span><span class="spaces">    </span><span class="istickedoff">addAnnotationsDelta Ann</span>
+<span class="lineno">  255 </span><span class="spaces">                          </span><span class="istickedoff">{ annEntryDelta = edp</span>
+<span class="lineno">  256 </span><span class="spaces">                          </span><span class="istickedoff">, annDelta   = (srcSpanStartColumn ss - off)</span>
+<span class="lineno">  257 </span><span class="spaces">                          </span><span class="istickedoff">, annsDP     = kds }</span>
+<span class="lineno">  258 </span><span class="spaces">    </span><span class="istickedoff">--  `debug` (&quot;leaveAST:(ss,finaledp,dp,nl,kds)=&quot; ++ show (showGhc ss,edp,dp,nl,kds))</span>
+<span class="lineno">  259 </span><span class="spaces">    </span><span class="istickedoff">return <span class="nottickedoff">res</span>)</span></span>
+<span class="lineno">  260 </span>
+<span class="lineno">  261 </span>-- ---------------------------------------------------------------------
 <span class="lineno">  262 </span>
-<span class="lineno">  263 </span>-- ---------------------------------------------------------------------
-<span class="lineno">  264 </span>
-<span class="lineno">  265 </span>
-<span class="lineno">  266 </span>-- ---------------------------------------------------------------------
-<span class="lineno">  267 </span>
-<span class="lineno">  268 </span>-- |Split the ordered list of comments into ones that occur prior to
-<span class="lineno">  269 </span>-- the given SrcSpan and the rest
-<span class="lineno">  270 </span>allocatePriorComments :: [Comment] -&gt; GHC.SrcSpan -&gt; ([Comment],[Comment])
-<span class="lineno">  271 </span><span class="decl"><span class="istickedoff">allocatePriorComments cs ss = partition isPrior cs</span>
-<span class="lineno">  272 </span><span class="spaces">  </span><span class="istickedoff">where</span>
-<span class="lineno">  273 </span><span class="spaces">    </span><span class="istickedoff">(start,_) = ss2span ss</span>
-<span class="lineno">  274 </span><span class="spaces">    </span><span class="istickedoff">isPrior (Comment s _)  = (fst s) &lt; start</span>
-<span class="lineno">  275 </span><span class="spaces">      </span><span class="istickedoff">`debug` <span class="nottickedoff">(&quot;allocatePriorComments:(s,ss,cond)=&quot; ++ showGhc (s,ss,(fst s) &lt; start))</span></span></span>
-<span class="lineno">  276 </span>
-<span class="lineno">  277 </span>-- ---------------------------------------------------------------------
-<span class="lineno">  278 </span>
-<span class="lineno">  279 </span>addAnnotationWorker :: KeywordId -&gt; GHC.SrcSpan -&gt; Delta ()
-<span class="lineno">  280 </span><span class="decl"><span class="istickedoff">addAnnotationWorker ann pa = do</span>
-<span class="lineno">  281 </span><span class="spaces">  </span><span class="istickedoff">if not (isPointSrcSpan pa)</span>
-<span class="lineno">  282 </span><span class="spaces">    </span><span class="istickedoff">then do</span>
-<span class="lineno">  283 </span><span class="spaces">      </span><span class="istickedoff">pe &lt;- getPriorEnd</span>
-<span class="lineno">  284 </span><span class="spaces">      </span><span class="istickedoff">ss &lt;- getSrcSpanDelta</span>
-<span class="lineno">  285 </span><span class="spaces">      </span><span class="istickedoff">let p = deltaFromSrcSpans pe pa</span>
-<span class="lineno">  286 </span><span class="spaces">      </span><span class="istickedoff">case (ann,isGoodDelta p) of</span>
-<span class="lineno">  287 </span><span class="spaces">        </span><span class="istickedoff">(G GHC.AnnComma,False) -&gt; return <span class="nottickedoff">()</span></span>
-<span class="lineno">  288 </span><span class="spaces">        </span><span class="istickedoff">(G GHC.AnnSemi, False) -&gt; <span class="nottickedoff">return ()</span></span>
-<span class="lineno">  289 </span><span class="spaces">        </span><span class="istickedoff">(G GHC.AnnOpen, False) -&gt; <span class="nottickedoff">return ()</span></span>
-<span class="lineno">  290 </span><span class="spaces">        </span><span class="istickedoff">(G GHC.AnnClose,False) -&gt; <span class="nottickedoff">return ()</span></span>
-<span class="lineno">  291 </span><span class="spaces">        </span><span class="istickedoff">_ -&gt; do</span>
-<span class="lineno">  292 </span><span class="spaces">          </span><span class="istickedoff">cs &lt;- getUnallocatedComments</span>
-<span class="lineno">  293 </span><span class="spaces">          </span><span class="istickedoff">let (allocated,cs') = allocatePriorComments cs pa</span>
-<span class="lineno">  294 </span><span class="spaces">          </span><span class="istickedoff">putUnallocatedComments cs'</span>
-<span class="lineno">  295 </span><span class="spaces">          </span><span class="istickedoff">return <span class="nottickedoff">()</span> `debug`<span class="nottickedoff">(&quot;addAnnotationWorker:(ss,pa,allocated,cs)=&quot; ++ showGhc (ss,pa,allocated,cs))</span></span>
-<span class="lineno">  296 </span><span class="spaces">          </span><span class="istickedoff">mapM_ addDeltaComment allocated</span>
-<span class="lineno">  297 </span><span class="spaces">          </span><span class="istickedoff">p' &lt;- adjustDeltaForOffsetM p</span>
-<span class="lineno">  298 </span><span class="spaces">          </span><span class="istickedoff">addAnnDeltaPos (<span class="nottickedoff">ss</span>,ann) p'</span>
-<span class="lineno">  299 </span><span class="spaces">          </span><span class="istickedoff">setPriorEnd pa</span>
-<span class="lineno">  300 </span><span class="spaces">              </span><span class="istickedoff">-- `debug` (&quot;addDeltaAnnotationWorker:(ss,pe,pa,p,ann)=&quot; ++ show (ss2span ss,ss2span pe,ss2span pa,p,ann))</span>
-<span class="lineno">  301 </span><span class="spaces">    </span><span class="istickedoff">else do</span>
-<span class="lineno">  302 </span><span class="spaces">      </span><span class="istickedoff">return <span class="nottickedoff">()</span></span></span>
-<span class="lineno">  303 </span>          -- `debug` (&quot;addDeltaAnnotationWorker::point span:(ss,ma,ann)=&quot; ++ show (ss2span pa,ann))
-<span class="lineno">  304 </span>
-<span class="lineno">  305 </span>-- ---------------------------------------------------------------------
-<span class="lineno">  306 </span>
-<span class="lineno">  307 </span>addDeltaComment :: Comment -&gt; Delta ()
-<span class="lineno">  308 </span><span class="decl"><span class="istickedoff">addDeltaComment (Comment paspan str) = do</span>
-<span class="lineno">  309 </span><span class="spaces">  </span><span class="istickedoff">let pa = span2ss paspan</span>
-<span class="lineno">  310 </span><span class="spaces">  </span><span class="istickedoff">pe &lt;- getPriorEnd</span>
-<span class="lineno">  311 </span><span class="spaces">  </span><span class="istickedoff">ss &lt;- getSrcSpanDelta</span>
-<span class="lineno">  312 </span><span class="spaces">  </span><span class="istickedoff">let p = deltaFromSrcSpans pe pa</span>
-<span class="lineno">  313 </span><span class="spaces">  </span><span class="istickedoff">p' &lt;- adjustDeltaForOffsetM p</span>
-<span class="lineno">  314 </span><span class="spaces">  </span><span class="istickedoff">setPriorEnd pa</span>
-<span class="lineno">  315 </span><span class="spaces">  </span><span class="istickedoff">let e = ss2deltaP (ss2posEnd pe) (snd paspan)</span>
-<span class="lineno">  316 </span><span class="spaces">  </span><span class="istickedoff">e' &lt;- adjustDeltaForOffsetM e</span>
-<span class="lineno">  317 </span><span class="spaces">  </span><span class="istickedoff">addAnnDeltaPos (<span class="nottickedoff">ss</span>,AnnComment (DComment (p',e') str)) p'</span></span>
-<span class="lineno">  318 </span>
-<span class="lineno">  319 </span>-- ---------------------------------------------------------------------
-<span class="lineno">  320 </span>
-<span class="lineno">  321 </span>-- | Look up and add a Delta annotation at the current position, and
-<span class="lineno">  322 </span>-- advance the position to the end of the annotation
-<span class="lineno">  323 </span>addDeltaAnnotation :: GHC.AnnKeywordId -&gt; Delta ()
-<span class="lineno">  324 </span><span class="decl"><span class="istickedoff">addDeltaAnnotation ann = do</span>
-<span class="lineno">  325 </span><span class="spaces">  </span><span class="istickedoff">ss &lt;- getSrcSpanDelta</span>
-<span class="lineno">  326 </span><span class="spaces">  </span><span class="istickedoff">when (ann == GHC.AnnVal) (debugM <span class="nottickedoff">(showGhc ss)</span>)</span>
-<span class="lineno">  327 </span><span class="spaces">  </span><span class="istickedoff">ma &lt;- getAnnotationDelta ann</span>
-<span class="lineno">  328 </span><span class="spaces">  </span><span class="istickedoff">when (ann == GHC.AnnVal &amp;&amp; null ma) (debugM <span class="nottickedoff">&quot;empty&quot;</span>)</span>
-<span class="lineno">  329 </span><span class="spaces">  </span><span class="istickedoff">case nub ma of -- ++AZ++ TODO: get rid of duplicates earlier</span>
-<span class="lineno">  330 </span><span class="spaces">    </span><span class="istickedoff">[] -&gt; return <span class="nottickedoff">()</span> `debug` <span class="nottickedoff">(&quot;addDeltaAnnotation empty ma for:&quot; ++ show ann)</span></span>
-<span class="lineno">  331 </span><span class="spaces">    </span><span class="istickedoff">[pa] -&gt; addAnnotationWorker (G ann) pa</span>
-<span class="lineno">  332 </span><span class="spaces">    </span><span class="istickedoff">_ -&gt; <span class="nottickedoff">error $ &quot;addDeltaAnnotation:(ss,ann,ma)=&quot; ++ showGhc (ss,ann,ma)</span></span></span>
-<span class="lineno">  333 </span>
-<span class="lineno">  334 </span>-- | Look up and add a Delta annotation appearing beyond the current
-<span class="lineno">  335 </span>-- SrcSpan at the current position, and advance the position to the
-<span class="lineno">  336 </span>-- end of the annotation
-<span class="lineno">  337 </span>addDeltaAnnotationAfter :: GHC.AnnKeywordId -&gt; Delta ()
-<span class="lineno">  338 </span><span class="decl"><span class="istickedoff">addDeltaAnnotationAfter ann = do</span>
-<span class="lineno">  339 </span><span class="spaces">  </span><span class="istickedoff">ss &lt;- getSrcSpanDelta</span>
-<span class="lineno">  340 </span><span class="spaces">  </span><span class="istickedoff">ma &lt;- getAnnotationDelta ann</span>
-<span class="lineno">  341 </span><span class="spaces">  </span><span class="istickedoff">let ma' = filter (\s -&gt; not (GHC.isSubspanOf s ss)) ma</span>
-<span class="lineno">  342 </span><span class="spaces">  </span><span class="istickedoff">case ma' of</span>
-<span class="lineno">  343 </span><span class="spaces">    </span><span class="istickedoff">[] -&gt; return <span class="nottickedoff">()</span> `debug` <span class="nottickedoff">(&quot;addDeltaAnnotation empty ma&quot;)</span></span>
-<span class="lineno">  344 </span><span class="spaces">    </span><span class="istickedoff">[pa] -&gt; addAnnotationWorker (G ann) pa</span>
-<span class="lineno">  345 </span><span class="spaces">    </span><span class="istickedoff">_ -&gt; <span class="nottickedoff">error $ &quot;addDeltaAnnotation:(ss,ann,ma)=&quot; ++ showGhc (ss,ann,ma)</span></span></span>
-<span class="lineno">  346 </span>
-<span class="lineno">  347 </span>-- | Look up and add a Delta annotation at the current position, and
-<span class="lineno">  348 </span>-- advance the position to the end of the annotation
-<span class="lineno">  349 </span>addDeltaAnnotationLs :: GHC.AnnKeywordId -&gt; Int -&gt; Delta ()
-<span class="lineno">  350 </span><span class="decl"><span class="istickedoff">addDeltaAnnotationLs ann off = do</span>
-<span class="lineno">  351 </span><span class="spaces">  </span><span class="istickedoff">ma &lt;- getAnnotationDelta ann</span>
-<span class="lineno">  352 </span><span class="spaces">  </span><span class="istickedoff">case (drop off ma) of</span>
-<span class="lineno">  353 </span><span class="spaces">    </span><span class="istickedoff">[] -&gt; return <span class="nottickedoff">()</span></span>
-<span class="lineno">  354 </span><span class="spaces">        </span><span class="istickedoff">-- `debug` (&quot;addDeltaAnnotationLs:missed:(off,pe,ann,ma)=&quot; ++ show (off,ss2span pe,ann,fmap ss2span ma))</span>
-<span class="lineno">  355 </span><span class="spaces">    </span><span class="istickedoff">(pa:_) -&gt; addAnnotationWorker (G ann) pa</span></span>
-<span class="lineno">  356 </span>
-<span class="lineno">  357 </span>-- | Look up and add possibly multiple Delta annotation at the current
-<span class="lineno">  358 </span>-- position, and advance the position to the end of the annotations
-<span class="lineno">  359 </span>addDeltaAnnotations :: GHC.AnnKeywordId -&gt; Delta ()
-<span class="lineno">  360 </span><span class="decl"><span class="istickedoff">addDeltaAnnotations ann = do</span>
-<span class="lineno">  361 </span><span class="spaces">  </span><span class="istickedoff">ma &lt;- getAnnotationDelta ann</span>
-<span class="lineno">  362 </span><span class="spaces">  </span><span class="istickedoff">let do_one ap' = addAnnotationWorker (G ann) ap'</span>
-<span class="lineno">  363 </span><span class="spaces">                    </span><span class="istickedoff">-- `debug` (&quot;addDeltaAnnotations:do_one:(ap',ann)=&quot; ++ showGhc (ap',ann))</span>
-<span class="lineno">  364 </span><span class="spaces">  </span><span class="istickedoff">mapM_ do_one (sort ma)</span></span>
-<span class="lineno">  365 </span>
-<span class="lineno">  366 </span>-- | Look up and add possibly multiple Delta annotations enclosed by
-<span class="lineno">  367 </span>-- the current SrcSpan at the current position, and advance the
-<span class="lineno">  368 </span>-- position to the end of the annotations
-<span class="lineno">  369 </span>addDeltaAnnotationsInside :: GHC.AnnKeywordId -&gt; Delta ()
-<span class="lineno">  370 </span><span class="decl"><span class="istickedoff">addDeltaAnnotationsInside ann = do</span>
-<span class="lineno">  371 </span><span class="spaces">  </span><span class="istickedoff">ss &lt;- getSrcSpanDelta</span>
-<span class="lineno">  372 </span><span class="spaces">  </span><span class="istickedoff">ma &lt;- getAnnotationDelta ann</span>
-<span class="lineno">  373 </span><span class="spaces">  </span><span class="istickedoff">let do_one ap' = addAnnotationWorker (G ann) ap'</span>
-<span class="lineno">  374 </span><span class="spaces">                    </span><span class="istickedoff">-- `debug` (&quot;addDeltaAnnotations:do_one:(ap',ann)=&quot; ++ showGhc (ap',ann))</span>
-<span class="lineno">  375 </span><span class="spaces">  </span><span class="istickedoff">let filtered = (sort $ filter (\s -&gt; GHC.isSubspanOf s ss) ma)</span>
-<span class="lineno">  376 </span><span class="spaces">  </span><span class="istickedoff">mapM_ do_one filtered</span></span>
-<span class="lineno">  377 </span>
-<span class="lineno">  378 </span>-- | Look up and add possibly multiple Delta annotations not enclosed by
-<span class="lineno">  379 </span>-- the current SrcSpan at the current position, and advance the
-<span class="lineno">  380 </span>-- position to the end of the annotations
-<span class="lineno">  381 </span>addDeltaAnnotationsOutside :: GHC.AnnKeywordId -&gt; KeywordId -&gt; Delta ()
-<span class="lineno">  382 </span><span class="decl"><span class="istickedoff">addDeltaAnnotationsOutside gann ann = do</span>
-<span class="lineno">  383 </span><span class="spaces">  </span><span class="istickedoff">ss &lt;- getSrcSpanDelta</span>
-<span class="lineno">  384 </span><span class="spaces">  </span><span class="istickedoff">if ss2span ss == ((1,1),(1,1))</span>
-<span class="lineno">  385 </span><span class="spaces">    </span><span class="istickedoff">then return <span class="nottickedoff">()</span></span>
-<span class="lineno">  386 </span><span class="spaces">    </span><span class="istickedoff">else do</span>
-<span class="lineno">  387 </span><span class="spaces">      </span><span class="istickedoff">-- ma &lt;- getAnnotationDelta ss gann</span>
-<span class="lineno">  388 </span><span class="spaces">      </span><span class="istickedoff">ma &lt;- getAndRemoveAnnotationDelta ss gann</span>
-<span class="lineno">  389 </span><span class="spaces">      </span><span class="istickedoff">let do_one ap' = addAnnotationWorker ann ap'</span>
-<span class="lineno">  390 </span><span class="spaces">      </span><span class="istickedoff">mapM_ do_one (sort $ filter (\s -&gt; not (GHC.isSubspanOf s ss)) ma)</span></span>
+<span class="lineno">  263 </span>-- |Split the ordered list of comments into ones that occur prior to
+<span class="lineno">  264 </span>-- the given SrcSpan and the rest
+<span class="lineno">  265 </span>allocatePriorComments :: [Comment] -&gt; GHC.SrcSpan -&gt; ([Comment],[Comment])
+<span class="lineno">  266 </span><span class="decl"><span class="istickedoff">allocatePriorComments cs ss = partition isPrior cs</span>
+<span class="lineno">  267 </span><span class="spaces">  </span><span class="istickedoff">where</span>
+<span class="lineno">  268 </span><span class="spaces">    </span><span class="istickedoff">(start,_) = ss2span ss</span>
+<span class="lineno">  269 </span><span class="spaces">    </span><span class="istickedoff">isPrior (Comment s _)  = (fst s) &lt; start</span>
+<span class="lineno">  270 </span><span class="spaces">      </span><span class="istickedoff">`debug` <span class="nottickedoff">(&quot;allocatePriorComments:(s,ss,cond)=&quot; ++ showGhc (s,ss,(fst s) &lt; start))</span></span></span>
+<span class="lineno">  271 </span>
+<span class="lineno">  272 </span>-- ---------------------------------------------------------------------
+<span class="lineno">  273 </span>
+<span class="lineno">  274 </span>addAnnotationWorker :: KeywordId -&gt; GHC.SrcSpan -&gt; Delta ()
+<span class="lineno">  275 </span><span class="decl"><span class="istickedoff">addAnnotationWorker ann pa = do</span>
+<span class="lineno">  276 </span><span class="spaces">  </span><span class="istickedoff">if not (isPointSrcSpan pa)</span>
+<span class="lineno">  277 </span><span class="spaces">    </span><span class="istickedoff">then do</span>
+<span class="lineno">  278 </span><span class="spaces">      </span><span class="istickedoff">pe &lt;- getPriorEnd</span>
+<span class="lineno">  279 </span><span class="spaces">      </span><span class="istickedoff">ss &lt;- getSrcSpan</span>
+<span class="lineno">  280 </span><span class="spaces">      </span><span class="istickedoff">let p = deltaFromSrcSpans pe pa</span>
+<span class="lineno">  281 </span><span class="spaces">      </span><span class="istickedoff">case (ann,isGoodDelta p) of</span>
+<span class="lineno">  282 </span><span class="spaces">        </span><span class="istickedoff">(G GHC.AnnComma,False) -&gt; return <span class="nottickedoff">()</span></span>
+<span class="lineno">  283 </span><span class="spaces">        </span><span class="istickedoff">(G GHC.AnnSemi, False) -&gt; <span class="nottickedoff">return ()</span></span>
+<span class="lineno">  284 </span><span class="spaces">        </span><span class="istickedoff">(G GHC.AnnOpen, False) -&gt; <span class="nottickedoff">return ()</span></span>
+<span class="lineno">  285 </span><span class="spaces">        </span><span class="istickedoff">(G GHC.AnnClose,False) -&gt; <span class="nottickedoff">return ()</span></span>
+<span class="lineno">  286 </span><span class="spaces">        </span><span class="istickedoff">_ -&gt; do</span>
+<span class="lineno">  287 </span><span class="spaces">          </span><span class="istickedoff">cs &lt;- getUnallocatedComments</span>
+<span class="lineno">  288 </span><span class="spaces">          </span><span class="istickedoff">let (allocated,cs') = allocatePriorComments cs pa</span>
+<span class="lineno">  289 </span><span class="spaces">          </span><span class="istickedoff">putUnallocatedComments cs'</span>
+<span class="lineno">  290 </span><span class="spaces">          </span><span class="istickedoff">return <span class="nottickedoff">()</span> `debug`<span class="nottickedoff">(&quot;addAnnotationWorker:(ss,pa,allocated,cs)=&quot; ++ showGhc (ss,pa,allocated,cs))</span></span>
+<span class="lineno">  291 </span><span class="spaces">          </span><span class="istickedoff">mapM_ addDeltaComment allocated</span>
+<span class="lineno">  292 </span><span class="spaces">          </span><span class="istickedoff">p' &lt;- adjustDeltaForOffsetM p</span>
+<span class="lineno">  293 </span><span class="spaces">          </span><span class="istickedoff">addAnnDeltaPos ann p'</span>
+<span class="lineno">  294 </span><span class="spaces">          </span><span class="istickedoff">setPriorEnd pa</span>
+<span class="lineno">  295 </span><span class="spaces">              </span><span class="istickedoff">-- `debug` (&quot;addDeltaAnnotationWorker:(ss,pe,pa,p,ann)=&quot; ++ show (ss2span ss,ss2span pe,ss2span pa,p,ann))</span>
+<span class="lineno">  296 </span><span class="spaces">    </span><span class="istickedoff">else do</span>
+<span class="lineno">  297 </span><span class="spaces">      </span><span class="istickedoff">return <span class="nottickedoff">()</span></span></span>
+<span class="lineno">  298 </span>          -- `debug` (&quot;addDeltaAnnotationWorker::point span:(ss,ma,ann)=&quot; ++ show (ss2span pa,ann))
+<span class="lineno">  299 </span>
+<span class="lineno">  300 </span>-- ---------------------------------------------------------------------
+<span class="lineno">  301 </span>
+<span class="lineno">  302 </span>addDeltaComment :: Comment -&gt; Delta ()
+<span class="lineno">  303 </span><span class="decl"><span class="istickedoff">addDeltaComment (Comment paspan str) = do</span>
+<span class="lineno">  304 </span><span class="spaces">  </span><span class="istickedoff">let pa = span2ss paspan</span>
+<span class="lineno">  305 </span><span class="spaces">  </span><span class="istickedoff">pe &lt;- getPriorEnd</span>
+<span class="lineno">  306 </span><span class="spaces">  </span><span class="istickedoff">let p = deltaFromSrcSpans pe pa</span>
+<span class="lineno">  307 </span><span class="spaces">  </span><span class="istickedoff">p' &lt;- adjustDeltaForOffsetM p</span>
+<span class="lineno">  308 </span><span class="spaces">  </span><span class="istickedoff">setPriorEnd pa</span>
+<span class="lineno">  309 </span><span class="spaces">  </span><span class="istickedoff">let e = ss2deltaP (ss2posEnd pe) (snd paspan)</span>
+<span class="lineno">  310 </span><span class="spaces">  </span><span class="istickedoff">e' &lt;- adjustDeltaForOffsetM e</span>
+<span class="lineno">  311 </span><span class="spaces">  </span><span class="istickedoff">addAnnDeltaPos (AnnComment (DComment (p',e') str)) p'</span></span>
+<span class="lineno">  312 </span>
+<span class="lineno">  313 </span>-- ---------------------------------------------------------------------
+<span class="lineno">  314 </span>
+<span class="lineno">  315 </span>-- | Look up and add a Delta annotation at the current position, and
+<span class="lineno">  316 </span>-- advance the position to the end of the annotation
+<span class="lineno">  317 </span>addDeltaAnnotation :: GHC.AnnKeywordId -&gt; Delta ()
+<span class="lineno">  318 </span><span class="decl"><span class="istickedoff">addDeltaAnnotation ann = do</span>
+<span class="lineno">  319 </span><span class="spaces">  </span><span class="istickedoff">ss &lt;- getSrcSpan</span>
+<span class="lineno">  320 </span><span class="spaces">  </span><span class="istickedoff">when (ann == GHC.AnnVal) (debugM <span class="nottickedoff">(showGhc ss)</span>)</span>
+<span class="lineno">  321 </span><span class="spaces">  </span><span class="istickedoff">ma &lt;- getAnnotationDelta ann</span>
+<span class="lineno">  322 </span><span class="spaces">  </span><span class="istickedoff">when (ann == GHC.AnnVal &amp;&amp; null ma) (debugM <span class="nottickedoff">&quot;empty&quot;</span>)</span>
+<span class="lineno">  323 </span><span class="spaces">  </span><span class="istickedoff">case nub ma of -- ++AZ++ TODO: get rid of duplicates earlier</span>
+<span class="lineno">  324 </span><span class="spaces">    </span><span class="istickedoff">[] -&gt; return <span class="nottickedoff">()</span> `debug` <span class="nottickedoff">(&quot;addDeltaAnnotation empty ma for:&quot; ++ show ann)</span></span>
+<span class="lineno">  325 </span><span class="spaces">    </span><span class="istickedoff">[pa] -&gt; addAnnotationWorker (G ann) pa</span>
+<span class="lineno">  326 </span><span class="spaces">    </span><span class="istickedoff">_ -&gt; <span class="nottickedoff">error $ &quot;addDeltaAnnotation:(ss,ann,ma)=&quot; ++ showGhc (ss,ann,ma)</span></span></span>
+<span class="lineno">  327 </span>
+<span class="lineno">  328 </span>-- | Look up and add a Delta annotation appearing beyond the current
+<span class="lineno">  329 </span>-- SrcSpan at the current position, and advance the position to the
+<span class="lineno">  330 </span>-- end of the annotation
+<span class="lineno">  331 </span>addDeltaAnnotationAfter :: GHC.AnnKeywordId -&gt; Delta ()
+<span class="lineno">  332 </span><span class="decl"><span class="istickedoff">addDeltaAnnotationAfter ann = do</span>
+<span class="lineno">  333 </span><span class="spaces">  </span><span class="istickedoff">ss &lt;- getSrcSpan</span>
+<span class="lineno">  334 </span><span class="spaces">  </span><span class="istickedoff">ma &lt;- getAnnotationDelta ann</span>
+<span class="lineno">  335 </span><span class="spaces">  </span><span class="istickedoff">let ma' = filter (\s -&gt; not (GHC.isSubspanOf s ss)) ma</span>
+<span class="lineno">  336 </span><span class="spaces">  </span><span class="istickedoff">case ma' of</span>
+<span class="lineno">  337 </span><span class="spaces">    </span><span class="istickedoff">[] -&gt; return <span class="nottickedoff">()</span> `debug` <span class="nottickedoff">(&quot;addDeltaAnnotation empty ma&quot;)</span></span>
+<span class="lineno">  338 </span><span class="spaces">    </span><span class="istickedoff">[pa] -&gt; addAnnotationWorker (G ann) pa</span>
+<span class="lineno">  339 </span><span class="spaces">    </span><span class="istickedoff">_ -&gt; <span class="nottickedoff">error $ &quot;addDeltaAnnotation:(ss,ann,ma)=&quot; ++ showGhc (ss,ann,ma)</span></span></span>
+<span class="lineno">  340 </span>
+<span class="lineno">  341 </span>-- | Look up and add a Delta annotation at the current position, and
+<span class="lineno">  342 </span>-- advance the position to the end of the annotation
+<span class="lineno">  343 </span>addDeltaAnnotationLs :: GHC.AnnKeywordId -&gt; Int -&gt; Delta ()
+<span class="lineno">  344 </span><span class="decl"><span class="istickedoff">addDeltaAnnotationLs ann off = do</span>
+<span class="lineno">  345 </span><span class="spaces">  </span><span class="istickedoff">ma &lt;- getAnnotationDelta ann</span>
+<span class="lineno">  346 </span><span class="spaces">  </span><span class="istickedoff">case (drop off ma) of</span>
+<span class="lineno">  347 </span><span class="spaces">    </span><span class="istickedoff">[] -&gt; return <span class="nottickedoff">()</span></span>
+<span class="lineno">  348 </span><span class="spaces">        </span><span class="istickedoff">-- `debug` (&quot;addDeltaAnnotationLs:missed:(off,pe,ann,ma)=&quot; ++ show (off,ss2span pe,ann,fmap ss2span ma))</span>
+<span class="lineno">  349 </span><span class="spaces">    </span><span class="istickedoff">(pa:_) -&gt; addAnnotationWorker (G ann) pa</span></span>
+<span class="lineno">  350 </span>
+<span class="lineno">  351 </span>-- | Look up and add possibly multiple Delta annotation at the current
+<span class="lineno">  352 </span>-- position, and advance the position to the end of the annotations
+<span class="lineno">  353 </span>addDeltaAnnotations :: GHC.AnnKeywordId -&gt; Delta ()
+<span class="lineno">  354 </span><span class="decl"><span class="istickedoff">addDeltaAnnotations ann = do</span>
+<span class="lineno">  355 </span><span class="spaces">  </span><span class="istickedoff">ma &lt;- getAnnotationDelta ann</span>
+<span class="lineno">  356 </span><span class="spaces">  </span><span class="istickedoff">let do_one ap' = addAnnotationWorker (G ann) ap'</span>
+<span class="lineno">  357 </span><span class="spaces">                    </span><span class="istickedoff">-- `debug` (&quot;addDeltaAnnotations:do_one:(ap',ann)=&quot; ++ showGhc (ap',ann))</span>
+<span class="lineno">  358 </span><span class="spaces">  </span><span class="istickedoff">mapM_ do_one (sort ma)</span></span>
+<span class="lineno">  359 </span>
+<span class="lineno">  360 </span>-- | Look up and add possibly multiple Delta annotations enclosed by
+<span class="lineno">  361 </span>-- the current SrcSpan at the current position, and advance the
+<span class="lineno">  362 </span>-- position to the end of the annotations
+<span class="lineno">  363 </span>addDeltaAnnotationsInside :: GHC.AnnKeywordId -&gt; Delta ()
+<span class="lineno">  364 </span><span class="decl"><span class="istickedoff">addDeltaAnnotationsInside ann = do</span>
+<span class="lineno">  365 </span><span class="spaces">  </span><span class="istickedoff">ss &lt;- getSrcSpan</span>
+<span class="lineno">  366 </span><span class="spaces">  </span><span class="istickedoff">ma &lt;- getAnnotationDelta ann</span>
+<span class="lineno">  367 </span><span class="spaces">  </span><span class="istickedoff">let do_one ap' = addAnnotationWorker (G ann) ap'</span>
+<span class="lineno">  368 </span><span class="spaces">                    </span><span class="istickedoff">-- `debug` (&quot;addDeltaAnnotations:do_one:(ap',ann)=&quot; ++ showGhc (ap',ann))</span>
+<span class="lineno">  369 </span><span class="spaces">  </span><span class="istickedoff">let filtered = (sort $ filter (\s -&gt; GHC.isSubspanOf s ss) ma)</span>
+<span class="lineno">  370 </span><span class="spaces">  </span><span class="istickedoff">mapM_ do_one filtered</span></span>
+<span class="lineno">  371 </span>
+<span class="lineno">  372 </span>-- | Look up and add possibly multiple Delta annotations not enclosed by
+<span class="lineno">  373 </span>-- the current SrcSpan at the current position, and advance the
+<span class="lineno">  374 </span>-- position to the end of the annotations
+<span class="lineno">  375 </span>addDeltaAnnotationsOutside :: GHC.AnnKeywordId -&gt; KeywordId -&gt; Delta ()
+<span class="lineno">  376 </span><span class="decl"><span class="istickedoff">addDeltaAnnotationsOutside gann ann = do</span>
+<span class="lineno">  377 </span><span class="spaces">  </span><span class="istickedoff">ss &lt;- getSrcSpan</span>
+<span class="lineno">  378 </span><span class="spaces">  </span><span class="istickedoff">if ss2span ss == ((1,1),(1,1))</span>
+<span class="lineno">  379 </span><span class="spaces">    </span><span class="istickedoff">then return <span class="nottickedoff">()</span></span>
+<span class="lineno">  380 </span><span class="spaces">    </span><span class="istickedoff">else do</span>
+<span class="lineno">  381 </span><span class="spaces">      </span><span class="istickedoff">-- ma &lt;- getAnnotationDelta ss gann</span>
+<span class="lineno">  382 </span><span class="spaces">      </span><span class="istickedoff">ma &lt;- getAndRemoveAnnotationDelta ss gann</span>
+<span class="lineno">  383 </span><span class="spaces">      </span><span class="istickedoff">let do_one ap' = addAnnotationWorker ann ap'</span>
+<span class="lineno">  384 </span><span class="spaces">      </span><span class="istickedoff">mapM_ do_one (sort $ filter (\s -&gt; not (GHC.isSubspanOf s ss)) ma)</span></span>
+<span class="lineno">  385 </span>
+<span class="lineno">  386 </span>-- | Add a Delta annotation at the current position, and advance the
+<span class="lineno">  387 </span>-- position to the end of the annotation
+<span class="lineno">  388 </span>addDeltaAnnotationExt :: GHC.SrcSpan -&gt; GHC.AnnKeywordId -&gt; Delta ()
+<span class="lineno">  389 </span><span class="decl"><span class="istickedoff">addDeltaAnnotationExt s ann = do</span>
+<span class="lineno">  390 </span><span class="spaces">  </span><span class="istickedoff">addAnnotationWorker (G ann) s</span></span>
 <span class="lineno">  391 </span>
-<span class="lineno">  392 </span>-- | Add a Delta annotation at the current position, and advance the
-<span class="lineno">  393 </span>-- position to the end of the annotation
-<span class="lineno">  394 </span>addDeltaAnnotationExt :: GHC.SrcSpan -&gt; GHC.AnnKeywordId -&gt; Delta ()
-<span class="lineno">  395 </span><span class="decl"><span class="istickedoff">addDeltaAnnotationExt s ann = do</span>
-<span class="lineno">  396 </span><span class="spaces">  </span><span class="istickedoff">addAnnotationWorker (G ann) s</span></span>
-<span class="lineno">  397 </span>
-<span class="lineno">  398 </span>
-<span class="lineno">  399 </span>addEofAnnotation :: Delta ()
-<span class="lineno">  400 </span><span class="decl"><span class="istickedoff">addEofAnnotation = do</span>
-<span class="lineno">  401 </span><span class="spaces">  </span><span class="istickedoff">pe &lt;- getPriorEnd</span>
-<span class="lineno">  402 </span><span class="spaces">  </span><span class="istickedoff">ss &lt;- getSrcSpanDelta</span>
-<span class="lineno">  403 </span><span class="spaces">  </span><span class="istickedoff">ma &lt;- withSrcSpanDelta (GHC.noLoc <span class="nottickedoff">()</span>) (getAnnotationDelta GHC.AnnEofPos)</span>
-<span class="lineno">  404 </span><span class="spaces">  </span><span class="istickedoff">case ma of</span>
-<span class="lineno">  405 </span><span class="spaces">    </span><span class="istickedoff">[] -&gt; <span class="nottickedoff">return ()</span></span>
-<span class="lineno">  406 </span><span class="spaces">    </span><span class="istickedoff">(pa:pss) -&gt; do</span>
-<span class="lineno">  407 </span><span class="spaces">      </span><span class="istickedoff">cs &lt;- getUnallocatedComments</span>
-<span class="lineno">  408 </span><span class="spaces">      </span><span class="istickedoff">mapM_ addDeltaComment cs</span>
-<span class="lineno">  409 </span><span class="spaces">      </span><span class="istickedoff">let DP (r,c) = deltaFromSrcSpans pe pa</span>
-<span class="lineno">  410 </span><span class="spaces">      </span><span class="istickedoff">addAnnDeltaPos (<span class="nottickedoff">ss</span>,G GHC.AnnEofPos) (DP (r, c - 1))</span>
-<span class="lineno">  411 </span><span class="spaces">      </span><span class="istickedoff">setPriorEnd <span class="nottickedoff">pa</span> `warn` <span class="nottickedoff">(&quot;Trailing annotations after Eof: &quot; ++ showGhc pss)</span></span></span>
+<span class="lineno">  392 </span>addEofAnnotation :: Delta ()
+<span class="lineno">  393 </span><span class="decl"><span class="istickedoff">addEofAnnotation = do</span>
+<span class="lineno">  394 </span><span class="spaces">  </span><span class="istickedoff">pe &lt;- getPriorEnd</span>
+<span class="lineno">  395 </span><span class="spaces">  </span><span class="istickedoff">ma &lt;- withSrcSpanDelta (GHC.noLoc <span class="nottickedoff">()</span>) (getAnnotationDelta GHC.AnnEofPos)</span>
+<span class="lineno">  396 </span><span class="spaces">  </span><span class="istickedoff">case ma of</span>
+<span class="lineno">  397 </span><span class="spaces">    </span><span class="istickedoff">[] -&gt; <span class="nottickedoff">return ()</span></span>
+<span class="lineno">  398 </span><span class="spaces">    </span><span class="istickedoff">(pa:pss) -&gt; do</span>
+<span class="lineno">  399 </span><span class="spaces">      </span><span class="istickedoff">cs &lt;- getUnallocatedComments</span>
+<span class="lineno">  400 </span><span class="spaces">      </span><span class="istickedoff">mapM_ addDeltaComment cs</span>
+<span class="lineno">  401 </span><span class="spaces">      </span><span class="istickedoff">let DP (r,c) = deltaFromSrcSpans pe pa</span>
+<span class="lineno">  402 </span><span class="spaces">      </span><span class="istickedoff">addAnnDeltaPos (G GHC.AnnEofPos) (DP (r, c - 1))</span>
+<span class="lineno">  403 </span><span class="spaces">      </span><span class="istickedoff">setPriorEnd <span class="nottickedoff">pa</span> `warn` <span class="nottickedoff">(&quot;Trailing annotations after Eof: &quot; ++ showGhc pss)</span></span></span>
+<span class="lineno">  404 </span>
+<span class="lineno">  405 </span>
+<span class="lineno">  406 </span>countAnnsDelta :: GHC.AnnKeywordId -&gt; Delta Int
+<span class="lineno">  407 </span><span class="decl"><span class="istickedoff">countAnnsDelta ann = do</span>
+<span class="lineno">  408 </span><span class="spaces">  </span><span class="istickedoff">ma &lt;- getAnnotationDelta ann</span>
+<span class="lineno">  409 </span><span class="spaces">  </span><span class="istickedoff">return (length ma)</span></span>
+<span class="lineno">  410 </span>
+<span class="lineno">  411 </span>
 <span class="lineno">  412 </span>
-<span class="lineno">  413 </span>
-<span class="lineno">  414 </span>countAnnsDelta :: GHC.AnnKeywordId -&gt; Delta Int
-<span class="lineno">  415 </span><span class="decl"><span class="istickedoff">countAnnsDelta ann = do</span>
-<span class="lineno">  416 </span><span class="spaces">  </span><span class="istickedoff">ma &lt;- getAnnotationDelta ann</span>
-<span class="lineno">  417 </span><span class="spaces">  </span><span class="istickedoff">return (length ma)</span></span>
-<span class="lineno">  418 </span>
-<span class="lineno">  419 </span>
-<span class="lineno">  420 </span>
 
 </pre>
 </body>
