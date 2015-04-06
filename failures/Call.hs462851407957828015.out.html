@@ -1,0 +1,888 @@
+<a href="caching.hs19027373351127401868.out.html">prev</a></br><a href="failures.html">home</a></br><a href="Call.hs823378840143542612.out.html">next</a></br></br><pre>95d94
+< firstSeq f (p:ps) = f p >>= \case
+96c95
+<   Left (Unint i s) -> firstSeq f ps >>= \case
+---
+> firstSeq f (p:ps) = f p >>= 
+96a96
+>   Left (Unint i s) -> firstSeq f ps >>= 
+105c105
+<     usemask a >>= \case
+---
+>     usemask a >>= 
+120c120
+<       firstSeq usemask ps >>= \case
+---
+>       firstSeq usemask ps >>= 
+338c338
+<     usepmask r i >>= \case
+---
+>     usepmask r i >>= 
+351c351
+<   usepmask (p,fs) i = runPrerequisite (p i) >>= \case
+---
+>   usepmask (p,fs) i = runPrerequisite (p i) >>= 
+430a431
+> 
+</pre></br><h2>original</h2></br><pre>{-# LANGUAGE MultiParamTypeClasses, FunctionalDependencies, FlexibleInstances, UndecidableInstances, RankNTypes, FlexibleContexts, LambdaCase, ScopedTypeVariables, ConstraintKinds #-}
+
+{-
+  This module is part of Antisplice.
+  Copyleft (c) 2014 Marvin Cohrs
+
+  All wrongs reversed. Sharing is an act of love, not crime.
+  Please share Antisplice with everyone you like.
+
+  Antisplice is free software: you can redistribute it and/or modify
+  it under the terms of the GNU Affero General Public License as published by
+  the Free Software Foundation, either version 3 of the License, or
+  (at your option) any later version.
+
+  Antisplice is distributed in the hope that it will be useful,
+  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+  GNU Affero General Public License for more details.
+
+  You should have received a copy of the GNU Affero General Public License
+  along with Antisplice. If not, see <http://www.gnu.org/licenses/>.
+-}
+
+-- | Provides a powerful language for user input evaluation
+module Game.Antisplice.Call (
+  -- * Using call masks
+  processMask,
+  tryMask,
+  -- * Mask classes
+  CallMask (..),
+  PredMask (..),
+  PostMask (..),
+  CombiMask (..),
+  -- * Mask segments
+  EnsureLineEnd (..),
+  CatchByType (..),
+  CatchToken (..),
+  CatchOrd (..),
+  Remaining (..),
+  CatchObj (..),
+  Which (..),
+  Optional (..),
+  Ignore (..),
+  Pass (..)
+  ) where
+
+import Control.Monad
+import Control.Monad.State
+import Control.Monad.Identity
+import Control.Monad.Error.Class
+import Data.Either
+import Data.List
+import Data.Maybe
+import Game.Antisplice.Errors
+import Game.Antisplice.Monad.Dungeon
+import Game.Antisplice.Monad.Vocab
+import Data.Chatty.AVL
+import Data.Chatty.BST
+import Data.Chatty.Hetero
+
+unint :: Monad m => String -> m (Either ReError a)
+unint = return . Left . Unint 0
+
+unintp :: Monad m => String -> m (Maybe ReError)
+unintp = return . Just . Unint 200
+
+-- | Typeclass for input masks (either single modules or lists of modules)
+class CallMask cm l | cm -> l where
+  usemask :: (MonadRoom m,MonadPlayer m) => cm -> StateT [(String,Token)] m (Either ReError l)
+  verbosemask :: cm -> String
+
+-- | Ensures that the end of the input is reached
+data EnsureLineEnd = EnsureLineEnd
+-- | Catches the string of a token matching the given token type
+data CatchByType = CatchVerb | CatchPrep | CatchNoun | CatchAdj | CatchOrdn Int | CatchFixe | CatchSkilln | CatchUnint | CatchAny
+-- | Catches an entire token
+data CatchToken = CatchToken | CatchNounc
+-- | Catches the number of an Ordn token
+data CatchOrd = CatchOrd
+-- | Catches the remaining part of the line
+data Remaining = Remaining
+-- | Catches an available, carried or seen object
+data CatchObj = AvailableObject | SeenObject | CarriedObject
+-- | Provide multiple alternatives and catch the first matching one as well as its result
+data Which a = Which [a]
+-- | Provide an optional mask part
+data Optional a = Optional a
+-- | Ignore a token or result
+data Ignore = Ignore
+-- | Pass-through a result
+data Pass = Pass
+
+firstSeq :: Monad m => (a -> m (Either ReError b)) -> [a] -> m (Either ReError (a,b))
+firstSeq _ [] = return $ Left $ Unint (-1) "You'll never see this error."
+firstSeq f (p:ps) = f p >>= \case
+  Left (Unint i s) -> firstSeq f ps >>= \case
+    Left (Unint i2 s2)
+      | i2 < i -> return $ Left $ Unint i s
+      | otherwise -> return $ Left $ Unint i2 s2
+  Left (Forward s) -> return $ Left $ Forward s
+  Right k -> return $ Right (p,k)
+
+instance (CallMask a ar, IntoMaybe ar am,Append am Nil am) => CallMask (Optional a) am where
+  usemask (Optional a) = do
+    usemask a >>= \case
+      Left _ -> return $ Right $ tnothing (undefined :: ar)
+      Right k -> return $ Right $ tjust k
+  verbosemask (Optional a) = "optionally [" ++ verbosemask a ++ "]"
+
+instance (CallMask a r,Append (Cons a Nil) r ar) => CallMask (Which a) ar where
+  usemask (Which []) = do
+    ss <- get
+    case ss of
+      [] -> unint "Couldn't match empty choice (Which []) with end of input. This is the dungeon writer's fault, you should blame him."
+      (s,_):_ -> unint ("Couldn't match empty choice (Which []) with word \""++s++"\". This is the dungeon writer's fault, you should blame him.")
+  usemask (Which ps) = do
+    ss <- get
+    if null ss then unint ("End of input reached, but one of the following expected: " ++ concat (intersperse " or " $ map verbosemask ps))
+               else let (s:_) = ss in do
+      firstSeq usemask ps >>= \case
+        Left e -> return $ Left e
+        Right (k,r) -> return $ Right (tappend (k :-: Nil) r)
+  verbosemask (Which []) = "empty choice (you should blame the dungeon writer)"
+  verbosemask (Which ps) = concat $ intersperse "or" $ map verbosemask ps
+
+instance CallMask Token Nil where
+  usemask t = do
+    ss <- get
+    if null ss then unint ("End of input reached, but token \""++show t++"\" expected.")
+               else let (s:_) = ss in
+      if snd s == t then modify tail >> return (Right Nil) else unint ("Token \""++show (snd s)++"\" found, but token \""++show t++"\" expected.")
+  verbosemask = show
+
+instance CallMask Ignore Nil where
+  usemask t = do
+    ss <- get
+    if null ss then unint "End of input reached, but any token expected."
+      else modify tail >> return (Right Nil)
+  verbosemask _ = "any token"
+
+instance CallMask String Nil where
+  usemask t = do
+    ss <- get
+    if null ss then unint ("End of input reached, but token \""++t++"\" expected.")
+               else let (s:_) =ss in
+      if fst s == t then modify tail >> return (Right Nil)
+      else unint ("Token \""++show (snd s)++"\" found, but \""++t++"\" expected.")
+  verbosemask = show
+
+instance CallMask EnsureLineEnd Nil where
+  usemask EnsureLineEnd = do
+    s <- get
+    if null s then return (Right Nil) else unint ("End of input expected, but token \""++show (snd $ head s)++"\" found.")
+  verbosemask _ = "end of input"
+
+instance CallMask CatchByType (Cons String Nil) where
+  usemask ct = do
+    ss <- get
+    if null ss then unint ("End of input reached, but \""++verbosemask ct++"\" expected.")
+               else let (s:_) = ss in do
+      modify tail
+      return $ case (ct,snd s) of
+        (CatchVerb, Verb t) -> Right (t :-: Nil)
+        (CatchAny, Verb t) -> Right (t :-: Nil)
+        (CatchPrep, Prep t) -> Right (t :-: Nil)
+        (CatchAny, Prep t) -> Right (t :-: Nil)
+        (CatchNoun, Noun t) -> Right (t :-: Nil)
+        (CatchAny, Noun t) -> Right (t :-: Nil)
+        (CatchAdj, Adj t) -> Right (t :-: Nil)
+        (CatchAny, Adj t) -> Right (t :-: Nil)
+        (CatchOrdn i, Ordn j t) -> if i == j then Right (t :-: Nil) else Left $ Unint 0 ("Ordinal #"++show j++" found, but ordinal #"++show i++" expected.")
+        (CatchAny, Ordn _ t) -> Right (t :-: Nil)
+        (CatchFixe, Fixe t) -> Right (t :-: Nil)
+        (CatchAny, Fixe t) -> Right (t :-: Nil)
+        (CatchSkilln, Skilln t) -> Right (t :-: Nil)
+        (CatchAny, Skilln t) -> Right (t :-: Nil)
+        (CatchUnint, Unintellegible t) -> Right (t :-: Nil)
+        (CatchAny, Unintellegible t) -> Right (t :-: Nil)
+        (ct,t) -> Left $ Unint 0 ("Token \""++show t++"\" found, but "++verbosemask ct++" expected.")
+  verbosemask CatchVerb = "verb"
+  verbosemask CatchPrep = "preposition"
+  verbosemask CatchNoun = "simple noun"
+  verbosemask CatchAdj = "adjective"
+  verbosemask (CatchOrdn i) = "token expressing ordinal #"++show i
+  verbosemask CatchFixe = "fix expression"
+  verbosemask CatchSkilln = "skill name"
+  verbosemask CatchUnint = "unclassified token (blame the dungeon's author!)"
+  verbosemask CatchAny = "token"
+
+instance CallMask CatchOrd (Cons Int Nil) where
+  usemask CatchOrd = do
+    ss <- get
+    if null ss then unint "End of input reached, but ordinal number expected."
+               else let (s:_) = ss in do
+      modify tail
+      case snd s of
+        Ordn i _ -> return $ Right (i :-: Nil)
+        t -> unint ("Token \""++show t++"\" found, but ordinal number expected.")
+  verbosemask CatchOrd = "ordinal number"
+
+instance CallMask CatchToken (Cons Token Nil) where
+  usemask CatchToken = do
+    ss <- get
+    if null ss then unint "End of line reached, but token expected."
+               else modify tail >> return (Right (snd (head ss) :-: Nil))
+  usemask CatchNounc = do
+    ss <- get
+    case mergeNoun ss of
+      Left e -> return $ Left e
+      Right (t,xs) -> do put xs; return $ Right (t :-: Nil)
+  verbosemask CatchToken = "token"
+  verbosemask CatchNounc = "noun"
+
+instance CallMask CatchObj (Cons (Titled ObjectState) Nil) where
+  usemask k = do
+    ss <- get
+    as <- lift $ case k of
+      AvailableObject -> availableObjects
+      SeenObject -> seenObjects
+      CarriedObject -> carriedObjects
+    case mergeNoun ss of
+      Left e -> return $ Left e
+      Right (t,xs) -> do
+        put xs
+        case getObject' as t of
+          Found x -> return $ Right (Titled (show t) x :-: Nil)
+          TooMany -> return $ Left $ Unint 100 (show t++" matches on multiple objects. Please be more precise or add an ordinal number.")
+          NoneFound -> return $ Left $ Unint 100 $ case k of
+            AvailableObject -> "I neither carry nor see any "++show t
+            SeenObject -> "I can't see any "++show t
+            CarriedObject -> "I don't carry any "++show t
+  verbosemask AvailableObject = "available object"
+  verbosemask SeenObject = "seen object"
+  verbosemask CarriedObject = "carried object"
+
+instance CallMask Remaining (Cons [String] Nil) where
+  usemask Remaining = do
+    ss <- get
+    put []
+    return $ Right (map fst ss :-: Nil)
+  verbosemask _ = "anything"
+
+instance CallMask Nil Nil where
+  usemask Nil = return $ Right Nil
+  verbosemask _ = "end of mask"
+
+instance (CallMask x r,CallMask xs rs,Append r rs rx) => CallMask (Cons x xs) rx where
+  usemask (x :-: xs) = do
+    l1 <- usemask x
+    case l1 of
+      Left e -> return $ Left e
+      Right l1 -> do
+        l2 <- usemask xs
+        case l2 of
+          Left (Unint x s) -> return $ Left $ Unint (x+1) s
+          Left e -> return $ Left e
+          Right l2 -> return $ Right $ tappend l1 l2
+  verbosemask (x :-: xs) = verbosemask x ++ ", then " ++ verbosemask xs
+
+-- | Use a mask on a list of tokens
+processMask' :: CallMask m r => m -> [(String,Token)] -> DungeonM (Either ReError r)
+processMask' m s = evalStateT (usemask m) s
+
+-- | Use a mask on a list of tokens and tuplify the result. Dispatch errors to the underlying monad.
+processMask :: (Append m (Cons EnsureLineEnd Nil) s,CallMask s r, Append r Nil r, Tuplify r t) => m -> [String] -> DungeonM t
+processMask m s = do
+  ss <- mapM lookupVocab s
+  mr <- processMask' (tappend m (EnsureLineEnd :-: Nil)) $ zip s ss
+  case mr of
+    Left _ -> throwError UnintellegibleError
+    Right r -> return $ tuplify r
+
+-- | Try to use a mask on a list of tokens.
+tryMask :: (Append m (Cons EnsureLineEnd Nil) s,Append r Nil r, CallMask s r) => m -> [String] -> DungeonM (Either ReError r)
+tryMask m s = do
+  ss <- mapM lookupVocab s
+  mr <- processMask' (tappend m (EnsureLineEnd :-: Nil)) $ zip s ss
+  return mr
+
+-- | Token is adjective?
+isAdj (Adj _) = True
+isAdj _ = False
+
+-- | Token is noun?
+isNoun (Noun _) = True
+isNoun _ = False
+
+-- | Merge nouns and adjectives to a complex noun
+mergeNoun :: [(String,Token)] -> Either ReError (Token,[(String,Token)])
+mergeNoun [] = Left $ Unint 5 "End of input reached, but noun expected."
+mergeNoun ts@((_,Noun s):_) =
+  let as = takeWhile (\(_,t) -> isAdj t || isNoun t) ts
+  in Right (Nounc (map fst $ init as) Nothing (fst $ last as), drop (length as) ts)
+mergeNoun ts@((_,Adj s):_) =
+  let as = takeWhile (\(_,t) -> isAdj t || isNoun t) ts
+  in Right (Nounc (map fst $ init as) Nothing (fst $ last as), drop (length as) ts)
+mergeNoun (o@(_,Ordn i _):ts) =
+  let as = takeWhile (\(_,t) -> isAdj t || isNoun t) ts
+  in case as of
+    [] -> Left $ Unint 0 "Sole ordinal number found, but noun expected."
+    _ ->  Right (Nounc (map fst $ init as) (Just i) (fst $ last as), drop (length as) ts)
+mergeNoun (o:_) = Left $ Unint 0 ("Token \""++show (snd o)++"\" found, but noun expected.")
+
+getObject' :: [ObjectState] -> Token -> GetterResponse
+getObject' os (Nounc as i n) =
+  let ns1 = filter (elem n . objectNamesOf) os
+      ns2 = foldr (\a ns -> filter (elem a . objectAttributesOf) ns) ns1 as
+  in case ns2 of
+    [] -> NoneFound
+    xs -> case i of
+      Nothing -> case xs of
+        [x] -> Found x
+        _ -> TooMany
+      Just idx -> if idx > length xs then NoneFound
+                                     else Found (xs !! (idx-1))
+
+availableObjects :: (MonadRoom m,MonadPlayer m) => m [ObjectState]
+availableObjects = do
+  rs <- getRoomState
+  ps <- getPlayerState
+  return (avlInorder (roomObjectsOf rs) ++ avlInorder (playerInventoryOf ps))
+
+carriedObjects :: MonadPlayer m => m [ObjectState]
+carriedObjects = liftM (avlInorder.playerInventoryOf) getPlayerState
+
+seenObjects :: MonadRoom m => m [ObjectState]
+seenObjects = liftM (avlInorder.roomObjectsOf) getRoomState
+
+-- | Typeclass for evaluation result predicate masks
+class PredMask rm im where
+  usepmask :: rm -> im -> ChattyDungeonM (Maybe ReError)
+
+instance PredMask Nil Nil where
+  usepmask Nil Nil = return Nothing
+
+instance (PredMask r i,PredMask rs is) => PredMask (Cons r rs) (Cons i is) where
+  usepmask (r :-: rs) (i :-: is) = do
+    usepmask r i >>= \case
+      Nothing -> usepmask rs is
+      Just (Unint i s) -> return $ Just $ Unint (i+1) s
+
+instance PredMask (x -> Bool, String) x where
+  usepmask (r,fs) i = case r i of
+    True -> return Nothing
+    False -> unintp fs
+
+instance PredMask (x -> Maybe ReError) x where
+  usepmask f i = return $ f i
+
+instance PredMask (x -> PrerequisiteBox, String) x where
+  usepmask (p,fs) i = runPrerequisite (p i) >>= \case
+    True -> return Nothing
+    False -> unintp fs
+
+instance PredMask String String where
+  usepmask s i = case s == i of
+    True -> return Nothing
+    False -> unintp ("Token \""++i++"\" expected, but \""++s++"\" found.")
+
+instance PredMask Ignore a where
+  usepmask Ignore _ = return Nothing
+
+instance PredMask Feature (Titled ObjectState) where
+  usepmask f (Titled n i) = case elem f $ avlInorder $ objectFeaturesOf i of
+    True -> return Nothing
+    False -> unintp $  case f of
+      Damagable -> n++" may not be damaged."
+      Acquirable -> n++" may not be acquired."
+      Usable -> "You don't know how to use "++n
+      Drinkable -> "You can't drink "++n
+      Eatable -> "You can't eat "++n
+      Mobile -> n++" may not move."
+      _ -> n++" does not possess the required feature."
+
+-- | Typeclass for evaluation result post-processing masks
+class PostMask pm im rm | pm im -> rm where
+  usepost :: pm -> im -> ChattyDungeonM rm
+
+instance PostMask Nil Nil Nil where
+  usepost Nil Nil = return Nil
+
+instance (PostMask m i r, PostMask ms is rs, Append r rs rx) => PostMask (Cons m ms) (Cons i is) rx where
+  usepost (m :-: ms) (i :-: is) = do
+    b <- usepost m i
+    bs <- usepost ms is
+    return $ tappend b bs
+
+instance PostMask Ignore a Nil where
+  usepost Ignore a = return Nil
+
+instance PostMask (a -> b) a (Cons b Nil) where
+  usepost f a = return (f a :-: Nil)
+
+instance PostMask (a -> b) (Titled a) (Cons b Nil) where
+  usepost f (Titled _ a) = return (f a :-: Nil)
+
+instance PostMask Pass a (Cons a Nil) where
+  usepost _ a = return (a :-: Nil)
+
+-- | Typeclass for evaluation result combi masks
+class CombiMask cm rm pm pom | cm rm -> pm pom where
+  ctopred :: cm -> rm -> pm
+  ctopost :: cm -> rm -> pom
+
+instance CombiMask Nil Nil Nil Nil where
+  ctopred Nil _ = Nil
+  ctopost Nil _ = Nil
+
+instance (CombiMask m i p po, CombiMask ms is ps pos) => CombiMask (Cons m ms) (Cons i is) (Cons p ps) (Cons po pos) where
+  ctopred (m :-: ms) _ = ctopred m (undefined :: i) :-: ctopred ms (undefined :: is)
+  ctopost (m :-: ms) _ = ctopost m (undefined :: i) :-: ctopost ms (undefined :: is)
+
+instance CombiMask Ignore a Ignore Ignore where
+  ctopred Ignore _ = Ignore
+  ctopost Ignore _ = Ignore
+
+instance CombiMask (a -> Maybe b, String) a (a -> Bool,String) (a -> b) where
+  ctopred (f,s) _ = (isJust . f,s)
+  ctopost (f,_) _ = unJust . f where unJust (Just j) = j
+
+instance CombiMask (a -> Either ReError b) a (a -> Maybe ReError) (a -> b) where
+  ctopred f _ = (eitherToMaybe . f)
+    where eitherToMaybe (Right _) = Nothing
+          eitherToMaybe (Left e) = Just e
+  ctopost f _ = unRight . f
+    where unRight (Right x) = x
+
+instance CombiMask Pass a Ignore Pass where
+  ctopred _ _ = Ignore
+  ctopost _ _ = Pass
+</pre></br><h2>printed</h2></br><pre>{-# LANGUAGE MultiParamTypeClasses, FunctionalDependencies, FlexibleInstances, UndecidableInstances, RankNTypes, FlexibleContexts, LambdaCase, ScopedTypeVariables, ConstraintKinds #-}
+
+{-
+  This module is part of Antisplice.
+  Copyleft (c) 2014 Marvin Cohrs
+
+  All wrongs reversed. Sharing is an act of love, not crime.
+  Please share Antisplice with everyone you like.
+
+  Antisplice is free software: you can redistribute it and/or modify
+  it under the terms of the GNU Affero General Public License as published by
+  the Free Software Foundation, either version 3 of the License, or
+  (at your option) any later version.
+
+  Antisplice is distributed in the hope that it will be useful,
+  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+  GNU Affero General Public License for more details.
+
+  You should have received a copy of the GNU Affero General Public License
+  along with Antisplice. If not, see <http://www.gnu.org/licenses/>.
+-}
+
+-- | Provides a powerful language for user input evaluation
+module Game.Antisplice.Call (
+  -- * Using call masks
+  processMask,
+  tryMask,
+  -- * Mask classes
+  CallMask (..),
+  PredMask (..),
+  PostMask (..),
+  CombiMask (..),
+  -- * Mask segments
+  EnsureLineEnd (..),
+  CatchByType (..),
+  CatchToken (..),
+  CatchOrd (..),
+  Remaining (..),
+  CatchObj (..),
+  Which (..),
+  Optional (..),
+  Ignore (..),
+  Pass (..)
+  ) where
+
+import Control.Monad
+import Control.Monad.State
+import Control.Monad.Identity
+import Control.Monad.Error.Class
+import Data.Either
+import Data.List
+import Data.Maybe
+import Game.Antisplice.Errors
+import Game.Antisplice.Monad.Dungeon
+import Game.Antisplice.Monad.Vocab
+import Data.Chatty.AVL
+import Data.Chatty.BST
+import Data.Chatty.Hetero
+
+unint :: Monad m => String -> m (Either ReError a)
+unint = return . Left . Unint 0
+
+unintp :: Monad m => String -> m (Maybe ReError)
+unintp = return . Just . Unint 200
+
+-- | Typeclass for input masks (either single modules or lists of modules)
+class CallMask cm l | cm -> l where
+  usemask :: (MonadRoom m,MonadPlayer m) => cm -> StateT [(String,Token)] m (Either ReError l)
+  verbosemask :: cm -> String
+
+-- | Ensures that the end of the input is reached
+data EnsureLineEnd = EnsureLineEnd
+-- | Catches the string of a token matching the given token type
+data CatchByType = CatchVerb | CatchPrep | CatchNoun | CatchAdj | CatchOrdn Int | CatchFixe | CatchSkilln | CatchUnint | CatchAny
+-- | Catches an entire token
+data CatchToken = CatchToken | CatchNounc
+-- | Catches the number of an Ordn token
+data CatchOrd = CatchOrd
+-- | Catches the remaining part of the line
+data Remaining = Remaining
+-- | Catches an available, carried or seen object
+data CatchObj = AvailableObject | SeenObject | CarriedObject
+-- | Provide multiple alternatives and catch the first matching one as well as its result
+data Which a = Which [a]
+-- | Provide an optional mask part
+data Optional a = Optional a
+-- | Ignore a token or result
+data Ignore = Ignore
+-- | Pass-through a result
+data Pass = Pass
+
+firstSeq :: Monad m => (a -> m (Either ReError b)) -> [a] -> m (Either ReError (a,b))
+firstSeq _ [] = return $ Left $ Unint (-1) "You'll never see this error."
+firstSeq f (p:ps) = f p >>= 
+  Left (Unint i s) -> firstSeq f ps >>= 
+    Left (Unint i2 s2)
+      | i2 < i -> return $ Left $ Unint i s
+      | otherwise -> return $ Left $ Unint i2 s2
+  Left (Forward s) -> return $ Left $ Forward s
+  Right k -> return $ Right (p,k)
+
+instance (CallMask a ar, IntoMaybe ar am,Append am Nil am) => CallMask (Optional a) am where
+  usemask (Optional a) = do
+    usemask a >>= 
+      Left _ -> return $ Right $ tnothing (undefined :: ar)
+      Right k -> return $ Right $ tjust k
+  verbosemask (Optional a) = "optionally [" ++ verbosemask a ++ "]"
+
+instance (CallMask a r,Append (Cons a Nil) r ar) => CallMask (Which a) ar where
+  usemask (Which []) = do
+    ss <- get
+    case ss of
+      [] -> unint "Couldn't match empty choice (Which []) with end of input. This is the dungeon writer's fault, you should blame him."
+      (s,_):_ -> unint ("Couldn't match empty choice (Which []) with word \""++s++"\". This is the dungeon writer's fault, you should blame him.")
+  usemask (Which ps) = do
+    ss <- get
+    if null ss then unint ("End of input reached, but one of the following expected: " ++ concat (intersperse " or " $ map verbosemask ps))
+               else let (s:_) = ss in do
+      firstSeq usemask ps >>= 
+        Left e -> return $ Left e
+        Right (k,r) -> return $ Right (tappend (k :-: Nil) r)
+  verbosemask (Which []) = "empty choice (you should blame the dungeon writer)"
+  verbosemask (Which ps) = concat $ intersperse "or" $ map verbosemask ps
+
+instance CallMask Token Nil where
+  usemask t = do
+    ss <- get
+    if null ss then unint ("End of input reached, but token \""++show t++"\" expected.")
+               else let (s:_) = ss in
+      if snd s == t then modify tail >> return (Right Nil) else unint ("Token \""++show (snd s)++"\" found, but token \""++show t++"\" expected.")
+  verbosemask = show
+
+instance CallMask Ignore Nil where
+  usemask t = do
+    ss <- get
+    if null ss then unint "End of input reached, but any token expected."
+      else modify tail >> return (Right Nil)
+  verbosemask _ = "any token"
+
+instance CallMask String Nil where
+  usemask t = do
+    ss <- get
+    if null ss then unint ("End of input reached, but token \""++t++"\" expected.")
+               else let (s:_) =ss in
+      if fst s == t then modify tail >> return (Right Nil)
+      else unint ("Token \""++show (snd s)++"\" found, but \""++t++"\" expected.")
+  verbosemask = show
+
+instance CallMask EnsureLineEnd Nil where
+  usemask EnsureLineEnd = do
+    s <- get
+    if null s then return (Right Nil) else unint ("End of input expected, but token \""++show (snd $ head s)++"\" found.")
+  verbosemask _ = "end of input"
+
+instance CallMask CatchByType (Cons String Nil) where
+  usemask ct = do
+    ss <- get
+    if null ss then unint ("End of input reached, but \""++verbosemask ct++"\" expected.")
+               else let (s:_) = ss in do
+      modify tail
+      return $ case (ct,snd s) of
+        (CatchVerb, Verb t) -> Right (t :-: Nil)
+        (CatchAny, Verb t) -> Right (t :-: Nil)
+        (CatchPrep, Prep t) -> Right (t :-: Nil)
+        (CatchAny, Prep t) -> Right (t :-: Nil)
+        (CatchNoun, Noun t) -> Right (t :-: Nil)
+        (CatchAny, Noun t) -> Right (t :-: Nil)
+        (CatchAdj, Adj t) -> Right (t :-: Nil)
+        (CatchAny, Adj t) -> Right (t :-: Nil)
+        (CatchOrdn i, Ordn j t) -> if i == j then Right (t :-: Nil) else Left $ Unint 0 ("Ordinal #"++show j++" found, but ordinal #"++show i++" expected.")
+        (CatchAny, Ordn _ t) -> Right (t :-: Nil)
+        (CatchFixe, Fixe t) -> Right (t :-: Nil)
+        (CatchAny, Fixe t) -> Right (t :-: Nil)
+        (CatchSkilln, Skilln t) -> Right (t :-: Nil)
+        (CatchAny, Skilln t) -> Right (t :-: Nil)
+        (CatchUnint, Unintellegible t) -> Right (t :-: Nil)
+        (CatchAny, Unintellegible t) -> Right (t :-: Nil)
+        (ct,t) -> Left $ Unint 0 ("Token \""++show t++"\" found, but "++verbosemask ct++" expected.")
+  verbosemask CatchVerb = "verb"
+  verbosemask CatchPrep = "preposition"
+  verbosemask CatchNoun = "simple noun"
+  verbosemask CatchAdj = "adjective"
+  verbosemask (CatchOrdn i) = "token expressing ordinal #"++show i
+  verbosemask CatchFixe = "fix expression"
+  verbosemask CatchSkilln = "skill name"
+  verbosemask CatchUnint = "unclassified token (blame the dungeon's author!)"
+  verbosemask CatchAny = "token"
+
+instance CallMask CatchOrd (Cons Int Nil) where
+  usemask CatchOrd = do
+    ss <- get
+    if null ss then unint "End of input reached, but ordinal number expected."
+               else let (s:_) = ss in do
+      modify tail
+      case snd s of
+        Ordn i _ -> return $ Right (i :-: Nil)
+        t -> unint ("Token \""++show t++"\" found, but ordinal number expected.")
+  verbosemask CatchOrd = "ordinal number"
+
+instance CallMask CatchToken (Cons Token Nil) where
+  usemask CatchToken = do
+    ss <- get
+    if null ss then unint "End of line reached, but token expected."
+               else modify tail >> return (Right (snd (head ss) :-: Nil))
+  usemask CatchNounc = do
+    ss <- get
+    case mergeNoun ss of
+      Left e -> return $ Left e
+      Right (t,xs) -> do put xs; return $ Right (t :-: Nil)
+  verbosemask CatchToken = "token"
+  verbosemask CatchNounc = "noun"
+
+instance CallMask CatchObj (Cons (Titled ObjectState) Nil) where
+  usemask k = do
+    ss <- get
+    as <- lift $ case k of
+      AvailableObject -> availableObjects
+      SeenObject -> seenObjects
+      CarriedObject -> carriedObjects
+    case mergeNoun ss of
+      Left e -> return $ Left e
+      Right (t,xs) -> do
+        put xs
+        case getObject' as t of
+          Found x -> return $ Right (Titled (show t) x :-: Nil)
+          TooMany -> return $ Left $ Unint 100 (show t++" matches on multiple objects. Please be more precise or add an ordinal number.")
+          NoneFound -> return $ Left $ Unint 100 $ case k of
+            AvailableObject -> "I neither carry nor see any "++show t
+            SeenObject -> "I can't see any "++show t
+            CarriedObject -> "I don't carry any "++show t
+  verbosemask AvailableObject = "available object"
+  verbosemask SeenObject = "seen object"
+  verbosemask CarriedObject = "carried object"
+
+instance CallMask Remaining (Cons [String] Nil) where
+  usemask Remaining = do
+    ss <- get
+    put []
+    return $ Right (map fst ss :-: Nil)
+  verbosemask _ = "anything"
+
+instance CallMask Nil Nil where
+  usemask Nil = return $ Right Nil
+  verbosemask _ = "end of mask"
+
+instance (CallMask x r,CallMask xs rs,Append r rs rx) => CallMask (Cons x xs) rx where
+  usemask (x :-: xs) = do
+    l1 <- usemask x
+    case l1 of
+      Left e -> return $ Left e
+      Right l1 -> do
+        l2 <- usemask xs
+        case l2 of
+          Left (Unint x s) -> return $ Left $ Unint (x+1) s
+          Left e -> return $ Left e
+          Right l2 -> return $ Right $ tappend l1 l2
+  verbosemask (x :-: xs) = verbosemask x ++ ", then " ++ verbosemask xs
+
+-- | Use a mask on a list of tokens
+processMask' :: CallMask m r => m -> [(String,Token)] -> DungeonM (Either ReError r)
+processMask' m s = evalStateT (usemask m) s
+
+-- | Use a mask on a list of tokens and tuplify the result. Dispatch errors to the underlying monad.
+processMask :: (Append m (Cons EnsureLineEnd Nil) s,CallMask s r, Append r Nil r, Tuplify r t) => m -> [String] -> DungeonM t
+processMask m s = do
+  ss <- mapM lookupVocab s
+  mr <- processMask' (tappend m (EnsureLineEnd :-: Nil)) $ zip s ss
+  case mr of
+    Left _ -> throwError UnintellegibleError
+    Right r -> return $ tuplify r
+
+-- | Try to use a mask on a list of tokens.
+tryMask :: (Append m (Cons EnsureLineEnd Nil) s,Append r Nil r, CallMask s r) => m -> [String] -> DungeonM (Either ReError r)
+tryMask m s = do
+  ss <- mapM lookupVocab s
+  mr <- processMask' (tappend m (EnsureLineEnd :-: Nil)) $ zip s ss
+  return mr
+
+-- | Token is adjective?
+isAdj (Adj _) = True
+isAdj _ = False
+
+-- | Token is noun?
+isNoun (Noun _) = True
+isNoun _ = False
+
+-- | Merge nouns and adjectives to a complex noun
+mergeNoun :: [(String,Token)] -> Either ReError (Token,[(String,Token)])
+mergeNoun [] = Left $ Unint 5 "End of input reached, but noun expected."
+mergeNoun ts@((_,Noun s):_) =
+  let as = takeWhile (\(_,t) -> isAdj t || isNoun t) ts
+  in Right (Nounc (map fst $ init as) Nothing (fst $ last as), drop (length as) ts)
+mergeNoun ts@((_,Adj s):_) =
+  let as = takeWhile (\(_,t) -> isAdj t || isNoun t) ts
+  in Right (Nounc (map fst $ init as) Nothing (fst $ last as), drop (length as) ts)
+mergeNoun (o@(_,Ordn i _):ts) =
+  let as = takeWhile (\(_,t) -> isAdj t || isNoun t) ts
+  in case as of
+    [] -> Left $ Unint 0 "Sole ordinal number found, but noun expected."
+    _ ->  Right (Nounc (map fst $ init as) (Just i) (fst $ last as), drop (length as) ts)
+mergeNoun (o:_) = Left $ Unint 0 ("Token \""++show (snd o)++"\" found, but noun expected.")
+
+getObject' :: [ObjectState] -> Token -> GetterResponse
+getObject' os (Nounc as i n) =
+  let ns1 = filter (elem n . objectNamesOf) os
+      ns2 = foldr (\a ns -> filter (elem a . objectAttributesOf) ns) ns1 as
+  in case ns2 of
+    [] -> NoneFound
+    xs -> case i of
+      Nothing -> case xs of
+        [x] -> Found x
+        _ -> TooMany
+      Just idx -> if idx > length xs then NoneFound
+                                     else Found (xs !! (idx-1))
+
+availableObjects :: (MonadRoom m,MonadPlayer m) => m [ObjectState]
+availableObjects = do
+  rs <- getRoomState
+  ps <- getPlayerState
+  return (avlInorder (roomObjectsOf rs) ++ avlInorder (playerInventoryOf ps))
+
+carriedObjects :: MonadPlayer m => m [ObjectState]
+carriedObjects = liftM (avlInorder.playerInventoryOf) getPlayerState
+
+seenObjects :: MonadRoom m => m [ObjectState]
+seenObjects = liftM (avlInorder.roomObjectsOf) getRoomState
+
+-- | Typeclass for evaluation result predicate masks
+class PredMask rm im where
+  usepmask :: rm -> im -> ChattyDungeonM (Maybe ReError)
+
+instance PredMask Nil Nil where
+  usepmask Nil Nil = return Nothing
+
+instance (PredMask r i,PredMask rs is) => PredMask (Cons r rs) (Cons i is) where
+  usepmask (r :-: rs) (i :-: is) = do
+    usepmask r i >>= 
+      Nothing -> usepmask rs is
+      Just (Unint i s) -> return $ Just $ Unint (i+1) s
+
+instance PredMask (x -> Bool, String) x where
+  usepmask (r,fs) i = case r i of
+    True -> return Nothing
+    False -> unintp fs
+
+instance PredMask (x -> Maybe ReError) x where
+  usepmask f i = return $ f i
+
+instance PredMask (x -> PrerequisiteBox, String) x where
+  usepmask (p,fs) i = runPrerequisite (p i) >>= 
+    True -> return Nothing
+    False -> unintp fs
+
+instance PredMask String String where
+  usepmask s i = case s == i of
+    True -> return Nothing
+    False -> unintp ("Token \""++i++"\" expected, but \""++s++"\" found.")
+
+instance PredMask Ignore a where
+  usepmask Ignore _ = return Nothing
+
+instance PredMask Feature (Titled ObjectState) where
+  usepmask f (Titled n i) = case elem f $ avlInorder $ objectFeaturesOf i of
+    True -> return Nothing
+    False -> unintp $  case f of
+      Damagable -> n++" may not be damaged."
+      Acquirable -> n++" may not be acquired."
+      Usable -> "You don't know how to use "++n
+      Drinkable -> "You can't drink "++n
+      Eatable -> "You can't eat "++n
+      Mobile -> n++" may not move."
+      _ -> n++" does not possess the required feature."
+
+-- | Typeclass for evaluation result post-processing masks
+class PostMask pm im rm | pm im -> rm where
+  usepost :: pm -> im -> ChattyDungeonM rm
+
+instance PostMask Nil Nil Nil where
+  usepost Nil Nil = return Nil
+
+instance (PostMask m i r, PostMask ms is rs, Append r rs rx) => PostMask (Cons m ms) (Cons i is) rx where
+  usepost (m :-: ms) (i :-: is) = do
+    b <- usepost m i
+    bs <- usepost ms is
+    return $ tappend b bs
+
+instance PostMask Ignore a Nil where
+  usepost Ignore a = return Nil
+
+instance PostMask (a -> b) a (Cons b Nil) where
+  usepost f a = return (f a :-: Nil)
+
+instance PostMask (a -> b) (Titled a) (Cons b Nil) where
+  usepost f (Titled _ a) = return (f a :-: Nil)
+
+instance PostMask Pass a (Cons a Nil) where
+  usepost _ a = return (a :-: Nil)
+
+-- | Typeclass for evaluation result combi masks
+class CombiMask cm rm pm pom | cm rm -> pm pom where
+  ctopred :: cm -> rm -> pm
+  ctopost :: cm -> rm -> pom
+
+instance CombiMask Nil Nil Nil Nil where
+  ctopred Nil _ = Nil
+  ctopost Nil _ = Nil
+
+instance (CombiMask m i p po, CombiMask ms is ps pos) => CombiMask (Cons m ms) (Cons i is) (Cons p ps) (Cons po pos) where
+  ctopred (m :-: ms) _ = ctopred m (undefined :: i) :-: ctopred ms (undefined :: is)
+  ctopost (m :-: ms) _ = ctopost m (undefined :: i) :-: ctopost ms (undefined :: is)
+
+instance CombiMask Ignore a Ignore Ignore where
+  ctopred Ignore _ = Ignore
+  ctopost Ignore _ = Ignore
+
+instance CombiMask (a -> Maybe b, String) a (a -> Bool,String) (a -> b) where
+  ctopred (f,s) _ = (isJust . f,s)
+  ctopost (f,_) _ = unJust . f where unJust (Just j) = j
+
+instance CombiMask (a -> Either ReError b) a (a -> Maybe ReError) (a -> b) where
+  ctopred f _ = (eitherToMaybe . f)
+    where eitherToMaybe (Right _) = Nothing
+          eitherToMaybe (Left e) = Just e
+  ctopost f _ = unRight . f
+    where unRight (Right x) = x
+
+instance CombiMask Pass a Ignore Pass where
+  ctopred _ _ = Ignore
+  ctopost _ _ = Pass
+
+</pre>

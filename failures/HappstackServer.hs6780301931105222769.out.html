@@ -1,0 +1,358 @@
+<a href="Happstack.hs585640194937186357.out.html">prev</a></br><a href="failures.html">home</a></br><a href="Has.hs823378840143542612.out.html">next</a></br></br><pre>12c12
+< import "mtl" Control.Monad.State
+---
+> import  Control.Monad.State
+175a176
+> 
+</pre></br><h2>original</h2></br><pre>-- code structure written by John MacFarlane,
+-- I filled in some missing pieces and make it compile.
+
+{-# LANGUAGE PackageImports #-}
+{-# LANGUAGE OverloadedStrings #-}
+
+
+module Hack2.Handler.HappstackServer (run, runWithConfig, ServerConf(..), appToServerPart) where
+
+
+import Control.Arrow ((>>>))
+import "mtl" Control.Monad.State
+import Data.Char
+import Data.Default
+import Data.List
+import Data.Maybe
+import qualified Hack2 as Hack2
+import Happstack.Server.SimpleHTTP as Happstack hiding (port, escape)
+import Network.URI (escapeURIString, isAllowedInURI)
+import Control.Applicative
+
+import qualified Data.ByteString.Char8 as S
+import qualified Data.ByteString.Lazy.Char8 as L
+
+import qualified Data.Map as M
+import qualified Happstack.Server.SimpleHTTP as H
+
+
+-- enum helper start
+import qualified Data.ByteString.Char8 as Strict
+import qualified Data.ByteString.Lazy.Char8 as B
+
+import qualified Data.Enumerator.Binary as EB
+import qualified Data.Enumerator.List as EL
+
+import Data.Enumerator (run_, enumList, Enumerator, ($$))
+
+fromEnumerator :: Monad m => Enumerator Strict.ByteString m B.ByteString -> m B.ByteString
+fromEnumerator m = run_ $ m $$ EB.consume
+
+toEnumerator :: Monad m => B.ByteString -> Enumerator Strict.ByteString m a
+toEnumerator = enumList 1 . B.toChunks
+-- enum helper end
+
+
+data ServerConf = ServerConf { port :: Int, serverName :: L.ByteString }
+  deriving (Show)
+
+instance Default ServerConf where
+  def = ServerConf { port = 3000, serverName = "localhost"}
+
+runWithConfig :: ServerConf -> Hack2.Application -> IO ()
+runWithConfig conf = simpleHTTP nullConf { H.port = port conf } . appToServerPart conf
+
+run :: Hack2.Application -> IO ()
+run = runWithConfig def
+
+appToServerPart :: ServerConf -> Hack2.Application -> ServerPart (Happstack.Response)
+appToServerPart conf app = askRq >>= \req -> liftIO $ (app $ reqToEnv req) >>= hackRToServerPartR
+  where
+    reqToEnv req =
+      def
+        { Hack2.requestMethod   = convertRequestMethod $ rqMethod req
+        , Hack2.scriptName      = S.empty
+        , Hack2.pathInfo        = S.pack $ escape $ "/" ++ (intercalate "/" $ rqPaths req)
+        , Hack2.queryString     = S.pack $ escape $ dropWhile (== '?') $ rqQuery req
+        , Hack2.serverName      = l2s $ serverName conf
+        , Hack2.serverPort      = (snd $ rqPeer req)
+        , Hack2.httpHeaders     = headersToHttp (rqHeaders req)
+        , Hack2.hackInput       = Hack2.HackEnumerator $ toEnumerator $ (\(Body x) -> x) (rqBody req)
+        , Hack2.hackHeaders     = [("RemoteHost", S.pack $ fst $ rqPeer req)]
+        }
+
+    escape = escapeURIString isAllowedInURI
+
+    convertRequestMethod Happstack.OPTIONS     =     Hack2.OPTIONS
+    convertRequestMethod Happstack.GET         =     Hack2.GET
+    convertRequestMethod Happstack.HEAD        =     Hack2.HEAD
+    convertRequestMethod Happstack.POST        =     Hack2.POST
+    convertRequestMethod Happstack.PUT         =     Hack2.PUT
+    convertRequestMethod Happstack.DELETE      =     Hack2.DELETE
+    convertRequestMethod Happstack.TRACE       =     Hack2.TRACE
+    convertRequestMethod Happstack.CONNECT     =     Hack2.CONNECT
+
+
+headersToHttp :: Headers -> [(S.ByteString, S.ByteString)]
+headersToHttp = M.toList >>> map snd >>> map headerToPair
+  where
+    headerToPair (HeaderPair k v) =
+      (S.pack $ normalizeHeader $ S.unpack k, S.intercalate " " v)
+
+hackRToServerPartR :: Hack2.Response -> IO Happstack.Response
+hackRToServerPartR r = do
+  body_bytestring <- fromEnumerator $ Hack2.unHackEnumerator $ Hack2.body r
+  return $
+    Happstack.Response
+      { rsCode      = Hack2.status r
+      , rsHeaders   = httpToHeaders $ Hack2.headers r
+      , rsFlags     = RsFlags {rsfContentLength = False}
+      , rsBody      = body_bytestring
+      , rsValidator = Nothing
+      }
+
+l2s :: L.ByteString -> S.ByteString
+l2s = S.concat . L.toChunks
+
+s2l :: S.ByteString -> L.ByteString
+s2l = L.fromChunks . return
+
+httpToHeaders :: [(S.ByteString, S.ByteString)] -> Headers
+httpToHeaders = map pairToHeader >>> M.fromList
+  where
+    pairToHeader (k,v) =
+      ((S.pack $ map toLower $ S.unpack k), HeaderPair (k) [v])
+
+
+-- happstack converts all request header to lowercase ...
+-- so we need to convert it back ...
+normalizeHeader :: String -> String
+normalizeHeader s = fromMaybe s $ find (map toLower >>> (== s) ) headerList
+
+headerList :: [String]
+headerList =
+  [ "Cache-Control"
+  , "Connection"
+  , "Date"
+  , "Pragma"
+  , "Transfer-Encoding"
+  , "Upgrade"
+  , "Via"
+  , "Accept"
+  , "Accept-Charset"
+  , "Accept-Encoding"
+  , "Accept-Language"
+  , "Authorization"
+  , "Cookie"
+  , "Expect"
+  , "From"
+  , "Host"
+  , "If-Modified-Since"
+  , "If-Match"
+  , "If-None-Match"
+  , "If-Range"
+  , "If-Unmodified-Since"
+  , "Max-Forwards"
+  , "Proxy-Authorization"
+  , "Range"
+  , "Referer"
+  , "User-Agent"
+  , "Age"
+  , "Location"
+  , "Proxy-Authenticate"
+  , "Public"
+  , "Retry-After"
+  , "Server"
+  , "Set-Cookie"
+  , "TE"
+  , "Trailer"
+  , "Vary"
+  , "Warning"
+  , "WWW-Authenticate"
+  , "Allow"
+  , "Content-Base"
+  , "Content-Encoding"
+  , "Content-Language"
+  , "Content-Length"
+  , "Content-Location"
+  , "Content-MD5"
+  , "Content-Range"
+  , "Content-Type"
+  , "ETag"
+  , "Expires"
+  , "Last-Modified"
+  , "Content-Transfer-Encodeing"
+  ]
+</pre></br><h2>printed</h2></br><pre>-- code structure written by John MacFarlane,
+-- I filled in some missing pieces and make it compile.
+
+{-# LANGUAGE PackageImports #-}
+{-# LANGUAGE OverloadedStrings #-}
+
+
+module Hack2.Handler.HappstackServer (run, runWithConfig, ServerConf(..), appToServerPart) where
+
+
+import Control.Arrow ((>>>))
+import  Control.Monad.State
+import Data.Char
+import Data.Default
+import Data.List
+import Data.Maybe
+import qualified Hack2 as Hack2
+import Happstack.Server.SimpleHTTP as Happstack hiding (port, escape)
+import Network.URI (escapeURIString, isAllowedInURI)
+import Control.Applicative
+
+import qualified Data.ByteString.Char8 as S
+import qualified Data.ByteString.Lazy.Char8 as L
+
+import qualified Data.Map as M
+import qualified Happstack.Server.SimpleHTTP as H
+
+
+-- enum helper start
+import qualified Data.ByteString.Char8 as Strict
+import qualified Data.ByteString.Lazy.Char8 as B
+
+import qualified Data.Enumerator.Binary as EB
+import qualified Data.Enumerator.List as EL
+
+import Data.Enumerator (run_, enumList, Enumerator, ($$))
+
+fromEnumerator :: Monad m => Enumerator Strict.ByteString m B.ByteString -> m B.ByteString
+fromEnumerator m = run_ $ m $$ EB.consume
+
+toEnumerator :: Monad m => B.ByteString -> Enumerator Strict.ByteString m a
+toEnumerator = enumList 1 . B.toChunks
+-- enum helper end
+
+
+data ServerConf = ServerConf { port :: Int, serverName :: L.ByteString }
+  deriving (Show)
+
+instance Default ServerConf where
+  def = ServerConf { port = 3000, serverName = "localhost"}
+
+runWithConfig :: ServerConf -> Hack2.Application -> IO ()
+runWithConfig conf = simpleHTTP nullConf { H.port = port conf } . appToServerPart conf
+
+run :: Hack2.Application -> IO ()
+run = runWithConfig def
+
+appToServerPart :: ServerConf -> Hack2.Application -> ServerPart (Happstack.Response)
+appToServerPart conf app = askRq >>= \req -> liftIO $ (app $ reqToEnv req) >>= hackRToServerPartR
+  where
+    reqToEnv req =
+      def
+        { Hack2.requestMethod   = convertRequestMethod $ rqMethod req
+        , Hack2.scriptName      = S.empty
+        , Hack2.pathInfo        = S.pack $ escape $ "/" ++ (intercalate "/" $ rqPaths req)
+        , Hack2.queryString     = S.pack $ escape $ dropWhile (== '?') $ rqQuery req
+        , Hack2.serverName      = l2s $ serverName conf
+        , Hack2.serverPort      = (snd $ rqPeer req)
+        , Hack2.httpHeaders     = headersToHttp (rqHeaders req)
+        , Hack2.hackInput       = Hack2.HackEnumerator $ toEnumerator $ (\(Body x) -> x) (rqBody req)
+        , Hack2.hackHeaders     = [("RemoteHost", S.pack $ fst $ rqPeer req)]
+        }
+
+    escape = escapeURIString isAllowedInURI
+
+    convertRequestMethod Happstack.OPTIONS     =     Hack2.OPTIONS
+    convertRequestMethod Happstack.GET         =     Hack2.GET
+    convertRequestMethod Happstack.HEAD        =     Hack2.HEAD
+    convertRequestMethod Happstack.POST        =     Hack2.POST
+    convertRequestMethod Happstack.PUT         =     Hack2.PUT
+    convertRequestMethod Happstack.DELETE      =     Hack2.DELETE
+    convertRequestMethod Happstack.TRACE       =     Hack2.TRACE
+    convertRequestMethod Happstack.CONNECT     =     Hack2.CONNECT
+
+
+headersToHttp :: Headers -> [(S.ByteString, S.ByteString)]
+headersToHttp = M.toList >>> map snd >>> map headerToPair
+  where
+    headerToPair (HeaderPair k v) =
+      (S.pack $ normalizeHeader $ S.unpack k, S.intercalate " " v)
+
+hackRToServerPartR :: Hack2.Response -> IO Happstack.Response
+hackRToServerPartR r = do
+  body_bytestring <- fromEnumerator $ Hack2.unHackEnumerator $ Hack2.body r
+  return $
+    Happstack.Response
+      { rsCode      = Hack2.status r
+      , rsHeaders   = httpToHeaders $ Hack2.headers r
+      , rsFlags     = RsFlags {rsfContentLength = False}
+      , rsBody      = body_bytestring
+      , rsValidator = Nothing
+      }
+
+l2s :: L.ByteString -> S.ByteString
+l2s = S.concat . L.toChunks
+
+s2l :: S.ByteString -> L.ByteString
+s2l = L.fromChunks . return
+
+httpToHeaders :: [(S.ByteString, S.ByteString)] -> Headers
+httpToHeaders = map pairToHeader >>> M.fromList
+  where
+    pairToHeader (k,v) =
+      ((S.pack $ map toLower $ S.unpack k), HeaderPair (k) [v])
+
+
+-- happstack converts all request header to lowercase ...
+-- so we need to convert it back ...
+normalizeHeader :: String -> String
+normalizeHeader s = fromMaybe s $ find (map toLower >>> (== s) ) headerList
+
+headerList :: [String]
+headerList =
+  [ "Cache-Control"
+  , "Connection"
+  , "Date"
+  , "Pragma"
+  , "Transfer-Encoding"
+  , "Upgrade"
+  , "Via"
+  , "Accept"
+  , "Accept-Charset"
+  , "Accept-Encoding"
+  , "Accept-Language"
+  , "Authorization"
+  , "Cookie"
+  , "Expect"
+  , "From"
+  , "Host"
+  , "If-Modified-Since"
+  , "If-Match"
+  , "If-None-Match"
+  , "If-Range"
+  , "If-Unmodified-Since"
+  , "Max-Forwards"
+  , "Proxy-Authorization"
+  , "Range"
+  , "Referer"
+  , "User-Agent"
+  , "Age"
+  , "Location"
+  , "Proxy-Authenticate"
+  , "Public"
+  , "Retry-After"
+  , "Server"
+  , "Set-Cookie"
+  , "TE"
+  , "Trailer"
+  , "Vary"
+  , "Warning"
+  , "WWW-Authenticate"
+  , "Allow"
+  , "Content-Base"
+  , "Content-Encoding"
+  , "Content-Language"
+  , "Content-Length"
+  , "Content-Location"
+  , "Content-MD5"
+  , "Content-Range"
+  , "Content-Type"
+  , "ETag"
+  , "Expires"
+  , "Last-Modified"
+  , "Content-Transfer-Encodeing"
+  ]
+
+</pre>

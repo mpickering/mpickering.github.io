@@ -1,0 +1,354 @@
+<a href="Interpreter.hs1622650073984943658.out.html">prev</a></br><a href="failures.html">home</a></br><a href="Interval.hs12648177091998097157.out.html">next</a></br></br><pre>31d30
+< foreign import ccall unsafe ccw_d      ∷ Double → Double → Double → Double → Double → Double → Ptr Double → IO ()
+32d30
+< foreign import ccall unsafe incircle_d ∷ Double → Double → Double → Double → Double → Double → Double → Double → Ptr Double → IO ()
+33c31
+< foreign import ccall unsafe cintt_d    ∷ Double → Double → Double → Ptr Double → IO CInt
+---
+> foreign import ccall unsafe ccw_d      :: Double -> Double -> Double -> Double -> Double -> Double -> Ptr Double -> IO ()
+33a32
+> foreign import ccall unsafe incircle_d :: Double -> Double -> Double -> Double -> Double -> Double -> Double -> Double -> Ptr Double -> IO ()
+33a33
+> foreign import ccall unsafe cintt_d    :: Double -> Double -> Double -> Ptr Double -> IO CInt
+47c47
+< cinttSSE ∷ Real a => a → a → a → Maybe Bool
+---
+> cinttSSE :: Real a => a -> a -> a -> Maybe Bool
+53c53
+< ccwSSE ∷ Real a => Vector2 a → Vector2 a → Vector2 a → Maybe Ordering
+---
+> ccwSSE :: Real a => Vector2 a -> Vector2 a -> Vector2 a -> Maybe Ordering
+61c61
+< incircleSSE ∷ Real a => (Vector2 a, Vector2 a, Vector2 a) → Vector2 a → Maybe Ordering
+---
+> incircleSSE :: Real a => (Vector2 a, Vector2 a, Vector2 a) -> Vector2 a -> Maybe Ordering
+68c68
+< cinttSSE_F ∷ Float → Float → Float → Maybe Bool
+---
+> cinttSSE_F :: Float -> Float -> Float -> Maybe Bool
+71c71
+< ccwSSE_F ∷ Vector2 Float → Vector2 Float → Vector2 Float → Maybe Ordering
+---
+> ccwSSE_F :: Vector2 Float -> Vector2 Float -> Vector2 Float -> Maybe Ordering
+76c76
+< incircleSSE_F ∷ (Vector2 Float, Vector2 Float, Vector2 Float) → Vector2 Float → Maybe Ordering
+---
+> incircleSSE_F :: (Vector2 Float, Vector2 Float, Vector2 Float) -> Vector2 Float -> Maybe Ordering
+84c84
+< cinttSSE_D ∷ Double → Double → Double → Maybe Bool
+---
+> cinttSSE_D :: Double -> Double -> Double -> Maybe Bool
+87c87
+<     | otherwise = unsafePerformIO $ allocaArray 2 $ \out → do
+---
+>     | otherwise = unsafePerformIO $ allocaArray 2 $ \out -> do
+89c89
+<                          x ← cintt_d l h p out
+---
+>                          x <- cintt_d l h p out
+95c95
+<                              [hi,lo] ← peekArray 2 out
+---
+>                              [hi,lo] <- peekArray 2 out
+105d104
+< incircleSSE_D ∷ (Vector2 Double, Vector2 Double, Vector2 Double) → Vector2 Double → Maybe Ordering
+106c105
+< incircleSSE_D ((x1,y1), (x2,y2), (x3,y3)) (x4,y4) = unsafePerformIO $ allocaArray 2 $ \out → do
+---
+> incircleSSE_D :: (Vector2 Double, Vector2 Double, Vector2 Double) -> Vector2 Double -> Maybe Ordering
+106a106
+> incircleSSE_D ((x1,y1), (x2,y2), (x3,y3)) (x4,y4) = unsafePerformIO $ allocaArray 2 $ \out -> do
+113c113
+<            [hi,lo] ← peekArray 2 out
+---
+>            [hi,lo] <- peekArray 2 out
+123d122
+< ccwSSE_D ∷ Vector2 Double → Vector2 Double → Vector2 Double → Maybe Ordering
+124c123
+< ccwSSE_D (x1,y1) (x2,y2) (x3,y3) = unsafePerformIO $ allocaArray 2 $ \out → do
+---
+> ccwSSE_D :: Vector2 Double -> Vector2 Double -> Vector2 Double -> Maybe Ordering
+124a124
+> ccwSSE_D (x1,y1) (x2,y2) (x3,y3) = unsafePerformIO $ allocaArray 2 $ \out -> do
+130c130
+<            [hi,lo] ← peekArray 2 out
+---
+>            [hi,lo] <- peekArray 2 out
+137a138
+> 
+</pre></br><h2>original</h2></br><pre>{-# LANGUAGE UnicodeSyntax, ForeignFunctionInterface #-}
+{-# CFILES Numeric/Geometric/Predicates/Interval/IntervalFilterPrimitives.c #-}
+
+{- | These predicates use hardware (SSE) based interval arithmetic based on the algorithms presented in (1).
+     They are intended to be used as a filter before resorting to slower exact computation.
+
+     * These routines return Nothing if the result could not be determined
+       exactly from the calculated interval.
+
+     * Each call toggles the SSE rounding mode to -infinity and back.
+
+     * All computations are done in Double precision.
+
+     * Rewrite specializations are in place for Float and Double that greatly reduce allocations compared to Real.
+       Using anything but Float or Double is probably absurdly slow thanks to realToFrac.
+
+     * For performance reasons we assume CDouble == Double.
+
+    (1) BRANIMIR LAMBOV. \"INTERVAL ARITHMETIC USING SSE-2\"
+-}
+
+module Numeric.Geometric.Predicates.Interval (cinttSSE, incircleSSE, ccwSSE) where
+import Numeric.Geometric.Primitives
+import System.IO.Unsafe
+import Foreign.Ptr
+import Foreign.Marshal
+import Foreign.C.Types
+import Control.Exception (assert)
+import GHC.Float
+
+foreign import ccall unsafe ccw_d      ∷ Double → Double → Double → Double → Double → Double → Ptr Double → IO ()
+foreign import ccall unsafe incircle_d ∷ Double → Double → Double → Double → Double → Double → Double → Double → Ptr Double → IO ()
+foreign import ccall unsafe cintt_d    ∷ Double → Double → Double → Ptr Double → IO CInt
+
+
+{-# RULES "incircleSSE/Double" incircleSSE = incircleSSE_D #-}
+{-# RULES "cinttSSE/Double"    cinttSSE    = cinttSSE_D #-}
+{-# RULES "ccwSSE/Double"      ccwSSE      = ccwSSE_D #-}
+
+{-# RULES "incircleSSE/Float" incircleSSE = incircleSSE_F #-}
+{-# RULES "cinttSSE/Float"    cinttSSE    = cinttSSE_F #-}
+{-# RULES "ccwSSE/Float"      ccwSSE      = ccwSSE_F #-}
+
+
+-- | Test if p3 is within the closed interval specified by [p1,p2]
+
+cinttSSE ∷ Real a => a → a → a → Maybe Bool
+cinttSSE a b c = cinttSSE_D (realToFrac a) (realToFrac b) (realToFrac c)
+
+-- | Counter-clockwise orientation test. Classifies p3 in relation to the line formed by p1 and p2.
+--   Result: LT=Right, GT=Left, EQ=Coincident
+
+ccwSSE ∷ Real a => Vector2 a → Vector2 a → Vector2 a → Maybe Ordering
+ccwSSE (xa,ya) (xb,yb) (xc,yc) = ccwSSE_D (realToFrac xa,realToFrac ya)
+                                          (realToFrac xb,realToFrac yb)
+                                          (realToFrac xc,realToFrac yc)
+
+-- | Test the relation of a point to the circle formed by (p1..p3). (p1..p3) must be in counterclockwise order.
+--   Result: GT=inside, EQ=border, LT=outside
+
+incircleSSE ∷ Real a => (Vector2 a, Vector2 a, Vector2 a) → Vector2 a → Maybe Ordering
+incircleSSE ((x1,y1), (x2,y2), (x3,y3)) (x4,y4) = incircleSSE_D ((realToFrac x1, realToFrac y1),
+                                                                 (realToFrac x2, realToFrac y2),
+                                                                 (realToFrac x3, realToFrac y3))
+                                                                 (realToFrac x4, realToFrac y4)
+---------------------------------------------------
+
+cinttSSE_F ∷ Float → Float → Float → Maybe Bool
+cinttSSE_F a b c = cinttSSE_D (float2Double a) (float2Double b) (float2Double c)
+
+ccwSSE_F ∷ Vector2 Float → Vector2 Float → Vector2 Float → Maybe Ordering
+ccwSSE_F (xa,ya) (xb,yb) (xc,yc) = ccwSSE_D (float2Double xa,float2Double ya)
+                                            (float2Double xb,float2Double yb)
+                                            (float2Double xc,float2Double yc)
+
+incircleSSE_F ∷ (Vector2 Float, Vector2 Float, Vector2 Float) → Vector2 Float → Maybe Ordering
+incircleSSE_F ((x1,y1), (x2,y2), (x3,y3)) (x4,y4) = incircleSSE_D ((float2Double x1, float2Double y1),
+                                                                   (float2Double x2, float2Double y2),
+                                                                   (float2Double x3, float2Double y3))
+                                                                   (float2Double x4, float2Double y4)
+
+---------------------------------------------------
+
+cinttSSE_D ∷ Double → Double → Double → Maybe Bool
+cinttSSE_D l h p
+    | l == h  = Just (p == l)
+    | otherwise = unsafePerformIO $ allocaArray 2 $ \out → do
+
+                         x ← cintt_d l h p out
+
+                         if x == 0
+                           then return Nothing
+                           else do
+
+                             [hi,lo] ← peekArray 2 out
+                             return . assert (lo <= hi) $ check lo hi
+    where
+      check lo hi
+          | hi < 0             = Just False
+          | lo > 1             = Just False
+          | lo >= 0 && hi <= 1 = Just True
+          | otherwise          = Nothing
+
+
+incircleSSE_D ∷ (Vector2 Double, Vector2 Double, Vector2 Double) → Vector2 Double → Maybe Ordering
+incircleSSE_D ((x1,y1), (x2,y2), (x3,y3)) (x4,y4) = unsafePerformIO $ allocaArray 2 $ \out → do
+
+           incircle_d x1 y1
+                      x2 y2
+                      x3 y3
+                      x4 y4 out
+
+           [hi,lo] ← peekArray 2 out
+           return . assert (lo <= hi) $ check lo hi
+    where
+      check lo hi
+          | lo > 0             = Just GT
+          | hi < 0             = Just LT
+          | lo == 0 && hi == 0 = Just EQ
+          | otherwise          = Nothing
+
+
+ccwSSE_D ∷ Vector2 Double → Vector2 Double → Vector2 Double → Maybe Ordering
+ccwSSE_D (x1,y1) (x2,y2) (x3,y3) = unsafePerformIO $ allocaArray 2 $ \out → do
+
+           ccw_d x1 y1
+                 x2 y2
+                 x3 y3 out
+
+           [hi,lo] ← peekArray 2 out
+           return . assert (lo <= hi) $ check lo hi
+    where
+      check lo hi
+          | lo > 0             = Just GT
+          | hi < 0             = Just LT
+          | lo == 0 && hi == 0 = Just EQ
+          | otherwise          = Nothing
+</pre></br><h2>printed</h2></br><pre>{-# LANGUAGE UnicodeSyntax, ForeignFunctionInterface #-}
+{-# CFILES Numeric/Geometric/Predicates/Interval/IntervalFilterPrimitives.c #-}
+
+{- | These predicates use hardware (SSE) based interval arithmetic based on the algorithms presented in (1).
+     They are intended to be used as a filter before resorting to slower exact computation.
+
+     * These routines return Nothing if the result could not be determined
+       exactly from the calculated interval.
+
+     * Each call toggles the SSE rounding mode to -infinity and back.
+
+     * All computations are done in Double precision.
+
+     * Rewrite specializations are in place for Float and Double that greatly reduce allocations compared to Real.
+       Using anything but Float or Double is probably absurdly slow thanks to realToFrac.
+
+     * For performance reasons we assume CDouble == Double.
+
+    (1) BRANIMIR LAMBOV. \"INTERVAL ARITHMETIC USING SSE-2\"
+-}
+
+module Numeric.Geometric.Predicates.Interval (cinttSSE, incircleSSE, ccwSSE) where
+import Numeric.Geometric.Primitives
+import System.IO.Unsafe
+import Foreign.Ptr
+import Foreign.Marshal
+import Foreign.C.Types
+import Control.Exception (assert)
+import GHC.Float
+
+foreign import ccall unsafe ccw_d      :: Double -> Double -> Double -> Double -> Double -> Double -> Ptr Double -> IO ()
+foreign import ccall unsafe incircle_d :: Double -> Double -> Double -> Double -> Double -> Double -> Double -> Double -> Ptr Double -> IO ()
+foreign import ccall unsafe cintt_d    :: Double -> Double -> Double -> Ptr Double -> IO CInt
+
+
+{-# RULES "incircleSSE/Double" incircleSSE = incircleSSE_D #-}
+{-# RULES "cinttSSE/Double"    cinttSSE    = cinttSSE_D #-}
+{-# RULES "ccwSSE/Double"      ccwSSE      = ccwSSE_D #-}
+
+{-# RULES "incircleSSE/Float" incircleSSE = incircleSSE_F #-}
+{-# RULES "cinttSSE/Float"    cinttSSE    = cinttSSE_F #-}
+{-# RULES "ccwSSE/Float"      ccwSSE      = ccwSSE_F #-}
+
+
+-- | Test if p3 is within the closed interval specified by [p1,p2]
+
+cinttSSE :: Real a => a -> a -> a -> Maybe Bool
+cinttSSE a b c = cinttSSE_D (realToFrac a) (realToFrac b) (realToFrac c)
+
+-- | Counter-clockwise orientation test. Classifies p3 in relation to the line formed by p1 and p2.
+--   Result: LT=Right, GT=Left, EQ=Coincident
+
+ccwSSE :: Real a => Vector2 a -> Vector2 a -> Vector2 a -> Maybe Ordering
+ccwSSE (xa,ya) (xb,yb) (xc,yc) = ccwSSE_D (realToFrac xa,realToFrac ya)
+                                          (realToFrac xb,realToFrac yb)
+                                          (realToFrac xc,realToFrac yc)
+
+-- | Test the relation of a point to the circle formed by (p1..p3). (p1..p3) must be in counterclockwise order.
+--   Result: GT=inside, EQ=border, LT=outside
+
+incircleSSE :: Real a => (Vector2 a, Vector2 a, Vector2 a) -> Vector2 a -> Maybe Ordering
+incircleSSE ((x1,y1), (x2,y2), (x3,y3)) (x4,y4) = incircleSSE_D ((realToFrac x1, realToFrac y1),
+                                                                 (realToFrac x2, realToFrac y2),
+                                                                 (realToFrac x3, realToFrac y3))
+                                                                 (realToFrac x4, realToFrac y4)
+---------------------------------------------------
+
+cinttSSE_F :: Float -> Float -> Float -> Maybe Bool
+cinttSSE_F a b c = cinttSSE_D (float2Double a) (float2Double b) (float2Double c)
+
+ccwSSE_F :: Vector2 Float -> Vector2 Float -> Vector2 Float -> Maybe Ordering
+ccwSSE_F (xa,ya) (xb,yb) (xc,yc) = ccwSSE_D (float2Double xa,float2Double ya)
+                                            (float2Double xb,float2Double yb)
+                                            (float2Double xc,float2Double yc)
+
+incircleSSE_F :: (Vector2 Float, Vector2 Float, Vector2 Float) -> Vector2 Float -> Maybe Ordering
+incircleSSE_F ((x1,y1), (x2,y2), (x3,y3)) (x4,y4) = incircleSSE_D ((float2Double x1, float2Double y1),
+                                                                   (float2Double x2, float2Double y2),
+                                                                   (float2Double x3, float2Double y3))
+                                                                   (float2Double x4, float2Double y4)
+
+---------------------------------------------------
+
+cinttSSE_D :: Double -> Double -> Double -> Maybe Bool
+cinttSSE_D l h p
+    | l == h  = Just (p == l)
+    | otherwise = unsafePerformIO $ allocaArray 2 $ \out -> do
+
+                         x <- cintt_d l h p out
+
+                         if x == 0
+                           then return Nothing
+                           else do
+
+                             [hi,lo] <- peekArray 2 out
+                             return . assert (lo <= hi) $ check lo hi
+    where
+      check lo hi
+          | hi < 0             = Just False
+          | lo > 1             = Just False
+          | lo >= 0 && hi <= 1 = Just True
+          | otherwise          = Nothing
+
+
+incircleSSE_D :: (Vector2 Double, Vector2 Double, Vector2 Double) -> Vector2 Double -> Maybe Ordering
+incircleSSE_D ((x1,y1), (x2,y2), (x3,y3)) (x4,y4) = unsafePerformIO $ allocaArray 2 $ \out -> do
+
+           incircle_d x1 y1
+                      x2 y2
+                      x3 y3
+                      x4 y4 out
+
+           [hi,lo] <- peekArray 2 out
+           return . assert (lo <= hi) $ check lo hi
+    where
+      check lo hi
+          | lo > 0             = Just GT
+          | hi < 0             = Just LT
+          | lo == 0 && hi == 0 = Just EQ
+          | otherwise          = Nothing
+
+
+ccwSSE_D :: Vector2 Double -> Vector2 Double -> Vector2 Double -> Maybe Ordering
+ccwSSE_D (x1,y1) (x2,y2) (x3,y3) = unsafePerformIO $ allocaArray 2 $ \out -> do
+
+           ccw_d x1 y1
+                 x2 y2
+                 x3 y3 out
+
+           [hi,lo] <- peekArray 2 out
+           return . assert (lo <= hi) $ check lo hi
+    where
+      check lo hi
+          | lo > 0             = Just GT
+          | hi < 0             = Just LT
+          | lo == 0 && hi == 0 = Just EQ
+          | otherwise          = Nothing
+
+</pre>

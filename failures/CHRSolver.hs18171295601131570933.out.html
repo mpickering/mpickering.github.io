@@ -1,0 +1,528 @@
+<a href="Chromaticity.hs20447473172034837525.out.html">prev</a></br><a href="failures.html">home</a></br><a href="Church.hs510616708590357944.out.html">next</a></br></br><pre>80d79
+<            foldM (\ (b,cur_tags) -> \ (a1,a2) -> do
+81d79
+<                        (b2, new_tags) <- match cur_tags a1 a2
+82c80
+<                        return (b && b2, new_tags))
+---
+>            foldM (\ (b,cur_tags) ->           -> (a1,a2) -> do
+82a81
+>                                   (b2, new_tags) <- match cur_tags a1 a2
+82a82
+>                                   return (b && b2, new_tags))
+256a257
+> 
+</pre></br><h2>original</h2></br><pre>
+
+
+{-# LANGUAGE ScopedTypeVariables, FlexibleInstances, TypeSynonymInstances, UndecidableInstances  #-}
+
+module CHRSolver where
+
+import IO
+import Monad hiding (when)
+import Control.Concurrent
+import Control.Concurrent.Chan
+import Control.Concurrent.STM
+
+import MultiSetRewrite.Base
+import MultiSetRewrite.RuleSyntax
+import MultiSetRewrite.RuleCompiler
+import MultiSetRewrite.StoreRepresentation
+
+
+-- A concurrent CHR solver built on top of multisetrewrite
+-- making use of n solver threads:
+
+-- We assume a fixed syntax of constraints
+--   C     ::=  Name Args
+--   Name ::= String
+--   Args ::= () | B | (B,B) | (B,B,B)   -- constant, unary, binary, tenary predicates
+--   B    ::= x -- variables
+--         |  i -- integers
+--         |  s -- strings
+--         |  b -- booleans
+
+
+-- Constraints are placed into a list of goals.
+-- Each solver threads checks for a goal
+-- and attempts to execute a rule based on the given goal.
+
+-- We provide also a primitive to check if rules have been
+-- exhaustively fired.
+
+
+------------------------------------------------------
+-- Boiler plate code to encode a CHR solver supporting
+-- constraints of the following form
+--   C     ::=  Name Args
+--   Name ::= String
+--   Args ::= () | B | (B,B) | (B,B,B)   -- constant, unary, binary, tenary predicates
+--   B    ::= x -- variables
+--         |  i -- integers
+--         |  s -- strings
+--         |  b -- booleans
+
+-- it's easy to support further 'primitive' types by extending
+-- the boiler plate code below.
+
+-- message types (well here constraints)
+
+data Constraint = C String [Argument]
+
+data Argument = ArgInt (L Int)
+              | ArgString (L String)
+              | ArgBool (L Bool) deriving (Eq, Show)
+
+
+-- boilerplate
+
+valHashOpMsg = HashOp {numberOfTables = 1,
+                       hashMsg = \ _ -> 1
+                      }
+
+instance Eq Constraint where
+   (==) (C s1 a1) (C s2 a2) = (s1 == s2) && (a1 == a2)
+
+instance Show Constraint
+
+instance Show a => Show (L a)
+
+instance EMatch Constraint where
+  match tags (C s1 a1) (C s2 a2) =
+         if s1 == s2 then
+           foldM (\ (b,cur_tags) -> \ (a1,a2) -> do
+                       (b2, new_tags) <- match cur_tags a1 a2
+                       return (b && b2, new_tags))
+                 (True, tags)
+                 (zip a1 a2)
+                    -- NOTE: user's responsibility to guarantee that
+                    -- number of arguments are consistent
+         else return (False, tags)
+
+instance EMatch Argument where
+  match tags (ArgInt x) (ArgInt y) = match tags x y
+  match tags (ArgBool x) (ArgBool y) = match tags x y
+  match tags (ArgString x) (ArgString y) = match tags x y
+  match tags _ _ = return (False, tags)
+
+instance EMatch Int where
+  match tags x y = return (x==y, tags)
+
+instance EMatch Bool where
+  match tags x y = return (x==y, tags)
+
+instance EMatch String where
+  match tags x y = return (x==y, tags)
+
+-- interface
+
+class Cons a where
+  cons :: String -> a -> Constraint
+
+instance CollectArgs a => Cons a where
+  cons s x = C s (collectArgs x)
+
+class CollectArgs a where
+  collectArgs :: a -> [Argument]
+
+
+instance CollectArgs () where
+   collectArgs _ = []
+
+instance CollectArgs (VAR Int) where
+   collectArgs x = [ArgInt (Var x)]
+instance CollectArgs Int where
+   collectArgs x = [ArgInt (Val x)]
+
+instance CollectArgs (VAR Bool) where
+   collectArgs x = [ArgBool (Var x)]
+instance CollectArgs Bool where
+   collectArgs x = [ArgBool (Val x)]
+
+instance CollectArgs (VAR String) where
+   collectArgs x = [ArgString (Var x)]
+instance CollectArgs String where
+   collectArgs x = [ArgString (Val x)]
+
+instance (CollectArgs a,
+          CollectArgs b) => CollectArgs (a,b) where
+   collectArgs (x,y) = (collectArgs x) ++ (collectArgs y)
+
+instance (CollectArgs a,
+          CollectArgs b,
+          CollectArgs c) => CollectArgs (a,b,c) where
+   collectArgs (x,y,z) = (collectArgs x) ++ (collectArgs y) ++ (collectArgs z)
+
+
+-----------------------------------
+-- the concurrent CHR solver
+
+type GoalBag = [Constraint]
+
+data CHRData = Data { store :: Store Constraint,
+                      goals :: TVar [Constraint],
+                      numberOfSolverThreads :: Int,
+                      inActiveThreads :: TVar Int }
+
+type ActiveConstraint = Location Constraint
+
+data CHRRules = Rules { rules :: CHR -> ActiveConstraint -> IO () }
+
+type CHR = (CHRData, CHRRules)
+
+
+-- each solverThread performs the following:
+--   check for a goal in the set of goals
+--   if none
+--    then   increment number of inactive threads
+--           suspend until set of goals become non-empty
+--           decrement number of inactive threads
+--    else store goal
+--         execute Rules given the current (active) goal
+--   start again
+
+-- We could use a bag instead of list to avoid conflicts
+-- among solver threads competing for a goal. For most cases,
+-- the main execution cost lies in the search for matching
+-- partner constraints (which will be carried out concurrently).
+-- Hence, the 'naive' list representation for goals is not a bottleneck.
+
+
+solverThread :: CHR -> IO ()
+solverThread (chr@(chrD, chrR)) =
+ let loop = do
+      r <- atomically $ do gs <- readTVar (goals chrD)
+                           case gs of
+                             (h:t) -> do writeTVar (goals chrD) t
+                                         return (Just h)
+                             [] -> return Nothing
+      case r of
+        Nothing -> do
+            atomically $ do x <- readTVar (inActiveThreads chrD)
+                            writeTVar (inActiveThreads chrD) (x+1)
+            atomically $ do g <- readTVar (goals chrD)
+                            if g == [] then retry
+                             else return ()
+            atomically $ do x <- readTVar (inActiveThreads chrD)
+                            writeTVar (inActiveThreads chrD) (x-1)
+        Just g -> do active <- addMsg (store chrD) g
+                     (rules chrR) chr active
+      loop
+  in loop
+
+
+suspendUntilRulesHaveExhaustivelyFired :: CHR -> IO ()
+suspendUntilRulesHaveExhaustivelyFired (chrD,chrR) = do
+   atomically $ do no <- readTVar (inActiveThreads chrD)
+                   if no == (numberOfSolverThreads chrD)
+                    then return ()
+                    else retry
+
+-- each constraint is added to the set of goals
+-- (which are inactive until activated by a solverThread)
+-- we can control the order in which we process goals
+-- by either stacking or queueing them
+
+stackGoal :: CHR -> Constraint -> IO ()
+stackGoal (chrD,chrR) c = do
+  atomically $ do gs <- readTVar (goals chrD)
+                  writeTVar (goals chrD) (c:gs)
+
+queueGoal :: CHR -> Constraint -> IO ()
+queueGoal (chrD,chrR) c = do
+  atomically $ do gs <- readTVar (goals chrD)
+                  writeTVar (goals chrD) (gs ++ [c])
+
+
+-------------------------------------
+-- testing
+
+ruleEx1 :: CHR -> ActiveConstraint -> IO ()
+ruleEx1 (chr@(chrD,chrR)) activeCons =
+  let prog = compileRulePattern
+               [  [ cons "A" ()] .\. [cons "B" ()]
+                        .->. putStr "F"
+               ]
+  in do res <- executeRules (store chrD) activeCons prog
+        case res of
+         Just action -> action
+         Nothing -> return ()
+
+sampleEx1 :: IO ()
+sampleEx1 = do
+  let threads = 4
+  initStore <- newStore valHashOpMsg
+  let initG  =
+             [cons "B" () | x <- [1..10]] ++ [cons "A" ()]
+
+  initGoals <- atomically $ newTVar initG
+  inActive <- atomically $ newTVar 0
+
+  let chr = (Data {store = initStore,
+                   goals = initGoals,
+                   numberOfSolverThreads = threads,
+                   inActiveThreads = inActive},
+             Rules { rules = ruleEx1 } )
+
+  mapM_ (\x -> forkIO (solverThread chr)) [1..threads]
+
+  suspendUntilRulesHaveExhaustivelyFired chr
+</pre></br><h2>printed</h2></br><pre>
+
+
+{-# LANGUAGE ScopedTypeVariables, FlexibleInstances, TypeSynonymInstances, UndecidableInstances  #-}
+
+module CHRSolver where
+
+import IO
+import Monad hiding (when)
+import Control.Concurrent
+import Control.Concurrent.Chan
+import Control.Concurrent.STM
+
+import MultiSetRewrite.Base
+import MultiSetRewrite.RuleSyntax
+import MultiSetRewrite.RuleCompiler
+import MultiSetRewrite.StoreRepresentation
+
+
+-- A concurrent CHR solver built on top of multisetrewrite
+-- making use of n solver threads:
+
+-- We assume a fixed syntax of constraints
+--   C     ::=  Name Args
+--   Name ::= String
+--   Args ::= () | B | (B,B) | (B,B,B)   -- constant, unary, binary, tenary predicates
+--   B    ::= x -- variables
+--         |  i -- integers
+--         |  s -- strings
+--         |  b -- booleans
+
+
+-- Constraints are placed into a list of goals.
+-- Each solver threads checks for a goal
+-- and attempts to execute a rule based on the given goal.
+
+-- We provide also a primitive to check if rules have been
+-- exhaustively fired.
+
+
+------------------------------------------------------
+-- Boiler plate code to encode a CHR solver supporting
+-- constraints of the following form
+--   C     ::=  Name Args
+--   Name ::= String
+--   Args ::= () | B | (B,B) | (B,B,B)   -- constant, unary, binary, tenary predicates
+--   B    ::= x -- variables
+--         |  i -- integers
+--         |  s -- strings
+--         |  b -- booleans
+
+-- it's easy to support further 'primitive' types by extending
+-- the boiler plate code below.
+
+-- message types (well here constraints)
+
+data Constraint = C String [Argument]
+
+data Argument = ArgInt (L Int)
+              | ArgString (L String)
+              | ArgBool (L Bool) deriving (Eq, Show)
+
+
+-- boilerplate
+
+valHashOpMsg = HashOp {numberOfTables = 1,
+                       hashMsg = \ _ -> 1
+                      }
+
+instance Eq Constraint where
+   (==) (C s1 a1) (C s2 a2) = (s1 == s2) && (a1 == a2)
+
+instance Show Constraint
+
+instance Show a => Show (L a)
+
+instance EMatch Constraint where
+  match tags (C s1 a1) (C s2 a2) =
+         if s1 == s2 then
+           foldM (\ (b,cur_tags) ->           -> (a1,a2) -> do
+                                  (b2, new_tags) <- match cur_tags a1 a2
+                                  return (b && b2, new_tags))
+                 (True, tags)
+                 (zip a1 a2)
+                    -- NOTE: user's responsibility to guarantee that
+                    -- number of arguments are consistent
+         else return (False, tags)
+
+instance EMatch Argument where
+  match tags (ArgInt x) (ArgInt y) = match tags x y
+  match tags (ArgBool x) (ArgBool y) = match tags x y
+  match tags (ArgString x) (ArgString y) = match tags x y
+  match tags _ _ = return (False, tags)
+
+instance EMatch Int where
+  match tags x y = return (x==y, tags)
+
+instance EMatch Bool where
+  match tags x y = return (x==y, tags)
+
+instance EMatch String where
+  match tags x y = return (x==y, tags)
+
+-- interface
+
+class Cons a where
+  cons :: String -> a -> Constraint
+
+instance CollectArgs a => Cons a where
+  cons s x = C s (collectArgs x)
+
+class CollectArgs a where
+  collectArgs :: a -> [Argument]
+
+
+instance CollectArgs () where
+   collectArgs _ = []
+
+instance CollectArgs (VAR Int) where
+   collectArgs x = [ArgInt (Var x)]
+instance CollectArgs Int where
+   collectArgs x = [ArgInt (Val x)]
+
+instance CollectArgs (VAR Bool) where
+   collectArgs x = [ArgBool (Var x)]
+instance CollectArgs Bool where
+   collectArgs x = [ArgBool (Val x)]
+
+instance CollectArgs (VAR String) where
+   collectArgs x = [ArgString (Var x)]
+instance CollectArgs String where
+   collectArgs x = [ArgString (Val x)]
+
+instance (CollectArgs a,
+          CollectArgs b) => CollectArgs (a,b) where
+   collectArgs (x,y) = (collectArgs x) ++ (collectArgs y)
+
+instance (CollectArgs a,
+          CollectArgs b,
+          CollectArgs c) => CollectArgs (a,b,c) where
+   collectArgs (x,y,z) = (collectArgs x) ++ (collectArgs y) ++ (collectArgs z)
+
+
+-----------------------------------
+-- the concurrent CHR solver
+
+type GoalBag = [Constraint]
+
+data CHRData = Data { store :: Store Constraint,
+                      goals :: TVar [Constraint],
+                      numberOfSolverThreads :: Int,
+                      inActiveThreads :: TVar Int }
+
+type ActiveConstraint = Location Constraint
+
+data CHRRules = Rules { rules :: CHR -> ActiveConstraint -> IO () }
+
+type CHR = (CHRData, CHRRules)
+
+
+-- each solverThread performs the following:
+--   check for a goal in the set of goals
+--   if none
+--    then   increment number of inactive threads
+--           suspend until set of goals become non-empty
+--           decrement number of inactive threads
+--    else store goal
+--         execute Rules given the current (active) goal
+--   start again
+
+-- We could use a bag instead of list to avoid conflicts
+-- among solver threads competing for a goal. For most cases,
+-- the main execution cost lies in the search for matching
+-- partner constraints (which will be carried out concurrently).
+-- Hence, the 'naive' list representation for goals is not a bottleneck.
+
+
+solverThread :: CHR -> IO ()
+solverThread (chr@(chrD, chrR)) =
+ let loop = do
+      r <- atomically $ do gs <- readTVar (goals chrD)
+                           case gs of
+                             (h:t) -> do writeTVar (goals chrD) t
+                                         return (Just h)
+                             [] -> return Nothing
+      case r of
+        Nothing -> do
+            atomically $ do x <- readTVar (inActiveThreads chrD)
+                            writeTVar (inActiveThreads chrD) (x+1)
+            atomically $ do g <- readTVar (goals chrD)
+                            if g == [] then retry
+                             else return ()
+            atomically $ do x <- readTVar (inActiveThreads chrD)
+                            writeTVar (inActiveThreads chrD) (x-1)
+        Just g -> do active <- addMsg (store chrD) g
+                     (rules chrR) chr active
+      loop
+  in loop
+
+
+suspendUntilRulesHaveExhaustivelyFired :: CHR -> IO ()
+suspendUntilRulesHaveExhaustivelyFired (chrD,chrR) = do
+   atomically $ do no <- readTVar (inActiveThreads chrD)
+                   if no == (numberOfSolverThreads chrD)
+                    then return ()
+                    else retry
+
+-- each constraint is added to the set of goals
+-- (which are inactive until activated by a solverThread)
+-- we can control the order in which we process goals
+-- by either stacking or queueing them
+
+stackGoal :: CHR -> Constraint -> IO ()
+stackGoal (chrD,chrR) c = do
+  atomically $ do gs <- readTVar (goals chrD)
+                  writeTVar (goals chrD) (c:gs)
+
+queueGoal :: CHR -> Constraint -> IO ()
+queueGoal (chrD,chrR) c = do
+  atomically $ do gs <- readTVar (goals chrD)
+                  writeTVar (goals chrD) (gs ++ [c])
+
+
+-------------------------------------
+-- testing
+
+ruleEx1 :: CHR -> ActiveConstraint -> IO ()
+ruleEx1 (chr@(chrD,chrR)) activeCons =
+  let prog = compileRulePattern
+               [  [ cons "A" ()] .\. [cons "B" ()]
+                        .->. putStr "F"
+               ]
+  in do res <- executeRules (store chrD) activeCons prog
+        case res of
+         Just action -> action
+         Nothing -> return ()
+
+sampleEx1 :: IO ()
+sampleEx1 = do
+  let threads = 4
+  initStore <- newStore valHashOpMsg
+  let initG  =
+             [cons "B" () | x <- [1..10]] ++ [cons "A" ()]
+
+  initGoals <- atomically $ newTVar initG
+  inActive <- atomically $ newTVar 0
+
+  let chr = (Data {store = initStore,
+                   goals = initGoals,
+                   numberOfSolverThreads = threads,
+                   inActiveThreads = inActive},
+             Rules { rules = ruleEx1 } )
+
+  mapM_ (\x -> forkIO (solverThread chr)) [1..threads]
+
+  suspendUntilRulesHaveExhaustivelyFired chr
+
+</pre>

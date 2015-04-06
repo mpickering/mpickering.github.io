@@ -1,0 +1,480 @@
+<a href="ErrorTrace.hs8235644401115438165.out.html">prev</a></br><a href="failures.html">home</a></br><a href="Eval.hs1108728549685118024.out.html">next</a></br></br><pre>40d39
+< foreign import ccall unsafe ccw_essa ∷ Float → Float → Float → Float → Float → Float → IO CInt
+41d39
+< foreign import ccall unsafe incircle_essa ∷ Float → Float → Float → Float → Float → Float → Float → Float → IO CInt
+42d39
+< foreign import ccall unsafe intersect2D_essa ∷ Float → Float → Float → Float → Float → Float → Float → Float → Ptr CInt → Ptr CInt → IO CInt
+43c40
+< foreign import ccall unsafe cintt_essa ∷ Float → Float → Float → IO CInt
+---
+> foreign import ccall unsafe ccw_essa :: Float -> Float -> Float -> Float -> Float -> Float -> IO CInt
+43a41
+> foreign import ccall unsafe incircle_essa :: Float -> Float -> Float -> Float -> Float -> Float -> Float -> Float -> IO CInt
+43a42
+> foreign import ccall unsafe intersect2D_essa :: Float -> Float -> Float -> Float -> Float -> Float -> Float -> Float -> Ptr CInt -> Ptr CInt -> IO CInt
+43a43
+> foreign import ccall unsafe cintt_essa :: Float -> Float -> Float -> IO CInt
+45d44
+< foreign import ccall unsafe split_double ∷ Double → Ptr Double → Ptr Double → IO ()
+46c45
+< foreign import ccall unsafe essa_double ∷ Ptr Double → CSize → IO CInt
+---
+> foreign import ccall unsafe split_double :: Double -> Ptr Double -> Ptr Double -> IO ()
+46a46
+> foreign import ccall unsafe essa_double :: Ptr Double -> CSize -> IO CInt
+50c50
+< cinttESSA ∷ Float → Float → Float → Bool
+---
+> cinttESSA :: Float -> Float -> Float -> Bool
+55c55
+< intersectESSA_SS2D ∷ LineSegment (Vector2 Float) → LineSegment (Vector2 Float) → LineIntersection
+---
+> intersectESSA_SS2D :: LineSegment (Vector2 Float) -> LineSegment (Vector2 Float) -> LineIntersection
+57d56
+<          alloca (\ip1p →
+58d56
+<          alloca (\ip2p → do
+59c57
+<                          x ← intersect2D_essa xi yi xj yj xk yk xl yl ip1p ip2p
+---
+>          alloca (\ip1p ->
+59a58
+>          alloca (\ip2p -> do
+59a59
+>                          x <- intersect2D_essa xi yi xj yj xk yk xl yl ip1p ip2p
+61d60
+<                            0 → return NINP
+62d60
+<                            1 → return Coincident
+63d60
+<                            2 → return Parallel
+64d60
+<                            3 → do
+65d60
+<                                ip1 ← ip <$> peek ip1p
+66c61
+<                                ip2 ← ip <$> peek ip2p
+---
+>                            0 -> return NINP
+66a62
+>                            1 -> return Coincident
+66a63
+>                            2 -> return Parallel
+66a64
+>                            3 -> do
+66a65
+>                                ip1 <- ip <$> peek ip1p
+66a66
+>                                ip2 <- ip <$> peek ip2p
+69c69
+<                            _ → error "intersectESSA_SS2D: unexpected result from FFI"
+---
+>                            _ -> error "intersectESSA_SS2D: unexpected result from FFI"
+91c91
+< ccwESSA ∷ Vector2 Float → Vector2 Float → Vector2 Float → Ordering
+---
+> ccwESSA :: Vector2 Float -> Vector2 Float -> Vector2 Float -> Ordering
+107c107
+< incircleESSA ∷ (Vector2 Float, Vector2 Float, Vector2 Float) → Vector2 Float → Ordering
+---
+> incircleESSA :: (Vector2 Float, Vector2 Float, Vector2 Float) -> Vector2 Float -> Ordering
+121c121
+< essa ∷ (Functor t, Foldable t) => t Double → Ordering
+---
+> essa :: (Functor t, Foldable t) => t Double -> Ordering
+135d134
+< splitDouble ∷ Double → (Double,Double)
+136d134
+< splitDouble a = unsafePerformIO (alloca (\xp →
+137c135
+<                                  alloca (\yp → do
+---
+> splitDouble :: Double -> (Double,Double)
+137a136
+> splitDouble a = unsafePerformIO (alloca (\xp ->
+137a137
+>                                  alloca (\yp -> do
+139d138
+<                                                x ← peek xp
+140c139
+<                                                y ← peek yp
+---
+>                                                x <- peek xp
+140a140
+>                                                y <- peek yp
+166c166
+< cast ∷ Float → Float
+---
+> cast :: Float -> Float
+169c169
+< castVector ∷ Vector2 Float → Vector2 Float
+---
+> castVector :: Vector2 Float -> Vector2 Float
+172c172
+< doubleESSA ∷ (Functor a, Foldable a) => a Double → Ordering
+---
+> doubleESSA :: (Functor a, Foldable a) => a Double -> Ordering
+177c177
+<       f = (\i p → essa_double p (fromIntegral i))
+---
+>       f = (\i p -> essa_double p (fromIntegral i))
+178a179
+> 
+</pre></br><h2>original</h2></br><pre>{-# LANGUAGE UnicodeSyntax, ForeignFunctionInterface #-}
+{-# CFILES Numeric/Geometric/Predicates/ESSA/ESSAPrimitives.c #-}
+
+{- | Hardware based, exact computation using the ESSA algorithm in double precision (1)
+
+     * We're using Float inputs on Double precision ESSA at the moment. Hopefully later we can add support for Double inputs on Quadruple ESSA
+
+     * Line intersection is based on the algorithm presented in (4)
+
+     * ccw and incircle based on (5)
+
+     * See (2) and (3) for more information on the splitDouble operation
+
+     * We assume realToFrac is broken and that CFloat == Float and CDouble == Double
+
+     (1) Helmut Ratschek, Jon Rokne. \"Exact computation of the sign of a finite sum\". Applied Mathematics and Computation, Volume 99, Issue 2-3, Pages: 99-127, ISSN:0096-3003, 1999.
+
+     (2) Siegfried M. Rump. \"High precision evaluation of nonlinear functions\"
+
+     (3) T.J. Dekker. \"A Floating-Point Technique for Extending the Available Precision\". Numerische Mathematik, 18:224-242, 1971.
+
+     (4) Marina Gavrilova, Jon Rokne. \"Reliable line segment intersection testing\"
+
+     (5) Marina Gavrilova, Helmut Ratschek and Jon Rokne. \"Exact computation of Voronoi diagram and Delaunay triangulation\"
+-}
+
+module Numeric.Geometric.Predicates.ESSA (cinttESSA, intersectESSA_SS2D, ccwESSA, incircleESSA, essa, splitDouble) where
+import Numeric.Geometric.Primitives
+
+import Data.Foldable (toList,Foldable)
+import Control.Applicative
+import Foreign.Ptr
+import Foreign.Marshal.Alloc
+import Foreign.Storable
+import Foreign.Marshal.Array
+import Foreign.C.Types
+import System.IO.Unsafe
+
+
+foreign import ccall unsafe ccw_essa ∷ Float → Float → Float → Float → Float → Float → IO CInt
+foreign import ccall unsafe incircle_essa ∷ Float → Float → Float → Float → Float → Float → Float → Float → IO CInt
+foreign import ccall unsafe intersect2D_essa ∷ Float → Float → Float → Float → Float → Float → Float → Float → Ptr CInt → Ptr CInt → IO CInt
+foreign import ccall unsafe cintt_essa ∷ Float → Float → Float → IO CInt
+
+foreign import ccall unsafe split_double ∷ Double → Ptr Double → Ptr Double → IO ()
+foreign import ccall unsafe essa_double ∷ Ptr Double → CSize → IO CInt
+
+-- | Test if p3 is within the closed interval specified by [p1,p2]
+
+cinttESSA ∷ Float → Float → Float → Bool
+cinttESSA lo hi p = (unsafePerformIO $ cintt_essa (cast lo) (cast hi) (cast p)) /= 0
+
+-- | Intersect two line segments
+
+intersectESSA_SS2D ∷ LineSegment (Vector2 Float) → LineSegment (Vector2 Float) → LineIntersection
+intersectESSA_SS2D (a,b) (c,d) = unsafePerformIO $
+         alloca (\ip1p →
+         alloca (\ip2p → do
+                         x ← intersect2D_essa xi yi xj yj xk yk xl yl ip1p ip2p
+                         case x of
+                           0 → return NINP
+                           1 → return Coincident
+                           2 → return Parallel
+                           3 → do
+                               ip1 ← ip <$> peek ip1p
+                               ip2 ← ip <$> peek ip2p
+                               return (Intersecting (ip1,ip2))
+
+                           _ → error "intersectESSA_SS2D: unexpected result from FFI"
+                ))
+
+
+    where
+      ip 0 = Endpoint0
+      ip 1 = Endpoint1
+      ip 2 = Between
+      ip _ = error "intersectESSA_SS2D: unexpected intersection result from FFI"
+
+      (xi,yi) = castVector a
+      (xj,yj) = castVector b
+      (xk,yk) = castVector c
+      (xl,yl) = castVector d
+
+
+
+{- | Counter-clockwise orientation test. Classifies p3 in relation to the line formed by p1 and p2.
+
+     Result: LT=Right, GT=Left, EQ=Coincident
+-}
+
+ccwESSA ∷ Vector2 Float → Vector2 Float → Vector2 Float → Ordering
+ccwESSA p1 p2 p3 = compare (unsafePerformIO $ ccw_essa x1 y1 x2 y2 x3 y3) 0
+    where
+      (x1,y1) = castVector p1
+      (x2,y2) = castVector p2
+      (x3,y3) = castVector p3
+
+
+
+{- | Test the relation of a point to the circle formed by (p1..p3). (p1..p3) must be in counterclockwise order.
+
+     Result: GT=inside, EQ=border, LT=outside.
+
+     Note: this is the sum of 192 multiplications.
+-}
+
+incircleESSA ∷ (Vector2 Float, Vector2 Float, Vector2 Float) → Vector2 Float → Ordering
+incircleESSA (a,b,c) d = compare (unsafePerformIO (incircle_essa xi yi xj yj xk yk xl yl)) 0
+
+    where
+      (xi,yi) = castVector a
+      (xj,yj) = castVector b
+      (xk,yk) = castVector c
+      (xl,yl) = castVector d
+
+
+{- | Compute the exact sign of the sum of the input sequence.
+     It is the caller's responsibility to ensure that the inputs have not suffered a loss of precision.
+-}
+
+essa ∷ (Functor t, Foldable t) => t Double → Ordering
+essa = doubleESSA . fmap realToFrac -- maybe support 128bit quad later
+
+
+
+{- | Split a 53 bit double into two 26 bit halves so that: @ let (lo,hi) = splitDouble x in x == lo + hi @
+
+     The trick is that the sign is used as the additional bit.
+
+     Note that the multiplication of two 26-bit floating point numbers is exact in double precision.
+
+     If you're new to this function you may want to read paper (5), as using this function properly may be trickier than it seems.
+-}
+
+splitDouble ∷ Double → (Double,Double)
+splitDouble a = unsafePerformIO (alloca (\xp →
+                                 alloca (\yp → do
+                                               split_double a xp yp
+                                               x ← peek xp
+                                               y ← peek yp
+                                               return (x,y))))
+
+
+
+
+{--
+
+foreign import ccall unsafe slope_essa ∷ Double → Double → Double → Double → IO CInt
+
+slopeESSA ∷ LineSegment (Vector2 Float) → Slope
+slopeESSA (a,b) = case unsafePerformIO $ slope_essa x1 y1 x2 y2 of
+                                0 → ZeroSlope
+                                1 → UndefinedSlope
+                                2 → NegativeSlope
+                                3 → PositiveSlope
+
+    where
+      (x1,y1) = castVector a
+      (x2,y2) = castVector b
+
+--}
+
+----------------------------------------------------
+
+-- At the time realToFrac couldn't be trusted to do the right thing
+cast ∷ Float → Float
+cast = id
+
+castVector ∷ Vector2 Float → Vector2 Float
+castVector = id
+
+doubleESSA ∷ (Functor a, Foldable a) => a Double → Ordering
+doubleESSA xs = compare v 0
+
+    where
+      v = unsafePerformIO $ withArrayLen (toList xs) f
+      f = (\i p → essa_double p (fromIntegral i))
+
+</pre></br><h2>printed</h2></br><pre>{-# LANGUAGE UnicodeSyntax, ForeignFunctionInterface #-}
+{-# CFILES Numeric/Geometric/Predicates/ESSA/ESSAPrimitives.c #-}
+
+{- | Hardware based, exact computation using the ESSA algorithm in double precision (1)
+
+     * We're using Float inputs on Double precision ESSA at the moment. Hopefully later we can add support for Double inputs on Quadruple ESSA
+
+     * Line intersection is based on the algorithm presented in (4)
+
+     * ccw and incircle based on (5)
+
+     * See (2) and (3) for more information on the splitDouble operation
+
+     * We assume realToFrac is broken and that CFloat == Float and CDouble == Double
+
+     (1) Helmut Ratschek, Jon Rokne. \"Exact computation of the sign of a finite sum\". Applied Mathematics and Computation, Volume 99, Issue 2-3, Pages: 99-127, ISSN:0096-3003, 1999.
+
+     (2) Siegfried M. Rump. \"High precision evaluation of nonlinear functions\"
+
+     (3) T.J. Dekker. \"A Floating-Point Technique for Extending the Available Precision\". Numerische Mathematik, 18:224-242, 1971.
+
+     (4) Marina Gavrilova, Jon Rokne. \"Reliable line segment intersection testing\"
+
+     (5) Marina Gavrilova, Helmut Ratschek and Jon Rokne. \"Exact computation of Voronoi diagram and Delaunay triangulation\"
+-}
+
+module Numeric.Geometric.Predicates.ESSA (cinttESSA, intersectESSA_SS2D, ccwESSA, incircleESSA, essa, splitDouble) where
+import Numeric.Geometric.Primitives
+
+import Data.Foldable (toList,Foldable)
+import Control.Applicative
+import Foreign.Ptr
+import Foreign.Marshal.Alloc
+import Foreign.Storable
+import Foreign.Marshal.Array
+import Foreign.C.Types
+import System.IO.Unsafe
+
+
+foreign import ccall unsafe ccw_essa :: Float -> Float -> Float -> Float -> Float -> Float -> IO CInt
+foreign import ccall unsafe incircle_essa :: Float -> Float -> Float -> Float -> Float -> Float -> Float -> Float -> IO CInt
+foreign import ccall unsafe intersect2D_essa :: Float -> Float -> Float -> Float -> Float -> Float -> Float -> Float -> Ptr CInt -> Ptr CInt -> IO CInt
+foreign import ccall unsafe cintt_essa :: Float -> Float -> Float -> IO CInt
+
+foreign import ccall unsafe split_double :: Double -> Ptr Double -> Ptr Double -> IO ()
+foreign import ccall unsafe essa_double :: Ptr Double -> CSize -> IO CInt
+
+-- | Test if p3 is within the closed interval specified by [p1,p2]
+
+cinttESSA :: Float -> Float -> Float -> Bool
+cinttESSA lo hi p = (unsafePerformIO $ cintt_essa (cast lo) (cast hi) (cast p)) /= 0
+
+-- | Intersect two line segments
+
+intersectESSA_SS2D :: LineSegment (Vector2 Float) -> LineSegment (Vector2 Float) -> LineIntersection
+intersectESSA_SS2D (a,b) (c,d) = unsafePerformIO $
+         alloca (\ip1p ->
+         alloca (\ip2p -> do
+                         x <- intersect2D_essa xi yi xj yj xk yk xl yl ip1p ip2p
+                         case x of
+                           0 -> return NINP
+                           1 -> return Coincident
+                           2 -> return Parallel
+                           3 -> do
+                               ip1 <- ip <$> peek ip1p
+                               ip2 <- ip <$> peek ip2p
+                               return (Intersecting (ip1,ip2))
+
+                           _ -> error "intersectESSA_SS2D: unexpected result from FFI"
+                ))
+
+
+    where
+      ip 0 = Endpoint0
+      ip 1 = Endpoint1
+      ip 2 = Between
+      ip _ = error "intersectESSA_SS2D: unexpected intersection result from FFI"
+
+      (xi,yi) = castVector a
+      (xj,yj) = castVector b
+      (xk,yk) = castVector c
+      (xl,yl) = castVector d
+
+
+
+{- | Counter-clockwise orientation test. Classifies p3 in relation to the line formed by p1 and p2.
+
+     Result: LT=Right, GT=Left, EQ=Coincident
+-}
+
+ccwESSA :: Vector2 Float -> Vector2 Float -> Vector2 Float -> Ordering
+ccwESSA p1 p2 p3 = compare (unsafePerformIO $ ccw_essa x1 y1 x2 y2 x3 y3) 0
+    where
+      (x1,y1) = castVector p1
+      (x2,y2) = castVector p2
+      (x3,y3) = castVector p3
+
+
+
+{- | Test the relation of a point to the circle formed by (p1..p3). (p1..p3) must be in counterclockwise order.
+
+     Result: GT=inside, EQ=border, LT=outside.
+
+     Note: this is the sum of 192 multiplications.
+-}
+
+incircleESSA :: (Vector2 Float, Vector2 Float, Vector2 Float) -> Vector2 Float -> Ordering
+incircleESSA (a,b,c) d = compare (unsafePerformIO (incircle_essa xi yi xj yj xk yk xl yl)) 0
+
+    where
+      (xi,yi) = castVector a
+      (xj,yj) = castVector b
+      (xk,yk) = castVector c
+      (xl,yl) = castVector d
+
+
+{- | Compute the exact sign of the sum of the input sequence.
+     It is the caller's responsibility to ensure that the inputs have not suffered a loss of precision.
+-}
+
+essa :: (Functor t, Foldable t) => t Double -> Ordering
+essa = doubleESSA . fmap realToFrac -- maybe support 128bit quad later
+
+
+
+{- | Split a 53 bit double into two 26 bit halves so that: @ let (lo,hi) = splitDouble x in x == lo + hi @
+
+     The trick is that the sign is used as the additional bit.
+
+     Note that the multiplication of two 26-bit floating point numbers is exact in double precision.
+
+     If you're new to this function you may want to read paper (5), as using this function properly may be trickier than it seems.
+-}
+
+splitDouble :: Double -> (Double,Double)
+splitDouble a = unsafePerformIO (alloca (\xp ->
+                                 alloca (\yp -> do
+                                               split_double a xp yp
+                                               x <- peek xp
+                                               y <- peek yp
+                                               return (x,y))))
+
+
+
+
+{--
+
+foreign import ccall unsafe slope_essa ∷ Double → Double → Double → Double → IO CInt
+
+slopeESSA ∷ LineSegment (Vector2 Float) → Slope
+slopeESSA (a,b) = case unsafePerformIO $ slope_essa x1 y1 x2 y2 of
+                                0 → ZeroSlope
+                                1 → UndefinedSlope
+                                2 → NegativeSlope
+                                3 → PositiveSlope
+
+    where
+      (x1,y1) = castVector a
+      (x2,y2) = castVector b
+
+--}
+
+----------------------------------------------------
+
+-- At the time realToFrac couldn't be trusted to do the right thing
+cast :: Float -> Float
+cast = id
+
+castVector :: Vector2 Float -> Vector2 Float
+castVector = id
+
+doubleESSA :: (Functor a, Foldable a) => a Double -> Ordering
+doubleESSA xs = compare v 0
+
+    where
+      v = unsafePerformIO $ withArrayLen (toList xs) f
+      f = (\i p -> essa_double p (fromIntegral i))
+
+
+</pre>

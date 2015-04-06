@@ -1,0 +1,570 @@
+<a href="Compose.hs18171295601131570933.out.html">prev</a></br><a href="failures.html">home</a></br><a href="Composition.hs14153062491523252771.out.html">next</a></br></br><pre>73c73
+<     (forall a. (m (n (m (n a))) -> m (n a))) ->
+---
+>     (forall a.  m (n (m (n a))) -> m (n a) ) ->
+281a282
+> 
+</pre></br><h2>original</h2></br><pre>{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE TypeSynonymInstances #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE Rank2Types #-}
+{-# LANGUAGE OverlappingInstances #-}
+-- .$Header: c:/Source/Haskell/Wrapper/Data/Flex/RCS/Compose.hs,v 1.15 2011/03/05 00:55:46 dosuser Exp dosuser $
+module Data.Flex.Compose where
+
+import Control.Monad (liftM, liftM2, join, MonadPlus(..))
+import Control.Monad.Error (Error)
+import Control.Monad.Writer (Writer, tell, runWriter)
+
+import Data.Monoid (Monoid)
+
+import Data.Type.Apply
+import Data.Type.TList
+
+import Data.Flex.FlipT (FlipT(..))
+import Data.Flex.Monad (
+        FWMonad, FWReturn, FWBind,
+        WrapReturn(..), WrapBind(..), wrapReturn, wrapBind
+    )
+import Data.Flex.MonadPlus (FWMonadPlus,
+        FWMZero, WrapMZero(..),
+        FWMPlus, WrapMPlus(..)
+    )
+import Data.Flex.MonadTrans (FWMonadTrans, FWLift, WrapLift(..))
+import Data.Flex.Utils (inCompose)
+import Data.Flex.Wrap (FlexiWrap(..), FW)
+import Data.Flex.WrapCTC (FlexiWrapCTC(..), FWCTC, inFlexiWrapCTC2)
+
+newtype (f :. g) a = O {unO :: f (g a)}
+
+type O = (:.)
+
+inO :: (f (g a) -> f' (g' b)) -> ((f :. g) a -> (f' :. g') b)
+inO = inCompose unO O
+
+inO2 :: (f (g a) -> f' (g' b) -> f'' (g'' c)) ->
+    ((f :. g) a -> (f' :. g') b -> (f'' :. g'') c)
+inO2 = inCompose unO $ inCompose unO O
+
+flexiCompose :: s -> (forall b. b -> f b) -> g a -> FWCTC s O f g a
+flexiCompose _ f ga = FlexiWrapCTC . O $ f ga
+
+-- Jones/Duponcheel's composition utilities
+
+returnC :: (Monad m, Monad n) => a -> m (n a)
+returnC  = return . return
+
+liftMC :: (Monad f, Monad g) => (a -> b) -> (f (g a) -> f (g b))
+liftMC  = liftM . liftM
+
+open :: FWCTC t O m n a -> m (n a)
+open = unO . unFlexiWrapCTC
+
+close :: m (n a) -> FWCTC t O m n a
+close = FlexiWrapCTC . O
+
+fmapC :: (Monad f, Monad g) =>
+    (a -> b) -> (FWCTC t O f g a -> FWCTC t O f g b)
+fmapC f = close . liftMC f . open
+
+wrapM  :: (Monad m, Monad n) =>
+           (m (n (m (n a))) -> m (n a)) ->
+             (FWCTC t O m n (FWCTC t O m n a) -> FWCTC t O m n a)
+wrapM j = close . j . liftMC open . open
+
+-- and our own utility
+
+wrapFW :: (Monad m, Monad n) =>
+    (forall a. (m (n (m (n a))) -> m (n a))) ->
+    WrapBind (FWCTC t O m n)
+wrapFW j = wrapBind ((wrapM j .) . flip fmapC)
+
+-- Jones/Duponcheel's prod construction
+
+class (Monad m, Monad n) => PComposable m n where
+    prod :: n (m (n a)) -> m (n a)
+
+joinP :: PComposable m n => m (n (m (n a))) -> m (n a)
+joinP  = join . liftM prod
+
+instance Monad m => PComposable m Maybe where
+    prod (Just m) = m
+    prod Nothing  = return Nothing
+
+data FWCompP = FWCompP
+
+instance FWMonad (FWCTC (FWCompP :*: s) O m n) FWCompP
+
+instance PComposable m n =>
+    Apply (FWReturn t (O m n)) FWCompP (WrapReturn (FWCTC t O m n))
+  where
+    apply _ _ = wrapReturn (close . returnC)
+
+instance PComposable m n =>
+    Apply (FWBind t (O m n)) FWCompP (WrapBind (FWCTC t O m n))
+  where
+    apply _ _ = wrapFW joinP
+    -- apply _ _ = wrapBind ((wrapM joinP .) . flip fmapC)
+
+-- Jones/Duponcheel's dorp construction
+
+class (Monad m, Monad n) => DComposable m n where
+    dorp :: m (n (m a)) -> m (n a)
+
+joinD :: DComposable m n => m (n (m (n a))) -> m (n a)
+joinD  = liftM join . dorp
+
+data FWCompD = FWCompD
+
+instance FWMonad (FWCTC (FWCompD :*: s) O m n) FWCompD
+
+instance DComposable m n =>
+    Apply (FWReturn t (O m n)) FWCompD (WrapReturn (FWCTC t O m n))
+  where
+    apply _ _ = wrapReturn (close . returnC)
+
+instance DComposable m n =>
+    Apply (FWBind t (O m n)) FWCompD (WrapBind (FWCTC t O m n))
+  where
+    apply _ _ = wrapFW joinD
+    -- apply _ _ = wrapBind ((wrapM joinD .) . flip fmapC)
+
+instance Monad n => DComposable ((->)r) n where
+    dorp f r = f r >>= \g -> return (g r)
+          -- = [ g r | g <- f r ]
+
+-- Jones/Duponcheel's swap construction
+
+-- TODO: Left- and right-biased variants (FWCompS{L,R}, SComposable{L,R})
+-- to help reduce boiler-plate instances
+
+class (Monad m, Monad n) => SComposable m n where
+    swap :: n (m a) -> m (n a)
+
+joinS :: SComposable m n => m (n (m (n a))) -> m (n a)
+joinS  = liftM join . join . liftM swap
+
+data FWCompS = FWCompS
+
+instance FWMonad (FWCTC (FWCompS :*: s) O m n) FWCompS
+
+instance SComposable m n =>
+    Apply (FWReturn t (O m n)) FWCompS (WrapReturn (FWCTC t O m n))
+  where
+    apply _ _ = wrapReturn (close . returnC)
+
+instance SComposable m n =>
+    Apply (FWBind t (O m n)) FWCompS (WrapBind (FWCTC t O m n))
+  where
+    apply _ _ = wrapFW joinS
+    -- apply _ _ = wrapBind ((wrapM joinS .) . flip fmapC)
+
+instance Monad m => SComposable m [] where
+    swap []     = return []
+    swap (x:xs) = x       >>= \y  ->
+                  swap xs >>= \ys ->
+                  return (y:ys)
+             -- = [ y:ys | y<-x, ys<-swap xs ]
+
+instance (Monad m, Monoid s) => SComposable m (Writer s) where
+    swap wm = do
+        a <- ma
+        return $ do
+            tell s
+            return a
+      where
+        (ma, s) = runWriter wm
+    {-
+    swap (Writer (ma, s)) = ma >>= \a -> return (Writer (a, s))
+                    -- = [ Result s a | a <- ma ]
+    -}
+
+-- TODO: Generalise to ... what?
+-- MonadError e m => m
+-- (doesn't have a sufficiently powerful interface)
+instance (Monad m, Error e) => SComposable m (Either e) where
+    swap (Right m)      = liftM Right m
+    swap (Left msg) = return (Left msg)
+
+{-
+instance (Monad m, MonadError e n) => SComposable m n where
+    swap m = catchError n ...
+-}
+
+instance Monad m => SComposable m (FW t) where
+    swap = liftM FlexiWrap . unFlexiWrap
+
+instance Monad m => SComposable (FW t) m where
+    swap = FlexiWrap . liftM unFlexiWrap
+
+-- Resolve overlap
+instance SComposable (FW s) (FW t) where
+    swap = FlexiWrap . liftM unFlexiWrap
+
+instance Monoid s => SComposable (FW t) (Writer s) where
+    swap = FlexiWrap . liftM unFlexiWrap
+
+instance SComposable (FW s) [] where
+    swap = FlexiWrap . liftM unFlexiWrap
+
+instance Error e => SComposable (FW s) (Either e) where
+    swap = FlexiWrap . liftM unFlexiWrap
+
+data FWCompDefaults = FWCompDefaults
+
+-- MonadTrans
+
+data FWCompTrans = FWCompTrans
+
+instance FWMonadTrans (FWCTC (FWCompTrans :*: s) o f) FWCompTrans
+instance FWMonadTrans (FWCTC (FWCompDefaults :*: s) o f) FWCompTrans
+
+-- TODO: Applicative version?
+-- (but *Monad*Trans requires Monad)
+instance Monad m =>
+    Apply (FWLift (FWCTC t O m)) FWCompTrans (WrapLift (FWCTC t O m))
+  where
+    apply _ _ = WrapLift (FlexiWrapCTC . O . return)
+
+instance Monad m =>
+    Apply (FWLift (FWCTC t (FlipT O) m)) FWCompTrans
+        (WrapLift (FWCTC t (FlipT O) m))
+  where
+    apply _ _ = WrapLift (FlexiWrapCTC . FlipT . O . liftM return)
+
+-- --- MonadPlus
+
+data FWCompMonadPlus = FWCompMonadPlus
+data FWCompMonadPlusL = FWCompMonadPlusL
+data FWCompMonadPlusR = FWCompMonadPlusR
+
+instance FWMonadPlus (FWCTC (FWCompMonadPlusR :*: s) O m n) FWCompMonadPlusR
+instance FWMonadPlus (FWCTC (FWCompMonadPlus :*: s) O m n) FWCompMonadPlusR
+instance FWMonadPlus (FWCTC (FWCompDefaults :*: s) O m n) FWCompMonadPlusR
+
+instance (Monad m, MonadPlus n) =>
+    Apply (FWMZero t (O m n)) FWCompMonadPlusR (WrapMZero (FWCTC t O m n))
+  where
+    apply _ _ = WrapMZero (FlexiWrapCTC . O $ return mzero)
+
+instance (Monad m, MonadPlus n) =>
+    Apply (FWMPlus t (O m n)) FWCompMonadPlusR (WrapMPlus (FWCTC t O m n))
+  where
+    apply _ _ = WrapMPlus (inFlexiWrapCTC2 . inO2 $ liftM2 mplus)
+
+instance FWMonadPlus (FWCTC (FWCompMonadPlusL :*: s) O m n) FWCompMonadPlusL
+
+instance MonadPlus m =>
+    Apply (FWMZero t (O m n)) FWCompMonadPlusL (WrapMZero (FWCTC t O m n))
+  where
+    apply _ _ = WrapMZero (FlexiWrapCTC $ O mzero)
+
+instance MonadPlus m =>
+    Apply (FWMPlus t (O m n)) FWCompMonadPlusL (WrapMPlus (FWCTC t O m n))
+  where
+    apply _ _ = WrapMPlus (inFlexiWrapCTC2 $ inO2 mplus)
+
+-- TODO: Remove this - subsumed by FWCompMonadPlus
+-- TODO: Maybe :. m
+data FWCompMaybeMonadPlus = FWCompMaybeMonadPlus
+
+instance FWMonadPlus (FWCTC (FWCompMaybeMonadPlus :*: s) O m n)
+    FWCompMaybeMonadPlus
+
+instance Monad m =>
+    Apply (FWMZero t (O m Maybe)) FWCompMaybeMonadPlus
+        (WrapMZero (FWCTC t O m Maybe))
+  where
+    apply _ _ = WrapMZero (FlexiWrapCTC . O $ return Nothing)
+
+instance Monad m =>
+    Apply (FWMPlus t (O m Maybe)) FWCompMaybeMonadPlus
+        (WrapMPlus (FWCTC t O m Maybe))
+  where
+    apply _ _ = WrapMPlus (inFlexiWrapCTC2 . inO2 $ liftM2 mplus)
+
+-- vim: expandtab:tabstop=4:shiftwidth=4
+</pre></br><h2>printed</h2></br><pre>{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE TypeSynonymInstances #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE Rank2Types #-}
+{-# LANGUAGE OverlappingInstances #-}
+-- .$Header: c:/Source/Haskell/Wrapper/Data/Flex/RCS/Compose.hs,v 1.15 2011/03/05 00:55:46 dosuser Exp dosuser $
+module Data.Flex.Compose where
+
+import Control.Monad (liftM, liftM2, join, MonadPlus(..))
+import Control.Monad.Error (Error)
+import Control.Monad.Writer (Writer, tell, runWriter)
+
+import Data.Monoid (Monoid)
+
+import Data.Type.Apply
+import Data.Type.TList
+
+import Data.Flex.FlipT (FlipT(..))
+import Data.Flex.Monad (
+        FWMonad, FWReturn, FWBind,
+        WrapReturn(..), WrapBind(..), wrapReturn, wrapBind
+    )
+import Data.Flex.MonadPlus (FWMonadPlus,
+        FWMZero, WrapMZero(..),
+        FWMPlus, WrapMPlus(..)
+    )
+import Data.Flex.MonadTrans (FWMonadTrans, FWLift, WrapLift(..))
+import Data.Flex.Utils (inCompose)
+import Data.Flex.Wrap (FlexiWrap(..), FW)
+import Data.Flex.WrapCTC (FlexiWrapCTC(..), FWCTC, inFlexiWrapCTC2)
+
+newtype (f :. g) a = O {unO :: f (g a)}
+
+type O = (:.)
+
+inO :: (f (g a) -> f' (g' b)) -> ((f :. g) a -> (f' :. g') b)
+inO = inCompose unO O
+
+inO2 :: (f (g a) -> f' (g' b) -> f'' (g'' c)) ->
+    ((f :. g) a -> (f' :. g') b -> (f'' :. g'') c)
+inO2 = inCompose unO $ inCompose unO O
+
+flexiCompose :: s -> (forall b. b -> f b) -> g a -> FWCTC s O f g a
+flexiCompose _ f ga = FlexiWrapCTC . O $ f ga
+
+-- Jones/Duponcheel's composition utilities
+
+returnC :: (Monad m, Monad n) => a -> m (n a)
+returnC  = return . return
+
+liftMC :: (Monad f, Monad g) => (a -> b) -> (f (g a) -> f (g b))
+liftMC  = liftM . liftM
+
+open :: FWCTC t O m n a -> m (n a)
+open = unO . unFlexiWrapCTC
+
+close :: m (n a) -> FWCTC t O m n a
+close = FlexiWrapCTC . O
+
+fmapC :: (Monad f, Monad g) =>
+    (a -> b) -> (FWCTC t O f g a -> FWCTC t O f g b)
+fmapC f = close . liftMC f . open
+
+wrapM  :: (Monad m, Monad n) =>
+           (m (n (m (n a))) -> m (n a)) ->
+             (FWCTC t O m n (FWCTC t O m n a) -> FWCTC t O m n a)
+wrapM j = close . j . liftMC open . open
+
+-- and our own utility
+
+wrapFW :: (Monad m, Monad n) =>
+    (forall a.  m (n (m (n a))) -> m (n a) ) ->
+    WrapBind (FWCTC t O m n)
+wrapFW j = wrapBind ((wrapM j .) . flip fmapC)
+
+-- Jones/Duponcheel's prod construction
+
+class (Monad m, Monad n) => PComposable m n where
+    prod :: n (m (n a)) -> m (n a)
+
+joinP :: PComposable m n => m (n (m (n a))) -> m (n a)
+joinP  = join . liftM prod
+
+instance Monad m => PComposable m Maybe where
+    prod (Just m) = m
+    prod Nothing  = return Nothing
+
+data FWCompP = FWCompP
+
+instance FWMonad (FWCTC (FWCompP :*: s) O m n) FWCompP
+
+instance PComposable m n =>
+    Apply (FWReturn t (O m n)) FWCompP (WrapReturn (FWCTC t O m n))
+  where
+    apply _ _ = wrapReturn (close . returnC)
+
+instance PComposable m n =>
+    Apply (FWBind t (O m n)) FWCompP (WrapBind (FWCTC t O m n))
+  where
+    apply _ _ = wrapFW joinP
+    -- apply _ _ = wrapBind ((wrapM joinP .) . flip fmapC)
+
+-- Jones/Duponcheel's dorp construction
+
+class (Monad m, Monad n) => DComposable m n where
+    dorp :: m (n (m a)) -> m (n a)
+
+joinD :: DComposable m n => m (n (m (n a))) -> m (n a)
+joinD  = liftM join . dorp
+
+data FWCompD = FWCompD
+
+instance FWMonad (FWCTC (FWCompD :*: s) O m n) FWCompD
+
+instance DComposable m n =>
+    Apply (FWReturn t (O m n)) FWCompD (WrapReturn (FWCTC t O m n))
+  where
+    apply _ _ = wrapReturn (close . returnC)
+
+instance DComposable m n =>
+    Apply (FWBind t (O m n)) FWCompD (WrapBind (FWCTC t O m n))
+  where
+    apply _ _ = wrapFW joinD
+    -- apply _ _ = wrapBind ((wrapM joinD .) . flip fmapC)
+
+instance Monad n => DComposable ((->)r) n where
+    dorp f r = f r >>= \g -> return (g r)
+          -- = [ g r | g <- f r ]
+
+-- Jones/Duponcheel's swap construction
+
+-- TODO: Left- and right-biased variants (FWCompS{L,R}, SComposable{L,R})
+-- to help reduce boiler-plate instances
+
+class (Monad m, Monad n) => SComposable m n where
+    swap :: n (m a) -> m (n a)
+
+joinS :: SComposable m n => m (n (m (n a))) -> m (n a)
+joinS  = liftM join . join . liftM swap
+
+data FWCompS = FWCompS
+
+instance FWMonad (FWCTC (FWCompS :*: s) O m n) FWCompS
+
+instance SComposable m n =>
+    Apply (FWReturn t (O m n)) FWCompS (WrapReturn (FWCTC t O m n))
+  where
+    apply _ _ = wrapReturn (close . returnC)
+
+instance SComposable m n =>
+    Apply (FWBind t (O m n)) FWCompS (WrapBind (FWCTC t O m n))
+  where
+    apply _ _ = wrapFW joinS
+    -- apply _ _ = wrapBind ((wrapM joinS .) . flip fmapC)
+
+instance Monad m => SComposable m [] where
+    swap []     = return []
+    swap (x:xs) = x       >>= \y  ->
+                  swap xs >>= \ys ->
+                  return (y:ys)
+             -- = [ y:ys | y<-x, ys<-swap xs ]
+
+instance (Monad m, Monoid s) => SComposable m (Writer s) where
+    swap wm = do
+        a <- ma
+        return $ do
+            tell s
+            return a
+      where
+        (ma, s) = runWriter wm
+    {-
+    swap (Writer (ma, s)) = ma >>= \a -> return (Writer (a, s))
+                    -- = [ Result s a | a <- ma ]
+    -}
+
+-- TODO: Generalise to ... what?
+-- MonadError e m => m
+-- (doesn't have a sufficiently powerful interface)
+instance (Monad m, Error e) => SComposable m (Either e) where
+    swap (Right m)      = liftM Right m
+    swap (Left msg) = return (Left msg)
+
+{-
+instance (Monad m, MonadError e n) => SComposable m n where
+    swap m = catchError n ...
+-}
+
+instance Monad m => SComposable m (FW t) where
+    swap = liftM FlexiWrap . unFlexiWrap
+
+instance Monad m => SComposable (FW t) m where
+    swap = FlexiWrap . liftM unFlexiWrap
+
+-- Resolve overlap
+instance SComposable (FW s) (FW t) where
+    swap = FlexiWrap . liftM unFlexiWrap
+
+instance Monoid s => SComposable (FW t) (Writer s) where
+    swap = FlexiWrap . liftM unFlexiWrap
+
+instance SComposable (FW s) [] where
+    swap = FlexiWrap . liftM unFlexiWrap
+
+instance Error e => SComposable (FW s) (Either e) where
+    swap = FlexiWrap . liftM unFlexiWrap
+
+data FWCompDefaults = FWCompDefaults
+
+-- MonadTrans
+
+data FWCompTrans = FWCompTrans
+
+instance FWMonadTrans (FWCTC (FWCompTrans :*: s) o f) FWCompTrans
+instance FWMonadTrans (FWCTC (FWCompDefaults :*: s) o f) FWCompTrans
+
+-- TODO: Applicative version?
+-- (but *Monad*Trans requires Monad)
+instance Monad m =>
+    Apply (FWLift (FWCTC t O m)) FWCompTrans (WrapLift (FWCTC t O m))
+  where
+    apply _ _ = WrapLift (FlexiWrapCTC . O . return)
+
+instance Monad m =>
+    Apply (FWLift (FWCTC t (FlipT O) m)) FWCompTrans
+        (WrapLift (FWCTC t (FlipT O) m))
+  where
+    apply _ _ = WrapLift (FlexiWrapCTC . FlipT . O . liftM return)
+
+-- --- MonadPlus
+
+data FWCompMonadPlus = FWCompMonadPlus
+data FWCompMonadPlusL = FWCompMonadPlusL
+data FWCompMonadPlusR = FWCompMonadPlusR
+
+instance FWMonadPlus (FWCTC (FWCompMonadPlusR :*: s) O m n) FWCompMonadPlusR
+instance FWMonadPlus (FWCTC (FWCompMonadPlus :*: s) O m n) FWCompMonadPlusR
+instance FWMonadPlus (FWCTC (FWCompDefaults :*: s) O m n) FWCompMonadPlusR
+
+instance (Monad m, MonadPlus n) =>
+    Apply (FWMZero t (O m n)) FWCompMonadPlusR (WrapMZero (FWCTC t O m n))
+  where
+    apply _ _ = WrapMZero (FlexiWrapCTC . O $ return mzero)
+
+instance (Monad m, MonadPlus n) =>
+    Apply (FWMPlus t (O m n)) FWCompMonadPlusR (WrapMPlus (FWCTC t O m n))
+  where
+    apply _ _ = WrapMPlus (inFlexiWrapCTC2 . inO2 $ liftM2 mplus)
+
+instance FWMonadPlus (FWCTC (FWCompMonadPlusL :*: s) O m n) FWCompMonadPlusL
+
+instance MonadPlus m =>
+    Apply (FWMZero t (O m n)) FWCompMonadPlusL (WrapMZero (FWCTC t O m n))
+  where
+    apply _ _ = WrapMZero (FlexiWrapCTC $ O mzero)
+
+instance MonadPlus m =>
+    Apply (FWMPlus t (O m n)) FWCompMonadPlusL (WrapMPlus (FWCTC t O m n))
+  where
+    apply _ _ = WrapMPlus (inFlexiWrapCTC2 $ inO2 mplus)
+
+-- TODO: Remove this - subsumed by FWCompMonadPlus
+-- TODO: Maybe :. m
+data FWCompMaybeMonadPlus = FWCompMaybeMonadPlus
+
+instance FWMonadPlus (FWCTC (FWCompMaybeMonadPlus :*: s) O m n)
+    FWCompMaybeMonadPlus
+
+instance Monad m =>
+    Apply (FWMZero t (O m Maybe)) FWCompMaybeMonadPlus
+        (WrapMZero (FWCTC t O m Maybe))
+  where
+    apply _ _ = WrapMZero (FlexiWrapCTC . O $ return Nothing)
+
+instance Monad m =>
+    Apply (FWMPlus t (O m Maybe)) FWCompMaybeMonadPlus
+        (WrapMPlus (FWCTC t O m Maybe))
+  where
+    apply _ _ = WrapMPlus (inFlexiWrapCTC2 . inO2 $ liftM2 mplus)
+
+-- vim: expandtab:tabstop=4:shiftwidth=4
+
+</pre>

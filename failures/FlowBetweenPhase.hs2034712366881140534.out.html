@@ -1,0 +1,927 @@
+<a href="FKL2VL.hs913090935401203083.out.html">prev</a></br><a href="failures.html">home</a></br><a href="FnBind.hs510616708590357944.out.html">next</a></br></br><pre>43c43
+< {-# LINE 75 "src/ehc/EHC/CompilePhase/FlowBetweenPhase.chs" #-}
+---
+> 
+43a44
+> 
+43a45
+> 
+43a46
+> 
+43a47
+> 
+43a48
+> 
+43a49
+> 
+43a50
+> 
+43a51
+> 
+43a52
+> 
+43a53
+> 
+43a54
+> 
+43a55
+> 
+43a56
+> 
+43a57
+> 
+43a58
+> 
+43a59
+> 
+43a60
+> 
+43a61
+> 
+43a62
+> 
+43a63
+> 
+43a64
+> 
+43a65
+> 
+43a66
+> 
+43a67
+> 
+43a68
+> 
+43a69
+> 
+43a70
+> 
+43a71
+> 
+43a72
+> 
+43a73
+> 
+43a74
+> 
+51c82
+< {-# LINE 96 "src/ehc/EHC/CompilePhase/FlowBetweenPhase.chs" #-}
+---
+> 
+51a83
+> 
+51a84
+> 
+51a85
+> 
+51a86
+> 
+51a87
+> 
+51a88
+> 
+51a89
+> 
+51a90
+> 
+51a91
+> 
+51a92
+> 
+51a93
+> 
+51a94
+> 
+51a95
+> 
+89c133
+< {-# LINE 139 "src/ehc/EHC/CompilePhase/FlowBetweenPhase.chs" #-}
+---
+> 
+89a134
+> 
+89a135
+> 
+89a136
+> 
+89a137
+> 
+89a138
+> 
+155c204
+< {-# LINE 243 "src/ehc/EHC/CompilePhase/FlowBetweenPhase.chs" #-}
+---
+> 
+155a205
+> 
+155a206
+> 
+155a207
+> 
+155a208
+> 
+155a209
+> 
+155a210
+> 
+155a211
+> 
+155a212
+> 
+155a213
+> 
+155a214
+> 
+155a215
+> 
+155a216
+> 
+155a217
+> 
+155a218
+> 
+155a219
+> 
+155a220
+> 
+155a221
+> 
+155a222
+> 
+155a223
+> 
+155a224
+> 
+155a225
+> 
+155a226
+> 
+155a227
+> 
+155a228
+> 
+155a229
+> 
+155a230
+> 
+155a231
+> 
+155a232
+> 
+155a233
+> 
+155a234
+> 
+155a235
+> 
+155a236
+> 
+155a237
+> 
+155a238
+> 
+155a239
+> 
+155a240
+> 
+155a241
+> 
+155a242
+> 
+193c280
+< {-# LINE 294 "src/ehc/EHC/CompilePhase/FlowBetweenPhase.chs" #-}
+---
+> 
+193a281
+> 
+193a282
+> 
+193a283
+> 
+193a284
+> 
+193a285
+> 
+193a286
+> 
+193a287
+> 
+193a288
+> 
+193a289
+> 
+193a290
+> 
+193a291
+> 
+193a292
+> 
+193a293
+> 
+210c310
+< {-# LINE 314 "src/ehc/EHC/CompilePhase/FlowBetweenPhase.chs" #-}
+---
+> 
+210a311
+> 
+210a312
+> 
+210a313
+> 
+260c363
+< {-# LINE 365 "src/ehc/EHC/CompilePhase/FlowBetweenPhase.chs" #-}
+---
+> 
+260a364
+> 
+272c376
+< {-# LINE 378 "src/ehc/EHC/CompilePhase/FlowBetweenPhase.chs" #-}
+---
+> 
+272a377
+> 
+288a394
+> 
+</pre></br><h2>original</h2></br><pre>module UHC.Light.Compiler.EHC.CompilePhase.FlowBetweenPhase
+( cpFlowEHSem1
+, cpFlowHsSem1
+, cpFlowHISem
+, cpFlowCoreModSem
+, cpFlowCoreSemAfterFold, cpFlowCoreSemBeforeFold
+, cpFlowHILamMp
+, cpFlowOptim )
+where
+import qualified Data.Map as Map
+import qualified Data.Set as Set
+import Control.Monad.State
+import UHC.Light.Compiler.EHC.Common
+import UHC.Light.Compiler.EHC.CompileUnit
+import UHC.Light.Compiler.EHC.CompileRun
+import qualified UHC.Light.Compiler.EH.MainAG as EHSem
+import qualified UHC.Light.Compiler.HS.MainAG as HSSem
+import qualified UHC.Light.Compiler.Core.ToGrin as Core2GrSem
+import UHC.Light.Compiler.LamInfo
+import UHC.Light.Compiler.Module.ImportExport
+import UHC.Light.Compiler.EHC.CompilePhase.Module
+import UHC.Light.Compiler.Core
+import UHC.Light.Compiler.Core.UsedModNms
+import qualified UHC.Light.Compiler.Core.Check as Core2ChkSem
+import qualified UHC.Light.Compiler.HI as HI
+import UHC.Light.Compiler.CHR.Solve (chrStoreUnion)
+import UHC.Light.Compiler.Base.Debug
+import UHC.Util.Pretty
+import qualified UHC.Util.FastSeq as Seq
+import UHC.Light.Compiler.EHC.CompilePhase.Module(cpUpdHiddenExports)
+
+
+
+
+
+
+
+
+
+
+
+
+{-# LINE 75 "src/ehc/EHC/CompilePhase/FlowBetweenPhase.chs" #-}
+prepFlow :: a -> a
+prepFlow x | x `seq` True = x
+-- prepFlow = id
+
+gamUnionFlow :: Ord k => Gam k v -> Gam k v -> Gam k v
+gamUnionFlow = gamUnion
+
+{-# LINE 96 "src/ehc/EHC/CompilePhase/FlowBetweenPhase.chs" #-}
+cpFlowHsSem1 :: EHCCompileRunner m => HsName -> EHCompilePhaseT m ()
+cpFlowHsSem1 modNm
+  =  do  {  cr <- get
+         ;  let  (ecu,crsi,opts,_) = crBaseInfo modNm cr
+                 hsSem  = panicJust "cpFlowHsSem1" $ ecuMbHSSem ecu
+                 ehInh  = crsiEHInh crsi
+                 hsInh  = crsiHSInh crsi
+                 hii    = ecuHIInfo ecu
+                 ig     = prepFlow $! HSSem.gathIdGam_Syn_AGItf hsSem
+                 fg     = prepFlow $! HSSem.gathFixityGam_Syn_AGItf hsSem
+                 hsInh' = hsInh
+                            { HSSem.idGam_Inh_AGItf      = ig `gamUnionFlow` HSSem.idGam_Inh_AGItf     hsInh
+                            , HSSem.fixityGam_Inh_AGItf  = fg `gamUnionFlow` HSSem.fixityGam_Inh_AGItf hsInh
+                            }
+                 ehInh' = ehInh
+                            { EHSem.idQualGam_Inh_AGItf  = idGam2QualGam ig `gamUnionFlow` EHSem.idQualGam_Inh_AGItf ehInh
+                            }
+                 hii'   = hii
+                            { HI.hiiFixityGam            = fg
+                            -- , HI.hiiIdDefHIIdGam         = HI.hiiIdDefOccGamToHIIdGam ig
+                            , HI.hiiHIDeclImpModS        = ecuHIDeclImpNmS ecu
+                            }
+                 opts'  = opts
+                            { ehcOptBuiltinNames = mkEHBuiltinNames mk
+                            }
+                        where mk = if ehcOptUseAssumePrelude opts
+                                   then \_ n -> n
+                                   else \k n -> idQualGamReplacement (EHSem.idQualGam_Inh_AGItf ehInh') k (hsnQualified n)
+         ;  when (isJust (ecuMbHSSem ecu))
+                 (do { cpUpdSI (\crsi -> crsi {crsiHSInh = hsInh', crsiEHInh = ehInh', crsiOpts = opts'})
+                     ; cpUpdCU modNm $! ecuStoreHIInfo hii'
+                     -- ; liftIO $ putStrLn (forceEval hii' `seq` "cpFlowHsSem1")
+                     })
+         -- ;  liftIO $ putWidthPPLn 120 (ppGam $ EHSem.idQualGam_Inh_AGItf $ ehInh')
+         }
+
+
+{-# LINE 139 "src/ehc/EHC/CompilePhase/FlowBetweenPhase.chs" #-}
+cpFlowEHSem1 :: EHCCompileRunner m => HsName -> EHCompilePhaseT m ()
+cpFlowEHSem1 modNm
+  =  do  {  cr <- get
+         ;  let  (ecu,crsi,opts,_) = crBaseInfo modNm cr
+                 ehSem    = panicJust "cpFlowEHSem1.ehSem" $ ecuMbEHSem ecu
+                 ehInh    = crsiEHInh crsi
+                 coreInh  = crsiCoreInh crsi
+                 dg       = prepFlow $! EHSem.gathDataGam_Syn_AGItf    ehSem
+                 vg       = prepFlow $! EHSem.gathValGam_Syn_AGItf     ehSem
+                 tg       = prepFlow $! EHSem.gathTyGam_Syn_AGItf      ehSem
+                 tkg      = prepFlow $! EHSem.gathTyKiGam_Syn_AGItf    ehSem
+                 pg       = prepFlow $! EHSem.gathPolGam_Syn_AGItf     ehSem
+                 kg       = prepFlow $! EHSem.gathKiGam_Syn_AGItf      ehSem
+                 clg      = prepFlow $! EHSem.gathClGam_Syn_AGItf      ehSem
+                 dfg      = prepFlow $! EHSem.gathClDfGam_Syn_AGItf    ehSem
+                 cs       = prepFlow $! EHSem.gathChrStore_Syn_AGItf   ehSem
+                 lm       = prepFlow $! EHSem.gathLamMp_Syn_AGItf      ehSem
+                 mmi      = panicJust "cpFlowEHSem1.crsiModMp" $ Map.lookup modNm $ crsiModMp crsi
+                 hii      = ecuHIInfo ecu
+                 mentrelFilterMp
+                          = mentrelFilterMpUnions [ EHSem.gathMentrelFilterMp_Syn_AGItf ehSem, mentrelToFilterMp' False [modNm] (mmiExps mmi) ]
+                 usedImpS = mentrelFilterMpModuleNames mentrelFilterMp
+                 ehInh'   = ehInh
+                              { EHSem.dataGam_Inh_AGItf    = dg  `gamUnionFlow`  EHSem.dataGam_Inh_AGItf    ehInh
+                              , EHSem.valGam_Inh_AGItf     = vg  `gamUnionFlow`  EHSem.valGam_Inh_AGItf     ehInh
+                              , EHSem.tyGam_Inh_AGItf      = tg  `gamUnionFlow`  EHSem.tyGam_Inh_AGItf      ehInh
+                              , EHSem.tyKiGam_Inh_AGItf    = tkg `gamUnionFlow`  EHSem.tyKiGam_Inh_AGItf    ehInh
+                              , EHSem.polGam_Inh_AGItf     = pg  `gamUnionFlow`  EHSem.polGam_Inh_AGItf     ehInh
+                              , EHSem.kiGam_Inh_AGItf      = kg  `gamUnionFlow`  EHSem.kiGam_Inh_AGItf      ehInh
+                              , EHSem.clGam_Inh_AGItf      = clg `gamUnionFlow`  EHSem.clGam_Inh_AGItf      ehInh
+                              , EHSem.clDfGam_Inh_AGItf    = dfg `gamUnionFlow`  EHSem.clDfGam_Inh_AGItf    ehInh
+                              , EHSem.chrStore_Inh_AGItf   = cs  `chrStoreUnion` EHSem.chrStore_Inh_AGItf   ehInh
+                              }
+                 hii'     = hii
+                              { -- 20100717 AD: redundant because later extracted from Core because of inlining etc, TBD
+                                HI.hiiHIUsedImpModS = usedImpS
+                              , HI.hiiMbOrphan      = EHSem.mbOrphan_Syn_AGItf ehSem
+                              , HI.hiiValGam        = vg
+                              , HI.hiiTyGam         = tg
+                              , HI.hiiTyKiGam       = tkg
+                              , HI.hiiPolGam        = pg
+                              , HI.hiiDataGam       = dg
+                              , HI.hiiClGam         = clg
+                              , HI.hiiClDfGam       = dfg
+                              , HI.hiiCHRStore      = {- HI.hiiScopedPredStoreToList -} cs
+                              -- , HI.hiiLamMp         = lm
+                              }
+                 coreInh' = coreInh
+                              { Core2GrSem.dataGam_Inh_CodeAGItf = EHSem.dataGam_Inh_AGItf     ehInh'
+                              , Core2GrSem.lamMp_Inh_CodeAGItf   = lm `lamMpUnionBindAspMp` Core2GrSem.lamMp_Inh_CodeAGItf coreInh      -- assumption: no duplicates, otherwise merging as done later has to be done
+                              }
+         ;  when (isJust (ecuMbEHSem ecu))
+                 (do { cpUpdSI
+                               (\crsi -> crsi
+                                   { crsiCoreInh = coreInh', crsiEHInh = ehInh' }
+                               )
+                     ; cpUpdCU modNm ( ecuStoreHIInfo hii'
+                                     . ecuStoreHIUsedImpS usedImpS
+                                     . ecuStoreUsedNames mentrelFilterMp
+                                     )
+                     -- put back additional hidden exports
+                     ; cpUpdHiddenExports modNm $ Seq.toList $ EHSem.gathHiddenExports_Syn_AGItf ehSem
+                     })
+         }
+
+{-# LINE 243 "src/ehc/EHC/CompilePhase/FlowBetweenPhase.chs" #-}
+cpFlowHISem :: EHCCompileRunner m => HsName -> EHCompilePhaseT m ()
+cpFlowHISem modNm
+  =  do  {  cr <- get
+         ;  let  (ecu,crsi,_,_) = crBaseInfo modNm cr
+                 -- hiSem  = panicJust "cpFlowHISem.hiSem" $ ecuMbPrevHISem ecu
+                 hiInfo = panicJust "cpFlowHISem.hiInfo" $ ecuMbPrevHIInfo ecu
+                 ehInh  = crsiEHInh crsi
+                 ehInh' = ehInh
+                            { EHSem.valGam_Inh_AGItf     = (HI.hiiValGam     hiInfo) `gamUnionFlow`  EHSem.valGam_Inh_AGItf     ehInh
+                            , EHSem.tyGam_Inh_AGItf      = (HI.hiiTyGam      hiInfo) `gamUnionFlow`  EHSem.tyGam_Inh_AGItf      ehInh
+                            , EHSem.tyKiGam_Inh_AGItf    = (HI.hiiTyKiGam    hiInfo) `gamUnionFlow`  EHSem.tyKiGam_Inh_AGItf    ehInh
+                            , EHSem.polGam_Inh_AGItf     = (HI.hiiPolGam     hiInfo) `gamUnionFlow`  EHSem.polGam_Inh_AGItf     ehInh
+                            , EHSem.dataGam_Inh_AGItf    = (HI.hiiDataGam    hiInfo) `gamUnionFlow`  EHSem.dataGam_Inh_AGItf    ehInh
+                            , EHSem.clGam_Inh_AGItf      = (HI.hiiClGam      hiInfo) `gamUnionFlow`  EHSem.clGam_Inh_AGItf      ehInh
+                            , EHSem.clDfGam_Inh_AGItf    = (HI.hiiClDfGam    hiInfo) `gamUnionFlow`  EHSem.clDfGam_Inh_AGItf    ehInh
+                            , EHSem.chrStore_Inh_AGItf   = (HI.hiiCHRStore   hiInfo) `chrStoreUnion` EHSem.chrStore_Inh_AGItf   ehInh
+                            }
+                 hsInh  = crsiHSInh crsi
+                 hsInh' = hsInh
+                            { HSSem.fixityGam_Inh_AGItf  = (HI.hiiFixityGam    hiInfo) `gamUnionFlow` HSSem.fixityGam_Inh_AGItf hsInh
+                            , HSSem.idGam_Inh_AGItf      = (HI.hiiIdDefOccGam  hiInfo) `gamUnionFlow` HSSem.idGam_Inh_AGItf     hsInh
+                            }
+                 coreInh  = crsiCoreInh crsi
+                 coreInh' = coreInh
+                              { Core2GrSem.lamMp_Inh_CodeAGItf   = (HI.hiiLamMp hiInfo) `lamMpUnionBindAspMp` Core2GrSem.lamMp_Inh_CodeAGItf coreInh
+                              }
+                 optim    = crsiOptim crsi
+                 optim'   = optim
+         ;  when (isJust (ecuMbPrevHIInfo ecu))
+                 (do { cpUpdSI (\crsi -> crsi { crsiEHInh = ehInh'
+                                              , crsiHSInh = {- tr "cpFlowHISem.crsiHSInh" (pp $ HSSem.idGam_Inh_AGItf hsInh') $ -} hsInh'
+                                              , crsiCoreInh = coreInh'
+                                              , crsiOptim = optim'
+                                              })
+                     })
+         }
+
+{-# LINE 294 "src/ehc/EHC/CompilePhase/FlowBetweenPhase.chs" #-}
+-- | Flow info after Core source check
+cpFlowCoreModSem :: EHCCompileRunner m => HsName -> EHCompilePhaseT m ()
+cpFlowCoreModSem modNm
+  =  do  {  cr <- get
+         ;  let  (ecu,crsi,opts,_) = crBaseInfo modNm cr
+                 coreInh  = crsiCoreInh crsi
+                 mbCoreModSem = ecuMbCoreSemMod ecu
+         ;  when (isJust mbCoreModSem) $ do
+              { let coreModSem = fromJust mbCoreModSem
+                    coreInh' = coreInh
+                      { Core2GrSem.dataGam_Inh_CodeAGItf = Core2GrSem.dataGam_Inh_CodeAGItf coreInh `gamUnionFlow` Core2ChkSem.gathDataGam_Syn_CodeAGItf coreModSem
+                      }
+              ; cpUpdSI (\crsi -> crsi { crsiCoreInh = coreInh' })
+              }
+         }
+
+{-# LINE 314 "src/ehc/EHC/CompilePhase/FlowBetweenPhase.chs" #-}
+cpFlowCoreSemAfterFold :: EHCCompileRunner m => HsName -> EHCompilePhaseT m ()
+cpFlowCoreSemAfterFold modNm
+  =  do  {  cr <- get
+         ;  let  (ecu,crsi,opts,_) = crBaseInfo modNm cr
+                 coreSem  = panicJust "cpFlowCoreSemAfterFold.coreSem" $ ecuMbCoreSem ecu
+
+                 coreInh  = crsiCoreInh crsi
+                 hii      = ecuHIInfo ecu
+                 am       = prepFlow $! Core2GrSem.gathLamMp_Syn_CodeAGItf coreSem
+                 coreInh' = coreInh
+                              { Core2GrSem.lamMp_Inh_CodeAGItf   = am `lamMpUnionBindAspMp` Core2GrSem.lamMp_Inh_CodeAGItf coreInh  -- assumption: old info can be overridden, otherwise merge should be done here
+                              }
+                 hii'     = hii
+                              { HI.hiiLamMp         = am
+                              }
+         ;  when (isJust (ecuMbCoreSem ecu))
+                 (do { cpUpdSI (\crsi -> crsi {crsiCoreInh = coreInh'})
+                     ; cpUpdCU modNm ( ecuStoreHIInfo hii'
+                                     )
+                     })
+         }
+
+cpFlowCoreSemBeforeFold :: EHCCompileRunner m => HsName -> EHCompilePhaseT m ()
+cpFlowCoreSemBeforeFold modNm
+  =  do  {  cr <- get
+         ;  let  (ecu,crsi,opts,_) = crBaseInfo modNm cr
+                 core     = panicJust "cpFlowCoreSemBeforeFold.core" $ ecuMbCore ecu
+
+                 -- 20100717 AD: required here because of inlining etc, TBD
+                 (usedImpS, introdModS) = cmodUsedModNms core
+
+                 hii      = ecuHIInfo ecu
+                 hii'     = hii
+                              { -- 20100717 AD: required here because of inlining etc, TBD
+                                HI.hiiHIUsedImpModS = usedImpS
+                              }
+         -- ;  liftIO $ putStrLn $ "cpFlowCoreSemBeforeFold usedImpS " ++ show usedImpS
+         -- ;  liftIO $ putStrLn $ "cpFlowCoreSemBeforeFold introdModS " ++ show introdModS
+         ;  cpUpdCU modNm ( ecuStoreHIInfo hii'
+                          --
+                          -- 20100717 AD: required here because of inlining etc, TBD
+                          . ecuStoreHIUsedImpS usedImpS
+                          . ecuStoreIntrodModS introdModS
+                          )
+         ;  impNmL <- cpGenImpNmInfo modNm
+         ;  cpUpdCU modNm ( ecuStoreCore $ cmodSetImports impNmL core
+                          )
+         }
+
+{-# LINE 365 "src/ehc/EHC/CompilePhase/FlowBetweenPhase.chs" #-}
+cpFlowHILamMp :: EHCCompileRunner m => HsName -> EHCompilePhaseT m ()
+cpFlowHILamMp modNm
+  = do { cr <- get
+       ; let  (ecu,crsi,opts,_) = crBaseInfo modNm cr
+              coreInh  = crsiCoreInh crsi
+              hii      = ecuHIInfo ecu
+
+         -- put back result: call info map (lambda arity, ...), overwriting previous entries
+       ; cpUpdSI (\crsi -> crsi {crsiCoreInh = coreInh {Core2GrSem.lamMp_Inh_CodeAGItf = HI.hiiLamMp hii `lamMpUnionBindAspMp` Core2GrSem.lamMp_Inh_CodeAGItf coreInh}})
+       }
+
+{-# LINE 378 "src/ehc/EHC/CompilePhase/FlowBetweenPhase.chs" #-}
+cpFlowOptim :: EHCCompileRunner m => HsName -> EHCompilePhaseT m ()
+cpFlowOptim modNm
+  =  do  {  cr <- get
+         ;  let  (ecu,crsi,_,_) = crBaseInfo modNm cr
+                 optim  = crsiOptim crsi
+                 moptim = panicJust "cpFlowOptim" $ ecuMbOptim ecu
+                 hii    = ecuHIInfo ecu
+                 optim' = optim
+                 hii'   = hii
+         ;  when (isJust (ecuMbOptim ecu))
+                 (do { cpUpdSI (\crsi -> crsi {crsiOptim = optim'})
+                     ; cpUpdCU modNm $! ecuStoreHIInfo $! prepFlow hii'
+                     -- ; liftIO $ putStrLn (forceEval hii' `seq` "cpFlowOptim")
+                     })
+         }
+
+</pre></br><h2>printed</h2></br><pre>module UHC.Light.Compiler.EHC.CompilePhase.FlowBetweenPhase
+( cpFlowEHSem1
+, cpFlowHsSem1
+, cpFlowHISem
+, cpFlowCoreModSem
+, cpFlowCoreSemAfterFold, cpFlowCoreSemBeforeFold
+, cpFlowHILamMp
+, cpFlowOptim )
+where
+import qualified Data.Map as Map
+import qualified Data.Set as Set
+import Control.Monad.State
+import UHC.Light.Compiler.EHC.Common
+import UHC.Light.Compiler.EHC.CompileUnit
+import UHC.Light.Compiler.EHC.CompileRun
+import qualified UHC.Light.Compiler.EH.MainAG as EHSem
+import qualified UHC.Light.Compiler.HS.MainAG as HSSem
+import qualified UHC.Light.Compiler.Core.ToGrin as Core2GrSem
+import UHC.Light.Compiler.LamInfo
+import UHC.Light.Compiler.Module.ImportExport
+import UHC.Light.Compiler.EHC.CompilePhase.Module
+import UHC.Light.Compiler.Core
+import UHC.Light.Compiler.Core.UsedModNms
+import qualified UHC.Light.Compiler.Core.Check as Core2ChkSem
+import qualified UHC.Light.Compiler.HI as HI
+import UHC.Light.Compiler.CHR.Solve (chrStoreUnion)
+import UHC.Light.Compiler.Base.Debug
+import UHC.Util.Pretty
+import qualified UHC.Util.FastSeq as Seq
+import UHC.Light.Compiler.EHC.CompilePhase.Module(cpUpdHiddenExports)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+prepFlow :: a -> a
+prepFlow x | x `seq` True = x
+-- prepFlow = id
+
+gamUnionFlow :: Ord k => Gam k v -> Gam k v -> Gam k v
+gamUnionFlow = gamUnion
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+cpFlowHsSem1 :: EHCCompileRunner m => HsName -> EHCompilePhaseT m ()
+cpFlowHsSem1 modNm
+  =  do  {  cr <- get
+         ;  let  (ecu,crsi,opts,_) = crBaseInfo modNm cr
+                 hsSem  = panicJust "cpFlowHsSem1" $ ecuMbHSSem ecu
+                 ehInh  = crsiEHInh crsi
+                 hsInh  = crsiHSInh crsi
+                 hii    = ecuHIInfo ecu
+                 ig     = prepFlow $! HSSem.gathIdGam_Syn_AGItf hsSem
+                 fg     = prepFlow $! HSSem.gathFixityGam_Syn_AGItf hsSem
+                 hsInh' = hsInh
+                            { HSSem.idGam_Inh_AGItf      = ig `gamUnionFlow` HSSem.idGam_Inh_AGItf     hsInh
+                            , HSSem.fixityGam_Inh_AGItf  = fg `gamUnionFlow` HSSem.fixityGam_Inh_AGItf hsInh
+                            }
+                 ehInh' = ehInh
+                            { EHSem.idQualGam_Inh_AGItf  = idGam2QualGam ig `gamUnionFlow` EHSem.idQualGam_Inh_AGItf ehInh
+                            }
+                 hii'   = hii
+                            { HI.hiiFixityGam            = fg
+                            -- , HI.hiiIdDefHIIdGam         = HI.hiiIdDefOccGamToHIIdGam ig
+                            , HI.hiiHIDeclImpModS        = ecuHIDeclImpNmS ecu
+                            }
+                 opts'  = opts
+                            { ehcOptBuiltinNames = mkEHBuiltinNames mk
+                            }
+                        where mk = if ehcOptUseAssumePrelude opts
+                                   then \_ n -> n
+                                   else \k n -> idQualGamReplacement (EHSem.idQualGam_Inh_AGItf ehInh') k (hsnQualified n)
+         ;  when (isJust (ecuMbHSSem ecu))
+                 (do { cpUpdSI (\crsi -> crsi {crsiHSInh = hsInh', crsiEHInh = ehInh', crsiOpts = opts'})
+                     ; cpUpdCU modNm $! ecuStoreHIInfo hii'
+                     -- ; liftIO $ putStrLn (forceEval hii' `seq` "cpFlowHsSem1")
+                     })
+         -- ;  liftIO $ putWidthPPLn 120 (ppGam $ EHSem.idQualGam_Inh_AGItf $ ehInh')
+         }
+
+
+
+
+
+
+
+
+cpFlowEHSem1 :: EHCCompileRunner m => HsName -> EHCompilePhaseT m ()
+cpFlowEHSem1 modNm
+  =  do  {  cr <- get
+         ;  let  (ecu,crsi,opts,_) = crBaseInfo modNm cr
+                 ehSem    = panicJust "cpFlowEHSem1.ehSem" $ ecuMbEHSem ecu
+                 ehInh    = crsiEHInh crsi
+                 coreInh  = crsiCoreInh crsi
+                 dg       = prepFlow $! EHSem.gathDataGam_Syn_AGItf    ehSem
+                 vg       = prepFlow $! EHSem.gathValGam_Syn_AGItf     ehSem
+                 tg       = prepFlow $! EHSem.gathTyGam_Syn_AGItf      ehSem
+                 tkg      = prepFlow $! EHSem.gathTyKiGam_Syn_AGItf    ehSem
+                 pg       = prepFlow $! EHSem.gathPolGam_Syn_AGItf     ehSem
+                 kg       = prepFlow $! EHSem.gathKiGam_Syn_AGItf      ehSem
+                 clg      = prepFlow $! EHSem.gathClGam_Syn_AGItf      ehSem
+                 dfg      = prepFlow $! EHSem.gathClDfGam_Syn_AGItf    ehSem
+                 cs       = prepFlow $! EHSem.gathChrStore_Syn_AGItf   ehSem
+                 lm       = prepFlow $! EHSem.gathLamMp_Syn_AGItf      ehSem
+                 mmi      = panicJust "cpFlowEHSem1.crsiModMp" $ Map.lookup modNm $ crsiModMp crsi
+                 hii      = ecuHIInfo ecu
+                 mentrelFilterMp
+                          = mentrelFilterMpUnions [ EHSem.gathMentrelFilterMp_Syn_AGItf ehSem, mentrelToFilterMp' False [modNm] (mmiExps mmi) ]
+                 usedImpS = mentrelFilterMpModuleNames mentrelFilterMp
+                 ehInh'   = ehInh
+                              { EHSem.dataGam_Inh_AGItf    = dg  `gamUnionFlow`  EHSem.dataGam_Inh_AGItf    ehInh
+                              , EHSem.valGam_Inh_AGItf     = vg  `gamUnionFlow`  EHSem.valGam_Inh_AGItf     ehInh
+                              , EHSem.tyGam_Inh_AGItf      = tg  `gamUnionFlow`  EHSem.tyGam_Inh_AGItf      ehInh
+                              , EHSem.tyKiGam_Inh_AGItf    = tkg `gamUnionFlow`  EHSem.tyKiGam_Inh_AGItf    ehInh
+                              , EHSem.polGam_Inh_AGItf     = pg  `gamUnionFlow`  EHSem.polGam_Inh_AGItf     ehInh
+                              , EHSem.kiGam_Inh_AGItf      = kg  `gamUnionFlow`  EHSem.kiGam_Inh_AGItf      ehInh
+                              , EHSem.clGam_Inh_AGItf      = clg `gamUnionFlow`  EHSem.clGam_Inh_AGItf      ehInh
+                              , EHSem.clDfGam_Inh_AGItf    = dfg `gamUnionFlow`  EHSem.clDfGam_Inh_AGItf    ehInh
+                              , EHSem.chrStore_Inh_AGItf   = cs  `chrStoreUnion` EHSem.chrStore_Inh_AGItf   ehInh
+                              }
+                 hii'     = hii
+                              { -- 20100717 AD: redundant because later extracted from Core because of inlining etc, TBD
+                                HI.hiiHIUsedImpModS = usedImpS
+                              , HI.hiiMbOrphan      = EHSem.mbOrphan_Syn_AGItf ehSem
+                              , HI.hiiValGam        = vg
+                              , HI.hiiTyGam         = tg
+                              , HI.hiiTyKiGam       = tkg
+                              , HI.hiiPolGam        = pg
+                              , HI.hiiDataGam       = dg
+                              , HI.hiiClGam         = clg
+                              , HI.hiiClDfGam       = dfg
+                              , HI.hiiCHRStore      = {- HI.hiiScopedPredStoreToList -} cs
+                              -- , HI.hiiLamMp         = lm
+                              }
+                 coreInh' = coreInh
+                              { Core2GrSem.dataGam_Inh_CodeAGItf = EHSem.dataGam_Inh_AGItf     ehInh'
+                              , Core2GrSem.lamMp_Inh_CodeAGItf   = lm `lamMpUnionBindAspMp` Core2GrSem.lamMp_Inh_CodeAGItf coreInh      -- assumption: no duplicates, otherwise merging as done later has to be done
+                              }
+         ;  when (isJust (ecuMbEHSem ecu))
+                 (do { cpUpdSI
+                               (\crsi -> crsi
+                                   { crsiCoreInh = coreInh', crsiEHInh = ehInh' }
+                               )
+                     ; cpUpdCU modNm ( ecuStoreHIInfo hii'
+                                     . ecuStoreHIUsedImpS usedImpS
+                                     . ecuStoreUsedNames mentrelFilterMp
+                                     )
+                     -- put back additional hidden exports
+                     ; cpUpdHiddenExports modNm $ Seq.toList $ EHSem.gathHiddenExports_Syn_AGItf ehSem
+                     })
+         }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+cpFlowHISem :: EHCCompileRunner m => HsName -> EHCompilePhaseT m ()
+cpFlowHISem modNm
+  =  do  {  cr <- get
+         ;  let  (ecu,crsi,_,_) = crBaseInfo modNm cr
+                 -- hiSem  = panicJust "cpFlowHISem.hiSem" $ ecuMbPrevHISem ecu
+                 hiInfo = panicJust "cpFlowHISem.hiInfo" $ ecuMbPrevHIInfo ecu
+                 ehInh  = crsiEHInh crsi
+                 ehInh' = ehInh
+                            { EHSem.valGam_Inh_AGItf     = (HI.hiiValGam     hiInfo) `gamUnionFlow`  EHSem.valGam_Inh_AGItf     ehInh
+                            , EHSem.tyGam_Inh_AGItf      = (HI.hiiTyGam      hiInfo) `gamUnionFlow`  EHSem.tyGam_Inh_AGItf      ehInh
+                            , EHSem.tyKiGam_Inh_AGItf    = (HI.hiiTyKiGam    hiInfo) `gamUnionFlow`  EHSem.tyKiGam_Inh_AGItf    ehInh
+                            , EHSem.polGam_Inh_AGItf     = (HI.hiiPolGam     hiInfo) `gamUnionFlow`  EHSem.polGam_Inh_AGItf     ehInh
+                            , EHSem.dataGam_Inh_AGItf    = (HI.hiiDataGam    hiInfo) `gamUnionFlow`  EHSem.dataGam_Inh_AGItf    ehInh
+                            , EHSem.clGam_Inh_AGItf      = (HI.hiiClGam      hiInfo) `gamUnionFlow`  EHSem.clGam_Inh_AGItf      ehInh
+                            , EHSem.clDfGam_Inh_AGItf    = (HI.hiiClDfGam    hiInfo) `gamUnionFlow`  EHSem.clDfGam_Inh_AGItf    ehInh
+                            , EHSem.chrStore_Inh_AGItf   = (HI.hiiCHRStore   hiInfo) `chrStoreUnion` EHSem.chrStore_Inh_AGItf   ehInh
+                            }
+                 hsInh  = crsiHSInh crsi
+                 hsInh' = hsInh
+                            { HSSem.fixityGam_Inh_AGItf  = (HI.hiiFixityGam    hiInfo) `gamUnionFlow` HSSem.fixityGam_Inh_AGItf hsInh
+                            , HSSem.idGam_Inh_AGItf      = (HI.hiiIdDefOccGam  hiInfo) `gamUnionFlow` HSSem.idGam_Inh_AGItf     hsInh
+                            }
+                 coreInh  = crsiCoreInh crsi
+                 coreInh' = coreInh
+                              { Core2GrSem.lamMp_Inh_CodeAGItf   = (HI.hiiLamMp hiInfo) `lamMpUnionBindAspMp` Core2GrSem.lamMp_Inh_CodeAGItf coreInh
+                              }
+                 optim    = crsiOptim crsi
+                 optim'   = optim
+         ;  when (isJust (ecuMbPrevHIInfo ecu))
+                 (do { cpUpdSI (\crsi -> crsi { crsiEHInh = ehInh'
+                                              , crsiHSInh = {- tr "cpFlowHISem.crsiHSInh" (pp $ HSSem.idGam_Inh_AGItf hsInh') $ -} hsInh'
+                                              , crsiCoreInh = coreInh'
+                                              , crsiOptim = optim'
+                                              })
+                     })
+         }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+-- | Flow info after Core source check
+cpFlowCoreModSem :: EHCCompileRunner m => HsName -> EHCompilePhaseT m ()
+cpFlowCoreModSem modNm
+  =  do  {  cr <- get
+         ;  let  (ecu,crsi,opts,_) = crBaseInfo modNm cr
+                 coreInh  = crsiCoreInh crsi
+                 mbCoreModSem = ecuMbCoreSemMod ecu
+         ;  when (isJust mbCoreModSem) $ do
+              { let coreModSem = fromJust mbCoreModSem
+                    coreInh' = coreInh
+                      { Core2GrSem.dataGam_Inh_CodeAGItf = Core2GrSem.dataGam_Inh_CodeAGItf coreInh `gamUnionFlow` Core2ChkSem.gathDataGam_Syn_CodeAGItf coreModSem
+                      }
+              ; cpUpdSI (\crsi -> crsi { crsiCoreInh = coreInh' })
+              }
+         }
+
+
+
+
+
+cpFlowCoreSemAfterFold :: EHCCompileRunner m => HsName -> EHCompilePhaseT m ()
+cpFlowCoreSemAfterFold modNm
+  =  do  {  cr <- get
+         ;  let  (ecu,crsi,opts,_) = crBaseInfo modNm cr
+                 coreSem  = panicJust "cpFlowCoreSemAfterFold.coreSem" $ ecuMbCoreSem ecu
+
+                 coreInh  = crsiCoreInh crsi
+                 hii      = ecuHIInfo ecu
+                 am       = prepFlow $! Core2GrSem.gathLamMp_Syn_CodeAGItf coreSem
+                 coreInh' = coreInh
+                              { Core2GrSem.lamMp_Inh_CodeAGItf   = am `lamMpUnionBindAspMp` Core2GrSem.lamMp_Inh_CodeAGItf coreInh  -- assumption: old info can be overridden, otherwise merge should be done here
+                              }
+                 hii'     = hii
+                              { HI.hiiLamMp         = am
+                              }
+         ;  when (isJust (ecuMbCoreSem ecu))
+                 (do { cpUpdSI (\crsi -> crsi {crsiCoreInh = coreInh'})
+                     ; cpUpdCU modNm ( ecuStoreHIInfo hii'
+                                     )
+                     })
+         }
+
+cpFlowCoreSemBeforeFold :: EHCCompileRunner m => HsName -> EHCompilePhaseT m ()
+cpFlowCoreSemBeforeFold modNm
+  =  do  {  cr <- get
+         ;  let  (ecu,crsi,opts,_) = crBaseInfo modNm cr
+                 core     = panicJust "cpFlowCoreSemBeforeFold.core" $ ecuMbCore ecu
+
+                 -- 20100717 AD: required here because of inlining etc, TBD
+                 (usedImpS, introdModS) = cmodUsedModNms core
+
+                 hii      = ecuHIInfo ecu
+                 hii'     = hii
+                              { -- 20100717 AD: required here because of inlining etc, TBD
+                                HI.hiiHIUsedImpModS = usedImpS
+                              }
+         -- ;  liftIO $ putStrLn $ "cpFlowCoreSemBeforeFold usedImpS " ++ show usedImpS
+         -- ;  liftIO $ putStrLn $ "cpFlowCoreSemBeforeFold introdModS " ++ show introdModS
+         ;  cpUpdCU modNm ( ecuStoreHIInfo hii'
+                          --
+                          -- 20100717 AD: required here because of inlining etc, TBD
+                          . ecuStoreHIUsedImpS usedImpS
+                          . ecuStoreIntrodModS introdModS
+                          )
+         ;  impNmL <- cpGenImpNmInfo modNm
+         ;  cpUpdCU modNm ( ecuStoreCore $ cmodSetImports impNmL core
+                          )
+         }
+
+
+
+cpFlowHILamMp :: EHCCompileRunner m => HsName -> EHCompilePhaseT m ()
+cpFlowHILamMp modNm
+  = do { cr <- get
+       ; let  (ecu,crsi,opts,_) = crBaseInfo modNm cr
+              coreInh  = crsiCoreInh crsi
+              hii      = ecuHIInfo ecu
+
+         -- put back result: call info map (lambda arity, ...), overwriting previous entries
+       ; cpUpdSI (\crsi -> crsi {crsiCoreInh = coreInh {Core2GrSem.lamMp_Inh_CodeAGItf = HI.hiiLamMp hii `lamMpUnionBindAspMp` Core2GrSem.lamMp_Inh_CodeAGItf coreInh}})
+       }
+
+
+
+cpFlowOptim :: EHCCompileRunner m => HsName -> EHCompilePhaseT m ()
+cpFlowOptim modNm
+  =  do  {  cr <- get
+         ;  let  (ecu,crsi,_,_) = crBaseInfo modNm cr
+                 optim  = crsiOptim crsi
+                 moptim = panicJust "cpFlowOptim" $ ecuMbOptim ecu
+                 hii    = ecuHIInfo ecu
+                 optim' = optim
+                 hii'   = hii
+         ;  when (isJust (ecuMbOptim ecu))
+                 (do { cpUpdSI (\crsi -> crsi {crsiOptim = optim'})
+                     ; cpUpdCU modNm $! ecuStoreHIInfo $! prepFlow hii'
+                     -- ; liftIO $ putStrLn (forceEval hii' `seq` "cpFlowOptim")
+                     })
+         }
+
+
+</pre>

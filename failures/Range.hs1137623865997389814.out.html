@@ -1,0 +1,508 @@
+<a href="Randomorg.hs462851407957828015.out.html">prev</a></br><a href="failures.html">home</a></br><a href="Rate.hs5414373351049077006.out.html">next</a></br></br><pre>18c18
+< {-# LINE 36 "src/ehc/Base/Range.chs" #-}
+---
+> 
+18a19
+> 
+18a20
+> 
+18a21
+> 
+18a22
+> 
+18a23
+> 
+18a24
+> 
+18a25
+> 
+18a26
+> 
+18a27
+> 
+18a28
+> 
+18a29
+> 
+18a30
+> 
+18a31
+> 
+18a32
+> 
+18a33
+> 
+18a34
+> 
+18a35
+> 
+39c56
+< {-# LINE 58 "src/ehc/Base/Range.chs" #-}
+---
+> 
+39a57
+> 
+48c66
+< {-# LINE 68 "src/ehc/Base/Range.chs" #-}
+---
+> 
+48a67
+> 
+57c76
+< {-# LINE 78 "src/ehc/Base/Range.chs" #-}
+---
+> 
+57a77
+> 
+63c83
+< {-# LINE 87 "src/ehc/Base/Range.chs" #-}
+---
+> 
+63a84
+> 
+63a85
+> 
+63a86
+> 
+70c93
+< {-# LINE 95 "src/ehc/Base/Range.chs" #-}
+---
+> 
+70a94
+> 
+82c106
+< {-# LINE 108 "src/ehc/Base/Range.chs" #-}
+---
+> 
+82a107
+> 
+97c122
+< {-# LINE 139 "src/ehc/Base/Range.chs" #-}
+---
+> 
+97a123
+> 
+97a124
+> 
+97a125
+> 
+97a126
+> 
+97a127
+> 
+97a128
+> 
+97a129
+> 
+97a130
+> 
+97a131
+> 
+97a132
+> 
+97a133
+> 
+97a134
+> 
+97a135
+> 
+97a136
+> 
+97a137
+> 
+97a138
+> 
+109c150
+< {-# LINE 156 "src/ehc/Base/Range.chs" #-}
+---
+> 
+109a151
+> 
+109a152
+> 
+109a153
+> 
+109a154
+> 
+109a155
+> 
+119c165
+< {-# LINE 171 "src/ehc/Base/Range.chs" #-}
+---
+> 
+119a166
+> 
+119a167
+> 
+119a168
+> 
+119a169
+> 
+119a170
+> 
+127c178
+< {-# LINE 184 "src/ehc/Base/Range.chs" #-}
+---
+> 
+127a179
+> 
+127a180
+> 
+127a181
+> 
+127a182
+> 
+127a183
+> 
+146a203
+> 
+</pre></br><h2>original</h2></br><pre>module UHC.Light.Compiler.Base.Range
+( Range (..), emptyRange, builtinRange, mkRange1, mkRange2
+, isEmptyRange
+, rangeUnion, rangeUnions
+, RngLiftArg, rngLift, rngAntilift )
+where
+import Data.Maybe
+import Control.Monad
+import UHC.Util.Pretty
+import UU.Scanner.Position
+import UHC.Light.Compiler.Base.HsName
+import UHC.Light.Compiler.Base.HsName.Builtin
+import UHC.Util.Binary
+import UHC.Util.Serialize
+
+
+
+{-# LINE 36 "src/ehc/Base/Range.chs" #-}
+data Range
+  = Range_Range    !Pos !Pos
+  | Range_Unknown
+  | Range_Builtin
+
+emptyRange :: Range
+emptyRange = Range_Unknown
+
+builtinRange :: Range
+builtinRange = Range_Builtin
+
+mkPos :: Position p => p -> Pos
+mkPos p = Pos (line p) (column p) (file p)
+
+mkRange1 :: Position p => p -> Range
+mkRange1 p = Range_Range (mkPos p) noPos
+
+mkRange2 :: Position p => p -> p -> Range
+mkRange2 p1 p2 = Range_Range (mkPos p1) (mkPos p2)
+
+{-# LINE 58 "src/ehc/Base/Range.chs" #-}
+show2Pos :: Pos -> Pos -> String
+show2Pos p1 p2
+  | p1 /= p2 && p2 /= noPos  = if line p1 == line p2
+                               then mk (show (line p1))                          (Just $ show (column p1) ++ "-" ++ show (column p2))
+                               else mk (show (line p1) ++ "-" ++ show (line p2)) Nothing
+  | otherwise                =      mk (show (line p1))                          (Just $ show (column p1))
+  where mk l c = file p1 ++ ":" ++ l ++ maybe "" (":" ++) c
+
+{-# LINE 68 "src/ehc/Base/Range.chs" #-}
+instance Show Range where
+  show (Range_Range p q) = show2Pos p q
+  show Range_Unknown     = "??"
+  show Range_Builtin     = "builtin"
+
+instance PP Range where
+  pp = pp . show
+
+{-# LINE 78 "src/ehc/Base/Range.chs" #-}
+isEmptyRange :: Range -> Bool
+isEmptyRange  Range_Unknown    = True
+isEmptyRange (Range_Range p _) = p == noPos
+isEmptyRange  _                = False
+
+{-# LINE 87 "src/ehc/Base/Range.chs" #-}
+instance Eq Range where
+  _ == _ = True             -- a Range is ballast, not a criterium to decide equality for
+
+instance Ord Range where
+  _ `compare` _ = EQ        -- a Range is ballast, not a criterium to decide equality for
+
+{-# LINE 95 "src/ehc/Base/Range.chs" #-}
+rngAdd :: Range -> Range -> Range
+rngAdd r1 r2
+  = case (r1,r2) of
+      (Range_Range l1 h1,Range_Range l2 h2)
+        -> Range_Range (l1 `min` l2) (h1 `max` h2)
+      (Range_Range _ _,_)
+        -> r1
+      (_,Range_Range _ _)
+        -> r2
+      _ -> Range_Unknown
+
+{-# LINE 108 "src/ehc/Base/Range.chs" #-}
+posMax, posMin :: Pos -> Pos -> Pos
+posMax (Pos l1 c1 f1) (Pos l2 c2 _) = Pos (l1 `max` l2) (c1 `max` c2) f1
+posMin (Pos l1 c1 f1) (Pos l2 c2 _) = Pos (l1 `min` l2) (c1 `min` c2) f1
+
+rangeUnion :: Range -> Range -> Range
+rangeUnion (Range_Range b1 e1) (Range_Range b2 e2) = Range_Range (b1 `posMin` b2) (e1' `posMax` e2')
+                                                  where e1' = if e1 == noPos then b1 else e1
+                                                        e2' = if e2 == noPos then b2 else e2
+rangeUnion Range_Unknown       r2                  = r2
+rangeUnion r1                  _                   = r1
+
+rangeUnions :: [Range] -> Range
+rangeUnions = foldr1 rangeUnion
+
+{-# LINE 139 "src/ehc/Base/Range.chs" #-}
+type RngLiftArg  x = Range -> x
+type RngLift     x = Range -> RngLiftArg x -> x
+
+rngLift :: RngLift v
+rngLift r mkv
+  = x `seq` x
+  where x = mkv r
+
+rngAntilift :: v -> RngLiftArg v
+rngAntilift = const
+
+{-# LINE 156 "src/ehc/Base/Range.chs" #-}
+instance Eq Pos where
+  p1 == p2 = line p1 == line p2 && column p1 == column p2
+
+instance Ord Pos where
+  compare p1 p2
+    = case compare (line p1) (line p2) of
+        EQ -> compare (column p1) (column p2)
+        c  -> c
+
+{-# LINE 171 "src/ehc/Base/Range.chs" #-}
+deriving instance Typeable Range
+deriving instance Data Range
+
+deriving instance Typeable Pos
+deriving instance Data Pos
+
+
+{-# LINE 184 "src/ehc/Base/Range.chs" #-}
+instance Binary Range where
+  put (Range_Unknown    ) = putWord8 0
+  put (Range_Builtin    ) = putWord8 1
+  put (Range_Range   a b) = putWord8 2 >> put a >> put b
+  get = do t <- getWord8
+           case t of
+             0 -> return Range_Unknown
+             1 -> return Range_Builtin
+             2 -> liftM2 Range_Range get get
+
+instance Serialize Range where
+  sput = sputShared
+  sget = sgetShared
+  sputNested = sputPlain
+  sgetNested = sgetPlain
+
+instance Binary Pos where
+  put (Pos a b c) = put a >> put b >> put c
+  get = liftM3 Pos get get get
+</pre></br><h2>printed</h2></br><pre>module UHC.Light.Compiler.Base.Range
+( Range (..), emptyRange, builtinRange, mkRange1, mkRange2
+, isEmptyRange
+, rangeUnion, rangeUnions
+, RngLiftArg, rngLift, rngAntilift )
+where
+import Data.Maybe
+import Control.Monad
+import UHC.Util.Pretty
+import UU.Scanner.Position
+import UHC.Light.Compiler.Base.HsName
+import UHC.Light.Compiler.Base.HsName.Builtin
+import UHC.Util.Binary
+import UHC.Util.Serialize
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+data Range
+  = Range_Range    !Pos !Pos
+  | Range_Unknown
+  | Range_Builtin
+
+emptyRange :: Range
+emptyRange = Range_Unknown
+
+builtinRange :: Range
+builtinRange = Range_Builtin
+
+mkPos :: Position p => p -> Pos
+mkPos p = Pos (line p) (column p) (file p)
+
+mkRange1 :: Position p => p -> Range
+mkRange1 p = Range_Range (mkPos p) noPos
+
+mkRange2 :: Position p => p -> p -> Range
+mkRange2 p1 p2 = Range_Range (mkPos p1) (mkPos p2)
+
+
+
+show2Pos :: Pos -> Pos -> String
+show2Pos p1 p2
+  | p1 /= p2 && p2 /= noPos  = if line p1 == line p2
+                               then mk (show (line p1))                          (Just $ show (column p1) ++ "-" ++ show (column p2))
+                               else mk (show (line p1) ++ "-" ++ show (line p2)) Nothing
+  | otherwise                =      mk (show (line p1))                          (Just $ show (column p1))
+  where mk l c = file p1 ++ ":" ++ l ++ maybe "" (":" ++) c
+
+
+
+instance Show Range where
+  show (Range_Range p q) = show2Pos p q
+  show Range_Unknown     = "??"
+  show Range_Builtin     = "builtin"
+
+instance PP Range where
+  pp = pp . show
+
+
+
+isEmptyRange :: Range -> Bool
+isEmptyRange  Range_Unknown    = True
+isEmptyRange (Range_Range p _) = p == noPos
+isEmptyRange  _                = False
+
+
+
+
+
+instance Eq Range where
+  _ == _ = True             -- a Range is ballast, not a criterium to decide equality for
+
+instance Ord Range where
+  _ `compare` _ = EQ        -- a Range is ballast, not a criterium to decide equality for
+
+
+
+rngAdd :: Range -> Range -> Range
+rngAdd r1 r2
+  = case (r1,r2) of
+      (Range_Range l1 h1,Range_Range l2 h2)
+        -> Range_Range (l1 `min` l2) (h1 `max` h2)
+      (Range_Range _ _,_)
+        -> r1
+      (_,Range_Range _ _)
+        -> r2
+      _ -> Range_Unknown
+
+
+
+posMax, posMin :: Pos -> Pos -> Pos
+posMax (Pos l1 c1 f1) (Pos l2 c2 _) = Pos (l1 `max` l2) (c1 `max` c2) f1
+posMin (Pos l1 c1 f1) (Pos l2 c2 _) = Pos (l1 `min` l2) (c1 `min` c2) f1
+
+rangeUnion :: Range -> Range -> Range
+rangeUnion (Range_Range b1 e1) (Range_Range b2 e2) = Range_Range (b1 `posMin` b2) (e1' `posMax` e2')
+                                                  where e1' = if e1 == noPos then b1 else e1
+                                                        e2' = if e2 == noPos then b2 else e2
+rangeUnion Range_Unknown       r2                  = r2
+rangeUnion r1                  _                   = r1
+
+rangeUnions :: [Range] -> Range
+rangeUnions = foldr1 rangeUnion
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+type RngLiftArg  x = Range -> x
+type RngLift     x = Range -> RngLiftArg x -> x
+
+rngLift :: RngLift v
+rngLift r mkv
+  = x `seq` x
+  where x = mkv r
+
+rngAntilift :: v -> RngLiftArg v
+rngAntilift = const
+
+
+
+
+
+
+
+instance Eq Pos where
+  p1 == p2 = line p1 == line p2 && column p1 == column p2
+
+instance Ord Pos where
+  compare p1 p2
+    = case compare (line p1) (line p2) of
+        EQ -> compare (column p1) (column p2)
+        c  -> c
+
+
+
+
+
+
+
+deriving instance Typeable Range
+deriving instance Data Range
+
+deriving instance Typeable Pos
+deriving instance Data Pos
+
+
+
+
+
+
+
+
+instance Binary Range where
+  put (Range_Unknown    ) = putWord8 0
+  put (Range_Builtin    ) = putWord8 1
+  put (Range_Range   a b) = putWord8 2 >> put a >> put b
+  get = do t <- getWord8
+           case t of
+             0 -> return Range_Unknown
+             1 -> return Range_Builtin
+             2 -> liftM2 Range_Range get get
+
+instance Serialize Range where
+  sput = sputShared
+  sget = sgetShared
+  sputNested = sputPlain
+  sgetNested = sgetPlain
+
+instance Binary Pos where
+  put (Pos a b c) = put a >> put b >> put c
+  get = liftM3 Pos get get get
+
+</pre>

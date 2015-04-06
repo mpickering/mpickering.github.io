@@ -1,0 +1,290 @@
+<a href="Fay.hs1622650073984943658.out.html">prev</a></br><a href="failures.html">home</a></br><a href="FFI.hs195400260589673557.out.html">next</a></br></br><pre>80c80
+<   let follow = foldl (\f n -> \els-> subElems n $ f els) id' names :: Filter
+---
+>   let follow = foldl (\f n ->     ->els-> subElems n $ f els) id' names :: Filter
+141a142
+> 
+</pre></br><h2>original</h2></br><pre>module FB2
+   ( readByteFile, convParseXml
+   , getAuthors, getTitle, getGenres
+   , getLang, getDate) where
+
+import qualified Data.ByteString.Lazy.Char8 as Lazy
+import Data.ByteString.Lazy.UTF8 (toString)
+
+import Data.Char (isSpace)
+import Data.List (intercalate)
+import Data.Maybe (maybeToList,listToMaybe,fromMaybe)
+
+import Text.XML.Light
+import Codec.Text.IConv (convertFuzzy,Fuzzy(..))
+
+{-
+import System.Environment (getArgs)
+import Control.Monad (mapM_, forM_)
+import Data.ByteString.Lazy.Internal (smallChunkSize)
+main = getArgs >>= mapM_ showInfo
+
+showInfo fname = do
+  raw <- readByteFile fname
+  let doc = convParseXml $ take smallChunkSize raw -- metainfo is in the beginning
+  let t = getTitle doc
+  let a = getAuthors doc
+  let g = getGenres doc
+  let l = getLang doc
+  let d = getDate doc
+  putStrLn $ intercalate ", " a
+  putStrLn $ " " ++ t
+  putStrLn $ " " ++ d
+  putStrLn $ " G: " ++ (intercalate ", " g)
+  putStrLn $ " L: " ++ l
+-}
+
+-- | Read file as a sequence of bytes.
+readByteFile :: String -> IO String
+readByteFile f = return . Lazy.unpack =<< Lazy.readFile f
+
+-- | Convert XML according to document encoding and parse it.
+convParseXml :: String -> [Element]
+convParseXml s =
+  let doc =  onlyElems . parseXML $ s
+      elm1 = head doc
+      convertFrom :: String -> String -> String
+      convertFrom enc = toString . convertFuzzy Transliterate enc "UTF-8" . Lazy.pack
+  in
+    if (qName . elName $ elm1) /= "?xml"
+      then doc
+      else case findAttr (unqual "encoding") elm1 of
+        Nothing -> doc
+        Just enc -> onlyElems . parseXML . convertFrom enc $ s
+
+--
+-- FB2 XML machinery
+--
+
+fbURL :: Maybe String
+fbURL = Just "http://www.gribuser.ru/xml/fictionbook/2.0"
+fbname :: String -> QName
+fbname name = QName name fbURL Nothing
+
+type Filter = [Element] -> [Element]
+
+-- | All descendent sub-elements with a given name.
+subElems :: String -> Filter
+subElems name elms = concatMap (findElements (fbname name)) elms
+
+-- | All text contents of given elements.
+txt :: [Element] -> [String]
+txt elms = map cdData . concatMap (onlyText . elContent) $ elms
+
+-- | Attribute value.
+attr :: String -> Element -> Maybe String
+attr name elm = findAttr (fbname name) elm
+
+getPath :: [String] -> Filter
+getPath names elms =
+  let follow = foldl (\f n -> \els-> subElems n $ f els) id' names :: Filter
+      id' = id :: Filter
+  in  follow elms
+
+-- | Text contents or attrubute values located by given path.
+-- If the last name in the path starts with @, lookup attribute value.
+getValues :: [String] -> [Element] -> [String]
+getValues [] _ = []
+getValues path elms =
+  let tip = last path
+      path' = init path -- if the last item in path is attribute name
+  in  case tip of
+      '@':name -> concatMap maybeToList . map (attr name) . getPath path' $ elms
+      _        -> txt . getPath path $ elms
+
+--
+-- FB2 meta information readers
+--
+
+metaPath :: [String]
+metaPath = [ "FictionBook", "description", "title-info" ]
+authorPath :: [String]
+authorPath = metaPath ++ [ "author" ]
+booktitlePath :: [String]
+booktitlePath = metaPath ++ [ "book-title" ]
+genrePath :: [String]
+genrePath = metaPath ++ [ "genre" ]
+langPath :: [String]
+langPath = metaPath ++ [ "lang" ]
+datePath :: [String]
+datePath = metaPath ++ [ "date" ]
+
+getTitle :: [Element] -> String
+getTitle doc = strip $ firstOrEmpty $ getValues booktitlePath doc
+
+getAuthors :: [Element] -> [String]
+getAuthors doc = map getAuthor . getPath authorPath $ doc
+  where getAuthor :: Element -> String
+        getAuthor e =
+          let ln = map strip $ getValues ["last-name"] [e]
+              fn = map strip $ getValues ["first-name"] [e]
+              mn = map strip $ getValues ["middle-name"] [e]
+          in  intercalate " " $ ln ++ fn ++ mn
+
+getGenres :: [Element] -> [String]
+getGenres doc = map strip $ getValues genrePath doc
+
+getLang :: [Element] -> String
+getLang doc = strip $ firstOrEmpty $ getValues langPath doc
+
+getDate :: [Element] -> String
+getDate doc = strip $ firstOrEmpty $ getValues datePath doc
+
+--
+-- Utilities
+--
+
+strip :: String -> String
+strip = dropWhile isSpace . reverse . dropWhile isSpace . reverse
+
+firstOrEmpty :: [String] -> String
+firstOrEmpty = fromMaybe "" . listToMaybe
+</pre></br><h2>printed</h2></br><pre>module FB2
+   ( readByteFile, convParseXml
+   , getAuthors, getTitle, getGenres
+   , getLang, getDate) where
+
+import qualified Data.ByteString.Lazy.Char8 as Lazy
+import Data.ByteString.Lazy.UTF8 (toString)
+
+import Data.Char (isSpace)
+import Data.List (intercalate)
+import Data.Maybe (maybeToList,listToMaybe,fromMaybe)
+
+import Text.XML.Light
+import Codec.Text.IConv (convertFuzzy,Fuzzy(..))
+
+{-
+import System.Environment (getArgs)
+import Control.Monad (mapM_, forM_)
+import Data.ByteString.Lazy.Internal (smallChunkSize)
+main = getArgs >>= mapM_ showInfo
+
+showInfo fname = do
+  raw <- readByteFile fname
+  let doc = convParseXml $ take smallChunkSize raw -- metainfo is in the beginning
+  let t = getTitle doc
+  let a = getAuthors doc
+  let g = getGenres doc
+  let l = getLang doc
+  let d = getDate doc
+  putStrLn $ intercalate ", " a
+  putStrLn $ " " ++ t
+  putStrLn $ " " ++ d
+  putStrLn $ " G: " ++ (intercalate ", " g)
+  putStrLn $ " L: " ++ l
+-}
+
+-- | Read file as a sequence of bytes.
+readByteFile :: String -> IO String
+readByteFile f = return . Lazy.unpack =<< Lazy.readFile f
+
+-- | Convert XML according to document encoding and parse it.
+convParseXml :: String -> [Element]
+convParseXml s =
+  let doc =  onlyElems . parseXML $ s
+      elm1 = head doc
+      convertFrom :: String -> String -> String
+      convertFrom enc = toString . convertFuzzy Transliterate enc "UTF-8" . Lazy.pack
+  in
+    if (qName . elName $ elm1) /= "?xml"
+      then doc
+      else case findAttr (unqual "encoding") elm1 of
+        Nothing -> doc
+        Just enc -> onlyElems . parseXML . convertFrom enc $ s
+
+--
+-- FB2 XML machinery
+--
+
+fbURL :: Maybe String
+fbURL = Just "http://www.gribuser.ru/xml/fictionbook/2.0"
+fbname :: String -> QName
+fbname name = QName name fbURL Nothing
+
+type Filter = [Element] -> [Element]
+
+-- | All descendent sub-elements with a given name.
+subElems :: String -> Filter
+subElems name elms = concatMap (findElements (fbname name)) elms
+
+-- | All text contents of given elements.
+txt :: [Element] -> [String]
+txt elms = map cdData . concatMap (onlyText . elContent) $ elms
+
+-- | Attribute value.
+attr :: String -> Element -> Maybe String
+attr name elm = findAttr (fbname name) elm
+
+getPath :: [String] -> Filter
+getPath names elms =
+  let follow = foldl (\f n ->     ->els-> subElems n $ f els) id' names :: Filter
+      id' = id :: Filter
+  in  follow elms
+
+-- | Text contents or attrubute values located by given path.
+-- If the last name in the path starts with @, lookup attribute value.
+getValues :: [String] -> [Element] -> [String]
+getValues [] _ = []
+getValues path elms =
+  let tip = last path
+      path' = init path -- if the last item in path is attribute name
+  in  case tip of
+      '@':name -> concatMap maybeToList . map (attr name) . getPath path' $ elms
+      _        -> txt . getPath path $ elms
+
+--
+-- FB2 meta information readers
+--
+
+metaPath :: [String]
+metaPath = [ "FictionBook", "description", "title-info" ]
+authorPath :: [String]
+authorPath = metaPath ++ [ "author" ]
+booktitlePath :: [String]
+booktitlePath = metaPath ++ [ "book-title" ]
+genrePath :: [String]
+genrePath = metaPath ++ [ "genre" ]
+langPath :: [String]
+langPath = metaPath ++ [ "lang" ]
+datePath :: [String]
+datePath = metaPath ++ [ "date" ]
+
+getTitle :: [Element] -> String
+getTitle doc = strip $ firstOrEmpty $ getValues booktitlePath doc
+
+getAuthors :: [Element] -> [String]
+getAuthors doc = map getAuthor . getPath authorPath $ doc
+  where getAuthor :: Element -> String
+        getAuthor e =
+          let ln = map strip $ getValues ["last-name"] [e]
+              fn = map strip $ getValues ["first-name"] [e]
+              mn = map strip $ getValues ["middle-name"] [e]
+          in  intercalate " " $ ln ++ fn ++ mn
+
+getGenres :: [Element] -> [String]
+getGenres doc = map strip $ getValues genrePath doc
+
+getLang :: [Element] -> String
+getLang doc = strip $ firstOrEmpty $ getValues langPath doc
+
+getDate :: [Element] -> String
+getDate doc = strip $ firstOrEmpty $ getValues datePath doc
+
+--
+-- Utilities
+--
+
+strip :: String -> String
+strip = dropWhile isSpace . reverse . dropWhile isSpace . reverse
+
+firstOrEmpty :: [String] -> String
+firstOrEmpty = fromMaybe "" . listToMaybe
+
+</pre>

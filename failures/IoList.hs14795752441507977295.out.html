@@ -1,0 +1,86 @@
+<a href="IOBuiltinTypes.hs6441594889688008.out.html">prev</a></br><a href="failures.html">home</a></br><a href="IOUtils.hs482756891501848671.out.html">next</a></br></br><pre>22d21
+< ioListBind = [| \m -> \f -> m >>= \vs ->
+23d21
+<                 Control.Monad.mapM f vs >>= \vs's ->
+24c22
+<                 return (concat vs's) |]
+---
+> ioListBind = [| \m ->    ->f -> m >>= \vs ->
+24a23
+>                     Control.Monad.mapM f vs >>= \vs's ->
+24a24
+>                     return (concat vs's) |]
+30c30
+< merge = [| (\m -> $ioListBind m id) . return |]
+---
+> merge = [| (\m -> ioListBind m id) . return |]
+33a34
+> 
+</pre></br><h2>original</h2></br><pre>{-# LANGUAGE TemplateHaskell #-}
+
+module MonadLab.IoList (
+   ioListMonad
+ ) where
+
+import Prelude hiding (Monad)
+import qualified Control.Monad
+import Language.Haskell.TH
+import MonadLab.CommonTypes
+
+ioListMonad :: Monad
+ioListMonad = (ioListTypeCon , ioListReturn , ioListBind, [(Io, [liftIO]), (List, [merge])], ioListBaseLift)
+
+ioListTypeCon :: MonadTypeCon
+ioListTypeCon = \t -> appT (conT ''IO) (appT listT t)
+
+ioListReturn :: ReturnExpQ
+ioListReturn = [| return . (\x -> [x]) |]
+
+ioListBind :: BindExpQ
+ioListBind = [| \m -> \f -> m >>= \vs ->
+                Control.Monad.mapM f vs >>= \vs's ->
+                return (concat vs's) |]
+
+liftIO :: NonProperMorphismExpQ
+liftIO = [| \io -> io >>= \v -> return [v] |]
+
+merge :: NonProperMorphismExpQ
+merge = [| (\m -> $ioListBind m id) . return |]
+
+ioListBaseLift :: LiftExpQ
+ioListBaseLift = [| return |]
+</pre></br><h2>printed</h2></br><pre>{-# LANGUAGE TemplateHaskell #-}
+
+module MonadLab.IoList (
+   ioListMonad
+ ) where
+
+import Prelude hiding (Monad)
+import qualified Control.Monad
+import Language.Haskell.TH
+import MonadLab.CommonTypes
+
+ioListMonad :: Monad
+ioListMonad = (ioListTypeCon , ioListReturn , ioListBind, [(Io, [liftIO]), (List, [merge])], ioListBaseLift)
+
+ioListTypeCon :: MonadTypeCon
+ioListTypeCon = \t -> appT (conT ''IO) (appT listT t)
+
+ioListReturn :: ReturnExpQ
+ioListReturn = [| return . (\x -> [x]) |]
+
+ioListBind :: BindExpQ
+ioListBind = [| \m ->    ->f -> m >>= \vs ->
+                    Control.Monad.mapM f vs >>= \vs's ->
+                    return (concat vs's) |]
+
+liftIO :: NonProperMorphismExpQ
+liftIO = [| \io -> io >>= \v -> return [v] |]
+
+merge :: NonProperMorphismExpQ
+merge = [| (\m -> ioListBind m id) . return |]
+
+ioListBaseLift :: LiftExpQ
+ioListBaseLift = [| return |]
+
+</pre>

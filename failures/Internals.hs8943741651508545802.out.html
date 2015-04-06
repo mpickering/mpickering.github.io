@@ -1,0 +1,280 @@
+<a href="Internals.hs8355004762008416046.out.html">prev</a></br><a href="failures.html">home</a></br><a href="Interpolated.hs20430460421358796011.out.html">next</a></br></br><pre>35d34
+< class Storable fr ⇒ Frame fr where
+36d34
+<     frameFmt  ∷ fr → C'esd_format_t
+37c35
+<     frameSize ∷ fr → Int
+---
+> class Storable fr => Frame fr where
+37a36
+>     frameFmt  :: fr -> C'esd_format_t
+37a37
+>     frameSize :: fr -> Int
+48d47
+<     channelFmt  ∷ ch → C'esd_format_t
+49c48
+<     numChannels ∷ ch → Int
+---
+>     channelFmt  :: ch -> C'esd_format_t
+49a49
+>     numChannels :: ch -> Int
+66c66
+< interleave ∷ Storable α ⇒ L.Vector α → L.Vector α → L.Vector α
+---
+> interleave :: Storable α => L.Vector α -> L.Vector α -> L.Vector α
+76c76
+< deinterleave ∷ Storable α ⇒ L.Vector α → (L.Vector α, L.Vector α)
+---
+> deinterleave :: Storable α => L.Vector α -> (L.Vector α, L.Vector α)
+91c91
+< toLSV ∷ Storable α ⇒ S.Vector α → L.Vector α
+---
+> toLSV :: Storable α => S.Vector α -> L.Vector α
+94c94
+< wrapSocket ∷ String → CInt → IO Handle
+---
+> wrapSocket :: String -> CInt -> IO Handle
+98d97
+< closeSocket ∷ Handle → IO ()
+99d97
+< closeSocket h = do (Fd fd) ← handleToFd h
+100c98
+<                    _       ← c'esd_close (fromIntegral fd)
+---
+> closeSocket :: Handle -> IO ()
+100a99
+> closeSocket h = do (Fd fd) <- handleToFd h
+100a100
+>                    _       <- c'esd_close (fromIntegral fd)
+103c103
+< withCStrOrNull ∷ Maybe String → (CString → IO a) → IO a
+---
+> withCStrOrNull :: Maybe String -> (CString -> IO a) -> IO a
+107c107
+< failOnError ∷ Monad m ⇒ String → (α → Bool) → α → m α
+---
+> failOnError :: Monad m => String -> (α -> Bool) -> α -> m α
+110a111
+> 
+</pre></br><h2>original</h2></br><pre>{-# LANGUAGE
+    EmptyDataDecls
+  , FlexibleInstances
+  , MultiParamTypeClasses
+  , UnicodeSyntax
+  #-}
+module Sound.EsounD.Internals
+    ( Frame(..)
+
+    , Channels(..)
+    , Mono
+    , Stereo
+    , interleave
+    , deinterleave
+
+    , toLSV
+    , wrapSocket
+    , closeSocket
+    , withCStrOrNull
+    , failOnError
+    )
+    where
+import Bindings.EsounD
+import Data.Int
+import Data.StorableVector      as S
+import Data.StorableVector.Lazy as L
+import Foreign.C.String
+import Foreign.C.Types
+import Foreign.Ptr
+import Foreign.Storable
+import System.IO
+import System.Posix.IO
+import System.Posix.Types
+
+class Storable fr ⇒ Frame fr where
+    frameFmt  ∷ fr → C'esd_format_t
+    frameSize ∷ fr → Int
+
+instance Frame Int8 where
+    frameFmt  _ = c'ESD_BITS8
+    frameSize _ = 1
+
+instance Frame Int16 where
+    frameFmt  _ = c'ESD_BITS16
+    frameSize _ = 2
+
+class Channels ch where
+    channelFmt  ∷ ch → C'esd_format_t
+    numChannels ∷ ch → Int
+
+-- Mono
+data Mono
+
+instance Channels Mono where
+    channelFmt  _ = c'ESD_MONO
+    numChannels _ = 1
+
+-- Stereo
+data Stereo
+
+instance Channels Stereo where
+    channelFmt  _ = c'ESD_STEREO
+    numChannels _ = 2
+
+{-# INLINE interleave #-}
+interleave ∷ Storable α ⇒ L.Vector α → L.Vector α → L.Vector α
+interleave l r
+    -- THINKME: consider using storablevector-streamfusion
+    = let Just (lFr, l') = L.viewL l
+          Just (rFr, r') = L.viewL r
+          lr' = interleave l' r'
+      in
+        L.cons lFr (L.cons rFr lr')
+
+{-# INLINE deinterleave #-}
+deinterleave ∷ Storable α ⇒ L.Vector α → (L.Vector α, L.Vector α)
+deinterleave v
+    -- THINKME: consider using storablevector-streamfusion
+    = let (lr, v') = L.splitAt 2 v
+      in
+        if L.null lr then
+            (L.empty, L.empty)
+        else
+            let Just (lFr, r) = L.viewL lr
+                Just (rFr, _) = L.viewL r
+                (l', r') = deinterleave v'
+            in
+              (L.cons lFr l', L.cons rFr r')
+
+-- Utility functions
+toLSV ∷ Storable α ⇒ S.Vector α → L.Vector α
+toLSV v = L.fromChunks [v]
+
+wrapSocket ∷ String → CInt → IO Handle
+wrapSocket e (-1) = fail e
+wrapSocket _ fd   = fdToHandle (Fd fd)
+
+closeSocket ∷ Handle → IO ()
+closeSocket h = do (Fd fd) ← handleToFd h
+                   _       ← c'esd_close (fromIntegral fd)
+                   return ()
+
+withCStrOrNull ∷ Maybe String → (CString → IO a) → IO a
+withCStrOrNull Nothing  f = f nullPtr
+withCStrOrNull (Just s) f = withCString s f
+
+failOnError ∷ Monad m ⇒ String → (α → Bool) → α → m α
+failOnError msg isErr rv
+    | isErr rv  = fail msg
+    | otherwise = return rv
+</pre></br><h2>printed</h2></br><pre>{-# LANGUAGE
+    EmptyDataDecls
+  , FlexibleInstances
+  , MultiParamTypeClasses
+  , UnicodeSyntax
+  #-}
+module Sound.EsounD.Internals
+    ( Frame(..)
+
+    , Channels(..)
+    , Mono
+    , Stereo
+    , interleave
+    , deinterleave
+
+    , toLSV
+    , wrapSocket
+    , closeSocket
+    , withCStrOrNull
+    , failOnError
+    )
+    where
+import Bindings.EsounD
+import Data.Int
+import Data.StorableVector      as S
+import Data.StorableVector.Lazy as L
+import Foreign.C.String
+import Foreign.C.Types
+import Foreign.Ptr
+import Foreign.Storable
+import System.IO
+import System.Posix.IO
+import System.Posix.Types
+
+class Storable fr => Frame fr where
+    frameFmt  :: fr -> C'esd_format_t
+    frameSize :: fr -> Int
+
+instance Frame Int8 where
+    frameFmt  _ = c'ESD_BITS8
+    frameSize _ = 1
+
+instance Frame Int16 where
+    frameFmt  _ = c'ESD_BITS16
+    frameSize _ = 2
+
+class Channels ch where
+    channelFmt  :: ch -> C'esd_format_t
+    numChannels :: ch -> Int
+
+-- Mono
+data Mono
+
+instance Channels Mono where
+    channelFmt  _ = c'ESD_MONO
+    numChannels _ = 1
+
+-- Stereo
+data Stereo
+
+instance Channels Stereo where
+    channelFmt  _ = c'ESD_STEREO
+    numChannels _ = 2
+
+{-# INLINE interleave #-}
+interleave :: Storable α => L.Vector α -> L.Vector α -> L.Vector α
+interleave l r
+    -- THINKME: consider using storablevector-streamfusion
+    = let Just (lFr, l') = L.viewL l
+          Just (rFr, r') = L.viewL r
+          lr' = interleave l' r'
+      in
+        L.cons lFr (L.cons rFr lr')
+
+{-# INLINE deinterleave #-}
+deinterleave :: Storable α => L.Vector α -> (L.Vector α, L.Vector α)
+deinterleave v
+    -- THINKME: consider using storablevector-streamfusion
+    = let (lr, v') = L.splitAt 2 v
+      in
+        if L.null lr then
+            (L.empty, L.empty)
+        else
+            let Just (lFr, r) = L.viewL lr
+                Just (rFr, _) = L.viewL r
+                (l', r') = deinterleave v'
+            in
+              (L.cons lFr l', L.cons rFr r')
+
+-- Utility functions
+toLSV :: Storable α => S.Vector α -> L.Vector α
+toLSV v = L.fromChunks [v]
+
+wrapSocket :: String -> CInt -> IO Handle
+wrapSocket e (-1) = fail e
+wrapSocket _ fd   = fdToHandle (Fd fd)
+
+closeSocket :: Handle -> IO ()
+closeSocket h = do (Fd fd) <- handleToFd h
+                   _       <- c'esd_close (fromIntegral fd)
+                   return ()
+
+withCStrOrNull :: Maybe String -> (CString -> IO a) -> IO a
+withCStrOrNull Nothing  f = f nullPtr
+withCStrOrNull (Just s) f = withCString s f
+
+failOnError :: Monad m => String -> (α -> Bool) -> α -> m α
+failOnError msg isErr rv
+    | isErr rv  = fail msg
+    | otherwise = return rv
+
+</pre>

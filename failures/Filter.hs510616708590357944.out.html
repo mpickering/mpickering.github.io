@@ -1,0 +1,826 @@
+<a href="Filter.hs41654197624301412.out.html">prev</a></br><a href="failures.html">home</a></br><a href="Filter.hs823378840143542612.out.html">next</a></br></br><pre>20c20
+<    {- ** Smooth -}
+---
+>    {- ** Smooth 
+23c23
+<    {- ** Delay -}
+---
+>    {- ** Delay 
+30c30
+<    {- * Recursive -}
+---
+>    {- * Recursive 
+32c32
+<    {- ** Without resonance -}
+---
+>    {- ** Without resonance 
+41c41
+<    {- ** With resonance -}
+---
+>    {- ** With resonance 
+44c44
+<    {- ** Allpass -}
+---
+>    {- ** Allpass 
+125c125
+< {- | needs a good handling of boundaries, yet -}
+---
+> {- | needs a good handling of boundaries, yet 
+128c128
+<       q            {- ^ time length of the window -}
+---
+>       q            {- ^ time length of the window 
+152c152
+<    -> q   {- ^ minDelay, minimal delay, may be negative -}
+---
+>    -> q   {- ^ minDelay, minimal delay, may be negative 
+155c155
+<                in the range [minDelay,maxDelay]. -}
+---
+>                in the range [minDelay,maxDelay]. 
+158c158
+<                negative numbers mean prefetch -}
+---
+>                negative numbers mean prefetch 
+176c176
+< {- | symmetric phaser -}
+---
+> {- | symmetric phaser 
+180c180
+<    -> q   {- ^ maxDelay, must be positive -}
+---
+>    -> q   {- ^ maxDelay, must be positive 
+182c182
+<           {- ^ delay control -}
+---
+>           {- ^ delay control 
+192c192
+<    -> q   {- ^ maxDelay, must be positive -}
+---
+>    -> q   {- ^ maxDelay, must be positive 
+194c194
+<           {- ^ delay control -}
+---
+>           {- ^ delay control 
+203c203
+<    -> q   {- ^ maxDelay, must be positive -}
+---
+>    -> q   {- ^ maxDelay, must be positive 
+205c205
+<           {- ^ delay control -}
+---
+>           {- ^ delay control 
+219d218
+<       SigI.T a q a {- ^ Control signal for the cut-off frequency. -}
+220c219
+<    -> SigC.T y y' yv {- ^ Input signal -}
+---
+>       SigI.T a q a {- ^ Control signal for the cut-off frequency. 
+220a220
+>    -> SigC.T y y' yv {- ^ Input signal 
+241c241
+<                         the higher the order, the sharper is the separation of frequencies. -}
+---
+>                         the higher the order, the sharper is the separation of frequencies. 
+243d242
+<                         Should be between 0 and 1. -}
+244d242
+<    -> SigI.T a q a {- ^ Control signal for the cut-off frequency. -}
+245c243
+<    -> SigC.T y y' yv {- ^ Input signal -}
+---
+>                         Should be between 0 and 1. 
+245a244
+>    -> SigI.T a q a {- ^ Control signal for the cut-off frequency. 
+245a245
+>    -> SigC.T y y' yv {- ^ Input signal 
+273d272
+<                         relatively to the transition band. -}
+274d272
+<    -> SigI.T a q a {- ^ signal for cut off and band center frequency -}
+275d272
+<    -> SigC.T y y' yv {- ^ input signal -}
+276c273
+<    -> SigI.Process a q (v,v,v) {- ^ highpass, bandpass, lowpass filter -}
+---
+>                         relatively to the transition band. 
+276a274
+>    -> SigI.T a q a {- ^ signal for cut off and band center frequency 
+276a275
+>    -> SigC.T y y' yv {- ^ input signal 
+276a276
+>    -> SigI.Process a q (v,v,v) {- ^ highpass, bandpass, lowpass filter 
+290d289
+<                         relatively to the transition band. -}
+291c290
+<    -> SigI.T a q a {- ^ signal for cut off and band center frequency -}
+---
+>                         relatively to the transition band. 
+291a291
+>    -> SigI.T a q a {- ^ signal for cut off and band center frequency 
+304d303
+<       Int          {- ^ order, number of filters in the cascade -}
+305d303
+<    -> a            {- ^ the phase shift to be achieved for the given frequency -}
+306c304
+<    -> SigI.T a q a {- ^ lowest comb frequency -}
+---
+>       Int          {- ^ order, number of filters in the cascade 
+306a305
+>    -> a            {- ^ the phase shift to be achieved for the given frequency 
+306a306
+>    -> SigI.T a q a {- ^ lowest comb frequency 
+345a346
+> 
+</pre></br><h2>original</h2></br><pre>{- |
+Copyright   :  (c) Henning Thielemann 2008
+License     :  GPL
+
+Maintainer  :  synthesizer@henning-thielemann.de
+Stability   :  provisional
+Portability :  requires multi-parameter type classes
+-}
+module Synthesizer.SampleRateContext.Filter (
+   {- * Non-recursive -}
+
+   {- ** Amplification -}
+   amplify,
+   negate,
+   envelope,
+   {- ** Filter operators from calculus -}
+   differentiate,
+
+{-
+   {- ** Smooth -}
+   mean,
+
+   {- ** Delay -}
+   delay,
+   phaseModulation,
+   phaser,
+   phaserStereo,
+
+
+   {- * Recursive -}
+
+   {- ** Without resonance -}
+   firstOrderLowpass,
+   firstOrderHighpass,
+   butterworthLowpass,
+   butterworthHighpass,
+   chebyshevALowpass,
+   chebyshevAHighpass,
+   chebyshevBLowpass,
+   chebyshevBHighpass,
+   {- ** With resonance -}
+   universal,
+   moogLowpass,
+   {- ** Allpass -}
+   allpassCascade,
+-}
+   {- ** Reverb -}
+   comb,
+
+   {- ** Filter operators from calculus -}
+   integrate,
+) where
+
+
+import qualified Synthesizer.Amplitude.Filter as FiltV
+import qualified Synthesizer.SampleRateContext.Signal as SigC
+import qualified Synthesizer.SampleRateContext.Rate as Rate
+
+import Synthesizer.SampleRateContext.Signal
+   (toTimeScalar, {- toFrequencyScalar, -} )
+
+-- import qualified Synthesizer.Plain.Displacement as Syn
+-- import qualified Synthesizer.Plain.Filter.Recursive    as FiltR
+import qualified Synthesizer.Plain.Filter.Recursive.Comb        as Comb
+import qualified Synthesizer.Plain.Filter.Recursive.Integration as Integrate
+import qualified Synthesizer.Plain.Filter.NonRecursive as FiltNR
+{-
+import qualified Synthesizer.Plain.Interpolation as Interpolation
+import qualified Synthesizer.Plain.Filter.Delay.Block as Delay
+
+import Data.Ord.HT (limit, )
+-}
+
+import qualified Algebra.OccasionallyScalar as OccScalar
+-- import qualified Algebra.Transcendental as Trans
+import qualified Algebra.RealField      as RealField
+import qualified Algebra.Field          as Field
+-- import qualified Algebra.Real           as Real
+import qualified Algebra.Ring           as Ring
+import qualified Algebra.Additive       as Additive
+import qualified Algebra.Module         as Module
+-- import qualified Algebra.VectorSpace    as VectorSpace
+
+-- import Control.Monad(liftM2)
+
+import NumericPrelude hiding (negate)
+import PreludeBase as P
+import Prelude ()
+
+
+{- | The amplification factor must be positive. -}
+amplify :: (Ring.C y') =>
+      y'
+   -> Rate.T t t'
+   -> SigC.T y y' yv
+   -> SigC.T y y' yv
+amplify volume = Rate.pure $ FiltV.amplify volume
+
+negate :: (Additive.C yv) =>
+      Rate.T t t'
+   -> SigC.T y y' yv
+   -> SigC.T y y' yv
+negate = Rate.pure FiltV.negate
+
+envelope :: (Module.C y0 yv, Ring.C y') =>
+      Rate.T t t'
+   -> SigC.T y y' y0  {-  the envelope -}
+   -> SigC.T y y' yv  {-  the signal to be enveloped -}
+   -> SigC.T y y' yv
+envelope = Rate.pure FiltV.envelope
+
+
+
+differentiate :: (Additive.C v, Ring.C q') =>
+      Rate.T t q'
+   -> SigC.T y q' v
+   -> SigC.T y q' v
+differentiate sr x =
+   SigC.Cons
+      (SigC.amplitude x * Rate.toNumber sr)
+      (FiltNR.differentiate (SigC.samples x))
+
+
+{-
+{- | needs a good handling of boundaries, yet -}
+mean :: (Additive.C yv, Field.C y', RealField.C a,
+         Module.C a v, OccScalar.C a q) =>
+      q            {- ^ time length of the window -}
+   -> SigC.T y y' yv
+   -> Rate.T t t' -> (SigC.T y y' yv)
+mean time x =
+   do t <- toTimeScalar x (Expr.constant time)
+      let tInt  = round ((t-1)/2)
+      let width = tInt*2+1
+      returnModified []
+         ((SigP.asTypeOfAmplitude (recip (fromIntegral width)) x *> ) .
+          Filt.sums width . FiltNR.delay tInt) x
+
+
+delay :: (Additive.C yv, Field.C y', RealField.C a, OccScalar.C a q) =>
+      q
+   -> SigC.T y y' yv
+   -> Rate.T t t' -> (SigC.T y y' yv)
+delay time x =
+   do t <- toTimeScalar x (Expr.constant time)
+      returnModified [] (FiltNR.delay (round t)) x
+
+
+phaseModulation ::
+         (Additive.C yv, Field.C y', RealField.C a, OccScalar.C a q) =>
+      Interpolation.T a v
+   -> q   {- ^ minDelay, minimal delay, may be negative -}
+   -> q   {- ^ maxDelay, maximal delay, it must be @minDelay <= maxDelay@
+               and the modulation must always be
+               in the range [minDelay,maxDelay]. -}
+   -> SigI.T a q a
+          {- ^ delay control, positive numbers mean delay,
+               negative numbers mean prefetch -}
+   -> SigC.T y y' yv
+   -> Rate.T t t' -> (SigC.T y y' yv)
+phaseModulation ip minDelay maxDelay delays x =
+   do t0 <- toTimeScalar x (Expr.constant minDelay)
+      t1 <- toTimeScalar x (Expr.constant maxDelay)
+      let tInt0 = floor   t0
+      let tInt1 = ceiling t1
+      let tInt0Neg = Additive.negate tInt0
+      ds <- SigI.scalarSamples (toTimeScalar delays) delays
+      returnModified [SigP.sampleRate delays]
+         (FiltNR.delay tInt0 .
+             Delay.modulated ip (tInt1-tInt0+1)
+               (FiltNR.delay tInt0Neg
+                  (Syn.raise (fromIntegral tInt0Neg)
+                     (map (clip t0 t1) ds)))) x
+
+
+{- | symmetric phaser -}
+phaser :: (Additive.C yv, Field.C y', RealField.C a,
+           Module.C a v, OccScalar.C a q) =>
+      Interpolation.T a v
+   -> q   {- ^ maxDelay, must be positive -}
+   -> SigI.T a q a
+          {- ^ delay control -}
+   -> SigC.T y y' yv
+   -> Rate.T t t' -> (SigC.T y y' yv)
+phaser ip maxDelay delays x =
+   amplify (asTypeOf 0.5 maxDelay) =<<
+      uncurry SynI.mix =<< phaserCore ip maxDelay delays x
+
+phaserStereo :: (Additive.C yv, Field.C y', Real.C q, RealField.C a,
+                 Module.C a v, OccScalar.C a q) =>
+      Interpolation.T a v
+   -> q   {- ^ maxDelay, must be positive -}
+   -> SigI.T a q a
+          {- ^ delay control -}
+   -> SigC.T y y' yv
+   -> SigI.Process a q (v,v)
+phaserStereo ip maxDelay delays x =
+   uncurry CutI.zip =<< phaserCore ip maxDelay delays x
+
+phaserCore :: (Additive.C yv, Field.C y', RealField.C a,
+               Module.C a v, OccScalar.C a q) =>
+      Interpolation.T a v
+   -> q   {- ^ maxDelay, must be positive -}
+   -> SigI.T a q a
+          {- ^ delay control -}
+   -> SigC.T y y' yv
+   -> Process.T q (SigC.T y y' yv, SigC.T y y' yv)
+phaserCore ip maxDelay delays x =
+   do let minDelay = Additive.negate maxDelay
+      negDelays <- Inference.Signal.Filter.negate delays
+      liftM2 (,)
+         (phaseModulation ip minDelay maxDelay delays x)
+         (phaseModulation ip minDelay maxDelay negDelays x)
+
+
+
+firstOrderLowpass, firstOrderHighpass ::
+   (Trans.C a, Trans.C q, Module.C a v, OccScalar.C a q) =>
+      SigI.T a q a {- ^ Control signal for the cut-off frequency. -}
+   -> SigC.T y y' yv {- ^ Input signal -}
+   -> Rate.T t t' -> (SigC.T y y' yv)
+firstOrderLowpass  = firstOrderGen Filt1.lowpass
+firstOrderHighpass = firstOrderGen Filt1.highpass
+
+firstOrderGen :: (Trans.C a, Trans.C q, Module.C a v, OccScalar.C a q) =>
+      ([a] -> [v] -> [v])
+   -> SigI.T a q a
+   -> SigC.T y y' yv
+   -> Rate.T t t' -> (SigC.T y y' yv)
+firstOrderGen filt freq x =
+   do freqs <- SigI.scalarSamples (toFrequencyScalar x) freq
+      returnModified [SigP.sampleRate freq]
+         (filt (map Filt1.parameter freqs)) x
+
+
+butterworthLowpass, butterworthHighpass,
+   chebyshevALowpass, chebyshevAHighpass,
+   chebyshevBLowpass, chebyshevBHighpass ::
+      (Field.C y', Trans.C a, VectorSpace.C a v, OccScalar.C a q) =>
+      Int          {- ^ Order of the filter, must be even,
+                        the higher the order, the sharper is the separation of frequencies. -}
+   -> a            {- ^ The attenuation at the cut-off frequency.
+                        Should be between 0 and 1. -}
+   -> SigI.T a q a {- ^ Control signal for the cut-off frequency. -}
+   -> SigC.T y y' yv {- ^ Input signal -}
+   -> Rate.T t t' -> (SigC.T y y' yv)
+
+butterworthLowpass  = higherOrderNoResoGen Butter.lowpass
+butterworthHighpass = higherOrderNoResoGen FiltR.butterworthHighpass
+chebyshevALowpass   = higherOrderNoResoGen FiltR.chebyshevALowpass
+chebyshevAHighpass  = higherOrderNoResoGen FiltR.chebyshevAHighpass
+chebyshevBLowpass   = higherOrderNoResoGen FiltR.chebyshevBLowpass
+chebyshevBHighpass  = higherOrderNoResoGen FiltR.chebyshevBHighpass
+
+higherOrderNoResoGen ::
+   (Field.C y', Ring.C a, OccScalar.C a q) =>
+      (Int -> a -> [a] -> [v] -> [v])
+   -> Int
+   -> a
+   -> SigI.T a q a
+   -> SigC.T y y' yv
+   -> Rate.T t t' -> (SigC.T y y' yv)
+higherOrderNoResoGen filt order ratio freq x =
+   do freqs <- SigI.scalarSamples (toFrequencyScalar x) freq
+      returnModified [SigP.sampleRate freq]
+         (filt order ratio freqs) x
+
+
+
+universal :: (Trans.C a, Module.C a v, Field.C y', OccScalar.C a q) =>
+      SigI.T a q a {- ^ signal for resonance,
+                        i.e. factor of amplification at the resonance frequency
+                        relatively to the transition band. -}
+   -> SigI.T a q a {- ^ signal for cut off and band center frequency -}
+   -> SigC.T y y' yv {- ^ input signal -}
+   -> SigI.Process a q (v,v,v) {- ^ highpass, bandpass, lowpass filter -}
+universal reso freq x =
+   do resos <- SigI.scalarSamples (Process.exprToScalar) reso
+      freqs <- SigI.scalarSamples (toFrequencyScalar x) freq
+      let params =
+             map FiltR.uniFilterParam
+                 (zipWith FiltR.Pole resos freqs)
+      returnModified [SigP.sampleRate reso, SigP.sampleRate freq]
+         (FiltR.uniFilter params) x
+
+moogLowpass :: (Trans.C a, Module.C a v, Field.C y', OccScalar.C a q) =>
+      Int
+   -> SigI.T a q a {- ^ signal for resonance,
+                        i.e. factor of amplification at the resonance frequency
+                        relatively to the transition band. -}
+   -> SigI.T a q a {- ^ signal for cut off and band center frequency -}
+   -> SigC.T y y' yv
+   -> Rate.T t t' -> (SigC.T y y' yv)
+moogLowpass order reso freq x =
+   do resos <- SigI.scalarSamples (Process.exprToScalar) reso
+      freqs <- SigI.scalarSamples (toFrequencyScalar x) freq
+      let params =
+             map (Moog.parameter order)
+                 (zipWith FiltR.Pole resos freqs)
+      returnModified [SigP.sampleRate reso, SigP.sampleRate freq]
+         (Moog.lowpass order params) x
+
+allpassCascade :: (Trans.C a, Module.C a v, Field.C y', OccScalar.C a q) =>
+      Int          {- ^ order, number of filters in the cascade -}
+   -> a            {- ^ the phase shift to be achieved for the given frequency -}
+   -> SigI.T a q a {- ^ lowest comb frequency -}
+   -> SigC.T y y' yv
+   -> Rate.T t t' -> (SigC.T y y' yv)
+allpassCascade order phase freq x =
+   do freqs <- SigI.scalarSamples (toFrequencyScalar x) freq
+      let params = map (FiltR.allpassCascadeParam order phase) freqs
+      returnModified [SigP.sampleRate freq]
+         (FiltR.allpassCascade order params) x
+-}
+
+
+
+{- | Infinitely many equi-delayed exponentially decaying echos. -}
+comb :: (RealField.C t, Ring.C t', OccScalar.C t t', Module.C y yv) =>
+   t' -> y -> Rate.T t t' -> SigC.T y y' yv -> SigC.T y y' yv
+comb time gain sr x =
+   SigC.Cons (SigC.amplitude x)
+      (Comb.run (round (toTimeScalar sr time)) gain (SigC.samples x))
+
+
+integrate :: (Additive.C v, Field.C q') =>
+      Rate.T t q'
+   -> SigC.T y q' v
+   -> SigC.T y q' v
+integrate sr x =
+   SigC.Cons
+      (SigC.amplitude x / Rate.toNumber sr)
+      (Integrate.run (SigC.samples x))
+
+
+{-
+returnModified :: (Eq q) =>
+   [Process.Value q] -> ([v] -> [w]) -> SigC.T y y' yv -> SigI.Process a q w
+returnModified sampleRates proc x =
+   do let sampleRate = SigP.sampleRate x
+      mapM_ (Process.equalValue sampleRate) sampleRates
+      SigI.returnCons
+         sampleRate (SigP.amplitude x)
+         (proc (SigP.samples x))
+-}
+</pre></br><h2>printed</h2></br><pre>{- |
+Copyright   :  (c) Henning Thielemann 2008
+License     :  GPL
+
+Maintainer  :  synthesizer@henning-thielemann.de
+Stability   :  provisional
+Portability :  requires multi-parameter type classes
+-}
+module Synthesizer.SampleRateContext.Filter (
+   {- * Non-recursive -}
+
+   {- ** Amplification -}
+   amplify,
+   negate,
+   envelope,
+   {- ** Filter operators from calculus -}
+   differentiate,
+
+{-
+   {- ** Smooth 
+   mean,
+
+   {- ** Delay 
+   delay,
+   phaseModulation,
+   phaser,
+   phaserStereo,
+
+
+   {- * Recursive 
+
+   {- ** Without resonance 
+   firstOrderLowpass,
+   firstOrderHighpass,
+   butterworthLowpass,
+   butterworthHighpass,
+   chebyshevALowpass,
+   chebyshevAHighpass,
+   chebyshevBLowpass,
+   chebyshevBHighpass,
+   {- ** With resonance 
+   universal,
+   moogLowpass,
+   {- ** Allpass 
+   allpassCascade,
+-}
+   {- ** Reverb -}
+   comb,
+
+   {- ** Filter operators from calculus -}
+   integrate,
+) where
+
+
+import qualified Synthesizer.Amplitude.Filter as FiltV
+import qualified Synthesizer.SampleRateContext.Signal as SigC
+import qualified Synthesizer.SampleRateContext.Rate as Rate
+
+import Synthesizer.SampleRateContext.Signal
+   (toTimeScalar, {- toFrequencyScalar, -} )
+
+-- import qualified Synthesizer.Plain.Displacement as Syn
+-- import qualified Synthesizer.Plain.Filter.Recursive    as FiltR
+import qualified Synthesizer.Plain.Filter.Recursive.Comb        as Comb
+import qualified Synthesizer.Plain.Filter.Recursive.Integration as Integrate
+import qualified Synthesizer.Plain.Filter.NonRecursive as FiltNR
+{-
+import qualified Synthesizer.Plain.Interpolation as Interpolation
+import qualified Synthesizer.Plain.Filter.Delay.Block as Delay
+
+import Data.Ord.HT (limit, )
+-}
+
+import qualified Algebra.OccasionallyScalar as OccScalar
+-- import qualified Algebra.Transcendental as Trans
+import qualified Algebra.RealField      as RealField
+import qualified Algebra.Field          as Field
+-- import qualified Algebra.Real           as Real
+import qualified Algebra.Ring           as Ring
+import qualified Algebra.Additive       as Additive
+import qualified Algebra.Module         as Module
+-- import qualified Algebra.VectorSpace    as VectorSpace
+
+-- import Control.Monad(liftM2)
+
+import NumericPrelude hiding (negate)
+import PreludeBase as P
+import Prelude ()
+
+
+{- | The amplification factor must be positive. -}
+amplify :: (Ring.C y') =>
+      y'
+   -> Rate.T t t'
+   -> SigC.T y y' yv
+   -> SigC.T y y' yv
+amplify volume = Rate.pure $ FiltV.amplify volume
+
+negate :: (Additive.C yv) =>
+      Rate.T t t'
+   -> SigC.T y y' yv
+   -> SigC.T y y' yv
+negate = Rate.pure FiltV.negate
+
+envelope :: (Module.C y0 yv, Ring.C y') =>
+      Rate.T t t'
+   -> SigC.T y y' y0  {-  the envelope -}
+   -> SigC.T y y' yv  {-  the signal to be enveloped -}
+   -> SigC.T y y' yv
+envelope = Rate.pure FiltV.envelope
+
+
+
+differentiate :: (Additive.C v, Ring.C q') =>
+      Rate.T t q'
+   -> SigC.T y q' v
+   -> SigC.T y q' v
+differentiate sr x =
+   SigC.Cons
+      (SigC.amplitude x * Rate.toNumber sr)
+      (FiltNR.differentiate (SigC.samples x))
+
+
+{-
+{- | needs a good handling of boundaries, yet 
+mean :: (Additive.C yv, Field.C y', RealField.C a,
+         Module.C a v, OccScalar.C a q) =>
+      q            {- ^ time length of the window 
+   -> SigC.T y y' yv
+   -> Rate.T t t' -> (SigC.T y y' yv)
+mean time x =
+   do t <- toTimeScalar x (Expr.constant time)
+      let tInt  = round ((t-1)/2)
+      let width = tInt*2+1
+      returnModified []
+         ((SigP.asTypeOfAmplitude (recip (fromIntegral width)) x *> ) .
+          Filt.sums width . FiltNR.delay tInt) x
+
+
+delay :: (Additive.C yv, Field.C y', RealField.C a, OccScalar.C a q) =>
+      q
+   -> SigC.T y y' yv
+   -> Rate.T t t' -> (SigC.T y y' yv)
+delay time x =
+   do t <- toTimeScalar x (Expr.constant time)
+      returnModified [] (FiltNR.delay (round t)) x
+
+
+phaseModulation ::
+         (Additive.C yv, Field.C y', RealField.C a, OccScalar.C a q) =>
+      Interpolation.T a v
+   -> q   {- ^ minDelay, minimal delay, may be negative 
+   -> q   {- ^ maxDelay, maximal delay, it must be @minDelay <= maxDelay@
+               and the modulation must always be
+               in the range [minDelay,maxDelay]. 
+   -> SigI.T a q a
+          {- ^ delay control, positive numbers mean delay,
+               negative numbers mean prefetch 
+   -> SigC.T y y' yv
+   -> Rate.T t t' -> (SigC.T y y' yv)
+phaseModulation ip minDelay maxDelay delays x =
+   do t0 <- toTimeScalar x (Expr.constant minDelay)
+      t1 <- toTimeScalar x (Expr.constant maxDelay)
+      let tInt0 = floor   t0
+      let tInt1 = ceiling t1
+      let tInt0Neg = Additive.negate tInt0
+      ds <- SigI.scalarSamples (toTimeScalar delays) delays
+      returnModified [SigP.sampleRate delays]
+         (FiltNR.delay tInt0 .
+             Delay.modulated ip (tInt1-tInt0+1)
+               (FiltNR.delay tInt0Neg
+                  (Syn.raise (fromIntegral tInt0Neg)
+                     (map (clip t0 t1) ds)))) x
+
+
+{- | symmetric phaser 
+phaser :: (Additive.C yv, Field.C y', RealField.C a,
+           Module.C a v, OccScalar.C a q) =>
+      Interpolation.T a v
+   -> q   {- ^ maxDelay, must be positive 
+   -> SigI.T a q a
+          {- ^ delay control 
+   -> SigC.T y y' yv
+   -> Rate.T t t' -> (SigC.T y y' yv)
+phaser ip maxDelay delays x =
+   amplify (asTypeOf 0.5 maxDelay) =<<
+      uncurry SynI.mix =<< phaserCore ip maxDelay delays x
+
+phaserStereo :: (Additive.C yv, Field.C y', Real.C q, RealField.C a,
+                 Module.C a v, OccScalar.C a q) =>
+      Interpolation.T a v
+   -> q   {- ^ maxDelay, must be positive 
+   -> SigI.T a q a
+          {- ^ delay control 
+   -> SigC.T y y' yv
+   -> SigI.Process a q (v,v)
+phaserStereo ip maxDelay delays x =
+   uncurry CutI.zip =<< phaserCore ip maxDelay delays x
+
+phaserCore :: (Additive.C yv, Field.C y', RealField.C a,
+               Module.C a v, OccScalar.C a q) =>
+      Interpolation.T a v
+   -> q   {- ^ maxDelay, must be positive 
+   -> SigI.T a q a
+          {- ^ delay control 
+   -> SigC.T y y' yv
+   -> Process.T q (SigC.T y y' yv, SigC.T y y' yv)
+phaserCore ip maxDelay delays x =
+   do let minDelay = Additive.negate maxDelay
+      negDelays <- Inference.Signal.Filter.negate delays
+      liftM2 (,)
+         (phaseModulation ip minDelay maxDelay delays x)
+         (phaseModulation ip minDelay maxDelay negDelays x)
+
+
+
+firstOrderLowpass, firstOrderHighpass ::
+   (Trans.C a, Trans.C q, Module.C a v, OccScalar.C a q) =>
+      SigI.T a q a {- ^ Control signal for the cut-off frequency. 
+   -> SigC.T y y' yv {- ^ Input signal 
+   -> Rate.T t t' -> (SigC.T y y' yv)
+firstOrderLowpass  = firstOrderGen Filt1.lowpass
+firstOrderHighpass = firstOrderGen Filt1.highpass
+
+firstOrderGen :: (Trans.C a, Trans.C q, Module.C a v, OccScalar.C a q) =>
+      ([a] -> [v] -> [v])
+   -> SigI.T a q a
+   -> SigC.T y y' yv
+   -> Rate.T t t' -> (SigC.T y y' yv)
+firstOrderGen filt freq x =
+   do freqs <- SigI.scalarSamples (toFrequencyScalar x) freq
+      returnModified [SigP.sampleRate freq]
+         (filt (map Filt1.parameter freqs)) x
+
+
+butterworthLowpass, butterworthHighpass,
+   chebyshevALowpass, chebyshevAHighpass,
+   chebyshevBLowpass, chebyshevBHighpass ::
+      (Field.C y', Trans.C a, VectorSpace.C a v, OccScalar.C a q) =>
+      Int          {- ^ Order of the filter, must be even,
+                        the higher the order, the sharper is the separation of frequencies. 
+   -> a            {- ^ The attenuation at the cut-off frequency.
+                        Should be between 0 and 1. 
+   -> SigI.T a q a {- ^ Control signal for the cut-off frequency. 
+   -> SigC.T y y' yv {- ^ Input signal 
+   -> Rate.T t t' -> (SigC.T y y' yv)
+
+butterworthLowpass  = higherOrderNoResoGen Butter.lowpass
+butterworthHighpass = higherOrderNoResoGen FiltR.butterworthHighpass
+chebyshevALowpass   = higherOrderNoResoGen FiltR.chebyshevALowpass
+chebyshevAHighpass  = higherOrderNoResoGen FiltR.chebyshevAHighpass
+chebyshevBLowpass   = higherOrderNoResoGen FiltR.chebyshevBLowpass
+chebyshevBHighpass  = higherOrderNoResoGen FiltR.chebyshevBHighpass
+
+higherOrderNoResoGen ::
+   (Field.C y', Ring.C a, OccScalar.C a q) =>
+      (Int -> a -> [a] -> [v] -> [v])
+   -> Int
+   -> a
+   -> SigI.T a q a
+   -> SigC.T y y' yv
+   -> Rate.T t t' -> (SigC.T y y' yv)
+higherOrderNoResoGen filt order ratio freq x =
+   do freqs <- SigI.scalarSamples (toFrequencyScalar x) freq
+      returnModified [SigP.sampleRate freq]
+         (filt order ratio freqs) x
+
+
+
+universal :: (Trans.C a, Module.C a v, Field.C y', OccScalar.C a q) =>
+      SigI.T a q a {- ^ signal for resonance,
+                        i.e. factor of amplification at the resonance frequency
+                        relatively to the transition band. 
+   -> SigI.T a q a {- ^ signal for cut off and band center frequency 
+   -> SigC.T y y' yv {- ^ input signal 
+   -> SigI.Process a q (v,v,v) {- ^ highpass, bandpass, lowpass filter 
+universal reso freq x =
+   do resos <- SigI.scalarSamples (Process.exprToScalar) reso
+      freqs <- SigI.scalarSamples (toFrequencyScalar x) freq
+      let params =
+             map FiltR.uniFilterParam
+                 (zipWith FiltR.Pole resos freqs)
+      returnModified [SigP.sampleRate reso, SigP.sampleRate freq]
+         (FiltR.uniFilter params) x
+
+moogLowpass :: (Trans.C a, Module.C a v, Field.C y', OccScalar.C a q) =>
+      Int
+   -> SigI.T a q a {- ^ signal for resonance,
+                        i.e. factor of amplification at the resonance frequency
+                        relatively to the transition band. 
+   -> SigI.T a q a {- ^ signal for cut off and band center frequency 
+   -> SigC.T y y' yv
+   -> Rate.T t t' -> (SigC.T y y' yv)
+moogLowpass order reso freq x =
+   do resos <- SigI.scalarSamples (Process.exprToScalar) reso
+      freqs <- SigI.scalarSamples (toFrequencyScalar x) freq
+      let params =
+             map (Moog.parameter order)
+                 (zipWith FiltR.Pole resos freqs)
+      returnModified [SigP.sampleRate reso, SigP.sampleRate freq]
+         (Moog.lowpass order params) x
+
+allpassCascade :: (Trans.C a, Module.C a v, Field.C y', OccScalar.C a q) =>
+      Int          {- ^ order, number of filters in the cascade 
+   -> a            {- ^ the phase shift to be achieved for the given frequency 
+   -> SigI.T a q a {- ^ lowest comb frequency 
+   -> SigC.T y y' yv
+   -> Rate.T t t' -> (SigC.T y y' yv)
+allpassCascade order phase freq x =
+   do freqs <- SigI.scalarSamples (toFrequencyScalar x) freq
+      let params = map (FiltR.allpassCascadeParam order phase) freqs
+      returnModified [SigP.sampleRate freq]
+         (FiltR.allpassCascade order params) x
+-}
+
+
+
+{- | Infinitely many equi-delayed exponentially decaying echos. -}
+comb :: (RealField.C t, Ring.C t', OccScalar.C t t', Module.C y yv) =>
+   t' -> y -> Rate.T t t' -> SigC.T y y' yv -> SigC.T y y' yv
+comb time gain sr x =
+   SigC.Cons (SigC.amplitude x)
+      (Comb.run (round (toTimeScalar sr time)) gain (SigC.samples x))
+
+
+integrate :: (Additive.C v, Field.C q') =>
+      Rate.T t q'
+   -> SigC.T y q' v
+   -> SigC.T y q' v
+integrate sr x =
+   SigC.Cons
+      (SigC.amplitude x / Rate.toNumber sr)
+      (Integrate.run (SigC.samples x))
+
+
+{-
+returnModified :: (Eq q) =>
+   [Process.Value q] -> ([v] -> [w]) -> SigC.T y y' yv -> SigI.Process a q w
+returnModified sampleRates proc x =
+   do let sampleRate = SigP.sampleRate x
+      mapM_ (Process.equalValue sampleRate) sampleRates
+      SigI.returnCons
+         sampleRate (SigP.amplitude x)
+         (proc (SigP.samples x))
+-}
+
+</pre>

@@ -1,0 +1,164 @@
+<a href="CheckBuildPlan.hs195400260589673557.out.html">prev</a></br><a href="failures.html">home</a></br><a href="Checkpoint.hs1502883016252193898.out.html">next</a></br></br><pre>24c24
+< instance NFData v ⇒ NFData (Checked p v) where
+---
+> instance NFData v => NFData (Checked p v) where
+28c28
+< trustMe ∷ v → Checked p v
+---
+> trustMe :: v -> Checked p v
+33c33
+< trustThat ∷ p → v → Checked p v
+---
+> trustThat :: p -> v -> Checked p v
+38c38
+< trustMap ∷ (v → v) → Checked p v → Checked p v
+---
+> trustMap :: (v -> v) -> Checked p v -> Checked p v
+43c43
+< checked ∷ Checked p v → v
+---
+> checked :: Checked p v -> v
+50c50
+<   holds ∷ p → v → Bool
+---
+>   holds :: p -> v -> Bool
+53c53
+< maybeHolds ∷ Property p v ⇒ p → v → Maybe v
+---
+> maybeHolds :: Property p v => p -> v -> Maybe v
+59d58
+< check ∷ ∀ p v . Property p v ⇒ v → Maybe (Checked p v)
+60c59
+< check v | holds (undefined ∷ p) v = Just (Checked v)
+---
+> check :: forall p v . Property p v => v -> Maybe (Checked p v)
+60a60
+> check v | holds (undefined :: p) v = Just (Checked v)
+62a63
+> 
+</pre></br><h2>original</h2></br><pre>{-# LANGUAGE UnicodeSyntax #-}
+{-# LANGUAGE DeriveDataTypeable #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+
+-- | Type-indexed runtime-checked properties.
+module Data.Checked
+  ( Checked
+  , trustMe
+  , trustThat
+  , trustMap
+  , checked
+  , Property(..)
+  , maybeHolds
+  , check
+  ) where
+
+import Data.Typeable (Typeable)
+import Control.DeepSeq (NFData(..))
+
+-- | Wrapper-evidence for property /p/.
+newtype Checked p v = Checked v deriving Typeable
+
+instance NFData v ⇒ NFData (Checked p v) where
+  rnf (Checked v) = rnf v
+
+-- | Use when the property can be deduced without a runtime check.
+trustMe ∷ v → Checked p v
+trustMe = Checked
+{-# INLINE trustMe #-}
+
+-- | Use when the property can be deduced without a runtime check.
+trustThat ∷ p → v → Checked p v
+trustThat _ = Checked
+{-# INLINE trustThat #-}
+
+-- | Apply a fuction that preserves the property to the checked value.
+trustMap ∷ (v → v) → Checked p v → Checked p v
+trustMap f (Checked v) = Checked (f v)
+{-# INLINE trustMap #-}
+
+-- | Unwrap the checked value.
+checked ∷ Checked p v → v
+checked (Checked v) = v
+{-# INLINE checked #-}
+
+class Property p v where
+  -- | Test if the property holds for the given value.
+  --   The first argument is supposed to be ignored.
+  holds ∷ p → v → Bool
+
+-- | Return 'Just' /v/ if /p/ holds and 'Nothing' overwise.
+maybeHolds ∷ Property p v ⇒ p → v → Maybe v
+maybeHolds p v | holds p v = Just v
+               | otherwise = Nothing
+{-# INLINABLE maybeHolds #-}
+
+-- | Wrap the value if the property holds.
+check ∷ ∀ p v . Property p v ⇒ v → Maybe (Checked p v)
+check v | holds (undefined ∷ p) v = Just (Checked v)
+        | otherwise               = Nothing
+{-# INLINABLE check #-}
+</pre></br><h2>printed</h2></br><pre>{-# LANGUAGE UnicodeSyntax #-}
+{-# LANGUAGE DeriveDataTypeable #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+
+-- | Type-indexed runtime-checked properties.
+module Data.Checked
+  ( Checked
+  , trustMe
+  , trustThat
+  , trustMap
+  , checked
+  , Property(..)
+  , maybeHolds
+  , check
+  ) where
+
+import Data.Typeable (Typeable)
+import Control.DeepSeq (NFData(..))
+
+-- | Wrapper-evidence for property /p/.
+newtype Checked p v = Checked v deriving Typeable
+
+instance NFData v => NFData (Checked p v) where
+  rnf (Checked v) = rnf v
+
+-- | Use when the property can be deduced without a runtime check.
+trustMe :: v -> Checked p v
+trustMe = Checked
+{-# INLINE trustMe #-}
+
+-- | Use when the property can be deduced without a runtime check.
+trustThat :: p -> v -> Checked p v
+trustThat _ = Checked
+{-# INLINE trustThat #-}
+
+-- | Apply a fuction that preserves the property to the checked value.
+trustMap :: (v -> v) -> Checked p v -> Checked p v
+trustMap f (Checked v) = Checked (f v)
+{-# INLINE trustMap #-}
+
+-- | Unwrap the checked value.
+checked :: Checked p v -> v
+checked (Checked v) = v
+{-# INLINE checked #-}
+
+class Property p v where
+  -- | Test if the property holds for the given value.
+  --   The first argument is supposed to be ignored.
+  holds :: p -> v -> Bool
+
+-- | Return 'Just' /v/ if /p/ holds and 'Nothing' overwise.
+maybeHolds :: Property p v => p -> v -> Maybe v
+maybeHolds p v | holds p v = Just v
+               | otherwise = Nothing
+{-# INLINABLE maybeHolds #-}
+
+-- | Wrap the value if the property holds.
+check :: forall p v . Property p v => v -> Maybe (Checked p v)
+check v | holds (undefined :: p) v = Just (Checked v)
+        | otherwise               = Nothing
+{-# INLINABLE check #-}
+
+</pre>

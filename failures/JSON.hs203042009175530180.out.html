@@ -1,0 +1,646 @@
+<a href="JSON.hs19427277221083454666.out.html">prev</a></br><a href="failures.html">home</a></br><a href="JSONTests.hs16406879291351995223.out.html">next</a></br></br><pre>72c72
+<     bdy an sn = [e| $(ine sn) . $(newtypeProjectionE an) |]
+---
+>     bdy an sn = [| $(ine sn) . $(newtypeProjectionE an) |]
+75d74
+<             BTstring -> [e| String |]
+76d74
+<             BTbinary -> [e| toJSON |]
+77d74
+<             BTbool   -> [e| Bool   |]
+78d74
+<             BTint    -> [e| mkInt  |]
+79c75
+<             BTutc    -> [e| mkUTC  |]
+---
+>             BTstring -> [| String |]
+79a76
+>             BTbinary -> [| toJSON |]
+79a77
+>             BTbool   -> [| Bool   |]
+79a78
+>             BTint    -> [| mkInt  |]
+79a79
+>             BTutc    -> [| mkUTC  |]
+91c91
+<     bdy ts an sn = [e| $(wth sn) $(typeNameE (anName an)) (pure . $(nodeNewtypeConE ts an sn)) |]
+---
+>     bdy ts an sn = [| $(wth sn) $(typeNameE (anName an)) (pure . $(nodeNewtypeConE ts an sn)) |]
+95d94
+<             (BTstring, Just (FtrStrg re)) -> [e| withRegEx re    |]
+96d94
+<             (BTstring, _                ) -> [e| withText        |]
+97d94
+<             (BTbinary, _                ) -> [e| withBinary      |]
+98d94
+<             (BTbool  , _                ) -> [e| withBool        |]
+99d94
+<             (BTint   , Just (FtrIntg ir)) -> [e| withIntRange ir |]
+100d94
+<             (BTint   , _                ) -> [e| withInt         |]
+101d94
+<             (BTutc   , Just (FtrUTC  ur)) -> [e| withUTCRange ur |]
+102c95
+<             (BTutc   , _                ) -> [e| withUTC         |]
+---
+>             (BTstring, Just (FtrStrg re)) -> [| withRegEx re    |]
+102a96
+>             (BTstring, _                ) -> [| withText        |]
+102a97
+>             (BTbinary, _                ) -> [| withBinary      |]
+102a98
+>             (BTbool  , _                ) -> [| withBool        |]
+102a99
+>             (BTint   , Just (FtrIntg ir)) -> [| withIntRange ir |]
+102a100
+>             (BTint   , _                ) -> [| withInt         |]
+102a101
+>             (BTutc   , Just (FtrUTC  ur)) -> [| withUTCRange ur |]
+102a102
+>             (BTutc   , _                ) -> [| withUTC         |]
+124c124
+<             listE [ [e| $(fieldNameE fn) .= $(nodeFieldE an fn) $(varE x) |]
+---
+>             listE [ [| $(fieldNameE fn) .= $(nodeFieldE an fn) $(varE x) |]
+149c149
+<         project (fn, ft) = [e| withDefaultField ro (fmap defaultValueAsJsValue mb_dv) $(fieldNameE fn) parseJSONWithErrs $(varE x) |]
+---
+>         project (fn, ft) = [| withDefaultField ro (fmap defaultValueAsJsValue mb_dv) $(fieldNameE fn) parseJSONWithErrs $(varE x) |]
+153c153
+<     clNull = clause [conP 'Null []] (normalB [e| parseJSONWithErrs (Object HMap.empty) |]) []
+---
+>     clNull = clause [conP 'Null []] (normalB [| parseJSONWithErrs (Object HMap.empty) |]) []
+156c156
+<     bdy' x = [e| failWith (expectedObject $(varE x)) |]
+---
+>     bdy' x = [| failWith (expectedObject $(varE x)) |]
+173c173
+<     bdy fn x = normalB [e| object [ $(fieldNameE fn) .= $(varE x) ] |]
+---
+>     bdy fn x = normalB [| object [ $(fieldNameE fn) .= $(varE x) ] |]
+189c189
+<     alt an (fn, _) = [e| ( $(fieldNameE fn) , fmap $(nodeAltConE an fn) . parseJSONWithErrs ) |]
+---
+>     alt an (fn, _) = [| ( $(fieldNameE fn) , fmap $(nodeAltConE an fn) . parseJSONWithErrs ) |]
+200c200
+<     bdy an = [e| String . $(varE (text_enum_nm an)) |]
+---
+>     bdy an = [| String . $(varE (text_enum_nm an)) |]
+212c212
+<     bdy an = [e| jsonStrMap_p $(varE (map_enum_nm an)) |]
+---
+>     bdy an = [| jsonStrMap_p $(varE (map_enum_nm an)) |]
+222c222
+<              lamE [varP x] [e| parseJSONWithErrs $(varE x) >>= $inj |]
+---
+>              lamE [varP x] [| parseJSONWithErrs $(varE x) >>= inj |]
+231c231
+<     bdy = [e| toJSON . $prj |]
+---
+>     bdy = [| toJSON . prj |]
+244c244
+<     genIf b ts t | b         = optionalInstanceD ts ''FromJSON [t] [simpleD 'parseJSON [e|parseJSONDefault|]]
+---
+>     genIf b ts t | b         = optionalInstanceD ts ''FromJSON [t] [simpleD 'parseJSON [|parseJSONDefault|]]
+269a270
+> 
+</pre></br><h2>original</h2></br><pre>{-# LANGUAGE TemplateHaskell            #-}
+
+module Data.API.Tools.JSON
+    ( jsonTool
+    , jsonTool'
+    , toJsonNodeTool
+    , fromJsonNodeTool
+    , fromJsonWithErrsNodeTool
+    ) where
+
+import           Data.API.JSON
+import           Data.API.TH
+import           Data.API.Tools.Combinators
+import           Data.API.Tools.Datatypes
+import           Data.API.Tools.Enum
+import           Data.API.Types
+import           Data.API.Utils
+
+import           Data.Aeson hiding (withText, withBool)
+import           Control.Applicative
+import qualified Data.HashMap.Strict            as HMap
+import           Data.Maybe
+import qualified Data.Map                       as Map
+import           Data.Monoid
+import qualified Data.Text                      as T
+import           Language.Haskell.TH
+
+
+-- | Tool to generate 'ToJSON' and 'FromJSONWithErrs' instances for
+-- types generated by 'datatypesTool'.  This depends on 'enumTool'.
+-- For historical reasons this does not generate 'FromJSON' instances;
+-- you probably want to use 'jsonTool'' instead.
+jsonTool :: APITool
+jsonTool = apiNodeTool $ toJsonNodeTool <> fromJsonWithErrsNodeTool
+
+-- | Tool to generate 'ToJSON', 'FromJSON' and 'FromJSONWithErrs'
+-- instances for types generated by 'datatypesTool'.  This depends on
+-- 'enumTool'.  Note that generated 'FromJSON' and 'FromJSONWithErrs'
+-- instances will always agree on the decoding of a value, but that
+-- the 'FromJSONWithErrs' instances for basic types are more liberal
+-- than 'FromJSON'.
+jsonTool' :: APITool
+jsonTool' = apiNodeTool $ toJsonNodeTool <> fromJsonNodeTool
+                                         <> fromJsonWithErrsNodeTool
+
+
+-- | Tool to generate 'ToJSON' instance for an API node
+toJsonNodeTool :: APINodeTool
+toJsonNodeTool = apiSpecTool gen_sn_to gen_sr_to gen_su_to gen_se_to mempty
+                 <> gen_pr
+
+-- | Tool to generate 'FromJSON' instance for an API node, which
+-- relies on the 'FromJSONWithErrs' instance.
+fromJsonNodeTool :: APINodeTool
+fromJsonNodeTool = gen_FromJSON
+
+-- | Tool to generate 'FromJSONWithErrs' instance for an API node
+fromJsonWithErrsNodeTool :: APINodeTool
+fromJsonWithErrsNodeTool = apiSpecTool gen_sn_fm gen_sr_fm gen_su_fm gen_se_fm mempty
+                           <> gen_in
+
+
+{-
+instance ToJSON JobId where
+    toJSON = String . _JobId
+-}
+
+gen_sn_to :: Tool (APINode, SpecNewtype)
+gen_sn_to = mkTool $ \ ts (an, sn) -> optionalInstanceD ts ''ToJSON [nodeRepT an]
+                                          [simpleD 'toJSON (bdy an sn)]
+  where
+    bdy an sn = [e| $(ine sn) . $(newtypeProjectionE an) |]
+
+    ine sn = case snType sn of
+            BTstring -> [e| String |]
+            BTbinary -> [e| toJSON |]
+            BTbool   -> [e| Bool   |]
+            BTint    -> [e| mkInt  |]
+            BTutc    -> [e| mkUTC  |]
+
+
+{-
+instance FromJSONWithErrs JobId where
+    parseJSONWithErrs = withText "JobId" (pure . JobId)
+-}
+
+gen_sn_fm :: Tool (APINode, SpecNewtype)
+gen_sn_fm = mkTool $ \ ts (an, sn) -> optionalInstanceD ts ''FromJSONWithErrs [nodeRepT an]
+                                          [simpleD 'parseJSONWithErrs (bdy ts an sn)]
+  where
+    bdy ts an sn = [e| $(wth sn) $(typeNameE (anName an)) (pure . $(nodeNewtypeConE ts an sn)) |]
+
+    wth sn    =
+        case (snType sn, snFilter sn) of
+            (BTstring, Just (FtrStrg re)) -> [e| withRegEx re    |]
+            (BTstring, _                ) -> [e| withText        |]
+            (BTbinary, _                ) -> [e| withBinary      |]
+            (BTbool  , _                ) -> [e| withBool        |]
+            (BTint   , Just (FtrIntg ir)) -> [e| withIntRange ir |]
+            (BTint   , _                ) -> [e| withInt         |]
+            (BTutc   , Just (FtrUTC  ur)) -> [e| withUTCRange ur |]
+            (BTutc   , _                ) -> [e| withUTC         |]
+
+
+
+{-
+instance ToJSON JobSpecId where
+     toJSON = \ x ->
+        object
+            [ "Id"         .= jsiId         x
+            , "Input"      .= jsiInput      x
+            , "Output"     .= jsiOutput     x
+            , "PipelineId" .= jsiPipelineId x
+            ]
+-}
+
+gen_sr_to :: Tool (APINode, SpecRecord)
+gen_sr_to = mkTool $ \ ts (an, sr) -> do
+    x <- newName "x"
+    optionalInstanceD ts ''ToJSON [nodeRepT an] [simpleD 'toJSON (bdy an sr x)]
+  where
+    bdy an sr x = lamE [varP x] $
+            varE 'object `appE`
+            listE [ [e| $(fieldNameE fn) .= $(nodeFieldE an fn) $(varE x) |]
+                  | (fn, _) <- srFields sr ]
+
+
+{-
+instance FromJSONWithErrs JobSpecId where
+     parseJSONWithErrs (Object v) =
+        JobSpecId <$>
+            v .: "Id"                               <*>
+            v .: "Input"                            <*>
+            v .: "Output"                           <*>
+            v .: "PipelineId"
+     parseJSONWithErrs Null       = parseJSONWithErrs (Object HMap.empty)
+     parseJSONWithErrs v          = failWith $ expectedObject val
+-}
+
+gen_sr_fm :: Tool (APINode, SpecRecord)
+gen_sr_fm = mkTool $ \ ts (an, sr) -> do
+    x <- newName "x"
+    optionalInstanceD ts ''FromJSONWithErrs [nodeRepT an]
+                      [funD 'parseJSONWithErrs [cl an sr x, clNull, cl' x]]
+  where
+    cl an sr x  = clause [conP 'Object [varP x]] (normalB bdy) []
+      where
+        bdy = applicativeE (nodeConE an) $ map project (srFields sr)
+        project (fn, ft) = [e| withDefaultField ro (fmap defaultValueAsJsValue mb_dv) $(fieldNameE fn) parseJSONWithErrs $(varE x) |]
+          where ro    = ftReadOnly ft
+                mb_dv = ftDefault ft
+
+    clNull = clause [conP 'Null []] (normalB [e| parseJSONWithErrs (Object HMap.empty) |]) []
+
+    cl'  x = clause [varP x] (normalB (bdy' x)) []
+    bdy' x = [e| failWith (expectedObject $(varE x)) |]
+
+
+{-
+instance ToJSON Foo where
+    toJSON (Bar x) = object [ "x" .= x ]
+    toJSON (Baz x) = object [ "y" .= x ]
+-}
+
+gen_su_to :: Tool (APINode, SpecUnion)
+gen_su_to = mkTool $ \ ts (an, su) -> optionalInstanceD ts ''ToJSON [nodeRepT an] [funD 'toJSON (cls an su)]
+  where
+    cls an su = map (cl an . fst) (suFields su)
+
+    cl an fn = do x <- newName "x"
+                  clause [nodeAltConP an fn [varP x]] (bdy fn x) []
+
+    bdy fn x = normalB [e| object [ $(fieldNameE fn) .= $(varE x) ] |]
+
+
+{-
+instance FromJSONWithErrs Foo where
+    parseJSONWithErrs = withUnion [ ("x", fmap Bar . parseJSONWithErrs)
+                                  , ("y", fmap Baz . parseJSONWithErrs) ]
+-}
+
+gen_su_fm :: Tool (APINode, SpecUnion)
+gen_su_fm = mkTool $ \ ts (an, su) ->
+    optionalInstanceD ts ''FromJSONWithErrs [nodeRepT an]
+                      [simpleD 'parseJSONWithErrs (bdy an su)]
+ where
+    bdy an su = varE 'withUnion `appE` listE (map (alt an) (suFields su))
+
+    alt an (fn, _) = [e| ( $(fieldNameE fn) , fmap $(nodeAltConE an fn) . parseJSONWithErrs ) |]
+
+
+{-
+instance ToJSON FrameRate where
+    toJSON    = String . _text_FrameRate
+-}
+
+gen_se_to :: Tool (APINode, SpecEnum)
+gen_se_to = mkTool $ \ ts (an, _se) -> optionalInstanceD ts ''ToJSON [nodeRepT an] [simpleD 'toJSON (bdy an)]
+  where
+    bdy an = [e| String . $(varE (text_enum_nm an)) |]
+
+
+{-
+instance FromJSONWithErrs FrameRate where
+    parseJSONWithErrs = jsonStrMap_p _map_FrameRate
+-}
+
+gen_se_fm :: Tool (APINode, SpecEnum)
+gen_se_fm = mkTool $ \ ts (an, _se) -> optionalInstanceD ts ''FromJSONWithErrs [nodeRepT an]
+                                           [simpleD 'parseJSONWithErrs (bdy an)]
+  where
+    bdy an = [e| jsonStrMap_p $(varE (map_enum_nm an)) |]
+
+
+gen_in :: Tool APINode
+gen_in = mkTool $ \ ts an -> case anConvert an of
+  Nothing          -> return []
+  Just (inj_fn, _) -> optionalInstanceD ts ''FromJSONWithErrs [nodeT an]
+                          [simpleD 'parseJSONWithErrs bdy]
+   where
+    bdy = do x <- newName "x"
+             lamE [varP x] [e| parseJSONWithErrs $(varE x) >>= $inj |]
+    inj = varE $ mkName $ _FieldName inj_fn
+
+
+gen_pr :: Tool APINode
+gen_pr = mkTool $ \ ts an -> case anConvert an of
+  Nothing          -> return []
+  Just (_, prj_fn) -> optionalInstanceD ts ''ToJSON [nodeT an] [simpleD 'toJSON bdy]
+   where
+    bdy = [e| toJSON . $prj |]
+    prj = varE $ mkName $ _FieldName prj_fn
+
+
+-- | Generate 'FromJSON' instances like this:
+--
+-- > instance FromJSON T where
+-- >   parseJSON = parseJSONDefault
+gen_FromJSON :: Tool APINode
+gen_FromJSON = mkTool $ \ ts an -> do
+    (++) <$> genIf (not (isSynonym an))    ts (nodeRepT an)
+         <*> genIf (isJust (anConvert an)) ts (nodeT an)
+  where
+    genIf b ts t | b         = optionalInstanceD ts ''FromJSON [t] [simpleD 'parseJSON [e|parseJSONDefault|]]
+                 | otherwise = pure []
+
+    isSynonym an = case anSpec an of
+                     SpSynonym _ -> True
+                     _           -> False
+
+
+mkInt :: Int -> Value
+mkInt = Number . fromInteger . toInteger
+
+
+jsonStrMap_p :: Ord a => Map.Map T.Text a -> Value -> ParserWithErrs a
+jsonStrMap_p mp = json_string_p (Map.keys mp) $ flip Map.lookup mp
+
+json_string_p :: Ord a => [T.Text] -> (T.Text->Maybe a) -> Value -> ParserWithErrs a
+json_string_p xs p (String t) | Just val <- p t = pure val
+                              | otherwise       = failWith $ UnexpectedEnumVal xs t
+json_string_p _  _ v                            = failWith $ expectedString v
+
+
+fieldNameE :: FieldName -> ExpQ
+fieldNameE = stringE . _FieldName
+
+typeNameE :: TypeName -> ExpQ
+typeNameE = stringE . _TypeName
+</pre></br><h2>printed</h2></br><pre>{-# LANGUAGE TemplateHaskell            #-}
+
+module Data.API.Tools.JSON
+    ( jsonTool
+    , jsonTool'
+    , toJsonNodeTool
+    , fromJsonNodeTool
+    , fromJsonWithErrsNodeTool
+    ) where
+
+import           Data.API.JSON
+import           Data.API.TH
+import           Data.API.Tools.Combinators
+import           Data.API.Tools.Datatypes
+import           Data.API.Tools.Enum
+import           Data.API.Types
+import           Data.API.Utils
+
+import           Data.Aeson hiding (withText, withBool)
+import           Control.Applicative
+import qualified Data.HashMap.Strict            as HMap
+import           Data.Maybe
+import qualified Data.Map                       as Map
+import           Data.Monoid
+import qualified Data.Text                      as T
+import           Language.Haskell.TH
+
+
+-- | Tool to generate 'ToJSON' and 'FromJSONWithErrs' instances for
+-- types generated by 'datatypesTool'.  This depends on 'enumTool'.
+-- For historical reasons this does not generate 'FromJSON' instances;
+-- you probably want to use 'jsonTool'' instead.
+jsonTool :: APITool
+jsonTool = apiNodeTool $ toJsonNodeTool <> fromJsonWithErrsNodeTool
+
+-- | Tool to generate 'ToJSON', 'FromJSON' and 'FromJSONWithErrs'
+-- instances for types generated by 'datatypesTool'.  This depends on
+-- 'enumTool'.  Note that generated 'FromJSON' and 'FromJSONWithErrs'
+-- instances will always agree on the decoding of a value, but that
+-- the 'FromJSONWithErrs' instances for basic types are more liberal
+-- than 'FromJSON'.
+jsonTool' :: APITool
+jsonTool' = apiNodeTool $ toJsonNodeTool <> fromJsonNodeTool
+                                         <> fromJsonWithErrsNodeTool
+
+
+-- | Tool to generate 'ToJSON' instance for an API node
+toJsonNodeTool :: APINodeTool
+toJsonNodeTool = apiSpecTool gen_sn_to gen_sr_to gen_su_to gen_se_to mempty
+                 <> gen_pr
+
+-- | Tool to generate 'FromJSON' instance for an API node, which
+-- relies on the 'FromJSONWithErrs' instance.
+fromJsonNodeTool :: APINodeTool
+fromJsonNodeTool = gen_FromJSON
+
+-- | Tool to generate 'FromJSONWithErrs' instance for an API node
+fromJsonWithErrsNodeTool :: APINodeTool
+fromJsonWithErrsNodeTool = apiSpecTool gen_sn_fm gen_sr_fm gen_su_fm gen_se_fm mempty
+                           <> gen_in
+
+
+{-
+instance ToJSON JobId where
+    toJSON = String . _JobId
+-}
+
+gen_sn_to :: Tool (APINode, SpecNewtype)
+gen_sn_to = mkTool $ \ ts (an, sn) -> optionalInstanceD ts ''ToJSON [nodeRepT an]
+                                          [simpleD 'toJSON (bdy an sn)]
+  where
+    bdy an sn = [| $(ine sn) . $(newtypeProjectionE an) |]
+
+    ine sn = case snType sn of
+            BTstring -> [| String |]
+            BTbinary -> [| toJSON |]
+            BTbool   -> [| Bool   |]
+            BTint    -> [| mkInt  |]
+            BTutc    -> [| mkUTC  |]
+
+
+{-
+instance FromJSONWithErrs JobId where
+    parseJSONWithErrs = withText "JobId" (pure . JobId)
+-}
+
+gen_sn_fm :: Tool (APINode, SpecNewtype)
+gen_sn_fm = mkTool $ \ ts (an, sn) -> optionalInstanceD ts ''FromJSONWithErrs [nodeRepT an]
+                                          [simpleD 'parseJSONWithErrs (bdy ts an sn)]
+  where
+    bdy ts an sn = [| $(wth sn) $(typeNameE (anName an)) (pure . $(nodeNewtypeConE ts an sn)) |]
+
+    wth sn    =
+        case (snType sn, snFilter sn) of
+            (BTstring, Just (FtrStrg re)) -> [| withRegEx re    |]
+            (BTstring, _                ) -> [| withText        |]
+            (BTbinary, _                ) -> [| withBinary      |]
+            (BTbool  , _                ) -> [| withBool        |]
+            (BTint   , Just (FtrIntg ir)) -> [| withIntRange ir |]
+            (BTint   , _                ) -> [| withInt         |]
+            (BTutc   , Just (FtrUTC  ur)) -> [| withUTCRange ur |]
+            (BTutc   , _                ) -> [| withUTC         |]
+
+
+
+{-
+instance ToJSON JobSpecId where
+     toJSON = \ x ->
+        object
+            [ "Id"         .= jsiId         x
+            , "Input"      .= jsiInput      x
+            , "Output"     .= jsiOutput     x
+            , "PipelineId" .= jsiPipelineId x
+            ]
+-}
+
+gen_sr_to :: Tool (APINode, SpecRecord)
+gen_sr_to = mkTool $ \ ts (an, sr) -> do
+    x <- newName "x"
+    optionalInstanceD ts ''ToJSON [nodeRepT an] [simpleD 'toJSON (bdy an sr x)]
+  where
+    bdy an sr x = lamE [varP x] $
+            varE 'object `appE`
+            listE [ [| $(fieldNameE fn) .= $(nodeFieldE an fn) $(varE x) |]
+                  | (fn, _) <- srFields sr ]
+
+
+{-
+instance FromJSONWithErrs JobSpecId where
+     parseJSONWithErrs (Object v) =
+        JobSpecId <$>
+            v .: "Id"                               <*>
+            v .: "Input"                            <*>
+            v .: "Output"                           <*>
+            v .: "PipelineId"
+     parseJSONWithErrs Null       = parseJSONWithErrs (Object HMap.empty)
+     parseJSONWithErrs v          = failWith $ expectedObject val
+-}
+
+gen_sr_fm :: Tool (APINode, SpecRecord)
+gen_sr_fm = mkTool $ \ ts (an, sr) -> do
+    x <- newName "x"
+    optionalInstanceD ts ''FromJSONWithErrs [nodeRepT an]
+                      [funD 'parseJSONWithErrs [cl an sr x, clNull, cl' x]]
+  where
+    cl an sr x  = clause [conP 'Object [varP x]] (normalB bdy) []
+      where
+        bdy = applicativeE (nodeConE an) $ map project (srFields sr)
+        project (fn, ft) = [| withDefaultField ro (fmap defaultValueAsJsValue mb_dv) $(fieldNameE fn) parseJSONWithErrs $(varE x) |]
+          where ro    = ftReadOnly ft
+                mb_dv = ftDefault ft
+
+    clNull = clause [conP 'Null []] (normalB [| parseJSONWithErrs (Object HMap.empty) |]) []
+
+    cl'  x = clause [varP x] (normalB (bdy' x)) []
+    bdy' x = [| failWith (expectedObject $(varE x)) |]
+
+
+{-
+instance ToJSON Foo where
+    toJSON (Bar x) = object [ "x" .= x ]
+    toJSON (Baz x) = object [ "y" .= x ]
+-}
+
+gen_su_to :: Tool (APINode, SpecUnion)
+gen_su_to = mkTool $ \ ts (an, su) -> optionalInstanceD ts ''ToJSON [nodeRepT an] [funD 'toJSON (cls an su)]
+  where
+    cls an su = map (cl an . fst) (suFields su)
+
+    cl an fn = do x <- newName "x"
+                  clause [nodeAltConP an fn [varP x]] (bdy fn x) []
+
+    bdy fn x = normalB [| object [ $(fieldNameE fn) .= $(varE x) ] |]
+
+
+{-
+instance FromJSONWithErrs Foo where
+    parseJSONWithErrs = withUnion [ ("x", fmap Bar . parseJSONWithErrs)
+                                  , ("y", fmap Baz . parseJSONWithErrs) ]
+-}
+
+gen_su_fm :: Tool (APINode, SpecUnion)
+gen_su_fm = mkTool $ \ ts (an, su) ->
+    optionalInstanceD ts ''FromJSONWithErrs [nodeRepT an]
+                      [simpleD 'parseJSONWithErrs (bdy an su)]
+ where
+    bdy an su = varE 'withUnion `appE` listE (map (alt an) (suFields su))
+
+    alt an (fn, _) = [| ( $(fieldNameE fn) , fmap $(nodeAltConE an fn) . parseJSONWithErrs ) |]
+
+
+{-
+instance ToJSON FrameRate where
+    toJSON    = String . _text_FrameRate
+-}
+
+gen_se_to :: Tool (APINode, SpecEnum)
+gen_se_to = mkTool $ \ ts (an, _se) -> optionalInstanceD ts ''ToJSON [nodeRepT an] [simpleD 'toJSON (bdy an)]
+  where
+    bdy an = [| String . $(varE (text_enum_nm an)) |]
+
+
+{-
+instance FromJSONWithErrs FrameRate where
+    parseJSONWithErrs = jsonStrMap_p _map_FrameRate
+-}
+
+gen_se_fm :: Tool (APINode, SpecEnum)
+gen_se_fm = mkTool $ \ ts (an, _se) -> optionalInstanceD ts ''FromJSONWithErrs [nodeRepT an]
+                                           [simpleD 'parseJSONWithErrs (bdy an)]
+  where
+    bdy an = [| jsonStrMap_p $(varE (map_enum_nm an)) |]
+
+
+gen_in :: Tool APINode
+gen_in = mkTool $ \ ts an -> case anConvert an of
+  Nothing          -> return []
+  Just (inj_fn, _) -> optionalInstanceD ts ''FromJSONWithErrs [nodeT an]
+                          [simpleD 'parseJSONWithErrs bdy]
+   where
+    bdy = do x <- newName "x"
+             lamE [varP x] [| parseJSONWithErrs $(varE x) >>= inj |]
+    inj = varE $ mkName $ _FieldName inj_fn
+
+
+gen_pr :: Tool APINode
+gen_pr = mkTool $ \ ts an -> case anConvert an of
+  Nothing          -> return []
+  Just (_, prj_fn) -> optionalInstanceD ts ''ToJSON [nodeT an] [simpleD 'toJSON bdy]
+   where
+    bdy = [| toJSON . prj |]
+    prj = varE $ mkName $ _FieldName prj_fn
+
+
+-- | Generate 'FromJSON' instances like this:
+--
+-- > instance FromJSON T where
+-- >   parseJSON = parseJSONDefault
+gen_FromJSON :: Tool APINode
+gen_FromJSON = mkTool $ \ ts an -> do
+    (++) <$> genIf (not (isSynonym an))    ts (nodeRepT an)
+         <*> genIf (isJust (anConvert an)) ts (nodeT an)
+  where
+    genIf b ts t | b         = optionalInstanceD ts ''FromJSON [t] [simpleD 'parseJSON [|parseJSONDefault|]]
+                 | otherwise = pure []
+
+    isSynonym an = case anSpec an of
+                     SpSynonym _ -> True
+                     _           -> False
+
+
+mkInt :: Int -> Value
+mkInt = Number . fromInteger . toInteger
+
+
+jsonStrMap_p :: Ord a => Map.Map T.Text a -> Value -> ParserWithErrs a
+jsonStrMap_p mp = json_string_p (Map.keys mp) $ flip Map.lookup mp
+
+json_string_p :: Ord a => [T.Text] -> (T.Text->Maybe a) -> Value -> ParserWithErrs a
+json_string_p xs p (String t) | Just val <- p t = pure val
+                              | otherwise       = failWith $ UnexpectedEnumVal xs t
+json_string_p _  _ v                            = failWith $ expectedString v
+
+
+fieldNameE :: FieldName -> ExpQ
+fieldNameE = stringE . _FieldName
+
+typeNameE :: TypeName -> ExpQ
+typeNameE = stringE . _TypeName
+
+</pre>

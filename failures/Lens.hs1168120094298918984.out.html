@@ -1,0 +1,190 @@
+<a href="Lens.hs10120281441086531968.out.html">prev</a></br><a href="failures.html">home</a></br><a href="Lens.hs13564252281899894091.out.html">next</a></br></br><pre>56c56
+< (l %~ f) a = getId (l (pure . f) a)
+---
+>    %~    f  a = getId (l (pure . f) a)
+91a92
+> 
+</pre></br><h2>original</h2></br><pre>{-# LANGUAGE Rank2Types, MultiParamTypeClasses, FunctionalDependencies #-}
+{-| A module providing simple Lens functionality  -}
+module Clean.Lens(
+  -- * The lens types
+  Iso,Iso',MkIso(..),
+  LensLike,LensLike',
+  Lens,Lens',
+  Traversal,Traversal',
+
+  -- * Constructing lenses
+  iso,from,lens,lam,prism,
+
+  -- * Extracting values
+  (^.),(%~),(.~),
+
+  -- * Basic lenses
+  _1,_2,_l,_r,_both,
+  _list,_head,_tail,_dropping,
+  Wrapped(..),wrapping
+  ) where
+
+import Clean.Core
+import Clean.Functor
+import Clean.Applicative
+import Clean.Foldable
+
+type LensLike f s t a b = (s -> f t) -> (a -> f b)
+type LensLike' f a b = LensLike f b b a a
+type Lens s t a b = forall f.Functor f => LensLike f s t a b
+type Lens' a b = Lens b b a a
+type Traversal s t a b = forall f. Applicative f => LensLike f s t a b
+type Traversal' a b = Traversal b b a a
+type Iso s t a b = forall p f. (Functor f,Bifunctor p) => p s (f t) -> p a (f b)
+type Iso' a b = Iso b b a a
+
+data MkIso a b s t = MkIso (s -> a) (b -> t)
+instance Functor (MkIso a b s) where map f (MkIso u v) = MkIso u (map f v)
+instance Cofunctor (Flip (MkIso a b) t) where
+  comap f (Flip (MkIso u v)) = Flip (MkIso (promap f u) v)
+instance Bifunctor (MkIso a b)
+
+iso :: (a -> s) -> (t -> b) -> Iso s t a b
+iso f g = dimap f (map g)
+from :: MkIso t s b a -> Iso a b s t
+from (MkIso u v) = iso v u
+lens :: (a -> s) -> (a -> t -> b) -> Lens s t a b
+lens f g = \k a -> g a <$> k (f a)
+lam f = lens f const
+prism :: (a -> (b:+:s)) -> (a -> t -> b) -> Traversal s t a b
+prism f g = \k a -> (pure <|> map (g a) . k) (f a)
+
+(^.) :: a -> Lens' a b -> b
+infixl 2 ^.
+x^.l = getConst (l Const x)
+(%~) :: Traversal' a b -> (b -> b) -> (a -> a)
+(l %~ f) a = getId (l (pure . f) a)
+(.~) :: Traversal' a b -> b -> (a -> a)
+l .~ x = l %~ const x
+
+_1 :: Lens' (a:*:b) a
+_1 = lens fst (\(_,b) a -> (a,b))
+_2 :: Lens' (a:*:b) b
+_2 = lens snd (\(a,_) b -> (a,b))
+_l :: Traversal' (a:+:b) a
+_l = prism (\e -> (Right <|> const (Left e)) e) (const Left)
+_r :: Traversal' (a:+:b) b
+_r = prism (\e -> (const (Left e) <|> Right) e) (const Right)
+
+_both :: Traversal a b (a,a) (b,b)
+_both k (a,a') = (,)<$>k a<*>k a'
+
+_list :: Iso' [a] (():+:(a:*:[a]))
+_list = iso (\l -> case l of
+                [] -> Left ()
+                (x:t) -> Right (x,t)) (const [] <|> uncurry (:))
+
+_head :: Traversal' [a] a
+_head = _list._r._1
+_tail :: Traversal' [a] [a]
+_tail = _list._r._2
+
+_dropping :: Int -> Traversal' [a] [a]
+_dropping n = foldr (.) id (_tail<$[1..n])
+
+_mapping :: Functor f => MkIso s t a b -> Iso (f s) (f t) (f a) (f b)
+_mapping (MkIso u v) = dimap (map u) (map (map v))
+
+class Wrapped s t a b | a -> s, b -> t, a t -> s, b s -> t where
+  wrapped :: Iso s t a b
+wrapping :: Wrapped b b a a => (a -> b) -> Iso' a b
+wrapping _ = wrapped
+</pre></br><h2>printed</h2></br><pre>{-# LANGUAGE Rank2Types, MultiParamTypeClasses, FunctionalDependencies #-}
+{-| A module providing simple Lens functionality  -}
+module Clean.Lens(
+  -- * The lens types
+  Iso,Iso',MkIso(..),
+  LensLike,LensLike',
+  Lens,Lens',
+  Traversal,Traversal',
+
+  -- * Constructing lenses
+  iso,from,lens,lam,prism,
+
+  -- * Extracting values
+  (^.),(%~),(.~),
+
+  -- * Basic lenses
+  _1,_2,_l,_r,_both,
+  _list,_head,_tail,_dropping,
+  Wrapped(..),wrapping
+  ) where
+
+import Clean.Core
+import Clean.Functor
+import Clean.Applicative
+import Clean.Foldable
+
+type LensLike f s t a b = (s -> f t) -> (a -> f b)
+type LensLike' f a b = LensLike f b b a a
+type Lens s t a b = forall f.Functor f => LensLike f s t a b
+type Lens' a b = Lens b b a a
+type Traversal s t a b = forall f. Applicative f => LensLike f s t a b
+type Traversal' a b = Traversal b b a a
+type Iso s t a b = forall p f. (Functor f,Bifunctor p) => p s (f t) -> p a (f b)
+type Iso' a b = Iso b b a a
+
+data MkIso a b s t = MkIso (s -> a) (b -> t)
+instance Functor (MkIso a b s) where map f (MkIso u v) = MkIso u (map f v)
+instance Cofunctor (Flip (MkIso a b) t) where
+  comap f (Flip (MkIso u v)) = Flip (MkIso (promap f u) v)
+instance Bifunctor (MkIso a b)
+
+iso :: (a -> s) -> (t -> b) -> Iso s t a b
+iso f g = dimap f (map g)
+from :: MkIso t s b a -> Iso a b s t
+from (MkIso u v) = iso v u
+lens :: (a -> s) -> (a -> t -> b) -> Lens s t a b
+lens f g = \k a -> g a <$> k (f a)
+lam f = lens f const
+prism :: (a -> (b:+:s)) -> (a -> t -> b) -> Traversal s t a b
+prism f g = \k a -> (pure <|> map (g a) . k) (f a)
+
+(^.) :: a -> Lens' a b -> b
+infixl 2 ^.
+x^.l = getConst (l Const x)
+(%~) :: Traversal' a b -> (b -> b) -> (a -> a)
+   %~    f  a = getId (l (pure . f) a)
+(.~) :: Traversal' a b -> b -> (a -> a)
+l .~ x = l %~ const x
+
+_1 :: Lens' (a:*:b) a
+_1 = lens fst (\(_,b) a -> (a,b))
+_2 :: Lens' (a:*:b) b
+_2 = lens snd (\(a,_) b -> (a,b))
+_l :: Traversal' (a:+:b) a
+_l = prism (\e -> (Right <|> const (Left e)) e) (const Left)
+_r :: Traversal' (a:+:b) b
+_r = prism (\e -> (const (Left e) <|> Right) e) (const Right)
+
+_both :: Traversal a b (a,a) (b,b)
+_both k (a,a') = (,)<$>k a<*>k a'
+
+_list :: Iso' [a] (():+:(a:*:[a]))
+_list = iso (\l -> case l of
+                [] -> Left ()
+                (x:t) -> Right (x,t)) (const [] <|> uncurry (:))
+
+_head :: Traversal' [a] a
+_head = _list._r._1
+_tail :: Traversal' [a] [a]
+_tail = _list._r._2
+
+_dropping :: Int -> Traversal' [a] [a]
+_dropping n = foldr (.) id (_tail<$[1..n])
+
+_mapping :: Functor f => MkIso s t a b -> Iso (f s) (f t) (f a) (f b)
+_mapping (MkIso u v) = dimap (map u) (map (map v))
+
+class Wrapped s t a b | a -> s, b -> t, a t -> s, b s -> t where
+  wrapped :: Iso s t a b
+wrapping :: Wrapped b b a a => (a -> b) -> Iso' a b
+wrapping _ = wrapped
+
+</pre>

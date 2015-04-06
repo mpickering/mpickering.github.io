@@ -1,0 +1,498 @@
+<a href="Lang.hs15323295361238616728.out.html">prev</a></br><a href="failures.html">home</a></br><a href="Lang.hs9508850062098478515.out.html">next</a></br></br><pre>165c165
+<               #- (\case
+---
+>               #- (
+198c198
+<   #|| Verb "equip" :-: CarriedObject :-: Nil #-> (equipObject >=> \case
+---
+>   #|| Verb "equip" :-: CarriedObject :-: Nil #-> (equipObject >=> 
+202c202
+<                 Pass :-: (\case
+---
+>                 Pass :-: (
+217c217
+<                  &?-> (\(o,k) -> equipObjectAt k o >>= \case
+---
+>                  &?-> (\(o,k) -> equipObjectAt k o >>= 
+239a240
+> 
+</pre></br><h2>original</h2></br><pre>{-# LANGUAGE FlexibleContexts, RankNTypes, LambdaCase, ConstraintKinds   #-}
+
+{-
+  This module is part of Antisplice.
+  Copyleft (c) 2014 Marvin Cohrs
+
+  All wrongs reversed. Sharing is an act of love, not crime.
+  Please share Antisplice with everyone you like.
+
+  Antisplice is free software: you can redistribute it and/or modify
+  it under the terms of the GNU Affero General Public License as published by
+  the Free Software Foundation, either version 3 of the License, or
+  (at your option) any later version.
+
+  Antisplice is distributed in the hope that it will be useful,
+  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+  GNU Affero General Public License for more details.
+
+  You should have received a copy of the GNU Affero General Public License
+  along with Antisplice. If not, see <http://www.gnu.org/licenses/>.
+-}
+
+-- | Provides all methods for language intellection.
+module Game.Antisplice.Lang (act,defVocab) where
+
+import Text.Chatty.Printer
+import Text.Chatty.Scanner
+import Text.Chatty.Expansion
+import Text.Chatty.Extended.Printer
+import Game.Antisplice.Errors
+import Game.Antisplice.Monad
+import Game.Antisplice.Monad.Dungeon
+import Game.Antisplice.Monad.Vocab
+import Data.Chatty.Graph
+import Data.Chatty.AVL
+import Data.Chatty.BST
+import Data.Chatty.TST
+import Data.Chatty.None
+import Data.Chatty.ListBuilder
+import Data.Chatty.Hetero
+import Game.Antisplice.Rooms
+import Game.Antisplice.Stats
+import Game.Antisplice.Skills
+import Game.Antisplice.MaskedSkills
+import Game.Antisplice.Call
+import Game.Antisplice.Action
+import Control.Arrow
+import Control.Monad.Error
+import Text.Printf
+import Data.Text (unpack)
+import Data.Maybe
+import Data.Char
+
+aliases :: [(String,String)]
+aliases = strictBuild $ do
+  "l" >-< "look"
+  "n" >-< "go north"
+  "ne" >-< "go northeast"
+  "e" >-< "go east"
+  "se" >-< "go southeast"
+  "s" >-< "go south"
+  "sw" >-< "go southwest"
+  "w" >-< "go west"
+  "nw" >-< "go northwest"
+  "u" >-< "ascend"
+  "d" >-< "descend"
+  "q" >-< "quit"
+  "i" >-< "list inventory"
+  "ex" >-< "list exits"
+  "get" >-< "acquire"
+  "take" >-< "acquire"
+  "show" >-< "list"
+  "sco" >-< "list score"
+  "eq" >-< "list equipment"
+  "'" >-< "echo"
+
+defVocab :: TST Token
+defVocab = foldr (\(k,v) -> tstInsert k (v k)) none $ strictBuild $ do
+  "quit" >-< Verb
+  "acquire" >-< Verb
+  "drop" >-< Verb
+  "idiot" >-< Noun
+  "first" >-< Ordn 1
+  "next" >-< Ordn 1
+  "primary" >-< Ordn 1
+  "second" >-< Ordn 2
+  "third" >-< Ordn 3
+  "commit" >-< Verb
+  "suicide" >-< Noun
+  "go" >-< Verb
+  "ascend" >-< Verb
+  "descend" >-< Verb
+  "north" >-< Fixe
+  "south" >-< Fixe
+  "east" >-< Fixe
+  "west" >-< Fixe
+  "northeast" >-< Fixe
+  "northwest" >-< Fixe
+  "southeast" >-< Fixe
+  "southwest" >-< Fixe
+  "at" >-< Prep
+  "on" >-< Prep
+  "for" >-< Prep
+  "of" >-< Prep
+  "enter" >-< Verb
+  "list" >-< Verb
+  "exits" >-< Fixe
+  "inventory" >-< Fixe
+  "score" >-< Fixe
+  "main" >-< Fixe
+  "hand" >-< Fixe
+  "off" >-< Fixe
+  "chest" >-< Fixe
+  "feet" >-< Fixe
+  "wrists" >-< Fixe
+  "waist" >-< Fixe
+  "head" >-< Fixe
+  "legs" >-< Fixe
+  "back" >-< Fixe
+  "hands" >-< Fixe
+  "neck" >-< Fixe
+  "finger" >-< Fixe
+  "left" >-< Fixe
+  "right" >-< Fixe
+  "equipment" >-< Fixe
+  "equip" >-< Verb
+  "echo" >-< Verb
+
+replaceAliases :: [String] -> [String]
+replaceAliases [] = []
+replaceAliases (s:ss) = words (aliasOf s) ++ replaceAliases ss
+  where aliasOf x = case filter ((==x).fst) aliases of
+          [] -> x
+          (a:_) -> snd a
+
+-- | Run a given input line.
+act :: String -> ChattyDungeonM ()
+act s = do
+  let sp = replaceAliases $ words $ map toLower s
+  ts <- mapM lookupVocab sp
+  unless (null sp) $ do
+    v1 <- lookupVocab (head sp)
+    case v1 of
+      Verb v -> runHandler $ runConsumer react sp
+      Skilln n -> do
+        ste <- totalStereo
+        case stereoSkillBonus ste n of
+          Nothing -> throwError CantCastThatNowError
+          Just t -> runHandler $ t $ tail sp
+      _ -> throwError VerbMustFirstError
+  return ()
+
+react :: Consumer
+react = Nil #->> noneM
+  #|| Verb "quit" :-: Nil #->> throwError QuitError
+  #|| Verb "echo" :-: Remaining :-: Nil #- unwords :-: Nil &-> (\s -> mprintLn =<< expand ("$user -> $user: \"%{V2;"++s++"}\""))
+  #|| Verb "commit" :-: Noun "suicide" :-: Nil #->> (do
+    eprintLn (Vivid Red) "You stab yourself in the chest, finally dying."
+    throwError QuitError)
+  #|| Verb "enter" :-: AvailableObject :-: Nil #-> objectTriggerOnEnterOf
+  #|| Verb "ascend" :-: Nil #->> changeRoom Up
+  #|| Verb "descend" :-: Nil #->> changeRoom Down
+  #|| Verb "go" :-: CatchFixe :-: Nil
+              #- (\case
+                    "north" -> Right North
+                    "south" -> Right South
+                    "east" -> Right East
+                    "west" -> Right West
+                    "northeast" -> Right NorthEast
+                    "northwest" -> Right NorthWest
+                    "southeast" -> Right SouthEast
+                    "southwest" -> Right SouthWest
+                    "up" -> Right Up
+                    "down" -> Right Down
+                    s -> Left $ Unint 0 ("\""++s++"\" is not a direction.")) :-: Nil &?-> changeRoom
+  #|| Verb "list" :-: Fixe "exits" :-: Nil #->> (do
+                                           s <- getDungeonState
+                                           let (Just r) = currentRoomOf s
+                                           forM_ (listEdges r $ roomsOf s) $ \(l,c,n) -> do
+                                             b <- pathPrerequisiteOf c
+                                             mprint "  " >> mprint (show l) >> mprint " -> "
+                                             mprint =<< withRoom n getRoomTitle
+                                             if not b then mprintLn " (locked)"
+                                               else mprintLn "")
+  #|| Verb "list" :-: Fixe "inventory" :-: Nil #->> (do
+                                               ps <- getPlayerState
+                                               mprintLn "Your inventory:"
+                                               forM_ (avlInorder $ playerInventoryOf ps) $ \os -> mprintLn $ printf "  %s" $ unpack $ objectTitleOf os)
+  #|| Verb "list" :-: Fixe "score" :-: Nil #->> (do
+                                            [str, agi, sta, int, spi, arm, akp] <- mapM calcStat [Strength, Agility, Stamina, Intelligence, Spirit, Armor, AttackPower]
+                                            [hst, gcd] <- mapM calcStat [Haste, CooldownDuration]
+                                            mprintLn $ printf "Strength:     %5i   Agility: %5i" str agi
+                                            mprintLn $ printf "Intelligence: %5i   Spirit:  %5i" int spi
+                                            mprintLn $ printf "Stamina:      %5i   Armor:   %5i" sta arm
+                                            mprintLn $ printf "Attack power: %5i   Haste:   %5i" akp hst
+                                            mprintLn $ printf "Global cooldown:  %5i" gcd)
+  #|| Verb "equip" :-: CarriedObject :-: Nil #-> (equipObject >=> \case
+                                             Nothing -> noneM
+                                             Just o -> modifyPlayerState $ \s -> s{playerInventoryOf=avlInsert o $ playerInventoryOf s})
+  #|| Verb "equip" :-: CarriedObject :-: Prep "at" :-: Remaining :-: Nil #-
+                Pass :-: (\case
+                           ["main","hand"] -> Right MainHand
+                           ["off","hand"] -> Right OffHand
+                           ["chest"] -> Right Chest
+                           ["feet"] -> Right Feet
+                           ["wrists"] -> Right Wrists
+                           ["waist"] -> Right Waist
+                           ["head"] -> Right Head
+                           ["legs"] -> Right Legs
+                           ["back"] -> Right Back
+                           ["hands"] -> Right Hands
+                           ["neck"] -> Right Neck
+                           ["right","finger"] -> Right Finger1
+                           ["left","finger"] -> Right Finger2
+                           ss -> Left $ Unint 0 ("\""++unwords ss++"\" is not a valid equipment slot")) :-: Nil
+                 &?-> (\(o,k) -> equipObjectAt k o >>= \case
+                                                        Nothing -> noneM
+                                                        Just o -> modifyPlayerState $ \s -> s{playerInventoryOf=avlInsert o $ playerInventoryOf s})
+  #|| Verb "list" :-: Fixe "equipment" :-: Nil #->> (
+    let pr (Just k) s = mprintLn $ printf "%-15s%s" s $ unpack $ objectTitleOf k
+        pr Nothing _ = noneM
+        firstM = runKleisli . first . Kleisli
+    in mapM_ (firstM getEquipment >=> uncurry pr) $ lazyBuild $ do
+      lit MainHand "Main hand:"
+      lit OffHand "Off hand:"
+      lit Chest "Chest:"
+      lit Feet "Feet:"
+      lit Wrists "Wrists:"
+      lit Waist "Waist:"
+      lit Head "Head:"
+      lit Legs "Legs:"
+      lit Back "Back:"
+      lit Hands "Hands:"
+      lit Neck "Neck:"
+      lit Finger1 "Right finger:"
+      lit Finger2 "Left finger:")
+  #|| Verb "acquire" :-: SeenObject :-: Nil #- objectIdOf :-: Nil &-> acquireObject +? Acquirable :-: Nil
+  #|| Verb "drop" :-: CarriedObject :-: Nil #- objectIdOf :-: Nil &-> dropObject
+</pre></br><h2>printed</h2></br><pre>{-# LANGUAGE FlexibleContexts, RankNTypes, LambdaCase, ConstraintKinds   #-}
+
+{-
+  This module is part of Antisplice.
+  Copyleft (c) 2014 Marvin Cohrs
+
+  All wrongs reversed. Sharing is an act of love, not crime.
+  Please share Antisplice with everyone you like.
+
+  Antisplice is free software: you can redistribute it and/or modify
+  it under the terms of the GNU Affero General Public License as published by
+  the Free Software Foundation, either version 3 of the License, or
+  (at your option) any later version.
+
+  Antisplice is distributed in the hope that it will be useful,
+  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+  GNU Affero General Public License for more details.
+
+  You should have received a copy of the GNU Affero General Public License
+  along with Antisplice. If not, see <http://www.gnu.org/licenses/>.
+-}
+
+-- | Provides all methods for language intellection.
+module Game.Antisplice.Lang (act,defVocab) where
+
+import Text.Chatty.Printer
+import Text.Chatty.Scanner
+import Text.Chatty.Expansion
+import Text.Chatty.Extended.Printer
+import Game.Antisplice.Errors
+import Game.Antisplice.Monad
+import Game.Antisplice.Monad.Dungeon
+import Game.Antisplice.Monad.Vocab
+import Data.Chatty.Graph
+import Data.Chatty.AVL
+import Data.Chatty.BST
+import Data.Chatty.TST
+import Data.Chatty.None
+import Data.Chatty.ListBuilder
+import Data.Chatty.Hetero
+import Game.Antisplice.Rooms
+import Game.Antisplice.Stats
+import Game.Antisplice.Skills
+import Game.Antisplice.MaskedSkills
+import Game.Antisplice.Call
+import Game.Antisplice.Action
+import Control.Arrow
+import Control.Monad.Error
+import Text.Printf
+import Data.Text (unpack)
+import Data.Maybe
+import Data.Char
+
+aliases :: [(String,String)]
+aliases = strictBuild $ do
+  "l" >-< "look"
+  "n" >-< "go north"
+  "ne" >-< "go northeast"
+  "e" >-< "go east"
+  "se" >-< "go southeast"
+  "s" >-< "go south"
+  "sw" >-< "go southwest"
+  "w" >-< "go west"
+  "nw" >-< "go northwest"
+  "u" >-< "ascend"
+  "d" >-< "descend"
+  "q" >-< "quit"
+  "i" >-< "list inventory"
+  "ex" >-< "list exits"
+  "get" >-< "acquire"
+  "take" >-< "acquire"
+  "show" >-< "list"
+  "sco" >-< "list score"
+  "eq" >-< "list equipment"
+  "'" >-< "echo"
+
+defVocab :: TST Token
+defVocab = foldr (\(k,v) -> tstInsert k (v k)) none $ strictBuild $ do
+  "quit" >-< Verb
+  "acquire" >-< Verb
+  "drop" >-< Verb
+  "idiot" >-< Noun
+  "first" >-< Ordn 1
+  "next" >-< Ordn 1
+  "primary" >-< Ordn 1
+  "second" >-< Ordn 2
+  "third" >-< Ordn 3
+  "commit" >-< Verb
+  "suicide" >-< Noun
+  "go" >-< Verb
+  "ascend" >-< Verb
+  "descend" >-< Verb
+  "north" >-< Fixe
+  "south" >-< Fixe
+  "east" >-< Fixe
+  "west" >-< Fixe
+  "northeast" >-< Fixe
+  "northwest" >-< Fixe
+  "southeast" >-< Fixe
+  "southwest" >-< Fixe
+  "at" >-< Prep
+  "on" >-< Prep
+  "for" >-< Prep
+  "of" >-< Prep
+  "enter" >-< Verb
+  "list" >-< Verb
+  "exits" >-< Fixe
+  "inventory" >-< Fixe
+  "score" >-< Fixe
+  "main" >-< Fixe
+  "hand" >-< Fixe
+  "off" >-< Fixe
+  "chest" >-< Fixe
+  "feet" >-< Fixe
+  "wrists" >-< Fixe
+  "waist" >-< Fixe
+  "head" >-< Fixe
+  "legs" >-< Fixe
+  "back" >-< Fixe
+  "hands" >-< Fixe
+  "neck" >-< Fixe
+  "finger" >-< Fixe
+  "left" >-< Fixe
+  "right" >-< Fixe
+  "equipment" >-< Fixe
+  "equip" >-< Verb
+  "echo" >-< Verb
+
+replaceAliases :: [String] -> [String]
+replaceAliases [] = []
+replaceAliases (s:ss) = words (aliasOf s) ++ replaceAliases ss
+  where aliasOf x = case filter ((==x).fst) aliases of
+          [] -> x
+          (a:_) -> snd a
+
+-- | Run a given input line.
+act :: String -> ChattyDungeonM ()
+act s = do
+  let sp = replaceAliases $ words $ map toLower s
+  ts <- mapM lookupVocab sp
+  unless (null sp) $ do
+    v1 <- lookupVocab (head sp)
+    case v1 of
+      Verb v -> runHandler $ runConsumer react sp
+      Skilln n -> do
+        ste <- totalStereo
+        case stereoSkillBonus ste n of
+          Nothing -> throwError CantCastThatNowError
+          Just t -> runHandler $ t $ tail sp
+      _ -> throwError VerbMustFirstError
+  return ()
+
+react :: Consumer
+react = Nil #->> noneM
+  #|| Verb "quit" :-: Nil #->> throwError QuitError
+  #|| Verb "echo" :-: Remaining :-: Nil #- unwords :-: Nil &-> (\s -> mprintLn =<< expand ("$user -> $user: \"%{V2;"++s++"}\""))
+  #|| Verb "commit" :-: Noun "suicide" :-: Nil #->> (do
+    eprintLn (Vivid Red) "You stab yourself in the chest, finally dying."
+    throwError QuitError)
+  #|| Verb "enter" :-: AvailableObject :-: Nil #-> objectTriggerOnEnterOf
+  #|| Verb "ascend" :-: Nil #->> changeRoom Up
+  #|| Verb "descend" :-: Nil #->> changeRoom Down
+  #|| Verb "go" :-: CatchFixe :-: Nil
+              #- (
+                    "north" -> Right North
+                    "south" -> Right South
+                    "east" -> Right East
+                    "west" -> Right West
+                    "northeast" -> Right NorthEast
+                    "northwest" -> Right NorthWest
+                    "southeast" -> Right SouthEast
+                    "southwest" -> Right SouthWest
+                    "up" -> Right Up
+                    "down" -> Right Down
+                    s -> Left $ Unint 0 ("\""++s++"\" is not a direction.")) :-: Nil &?-> changeRoom
+  #|| Verb "list" :-: Fixe "exits" :-: Nil #->> (do
+                                           s <- getDungeonState
+                                           let (Just r) = currentRoomOf s
+                                           forM_ (listEdges r $ roomsOf s) $ \(l,c,n) -> do
+                                             b <- pathPrerequisiteOf c
+                                             mprint "  " >> mprint (show l) >> mprint " -> "
+                                             mprint =<< withRoom n getRoomTitle
+                                             if not b then mprintLn " (locked)"
+                                               else mprintLn "")
+  #|| Verb "list" :-: Fixe "inventory" :-: Nil #->> (do
+                                               ps <- getPlayerState
+                                               mprintLn "Your inventory:"
+                                               forM_ (avlInorder $ playerInventoryOf ps) $ \os -> mprintLn $ printf "  %s" $ unpack $ objectTitleOf os)
+  #|| Verb "list" :-: Fixe "score" :-: Nil #->> (do
+                                            [str, agi, sta, int, spi, arm, akp] <- mapM calcStat [Strength, Agility, Stamina, Intelligence, Spirit, Armor, AttackPower]
+                                            [hst, gcd] <- mapM calcStat [Haste, CooldownDuration]
+                                            mprintLn $ printf "Strength:     %5i   Agility: %5i" str agi
+                                            mprintLn $ printf "Intelligence: %5i   Spirit:  %5i" int spi
+                                            mprintLn $ printf "Stamina:      %5i   Armor:   %5i" sta arm
+                                            mprintLn $ printf "Attack power: %5i   Haste:   %5i" akp hst
+                                            mprintLn $ printf "Global cooldown:  %5i" gcd)
+  #|| Verb "equip" :-: CarriedObject :-: Nil #-> (equipObject >=> 
+                                             Nothing -> noneM
+                                             Just o -> modifyPlayerState $ \s -> s{playerInventoryOf=avlInsert o $ playerInventoryOf s})
+  #|| Verb "equip" :-: CarriedObject :-: Prep "at" :-: Remaining :-: Nil #-
+                Pass :-: (
+                           ["main","hand"] -> Right MainHand
+                           ["off","hand"] -> Right OffHand
+                           ["chest"] -> Right Chest
+                           ["feet"] -> Right Feet
+                           ["wrists"] -> Right Wrists
+                           ["waist"] -> Right Waist
+                           ["head"] -> Right Head
+                           ["legs"] -> Right Legs
+                           ["back"] -> Right Back
+                           ["hands"] -> Right Hands
+                           ["neck"] -> Right Neck
+                           ["right","finger"] -> Right Finger1
+                           ["left","finger"] -> Right Finger2
+                           ss -> Left $ Unint 0 ("\""++unwords ss++"\" is not a valid equipment slot")) :-: Nil
+                 &?-> (\(o,k) -> equipObjectAt k o >>= 
+                                                        Nothing -> noneM
+                                                        Just o -> modifyPlayerState $ \s -> s{playerInventoryOf=avlInsert o $ playerInventoryOf s})
+  #|| Verb "list" :-: Fixe "equipment" :-: Nil #->> (
+    let pr (Just k) s = mprintLn $ printf "%-15s%s" s $ unpack $ objectTitleOf k
+        pr Nothing _ = noneM
+        firstM = runKleisli . first . Kleisli
+    in mapM_ (firstM getEquipment >=> uncurry pr) $ lazyBuild $ do
+      lit MainHand "Main hand:"
+      lit OffHand "Off hand:"
+      lit Chest "Chest:"
+      lit Feet "Feet:"
+      lit Wrists "Wrists:"
+      lit Waist "Waist:"
+      lit Head "Head:"
+      lit Legs "Legs:"
+      lit Back "Back:"
+      lit Hands "Hands:"
+      lit Neck "Neck:"
+      lit Finger1 "Right finger:"
+      lit Finger2 "Left finger:")
+  #|| Verb "acquire" :-: SeenObject :-: Nil #- objectIdOf :-: Nil &-> acquireObject +? Acquirable :-: Nil
+  #|| Verb "drop" :-: CarriedObject :-: Nil #- objectIdOf :-: Nil &-> dropObject
+
+</pre>

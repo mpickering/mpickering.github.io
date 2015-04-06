@@ -1,0 +1,188 @@
+<a href="Reactive.hs19548990971636807826.out.html">prev</a></br><a href="failures.html">home</a></br><a href="Reactive.hs726943819710298150.out.html">next</a></br></br><pre>53c53
+<          readChan chan >>= \case Act act     -> do state1 <- act state
+---
+>          readChan chan >>=       Act act     -> do state1 <- act state
+90a91
+> 
+</pre></br><h2>original</h2></br><pre>{-# LANGUAGE RankNTypes, GADTs, ScopedTypeVariables, LambdaCase #-}
+
+-- |
+-- Module: Data.Concurrent.Reactive
+-- Copyright: Andy Gill (??-2008), Heather Cynede (2014)
+-- License: BSD3
+-- |
+
+module Control.Concurrent.Reactive
+    ( Action
+    , Request
+    , reactiveObjectIO
+    , Sink
+    , pauseIO
+    , reactiveIO
+    ) where
+
+import Control.Concurrent.Chan
+import Control.Concurrent
+import Control.Exception as Ex
+
+-- An action is an IO-based change to an explicit state
+type Action s    = s -> IO s     -- only state change
+type Request s a = s -> IO (s,a) -- state change + reply to be passed back to caller
+
+-- This is the 'forkIO' of the O'Haskell Object sub-system.
+-- To consider; how do we handle proper exceptions?
+--   we need to bullet-proof this for exception!
+
+-- Choices:
+--   * do the Requests see the failure
+--   * Actions do not see anything
+--   *
+data Msg s = Act (Action s)
+           | forall a . Req (Request s a) (MVar a)
+           | Done (MVar ())
+
+reactiveObjectIO
+    :: forall state object. state
+    -> (    ThreadId
+            -> (forall r. Request state r -> IO r)  -- requests
+            -> (Action state -> IO ())              -- actions
+            -> IO ()                                -- done
+            -> object
+       )
+    -> IO object
+reactiveObjectIO state mkObject = do
+    chan <- newChan
+    -- We return the pid, so you can build a hard-abort function
+    -- we need to think about this; how do you abort an object
+    -- the state is passed as the argument, watch for strictness issues.
+    let dispatch state =
+         readChan chan >>= \case Act act     -> do state1 <- act state
+                                                   dispatch $! state1
+                                 Req req box -> do (state1,ret) <- req state
+                                                   putMVar box ret
+                                                   dispatch $! state1
+                                 Done box    -> do putMVar box ()
+                                                   return () -- no looping; we are done
+    pid <- forkIO $ dispatch state
+
+    -- This trick of using a return MVar is straight from Johan's PhD.
+    let requestit :: forall r. Request state r -> IO r
+        requestit fun = do
+            ret <- newEmptyMVar
+            writeChan chan $ Req fun ret
+            takeMVar ret -- wait for the object to react
+        actionit act = writeChan chan $ Act act
+        doneit = do
+            ret <- newEmptyMVar
+            writeChan chan $ Done ret
+            takeMVar ret -- wait for the object to *finish*
+
+    return (mkObject pid requestit actionit doneit)
+
+-- From Conal; a Sink is a object into which things are thrown.
+type Sink a = a -> IO ()
+
+-- This turns a reactive style call into a pausing IO call.
+pauseIO :: (a -> Sink b -> IO ()) -> a -> IO b
+pauseIO fn a = do
+    var <- newEmptyMVar
+    forkIO $ do fn a (\ b -> putMVar var b)
+    takeMVar var
+
+-- This turns a pausing IO call into a reactive style call.
+reactiveIO :: (a -> IO b) -> a -> Sink b -> IO ()
+reactiveIO fn a sinkB = do
+    forkIO $ sinkB =<< fn a
+    return ()
+</pre></br><h2>printed</h2></br><pre>{-# LANGUAGE RankNTypes, GADTs, ScopedTypeVariables, LambdaCase #-}
+
+-- |
+-- Module: Data.Concurrent.Reactive
+-- Copyright: Andy Gill (??-2008), Heather Cynede (2014)
+-- License: BSD3
+-- |
+
+module Control.Concurrent.Reactive
+    ( Action
+    , Request
+    , reactiveObjectIO
+    , Sink
+    , pauseIO
+    , reactiveIO
+    ) where
+
+import Control.Concurrent.Chan
+import Control.Concurrent
+import Control.Exception as Ex
+
+-- An action is an IO-based change to an explicit state
+type Action s    = s -> IO s     -- only state change
+type Request s a = s -> IO (s,a) -- state change + reply to be passed back to caller
+
+-- This is the 'forkIO' of the O'Haskell Object sub-system.
+-- To consider; how do we handle proper exceptions?
+--   we need to bullet-proof this for exception!
+
+-- Choices:
+--   * do the Requests see the failure
+--   * Actions do not see anything
+--   *
+data Msg s = Act (Action s)
+           | forall a . Req (Request s a) (MVar a)
+           | Done (MVar ())
+
+reactiveObjectIO
+    :: forall state object. state
+    -> (    ThreadId
+            -> (forall r. Request state r -> IO r)  -- requests
+            -> (Action state -> IO ())              -- actions
+            -> IO ()                                -- done
+            -> object
+       )
+    -> IO object
+reactiveObjectIO state mkObject = do
+    chan <- newChan
+    -- We return the pid, so you can build a hard-abort function
+    -- we need to think about this; how do you abort an object
+    -- the state is passed as the argument, watch for strictness issues.
+    let dispatch state =
+         readChan chan >>=       Act act     -> do state1 <- act state
+                                                   dispatch $! state1
+                                 Req req box -> do (state1,ret) <- req state
+                                                   putMVar box ret
+                                                   dispatch $! state1
+                                 Done box    -> do putMVar box ()
+                                                   return () -- no looping; we are done
+    pid <- forkIO $ dispatch state
+
+    -- This trick of using a return MVar is straight from Johan's PhD.
+    let requestit :: forall r. Request state r -> IO r
+        requestit fun = do
+            ret <- newEmptyMVar
+            writeChan chan $ Req fun ret
+            takeMVar ret -- wait for the object to react
+        actionit act = writeChan chan $ Act act
+        doneit = do
+            ret <- newEmptyMVar
+            writeChan chan $ Done ret
+            takeMVar ret -- wait for the object to *finish*
+
+    return (mkObject pid requestit actionit doneit)
+
+-- From Conal; a Sink is a object into which things are thrown.
+type Sink a = a -> IO ()
+
+-- This turns a reactive style call into a pausing IO call.
+pauseIO :: (a -> Sink b -> IO ()) -> a -> IO b
+pauseIO fn a = do
+    var <- newEmptyMVar
+    forkIO $ do fn a (\ b -> putMVar var b)
+    takeMVar var
+
+-- This turns a pausing IO call into a reactive style call.
+reactiveIO :: (a -> IO b) -> a -> Sink b -> IO ()
+reactiveIO fn a sinkB = do
+    forkIO $ sinkB =<< fn a
+    return ()
+
+</pre>

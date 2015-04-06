@@ -1,0 +1,82 @@
+<a href="Server.hs1075260298824938981.out.html">prev</a></br><a href="failures.html">home</a></br><a href="Server.hs11477222941070477904.out.html">next</a></br></br><pre>5d4
+< import "monads-tf" Control.Monad.State
+6c5
+< import "monads-tf" Control.Monad.Error
+---
+> import  Control.Monad.State
+6a6
+> import  Control.Monad.Error
+35a36
+> 
+</pre></br><h2>original</h2></br><pre>{-# LANGUAGE OverloadedStrings, FlexibleContexts, PackageImports #-}
+
+module Network.Sasl.External.Server (sasl) where
+
+import "monads-tf" Control.Monad.State
+import "monads-tf" Control.Monad.Error
+import Data.Pipe
+
+import qualified Data.ByteString as BS
+
+import Network.Sasl
+
+sasl :: (
+    MonadState m, SaslState (StateType m),
+    MonadError m, SaslError (ErrorType m) ) =>
+    (BS.ByteString -> m ()) -> (
+        BS.ByteString,
+        (Bool, Pipe BS.ByteString (Either Success BS.ByteString) m ()) )
+sasl rt = ("EXTERNAL", server $ script rt)
+
+script :: (
+    MonadState m, SaslState (StateType m),
+    MonadError m, Error (ErrorType m) ) =>
+    (BS.ByteString -> m ()) -> Server m
+script rt = Server (Just $ clientMessage rt) [] Nothing
+
+clientMessage :: (
+    MonadState m, SaslState (StateType m),
+    MonadError m, Error (ErrorType m) ) =>
+    (BS.ByteString -> m ()) -> Receive m
+clientMessage rt rs = do
+    rt rs
+--  unless ok . throwError $ strMsg "not authenticate"
+    st <- gets getSaslState
+    modify . putSaslState $ ("username", rs) : st
+</pre></br><h2>printed</h2></br><pre>{-# LANGUAGE OverloadedStrings, FlexibleContexts, PackageImports #-}
+
+module Network.Sasl.External.Server (sasl) where
+
+import  Control.Monad.State
+import  Control.Monad.Error
+import Data.Pipe
+
+import qualified Data.ByteString as BS
+
+import Network.Sasl
+
+sasl :: (
+    MonadState m, SaslState (StateType m),
+    MonadError m, SaslError (ErrorType m) ) =>
+    (BS.ByteString -> m ()) -> (
+        BS.ByteString,
+        (Bool, Pipe BS.ByteString (Either Success BS.ByteString) m ()) )
+sasl rt = ("EXTERNAL", server $ script rt)
+
+script :: (
+    MonadState m, SaslState (StateType m),
+    MonadError m, Error (ErrorType m) ) =>
+    (BS.ByteString -> m ()) -> Server m
+script rt = Server (Just $ clientMessage rt) [] Nothing
+
+clientMessage :: (
+    MonadState m, SaslState (StateType m),
+    MonadError m, Error (ErrorType m) ) =>
+    (BS.ByteString -> m ()) -> Receive m
+clientMessage rt rs = do
+    rt rs
+--  unless ok . throwError $ strMsg "not authenticate"
+    st <- gets getSaslState
+    modify . putSaslState $ ("username", rs) : st
+
+</pre>

@@ -1,0 +1,198 @@
+<a href="Foldable.hs5305119672110010672.out.html">prev</a></br><a href="failures.html">home</a></br><a href="FoldK.hs8965443031474833169.out.html">next</a></br></br><pre>53c53
+< split = foldMap ((,zero)<|>(zero,))
+---
+> split = foldMap (( zero)<|>(zero,))
+95a96
+> 
+</pre></br><h2>original</h2></br><pre>{-# LANGUAGE TupleSections, MultiParamTypeClasses #-}
+module Algebra.Foldable where
+
+import Algebra.Core
+import Algebra.Classes
+import Algebra.Functor
+import Data.Tree
+
+class Functor t => Foldable t where
+  fold :: Monoid m => t m -> m
+instance Foldable Id where fold = getId
+instance Foldable (Either a) where
+  fold = pure zero <|> id
+instance Foldable Maybe where
+  fold (Just w) = w ; fold Nothing = zero
+instance Foldable ((,) a) where fold = snd
+instance Foldable [] where
+  fold [] = zero
+  fold (x:t) = x+fold t
+instance Foldable Tree where fold (Node m subs) = m + fold (map fold subs)
+deriving instance Foldable Interleave
+deriving instance Foldable OrdList
+instance (Foldable f,Foldable g) => Foldable (f:.:g) where
+  fold = getCompose >>> map fold >>> fold
+
+newtype Sized f a = Sized { getSized :: f a }
+instance (Foldable f,Semigroup (Sized f a),Monoid n,Num n) =>
+         SubSemi n (Sized f a) where
+  cast = size . getSized
+
+instance (Foldable f,Foldable g) => Foldable (f:**:g) where
+  fold (f:**:g) = fold f + fold g
+instance (Foldable f,Foldable g) => Foldable (f:++:g) where
+  fold (Sum (Left f)) = fold f
+  fold (Sum (Right g)) = fold g
+
+foldMap :: (Monoid m, Foldable t) => (a -> m) -> t a -> m
+foldMap f = fold . map f
+convert :: (Unit f, Monoid (f a), Foldable t) => t a -> f a
+convert = foldMap pure
+concat :: (Monoid m, Foldable t) => t m -> m
+concat = fold
+sum :: (Monoid m, Foldable t) => t m -> m
+sum = fold
+size :: (Foldable f,Num n,Monoid n) => f a -> n
+size c = sum (1<$c)
+count :: (Num n, Monoid n, Foldable f) => f a -> n
+count = size
+length :: (Num n,Monoid n) => [a] -> n
+length = count
+
+split :: (Foldable t,Monoid b,Monoid c) => t (b:+:c) -> (b,c)
+split = foldMap ((,zero)<|>(zero,))
+partitionEithers :: (Foldable t,Unit t,Monoid (t a),Monoid (t b))
+                    => t (a:+:b) -> (t a,t b)
+partitionEithers = split . map (pure|||pure)
+partition :: (Unit f, Monoid (f a), Foldable t) => (a -> Bool) -> t a -> (f a, f a)
+partition p = split . map (\a -> (if p a then Left else Right) (pure a))
+filter :: (Unit f, Monoid (f a), Foldable t) => (a -> Bool) -> t a -> f a
+filter p = fst . partition p
+select :: (Unit f, Monoid (f a), Foldable t) => (a -> Bool) -> t a -> f a
+select = filter
+refuse :: (Unit f, Monoid (f a), Foldable t) => (a -> Bool) -> t a -> f a
+refuse = filter . map not
+
+compose :: (Category k, Foldable t) => t (k a a) -> k a a
+compose = runEndo . foldMap Endo
+
+foldr :: Foldable t => (b -> a -> a) -> a -> t b -> a
+foldr f e t = (runEndo . getDual) (foldMap (\b -> Dual (Endo (f b))) t) e
+foldr1 :: (a -> a -> a) -> [a] -> a
+foldr1 f ~(e:t) = foldr f e t
+foldl' :: Foldable t => (a -> b -> a) -> a -> t b -> a
+foldl' f e t = runEndo (foldMap (\b -> Endo (\a -> a`seq`f a b)) t) e
+foldl1' :: (a -> a -> a) -> [a] -> a
+foldl1' f ~(e:t) = foldl' f e t
+
+toList :: Foldable t => t a -> [a]
+toList = foldr (:) []
+
+find :: Foldable t => (a -> Bool) -> t a -> Maybe a
+find p = foldMap (filter p . Id)
+or :: Foldable t => t Bool -> Bool
+or = fold
+and :: Foldable t => t Bool -> Bool
+and = getProduct . fold . map Product
+all :: Foldable t => (a -> Bool) -> t a -> Bool
+all = map and . map
+any :: Foldable t => (a -> Bool) -> t a -> Bool
+any = map or . map
+elem :: (Eq a,Foldable t) => a -> t a -> Bool
+elem e = any (e==)
+
+empty :: Foldable f => f a -> Bool
+empty = foldr (const (const False)) True
+</pre></br><h2>printed</h2></br><pre>{-# LANGUAGE TupleSections, MultiParamTypeClasses #-}
+module Algebra.Foldable where
+
+import Algebra.Core
+import Algebra.Classes
+import Algebra.Functor
+import Data.Tree
+
+class Functor t => Foldable t where
+  fold :: Monoid m => t m -> m
+instance Foldable Id where fold = getId
+instance Foldable (Either a) where
+  fold = pure zero <|> id
+instance Foldable Maybe where
+  fold (Just w) = w ; fold Nothing = zero
+instance Foldable ((,) a) where fold = snd
+instance Foldable [] where
+  fold [] = zero
+  fold (x:t) = x+fold t
+instance Foldable Tree where fold (Node m subs) = m + fold (map fold subs)
+deriving instance Foldable Interleave
+deriving instance Foldable OrdList
+instance (Foldable f,Foldable g) => Foldable (f:.:g) where
+  fold = getCompose >>> map fold >>> fold
+
+newtype Sized f a = Sized { getSized :: f a }
+instance (Foldable f,Semigroup (Sized f a),Monoid n,Num n) =>
+         SubSemi n (Sized f a) where
+  cast = size . getSized
+
+instance (Foldable f,Foldable g) => Foldable (f:**:g) where
+  fold (f:**:g) = fold f + fold g
+instance (Foldable f,Foldable g) => Foldable (f:++:g) where
+  fold (Sum (Left f)) = fold f
+  fold (Sum (Right g)) = fold g
+
+foldMap :: (Monoid m, Foldable t) => (a -> m) -> t a -> m
+foldMap f = fold . map f
+convert :: (Unit f, Monoid (f a), Foldable t) => t a -> f a
+convert = foldMap pure
+concat :: (Monoid m, Foldable t) => t m -> m
+concat = fold
+sum :: (Monoid m, Foldable t) => t m -> m
+sum = fold
+size :: (Foldable f,Num n,Monoid n) => f a -> n
+size c = sum (1<$c)
+count :: (Num n, Monoid n, Foldable f) => f a -> n
+count = size
+length :: (Num n,Monoid n) => [a] -> n
+length = count
+
+split :: (Foldable t,Monoid b,Monoid c) => t (b:+:c) -> (b,c)
+split = foldMap (( zero)<|>(zero,))
+partitionEithers :: (Foldable t,Unit t,Monoid (t a),Monoid (t b))
+                    => t (a:+:b) -> (t a,t b)
+partitionEithers = split . map (pure|||pure)
+partition :: (Unit f, Monoid (f a), Foldable t) => (a -> Bool) -> t a -> (f a, f a)
+partition p = split . map (\a -> (if p a then Left else Right) (pure a))
+filter :: (Unit f, Monoid (f a), Foldable t) => (a -> Bool) -> t a -> f a
+filter p = fst . partition p
+select :: (Unit f, Monoid (f a), Foldable t) => (a -> Bool) -> t a -> f a
+select = filter
+refuse :: (Unit f, Monoid (f a), Foldable t) => (a -> Bool) -> t a -> f a
+refuse = filter . map not
+
+compose :: (Category k, Foldable t) => t (k a a) -> k a a
+compose = runEndo . foldMap Endo
+
+foldr :: Foldable t => (b -> a -> a) -> a -> t b -> a
+foldr f e t = (runEndo . getDual) (foldMap (\b -> Dual (Endo (f b))) t) e
+foldr1 :: (a -> a -> a) -> [a] -> a
+foldr1 f ~(e:t) = foldr f e t
+foldl' :: Foldable t => (a -> b -> a) -> a -> t b -> a
+foldl' f e t = runEndo (foldMap (\b -> Endo (\a -> a`seq`f a b)) t) e
+foldl1' :: (a -> a -> a) -> [a] -> a
+foldl1' f ~(e:t) = foldl' f e t
+
+toList :: Foldable t => t a -> [a]
+toList = foldr (:) []
+
+find :: Foldable t => (a -> Bool) -> t a -> Maybe a
+find p = foldMap (filter p . Id)
+or :: Foldable t => t Bool -> Bool
+or = fold
+and :: Foldable t => t Bool -> Bool
+and = getProduct . fold . map Product
+all :: Foldable t => (a -> Bool) -> t a -> Bool
+all = map and . map
+any :: Foldable t => (a -> Bool) -> t a -> Bool
+any = map or . map
+elem :: (Eq a,Foldable t) => a -> t a -> Bool
+elem e = any (e==)
+
+empty :: Foldable f => f a -> Bool
+empty = foldr (const (const False)) True
+
+</pre>

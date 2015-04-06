@@ -1,0 +1,98 @@
+<a href="CMAES.hs784170963454233502.out.html">prev</a></br><a href="failures.html">home</a></br><a href="CmdLine.hs18171295601131570933.out.html">next</a></br></br><pre>12c12
+< import "mtl" Control.Monad.Reader
+---
+> import  Control.Monad.Reader
+45a46
+> 
+</pre></br><h2>original</h2></br><pre>{-# LANGUAGE PackageImports #-}
+
+module Propellor.Property.Cmd (
+    cmdProperty,
+    cmdProperty',
+    scriptProperty,
+    userScriptProperty,
+) where
+
+import Control.Applicative
+import Data.List
+import "mtl" Control.Monad.Reader
+
+import Propellor.Types
+import Propellor.Property
+import Utility.SafeCommand
+import Utility.Env
+
+-- | A property that can be satisfied by running a command.
+--
+-- The command must exit 0 on success.
+cmdProperty :: String -> [String] -> Property NoInfo
+cmdProperty cmd params = cmdProperty' cmd params []
+
+-- | A property that can be satisfied by running a command,
+-- with added environment.
+cmdProperty' :: String -> [String] -> [(String, String)] -> Property NoInfo
+cmdProperty' cmd params env = property desc $ liftIO $ do
+    env' <- addEntries env <$> getEnvironment
+    toResult <$> boolSystemEnv cmd (map Param params) (Just env')
+  where
+    desc = unwords $ cmd : params
+
+-- | A property that can be satisfied by running a series of shell commands.
+scriptProperty :: [String] -> Property NoInfo
+scriptProperty script = cmdProperty "sh" ["-c", shellcmd]
+  where
+    shellcmd = intercalate " ; " ("set -e" : script)
+
+-- | A property that can satisfied by running a series of shell commands,
+-- as user (cd'd to their home directory).
+userScriptProperty :: UserName -> [String] -> Property NoInfo
+userScriptProperty user script = cmdProperty "su" ["-c", shellcmd, user]
+  where
+    shellcmd = intercalate " ; " ("set -e" : "cd" : script)
+</pre></br><h2>printed</h2></br><pre>{-# LANGUAGE PackageImports #-}
+
+module Propellor.Property.Cmd (
+    cmdProperty,
+    cmdProperty',
+    scriptProperty,
+    userScriptProperty,
+) where
+
+import Control.Applicative
+import Data.List
+import  Control.Monad.Reader
+
+import Propellor.Types
+import Propellor.Property
+import Utility.SafeCommand
+import Utility.Env
+
+-- | A property that can be satisfied by running a command.
+--
+-- The command must exit 0 on success.
+cmdProperty :: String -> [String] -> Property NoInfo
+cmdProperty cmd params = cmdProperty' cmd params []
+
+-- | A property that can be satisfied by running a command,
+-- with added environment.
+cmdProperty' :: String -> [String] -> [(String, String)] -> Property NoInfo
+cmdProperty' cmd params env = property desc $ liftIO $ do
+    env' <- addEntries env <$> getEnvironment
+    toResult <$> boolSystemEnv cmd (map Param params) (Just env')
+  where
+    desc = unwords $ cmd : params
+
+-- | A property that can be satisfied by running a series of shell commands.
+scriptProperty :: [String] -> Property NoInfo
+scriptProperty script = cmdProperty "sh" ["-c", shellcmd]
+  where
+    shellcmd = intercalate " ; " ("set -e" : script)
+
+-- | A property that can satisfied by running a series of shell commands,
+-- as user (cd'd to their home directory).
+userScriptProperty :: UserName -> [String] -> Property NoInfo
+userScriptProperty user script = cmdProperty "su" ["-c", shellcmd, user]
+  where
+    shellcmd = intercalate " ; " ("set -e" : "cd" : script)
+
+</pre>

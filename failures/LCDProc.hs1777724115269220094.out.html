@@ -1,0 +1,506 @@
+<a href="LazySmallCheck.hs12893357351755699915.out.html">prev</a></br><a href="failures.html">home</a></br><a href="LCSU.hs1439025357738342585.out.html">next</a></br></br><pre>76c76
+< marquee lst = concat . foldr (\(b,a) -> \lst -> (a:(b:lst)) )  [] .zip ( Data.List.repeat " + " ) $ lst
+---
+> marquee lst = concat . foldr (\(b,a) ->      ->lst -> (a:(b:lst)) )  [] .zip ( Data.List.repeat " + " ) $ lst
+249a250
+> 
+</pre></br><h2>original</h2></br><pre>{-
+ - Module responsible for managing the LCD display.
+ - 'initialize' registers a number of different screens
+ - with the LCDProc daemon.
+ -}
+module Hmpf.LCDProc (initialize
+               , selectList
+               , closeSession
+               , music
+               , musicBanner
+           , showMusic
+           , percent
+           , alphabet
+           , general
+               , alert ) where
+
+import Hmpf.Util (clock)
+import Hmpf.ApplicationTypes
+import Network
+import System.IO
+import Control.Concurrent.MVar
+import Data.List
+import Control.Concurrent
+import System.Posix.Time
+import System.Posix.Types
+import System.Time
+import Control.Concurrent.MVar ( newEmptyMVar )
+import qualified Hmpf.Monitor as M
+
+-- host = "10.1.1.4"
+-- port = PortNumber 13666
+
+
+initialize :: Session ()
+initialize = do
+ state <- get
+ let (host, port) = lcdConf state
+ h <- lift (connectTo host (PortNumber port))
+ lift (hSetBuffering h LineBuffering)
+ lift (hPutStrLn h "hello")
+ resp <- lift (hGetLine h)
+ {-
+ let ws = words resp
+     width = read . ( !! 7 ) $ ws
+     height = read . ( !! 9 ) $ ws
+ -}
+ put (state { lcdSocket = h })
+ mkAlert >> mkSelectList >> mkMusic >> mkPercent >> mkAlphabet >> mkGeneral
+
+closeSession :: a -> Session a
+closeSession x = do
+ get >>= ( lift . hClose . lcdSocket )
+ return x
+
+
+send :: String -> Session ()
+send cmd = do
+ putLCDLn cmd
+
+putLCDLn :: String -> Session ()
+putLCDLn cmd = do
+ h <- get >>= ( return . lcdSocket )
+ lift $ hPutStrLn  h cmd
+ resp <- getLCDLn
+ return ()
+
+getLCDLn :: Session String
+getLCDLn = do
+ h <- get >>= ( return . lcdSocket )
+ lift $ hGetLine h
+
+-- Converts a list into a string suitable for display on the marquee scroller
+marquee :: [String] -> String
+marquee [x] | length x < 14 = x
+            | otherwise = x ++ " + "
+marquee lst = concat . foldr (\(b,a) -> \lst -> (a:(b:lst)) )  [] .zip ( Data.List.repeat " + " ) $ lst
+
+--Create general screen
+mkGeneral :: Session ()
+mkGeneral = mapM_ send mkScreen
+ where mkScreen = [ "screen_add general"
+                  , "widget_add general ln1 scroller"
+                  , "widget_add general ln2 string"
+          , "screen_set general -priority hidden"
+          , "screen_set general -heartbeat off" ]
+
+--Create music screen
+mkMusic :: Session ()
+mkMusic = mapM_ send mkScreen
+ where mkScreen = [ "screen_add music"
+                  , "widget_add music ln1 scroller"
+                  , "widget_add music ln2 string"
+                  , "widget_add music b1 string"
+                  , "widget_add music b2 string"
+          , "screen_set music -priority foreground"
+          , "screen_set music -heartbeat off" ]
+
+--Create alert screen
+mkAlert :: Session ()
+mkAlert = mapM_ send mkScreen
+ where mkScreen = [ "screen_add alert"
+                  , "widget_add alert ln1 string"
+                  , "widget_add alert ln2 string"
+          , "screen_set alert -priority hidden"
+          , "screen_set alert -heartbeat off" ]
+
+--Create the selectList screen
+mkSelectList :: Session ()
+mkSelectList = mapM_ send mkScreen
+ where mkScreen = [ "screen_add selectlist"
+                  , "widget_add selectlist s1 string"
+                  , "widget_add selectlist s2 string"
+                  , "widget_add selectlist ln1 scroller"
+                  , "widget_add selectlist ln2 string"
+                  -- , "widget_add selectlist ln2 scroller"
+          , "screen_set selectlist -priority hidden"
+          , "screen_set selectlist -heartbeat off" ]
+
+mkPercent :: Session()
+mkPercent = mapM_ send mkScreen
+ where mkScreen = [ "screen_add percent"
+                  , "widget_add percent val string"
+                  , "widget_add percent bar hbar"
+                  , "screen_set percent -priority hidden"
+                  , "screen_set percent -heartbeat off" ]
+
+--Create the Alphabet Selector screen
+mkAlphabet :: Session ()
+mkAlphabet = mapM_ send mkScreen
+ where mkScreen = [ "screen_add alphabet"
+                  , "widget_add alphabet ln1 string"
+                  , "widget_add alphabet ln2 string"
+          , "screen_set alphabet -priority hidden"
+          , "screen_set alphabet -heartbeat off" ]
+
+--General screen
+general :: String -> String -> Session ()
+general top bottom = do
+ mapM_ send commands
+ raise "general"
+ where
+  commands = [ "widget_set general ln1 1 1 16 1 m 3 \"" ++ ( marquee [top] ) ++ "\""
+             , "widget_set general ln2 1 2 \"" ++ bottom ++ "\"" ]
+
+--Display alphabet selector
+alphabet :: String -> String -> Int -> Session ()
+alphabet selected choices i = do
+ mapM_ send commands
+ raise "alphabet"
+ where
+  ln1 = selected
+  ln2 = drop ( i - ( i `mod` 16 ) ) choices
+  x_cursor = show . (+1) . ( `mod` 16 ) $ i
+  commands = [ "screen_set alphabet -cursor on"
+             , "widget_set alphabet ln1 1 1 \"" ++ ln1 ++ "\""
+             , "widget_set alphabet ln2 1 2 \"" ++ ln2 ++ "\""
+         , "screen_set alphabet -cursor_y 2 -cursor_x " ++ x_cursor ]
+
+--Refresh music screen
+music :: String -> String -> Int -> Int -> Int -> Int -> Session ()
+music artist title elapsed duration number playlist =
+ mapM_ send commands
+ where
+  ln1 = marquee [ artist , title ]
+  ln2 = (clock elapsed) ++ " (" ++ (show number) ++"/" ++ (show playlist) ++ ") " ++ (clock ( duration - elapsed ) )
+  commands = [ "widget_set music ln1 1 1 16 1 m 3 \"" ++ ln1 ++ "\""
+             , "widget_set music ln2 1 2 \"" ++ ln2 ++ "\""
+         , "widget_set music b1 1 1 \"\""
+         , "widget_set music b2 1 1 \"\""
+         ]
+
+musicBanner :: String -> String -> Session ()
+musicBanner top bottom =
+ mapM_ send commands
+ where
+  commands = [ "widget_set music ln1 1 1 1 1 m 3 \"\""
+             , "widget_set music ln2 1 2 \"\""
+         , "widget_set music b1 1 1 \"" ++ top ++ "\""
+         , "widget_set music b2 1 2 \"" ++ bottom  ++ "\""
+         ]
+
+showMusic :: Session ()
+showMusic = raise "music"
+
+--Display a selected item in a list
+selectList :: [String] -> Int -> Session ()
+selectList [] _ = return ()
+selectList [x,y] i = (selectBinary x y i) >> (raise "selectlist")
+selectList lst item = (mapM_ send commands) >> (raise "selectlist")
+ where
+  ln1 =  lst !! ( item `mod` (length lst) )
+  ln2 =  lst !! ( (item + 1) `mod` (length lst) )
+  commands = [ "widget_set selectlist s1 1 1 \">>\""
+             , "widget_set selectlist s2 1 2 \"  \""
+             , "widget_set selectlist ln1 3 1 16 1 h 2 \"" ++ ln1 ++ " \""
+             , "widget_set selectlist ln2 3 2 \"" ++ ln2 ++ " \"" ]
+
+selectBinary :: String -> String -> Int -> Session ()
+selectBinary one two i = mapM_ send commands
+ where
+  commands = case i `mod` 2 of
+   0 -> [ "widget_set selectlist s1 1 1 \">>\""
+        , "widget_set selectlist s2 1 2 \"  \""
+        , "widget_set selectlist ln1 3 1 16 1 h 2 \"" ++ one ++ " \""
+        , "widget_set selectlist ln2 3 2 \"" ++ two ++ " \"" ]
+   1 -> [ "widget_set selectlist s1 1 1 \"  \""
+        , "widget_set selectlist s2 1 2 \">>\""
+        , "widget_set selectlist ln1 3 2 16 2 h 2 \"" ++ two ++ " \""
+        , "widget_set selectlist ln2 3 1 \"" ++ one ++ " \"" ]
+
+--Briefly display a status bar with message
+percent :: String -> Int -> Session ()
+percent title percentage = do
+ M.unscheduleAction "hidepercent"
+ mapM_ send commands
+ M.scheduleAction "hidepercent" 4 (hideScreen "percent")
+ where commands = [ "screen_set percent -priority 5"
+          , "widget_set percent val 1 1 \"" ++ ln1 ++ "\""
+          , "widget_set percent bar 1 2 " ++ (show percentage) ]
+       ln1 = title ++ ": " ++ (show percentage) ++ "%"
+
+
+
+--Display a two line message briefly
+alert :: String -> String -> Session ()
+alert ln1 ln2 = do
+ M.unscheduleAction "hidealert"
+ mapM_ send commands
+ M.scheduleAction "hidealert" 4 (hideScreen "alert")
+ where commands = [ "screen_set alert -priority 5"
+          , "widget_set alert ln1 1 1 \"" ++ ln1 ++ "\""
+          , "widget_set alert ln2 1 2 \"" ++ ln2 ++ "\"" ]
+
+-- Hide a particular screen
+hideScreen :: String -> Session ()
+hideScreen scr = send ("screen_set "++ scr ++ " -priority hidden")
+
+
+permanentscreens = [ "music"
+                   , "general"
+           , "selectlist"
+           , "alphabet"
+           ]
+
+raise :: String -> Session ()
+raise scr = do
+ let xs = filter (/=scr) permanentscreens
+ send ("screen_set "++ scr ++ " -priority foreground")
+ mapM_ hideScreen xs
+</pre></br><h2>printed</h2></br><pre>{-
+ - Module responsible for managing the LCD display.
+ - 'initialize' registers a number of different screens
+ - with the LCDProc daemon.
+ -}
+module Hmpf.LCDProc (initialize
+               , selectList
+               , closeSession
+               , music
+               , musicBanner
+           , showMusic
+           , percent
+           , alphabet
+           , general
+               , alert ) where
+
+import Hmpf.Util (clock)
+import Hmpf.ApplicationTypes
+import Network
+import System.IO
+import Control.Concurrent.MVar
+import Data.List
+import Control.Concurrent
+import System.Posix.Time
+import System.Posix.Types
+import System.Time
+import Control.Concurrent.MVar ( newEmptyMVar )
+import qualified Hmpf.Monitor as M
+
+-- host = "10.1.1.4"
+-- port = PortNumber 13666
+
+
+initialize :: Session ()
+initialize = do
+ state <- get
+ let (host, port) = lcdConf state
+ h <- lift (connectTo host (PortNumber port))
+ lift (hSetBuffering h LineBuffering)
+ lift (hPutStrLn h "hello")
+ resp <- lift (hGetLine h)
+ {-
+ let ws = words resp
+     width = read . ( !! 7 ) $ ws
+     height = read . ( !! 9 ) $ ws
+ -}
+ put (state { lcdSocket = h })
+ mkAlert >> mkSelectList >> mkMusic >> mkPercent >> mkAlphabet >> mkGeneral
+
+closeSession :: a -> Session a
+closeSession x = do
+ get >>= ( lift . hClose . lcdSocket )
+ return x
+
+
+send :: String -> Session ()
+send cmd = do
+ putLCDLn cmd
+
+putLCDLn :: String -> Session ()
+putLCDLn cmd = do
+ h <- get >>= ( return . lcdSocket )
+ lift $ hPutStrLn  h cmd
+ resp <- getLCDLn
+ return ()
+
+getLCDLn :: Session String
+getLCDLn = do
+ h <- get >>= ( return . lcdSocket )
+ lift $ hGetLine h
+
+-- Converts a list into a string suitable for display on the marquee scroller
+marquee :: [String] -> String
+marquee [x] | length x < 14 = x
+            | otherwise = x ++ " + "
+marquee lst = concat . foldr (\(b,a) ->      ->lst -> (a:(b:lst)) )  [] .zip ( Data.List.repeat " + " ) $ lst
+
+--Create general screen
+mkGeneral :: Session ()
+mkGeneral = mapM_ send mkScreen
+ where mkScreen = [ "screen_add general"
+                  , "widget_add general ln1 scroller"
+                  , "widget_add general ln2 string"
+          , "screen_set general -priority hidden"
+          , "screen_set general -heartbeat off" ]
+
+--Create music screen
+mkMusic :: Session ()
+mkMusic = mapM_ send mkScreen
+ where mkScreen = [ "screen_add music"
+                  , "widget_add music ln1 scroller"
+                  , "widget_add music ln2 string"
+                  , "widget_add music b1 string"
+                  , "widget_add music b2 string"
+          , "screen_set music -priority foreground"
+          , "screen_set music -heartbeat off" ]
+
+--Create alert screen
+mkAlert :: Session ()
+mkAlert = mapM_ send mkScreen
+ where mkScreen = [ "screen_add alert"
+                  , "widget_add alert ln1 string"
+                  , "widget_add alert ln2 string"
+          , "screen_set alert -priority hidden"
+          , "screen_set alert -heartbeat off" ]
+
+--Create the selectList screen
+mkSelectList :: Session ()
+mkSelectList = mapM_ send mkScreen
+ where mkScreen = [ "screen_add selectlist"
+                  , "widget_add selectlist s1 string"
+                  , "widget_add selectlist s2 string"
+                  , "widget_add selectlist ln1 scroller"
+                  , "widget_add selectlist ln2 string"
+                  -- , "widget_add selectlist ln2 scroller"
+          , "screen_set selectlist -priority hidden"
+          , "screen_set selectlist -heartbeat off" ]
+
+mkPercent :: Session()
+mkPercent = mapM_ send mkScreen
+ where mkScreen = [ "screen_add percent"
+                  , "widget_add percent val string"
+                  , "widget_add percent bar hbar"
+                  , "screen_set percent -priority hidden"
+                  , "screen_set percent -heartbeat off" ]
+
+--Create the Alphabet Selector screen
+mkAlphabet :: Session ()
+mkAlphabet = mapM_ send mkScreen
+ where mkScreen = [ "screen_add alphabet"
+                  , "widget_add alphabet ln1 string"
+                  , "widget_add alphabet ln2 string"
+          , "screen_set alphabet -priority hidden"
+          , "screen_set alphabet -heartbeat off" ]
+
+--General screen
+general :: String -> String -> Session ()
+general top bottom = do
+ mapM_ send commands
+ raise "general"
+ where
+  commands = [ "widget_set general ln1 1 1 16 1 m 3 \"" ++ ( marquee [top] ) ++ "\""
+             , "widget_set general ln2 1 2 \"" ++ bottom ++ "\"" ]
+
+--Display alphabet selector
+alphabet :: String -> String -> Int -> Session ()
+alphabet selected choices i = do
+ mapM_ send commands
+ raise "alphabet"
+ where
+  ln1 = selected
+  ln2 = drop ( i - ( i `mod` 16 ) ) choices
+  x_cursor = show . (+1) . ( `mod` 16 ) $ i
+  commands = [ "screen_set alphabet -cursor on"
+             , "widget_set alphabet ln1 1 1 \"" ++ ln1 ++ "\""
+             , "widget_set alphabet ln2 1 2 \"" ++ ln2 ++ "\""
+         , "screen_set alphabet -cursor_y 2 -cursor_x " ++ x_cursor ]
+
+--Refresh music screen
+music :: String -> String -> Int -> Int -> Int -> Int -> Session ()
+music artist title elapsed duration number playlist =
+ mapM_ send commands
+ where
+  ln1 = marquee [ artist , title ]
+  ln2 = (clock elapsed) ++ " (" ++ (show number) ++"/" ++ (show playlist) ++ ") " ++ (clock ( duration - elapsed ) )
+  commands = [ "widget_set music ln1 1 1 16 1 m 3 \"" ++ ln1 ++ "\""
+             , "widget_set music ln2 1 2 \"" ++ ln2 ++ "\""
+         , "widget_set music b1 1 1 \"\""
+         , "widget_set music b2 1 1 \"\""
+         ]
+
+musicBanner :: String -> String -> Session ()
+musicBanner top bottom =
+ mapM_ send commands
+ where
+  commands = [ "widget_set music ln1 1 1 1 1 m 3 \"\""
+             , "widget_set music ln2 1 2 \"\""
+         , "widget_set music b1 1 1 \"" ++ top ++ "\""
+         , "widget_set music b2 1 2 \"" ++ bottom  ++ "\""
+         ]
+
+showMusic :: Session ()
+showMusic = raise "music"
+
+--Display a selected item in a list
+selectList :: [String] -> Int -> Session ()
+selectList [] _ = return ()
+selectList [x,y] i = (selectBinary x y i) >> (raise "selectlist")
+selectList lst item = (mapM_ send commands) >> (raise "selectlist")
+ where
+  ln1 =  lst !! ( item `mod` (length lst) )
+  ln2 =  lst !! ( (item + 1) `mod` (length lst) )
+  commands = [ "widget_set selectlist s1 1 1 \">>\""
+             , "widget_set selectlist s2 1 2 \"  \""
+             , "widget_set selectlist ln1 3 1 16 1 h 2 \"" ++ ln1 ++ " \""
+             , "widget_set selectlist ln2 3 2 \"" ++ ln2 ++ " \"" ]
+
+selectBinary :: String -> String -> Int -> Session ()
+selectBinary one two i = mapM_ send commands
+ where
+  commands = case i `mod` 2 of
+   0 -> [ "widget_set selectlist s1 1 1 \">>\""
+        , "widget_set selectlist s2 1 2 \"  \""
+        , "widget_set selectlist ln1 3 1 16 1 h 2 \"" ++ one ++ " \""
+        , "widget_set selectlist ln2 3 2 \"" ++ two ++ " \"" ]
+   1 -> [ "widget_set selectlist s1 1 1 \"  \""
+        , "widget_set selectlist s2 1 2 \">>\""
+        , "widget_set selectlist ln1 3 2 16 2 h 2 \"" ++ two ++ " \""
+        , "widget_set selectlist ln2 3 1 \"" ++ one ++ " \"" ]
+
+--Briefly display a status bar with message
+percent :: String -> Int -> Session ()
+percent title percentage = do
+ M.unscheduleAction "hidepercent"
+ mapM_ send commands
+ M.scheduleAction "hidepercent" 4 (hideScreen "percent")
+ where commands = [ "screen_set percent -priority 5"
+          , "widget_set percent val 1 1 \"" ++ ln1 ++ "\""
+          , "widget_set percent bar 1 2 " ++ (show percentage) ]
+       ln1 = title ++ ": " ++ (show percentage) ++ "%"
+
+
+
+--Display a two line message briefly
+alert :: String -> String -> Session ()
+alert ln1 ln2 = do
+ M.unscheduleAction "hidealert"
+ mapM_ send commands
+ M.scheduleAction "hidealert" 4 (hideScreen "alert")
+ where commands = [ "screen_set alert -priority 5"
+          , "widget_set alert ln1 1 1 \"" ++ ln1 ++ "\""
+          , "widget_set alert ln2 1 2 \"" ++ ln2 ++ "\"" ]
+
+-- Hide a particular screen
+hideScreen :: String -> Session ()
+hideScreen scr = send ("screen_set "++ scr ++ " -priority hidden")
+
+
+permanentscreens = [ "music"
+                   , "general"
+           , "selectlist"
+           , "alphabet"
+           ]
+
+raise :: String -> Session ()
+raise scr = do
+ let xs = filter (/=scr) permanentscreens
+ send ("screen_set "++ scr ++ " -priority foreground")
+ mapM_ hideScreen xs
+
+</pre>

@@ -1,0 +1,148 @@
+<a href="MapBuffer.hs4119385542111482797.out.html">prev</a></br><a href="failures.html">home</a></br><a href="Mapping.hs15478371072028841238.out.html">next</a></br></br><pre>15d14
+<     MonadPlus m ⇒
+16d14
+<     Word {-^ number of colors -} →
+17d14
+<     Word {-^ number of countries -} →
+18c15
+<     (Word → Word → Bool) {-^ whether two countries are adjacent (must be symmetric) -} →
+---
+>     MonadPlus m =>
+18a16
+>     Word {-^ number of colors -} ->
+18a17
+>     Word {-^ number of countries -} ->
+18a18
+>     (Word -> Word -> Bool) {-^ whether two countries are adjacent (must be symmetric) -} ->
+24d23
+<         color ← between 1 number_of_colors
+25c24
+<         forM_ coloring $ \(other_country, other_color) →
+---
+>         color <- between 1 number_of_colors
+25a25
+>         forM_ coloring $ \(other_country, other_color) ->
+35d34
+<     MonadPlus m ⇒
+36d34
+<     Word {-^ number of colors -} →
+37d34
+<     Word {-^ number of countries -} →
+38c35
+<     (Word → Word → Bool) {-^ whether two countries are adjacent (must be symmetric) -} →
+---
+>     MonadPlus m =>
+38a36
+>     Word {-^ number of colors -} ->
+38a37
+>     Word {-^ number of countries -} ->
+38a38
+>     (Word -> Word -> Bool) {-^ whether two countries are adjacent (must be symmetric) -} ->
+44d43
+<         color ← between 1 ((number_of_colors_used + 1) `min` number_of_colors)
+45c44
+<         forM_ coloring $ \(other_country, other_color) →
+---
+>         color <- between 1 ((number_of_colors_used + 1) `min` number_of_colors)
+45a45
+>         forM_ coloring $ \(other_country, other_color) ->
+48a49
+> 
+</pre></br><h2>original</h2></br><pre>{-# LANGUAGE UnicodeSyntax #-}
+
+{-| This module contains examples of logic programs that generate all the valid
+    colorings of a given (geographical) map.
+ -}
+module LogicGrowsOnTrees.Examples.MapColoring where
+
+import Control.Monad (MonadPlus,foldM,forM_,guard,liftM,when)
+import Data.Word (Word)
+
+import LogicGrowsOnTrees (between)
+
+{-| Generate all valid map colorings. -}
+coloringSolutions ::
+    MonadPlus m ⇒
+    Word {-^ number of colors -} →
+    Word {-^ number of countries -} →
+    (Word → Word → Bool) {-^ whether two countries are adjacent (must be symmetric) -} →
+    m [(Word,Word)] {-^ a valid coloring -}
+coloringSolutions number_of_colors number_of_countries isAdjacentTo =
+    foldM addCountryToColoring [] [1..number_of_countries]
+  where
+    addCountryToColoring coloring country = do
+        color ← between 1 number_of_colors
+        forM_ coloring $ \(other_country, other_color) →
+            when (country `isAdjacentTo` other_country) $
+                guard (color /= other_color)
+        return $ (country,color):coloring
+
+{-| Generate all /unique/ valid map colorings.  That is, exactly one coloring will
+    be generated from each class of colorings that are equivalent under a
+    permutation of colors.
+ -}
+coloringUniqueSolutions ::
+    MonadPlus m ⇒
+    Word {-^ number of colors -} →
+    Word {-^ number of countries -} →
+    (Word → Word → Bool) {-^ whether two countries are adjacent (must be symmetric) -} →
+    m [(Word,Word)] {-^ a (unique) valid coloring -}
+coloringUniqueSolutions number_of_colors number_of_countries isAdjacentTo =
+    liftM snd $ foldM addCountryToColoring (0,[]) [1..number_of_countries]
+  where
+    addCountryToColoring (number_of_colors_used,coloring) country = do
+        color ← between 1 ((number_of_colors_used + 1) `min` number_of_colors)
+        forM_ coloring $ \(other_country, other_color) →
+            when (country `isAdjacentTo` other_country) $
+                guard (color /= other_color)
+        return (number_of_colors_used `max` color,(country,color):coloring)
+</pre></br><h2>printed</h2></br><pre>{-# LANGUAGE UnicodeSyntax #-}
+
+{-| This module contains examples of logic programs that generate all the valid
+    colorings of a given (geographical) map.
+ -}
+module LogicGrowsOnTrees.Examples.MapColoring where
+
+import Control.Monad (MonadPlus,foldM,forM_,guard,liftM,when)
+import Data.Word (Word)
+
+import LogicGrowsOnTrees (between)
+
+{-| Generate all valid map colorings. -}
+coloringSolutions ::
+    MonadPlus m =>
+    Word {-^ number of colors -} ->
+    Word {-^ number of countries -} ->
+    (Word -> Word -> Bool) {-^ whether two countries are adjacent (must be symmetric) -} ->
+    m [(Word,Word)] {-^ a valid coloring -}
+coloringSolutions number_of_colors number_of_countries isAdjacentTo =
+    foldM addCountryToColoring [] [1..number_of_countries]
+  where
+    addCountryToColoring coloring country = do
+        color <- between 1 number_of_colors
+        forM_ coloring $ \(other_country, other_color) ->
+            when (country `isAdjacentTo` other_country) $
+                guard (color /= other_color)
+        return $ (country,color):coloring
+
+{-| Generate all /unique/ valid map colorings.  That is, exactly one coloring will
+    be generated from each class of colorings that are equivalent under a
+    permutation of colors.
+ -}
+coloringUniqueSolutions ::
+    MonadPlus m =>
+    Word {-^ number of colors -} ->
+    Word {-^ number of countries -} ->
+    (Word -> Word -> Bool) {-^ whether two countries are adjacent (must be symmetric) -} ->
+    m [(Word,Word)] {-^ a (unique) valid coloring -}
+coloringUniqueSolutions number_of_colors number_of_countries isAdjacentTo =
+    liftM snd $ foldM addCountryToColoring (0,[]) [1..number_of_countries]
+  where
+    addCountryToColoring (number_of_colors_used,coloring) country = do
+        color <- between 1 ((number_of_colors_used + 1) `min` number_of_colors)
+        forM_ coloring $ \(other_country, other_color) ->
+            when (country `isAdjacentTo` other_country) $
+                guard (color /= other_color)
+        return (number_of_colors_used `max` color,(country,color):coloring)
+
+</pre>

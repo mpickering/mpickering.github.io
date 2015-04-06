@@ -1,0 +1,84 @@
+<a href="Internal.hs459244054458588260.out.html">prev</a></br><a href="failures.html">home</a></br><a href="Internal.hs563613512101929267.out.html">next</a></br></br><pre>13c13
+< mergeEs :: View [Port] n ⇒ MergeEdges -> Rewrite n ()
+---
+> mergeEs :: View [Port] n => MergeEdges -> Rewrite n ()
+18c18
+< joinEdges ∷ [[Edge]] → [[Edge]]
+---
+> joinEdges :: [[Edge]] -> [[Edge]]
+24c24
+< join ∷ [Set] → [Set]
+---
+> join :: [Set] -> [Set]
+28c28
+< join1 ∷ Set → [Set] → [Set]
+---
+> join1 :: Set -> [Set] -> [Set]
+32a33
+> 
+</pre></br><h2>original</h2></br><pre>{-# LANGUAGE UnicodeSyntax, FlexibleContexts #-}
+module GraphRewriting.Rule.Internal where
+
+import GraphRewriting.Graph.Internal
+import GraphRewriting.Graph.Write
+import qualified Data.IntSet as Set
+
+
+type MergeEdges = [Edge]
+
+newtype Replace n a = Replace (Rewrite n (a, [MergeEdges]))
+
+mergeEs :: View [Port] n ⇒ MergeEdges -> Rewrite n ()
+mergeEs (e:es) = mapM_ (mergeEdges e) es
+
+type Set = Set.IntSet
+
+joinEdges ∷ [[Edge]] → [[Edge]]
+joinEdges = map (map Edge . Set.elems) . join . map (Set.fromList . map eKey)
+
+-- The code below is essentially maintaining equivalence classes. TODO: use a library for that.
+
+-- | Join pairs of sets with a common element until all sets are disjoint.
+join ∷ [Set] → [Set]
+join = foldr join1 []
+
+-- | Add to a list of disjoint sets a further set and join sets with common elements such that the resulting list again only contains disjoint sets.
+join1 ∷ Set → [Set] → [Set]
+join1 x [    ] = [x]
+join1 x (y:ys) = if Set.null $ Set.intersection x y
+    then y : join1 x ys
+    else join1 (Set.union x y) ys
+</pre></br><h2>printed</h2></br><pre>{-# LANGUAGE UnicodeSyntax, FlexibleContexts #-}
+module GraphRewriting.Rule.Internal where
+
+import GraphRewriting.Graph.Internal
+import GraphRewriting.Graph.Write
+import qualified Data.IntSet as Set
+
+
+type MergeEdges = [Edge]
+
+newtype Replace n a = Replace (Rewrite n (a, [MergeEdges]))
+
+mergeEs :: View [Port] n => MergeEdges -> Rewrite n ()
+mergeEs (e:es) = mapM_ (mergeEdges e) es
+
+type Set = Set.IntSet
+
+joinEdges :: [[Edge]] -> [[Edge]]
+joinEdges = map (map Edge . Set.elems) . join . map (Set.fromList . map eKey)
+
+-- The code below is essentially maintaining equivalence classes. TODO: use a library for that.
+
+-- | Join pairs of sets with a common element until all sets are disjoint.
+join :: [Set] -> [Set]
+join = foldr join1 []
+
+-- | Add to a list of disjoint sets a further set and join sets with common elements such that the resulting list again only contains disjoint sets.
+join1 :: Set -> [Set] -> [Set]
+join1 x [    ] = [x]
+join1 x (y:ys) = if Set.null $ Set.intersection x y
+    then y : join1 x ys
+    else join1 (Set.union x y) ys
+
+</pre>

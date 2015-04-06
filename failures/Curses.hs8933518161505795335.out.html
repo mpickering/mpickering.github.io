@@ -1,0 +1,432 @@
+<a href="Curses.hs2721122891398556760.out.html">prev</a></br><a href="failures.html">home</a></br><a href="Custom.hs12648177091998097157.out.html">next</a></br></br><pre>18c18
+< toCursesColor ∷ ANSI.Color → Curses.Color
+---
+> toCursesColor :: ANSI.Color -> Curses.Color
+28c28
+< setColor ∷ Window → ANSI.ColorIntensity → ANSI.Color → IO ()
+---
+> setColor :: Window -> ANSI.ColorIntensity -> ANSI.Color -> IO ()
+31c31
+<   (attr, _) ← wAttrGet pad
+---
+>   (attr, _) <- wAttrGet pad
+33d32
+<                ANSI.Vivid → Curses.setBold attr True
+34c33
+<                ANSI.Dull  → attr
+---
+>                ANSI.Vivid -> Curses.setBold attr True
+34a34
+>                ANSI.Dull  -> attr
+37c37
+< setBoldW ∷ Window → IO ()
+---
+> setBoldW :: Window -> IO ()
+39c39
+<   (attr, pair) ← wAttrGet pad
+---
+>   (attr, pair) <- wAttrGet pad
+42c42
+< reset ∷ Window → IO ()
+---
+> reset :: Window -> IO ()
+46c46
+< outItem ∷  Window → OutItem → IO ()
+---
+> outItem ::  Window -> OutItem -> IO ()
+52c52
+< cursesPrintTodos ∷ (TodoItem → IO ()) → PrintConfig DefaultConfig → [Todo] → IO ()
+---
+> cursesPrintTodos :: (TodoItem -> IO ()) -> PrintConfig DefaultConfig -> [Todo] -> IO ()
+54c54
+<   tty ← hIsTerminalDevice stdout
+---
+>   tty <- hIsTerminalDevice stdout
+65c65
+<       (lines,cols) ← scrSize
+---
+>       (lines,cols) <- scrSize
+69d68
+<           np ← colorPairs
+70c69
+<           nc ← colors
+---
+>           np <- colorPairs
+70a70
+>           nc <- colors
+72c72
+<           forM_ [0..m-1] $ \i →
+---
+>           forM_ [0..m-1] $ \i ->
+74c74
+<           pad ← newPad nLines cols
+---
+>           pad <- newPad nLines cols
+85c85
+< runByNumber ∷ (TodoItem → IO ()) → [Todo] → Int → IO ()
+---
+> runByNumber :: (TodoItem -> IO ()) -> [Todo] -> Int -> IO ()
+88d87
+<     Nothing → putStrLn $ "Not found: " ++ show i
+89c88
+<     Just x  → run x
+---
+>     Nothing -> putStrLn $ "Not found: " ++ show i
+89a89
+>     Just x  -> run x
+91c91
+< scrollPad ∷ Window → Int → Int → Int → (Int → IO ()) → IO ()
+---
+> scrollPad :: Window -> Int -> Int -> Int -> (Int -> IO ()) -> IO ()
+104c104
+<       (y,x) ← getYX pad
+---
+>       (y,x) <- getYX pad
+111c111
+<       (y,x) ← getYX pad
+---
+>       (y,x) <- getYX pad
+118c118
+<       (y,x) ← getYX pad
+---
+>       (y,x) <- getYX pad
+123c123
+<       (y,x) ← getYX pad
+---
+>       (y,x) <- getYX pad
+128c128
+<       (y,_) ← getYX pad
+---
+>       (y,_) <- getYX pad
+133c133
+<       c ← getCh
+---
+>       c <- getCh
+135d134
+<         KeyChar 'q' → return ()
+136d134
+<         KeyChar 'j' → moveDown i
+137d134
+<         KeyChar 'k' → moveUp i
+138d134
+<         KeyChar 'h' → moveLeft i
+139d134
+<         KeyChar 'l' → moveRight i
+140d134
+<         KeyChar 'g' → scroll 0
+141d134
+<         KeyChar 'G' → scroll (padLines - lines)
+142d134
+<         KeyChar 'e' → runSelected
+143c135
+<         _           → beep >> waitForKeys i
+---
+>         KeyChar 'q' -> return ()
+143a136
+>         KeyChar 'j' -> moveDown i
+143a137
+>         KeyChar 'k' -> moveUp i
+143a138
+>         KeyChar 'h' -> moveLeft i
+143a139
+>         KeyChar 'l' -> moveRight i
+143a140
+>         KeyChar 'g' -> scroll 0
+143a141
+>         KeyChar 'G' -> scroll (padLines - lines)
+143a142
+>         KeyChar 'e' -> runSelected
+143a143
+>         _           -> beep >> waitForKeys i
+144a145
+> 
+</pre></br><h2>original</h2></br><pre>{-# LANGUAGE UnicodeSyntax #-}
+
+module Todos.Default.Curses (cursesPrintTodos) where
+
+import Control.Monad
+import Control.Monad.Reader
+import System.IO
+import System.Console.ANSI as ANSI
+import UI.HSCurses.Curses  as Curses
+import System.Locale.SetLocale
+
+import Todos.Types
+import Todos.Tree
+import Todos.Default.Config
+import Todos.Default.Print (showTodos, defaultPrintTodos)
+import Todos.Formatters hiding (outItem)
+
+toCursesColor ∷ ANSI.Color → Curses.Color
+toCursesColor ANSI.Black   = Curses.Color 0
+toCursesColor ANSI.Red     = Curses.Color 1
+toCursesColor ANSI.Green   = Curses.Color 2
+toCursesColor ANSI.Yellow  = Curses.Color 3
+toCursesColor ANSI.Blue    = Curses.Color 4
+toCursesColor ANSI.Magenta = Curses.Color 5
+toCursesColor ANSI.Cyan    = Curses.Color 6
+toCursesColor ANSI.White   = Curses.Color 7
+
+setColor ∷ Window → ANSI.ColorIntensity → ANSI.Color → IO ()
+setColor pad int clr = do
+  let (Curses.Color c) = toCursesColor clr
+  (attr, _) ← wAttrGet pad
+  let attr' = case int of
+               ANSI.Vivid → Curses.setBold attr True
+               ANSI.Dull  → attr
+  wAttrSet pad (attr', Pair c)
+
+setBoldW ∷ Window → IO ()
+setBoldW pad = do
+  (attr, pair) ← wAttrGet pad
+  wAttrSet pad (Curses.setBold attr True, pair)
+
+reset ∷ Window → IO ()
+reset pad = wAttrSet pad (attr0, Pair 0)
+
+-- | Print OutItem to console
+outItem ∷  Window → OutItem → IO ()
+outItem pad (OutString s)     = wAddStr pad s
+outItem pad (OutSetColor i c) = setColor pad i c
+outItem pad SetBold           = setBoldW pad
+outItem pad ResetAll          = reset pad
+
+cursesPrintTodos ∷ (TodoItem → IO ()) → PrintConfig DefaultConfig → [Todo] → IO ()
+cursesPrintTodos run cfg lst = do
+  tty ← hIsTerminalDevice stdout
+  if not tty
+    then defaultPrintTodos cfg lst
+    else do
+      todos <- if hasCycles lst
+                then do
+                  hPutStrLn stderr "Warning: cycles in TODOs; `execute' will not work"
+                  return lst
+                else return $ markLevels $ enumerateTodos lst
+      setLocale LC_ALL Nothing
+      initCurses
+      (lines,cols) ← scrSize
+      let nLines = fromIntegral $ treeLines todos
+      if nLines >= lines
+        then do
+          np ← colorPairs
+          nc ← colors
+          let m = min np nc
+          forM_ [0..m-1] $ \i →
+            initPair (Pair i) (Curses.Color i) (Curses.Color (-1))
+          pad ← newPad nLines cols
+          let lst' = runReader (showTodos todos) cfg
+          forM lst' (outItem pad)
+          echo False
+          scrollPad pad nLines lines cols (runByNumber run todos)
+          delWin pad
+          endWin
+        else do
+          endWin
+          defaultPrintTodos cfg lst
+
+runByNumber ∷ (TodoItem → IO ()) → [Todo] → Int → IO ()
+runByNumber run todos i =
+  case itemByNumber todos (fromIntegral i) of
+    Nothing → putStrLn $ "Not found: " ++ show i
+    Just x  → run x
+
+scrollPad ∷ Window → Int → Int → Int → (Int → IO ()) → IO ()
+scrollPad pad padLines lines cols run = do
+    wMove pad 0 0
+    scrollToLine 0
+    waitForKeys 0
+  where
+    scrollToLine i = pRefresh pad i 0 0 0 (lines-1) (cols-1)
+
+    scroll i = do
+      scrollToLine i
+      waitForKeys i
+
+    moveDown i = do
+      (y,x) ← getYX pad
+      wMove pad (min (padLines-1) (y+1)) x
+      if y-i == lines - 1
+        then scroll $ min (padLines - lines) (i+1)
+        else scroll i
+
+    moveUp i = do
+      (y,x) ← getYX pad
+      wMove pad (max 0 (y-1)) x
+      if y == i
+        then scroll $ max 0 (i-1)
+        else scroll i
+
+    moveRight i = do
+      (y,x) ← getYX pad
+      wMove pad y $ min (cols-1) (x+1)
+      scroll i
+
+    moveLeft i = do
+      (y,x) ← getYX pad
+      wMove pad y $ max 0 (x-1)
+      scroll i
+
+    runSelected = do
+      (y,_) ← getYX pad
+      wAddStr pad (show y)
+      run (y+1)
+
+    waitForKeys i = do
+      c ← getCh
+      case c of
+        KeyChar 'q' → return ()
+        KeyChar 'j' → moveDown i
+        KeyChar 'k' → moveUp i
+        KeyChar 'h' → moveLeft i
+        KeyChar 'l' → moveRight i
+        KeyChar 'g' → scroll 0
+        KeyChar 'G' → scroll (padLines - lines)
+        KeyChar 'e' → runSelected
+        _           → beep >> waitForKeys i
+
+</pre></br><h2>printed</h2></br><pre>{-# LANGUAGE UnicodeSyntax #-}
+
+module Todos.Default.Curses (cursesPrintTodos) where
+
+import Control.Monad
+import Control.Monad.Reader
+import System.IO
+import System.Console.ANSI as ANSI
+import UI.HSCurses.Curses  as Curses
+import System.Locale.SetLocale
+
+import Todos.Types
+import Todos.Tree
+import Todos.Default.Config
+import Todos.Default.Print (showTodos, defaultPrintTodos)
+import Todos.Formatters hiding (outItem)
+
+toCursesColor :: ANSI.Color -> Curses.Color
+toCursesColor ANSI.Black   = Curses.Color 0
+toCursesColor ANSI.Red     = Curses.Color 1
+toCursesColor ANSI.Green   = Curses.Color 2
+toCursesColor ANSI.Yellow  = Curses.Color 3
+toCursesColor ANSI.Blue    = Curses.Color 4
+toCursesColor ANSI.Magenta = Curses.Color 5
+toCursesColor ANSI.Cyan    = Curses.Color 6
+toCursesColor ANSI.White   = Curses.Color 7
+
+setColor :: Window -> ANSI.ColorIntensity -> ANSI.Color -> IO ()
+setColor pad int clr = do
+  let (Curses.Color c) = toCursesColor clr
+  (attr, _) <- wAttrGet pad
+  let attr' = case int of
+               ANSI.Vivid -> Curses.setBold attr True
+               ANSI.Dull  -> attr
+  wAttrSet pad (attr', Pair c)
+
+setBoldW :: Window -> IO ()
+setBoldW pad = do
+  (attr, pair) <- wAttrGet pad
+  wAttrSet pad (Curses.setBold attr True, pair)
+
+reset :: Window -> IO ()
+reset pad = wAttrSet pad (attr0, Pair 0)
+
+-- | Print OutItem to console
+outItem ::  Window -> OutItem -> IO ()
+outItem pad (OutString s)     = wAddStr pad s
+outItem pad (OutSetColor i c) = setColor pad i c
+outItem pad SetBold           = setBoldW pad
+outItem pad ResetAll          = reset pad
+
+cursesPrintTodos :: (TodoItem -> IO ()) -> PrintConfig DefaultConfig -> [Todo] -> IO ()
+cursesPrintTodos run cfg lst = do
+  tty <- hIsTerminalDevice stdout
+  if not tty
+    then defaultPrintTodos cfg lst
+    else do
+      todos <- if hasCycles lst
+                then do
+                  hPutStrLn stderr "Warning: cycles in TODOs; `execute' will not work"
+                  return lst
+                else return $ markLevels $ enumerateTodos lst
+      setLocale LC_ALL Nothing
+      initCurses
+      (lines,cols) <- scrSize
+      let nLines = fromIntegral $ treeLines todos
+      if nLines >= lines
+        then do
+          np <- colorPairs
+          nc <- colors
+          let m = min np nc
+          forM_ [0..m-1] $ \i ->
+            initPair (Pair i) (Curses.Color i) (Curses.Color (-1))
+          pad <- newPad nLines cols
+          let lst' = runReader (showTodos todos) cfg
+          forM lst' (outItem pad)
+          echo False
+          scrollPad pad nLines lines cols (runByNumber run todos)
+          delWin pad
+          endWin
+        else do
+          endWin
+          defaultPrintTodos cfg lst
+
+runByNumber :: (TodoItem -> IO ()) -> [Todo] -> Int -> IO ()
+runByNumber run todos i =
+  case itemByNumber todos (fromIntegral i) of
+    Nothing -> putStrLn $ "Not found: " ++ show i
+    Just x  -> run x
+
+scrollPad :: Window -> Int -> Int -> Int -> (Int -> IO ()) -> IO ()
+scrollPad pad padLines lines cols run = do
+    wMove pad 0 0
+    scrollToLine 0
+    waitForKeys 0
+  where
+    scrollToLine i = pRefresh pad i 0 0 0 (lines-1) (cols-1)
+
+    scroll i = do
+      scrollToLine i
+      waitForKeys i
+
+    moveDown i = do
+      (y,x) <- getYX pad
+      wMove pad (min (padLines-1) (y+1)) x
+      if y-i == lines - 1
+        then scroll $ min (padLines - lines) (i+1)
+        else scroll i
+
+    moveUp i = do
+      (y,x) <- getYX pad
+      wMove pad (max 0 (y-1)) x
+      if y == i
+        then scroll $ max 0 (i-1)
+        else scroll i
+
+    moveRight i = do
+      (y,x) <- getYX pad
+      wMove pad y $ min (cols-1) (x+1)
+      scroll i
+
+    moveLeft i = do
+      (y,x) <- getYX pad
+      wMove pad y $ max 0 (x-1)
+      scroll i
+
+    runSelected = do
+      (y,_) <- getYX pad
+      wAddStr pad (show y)
+      run (y+1)
+
+    waitForKeys i = do
+      c <- getCh
+      case c of
+        KeyChar 'q' -> return ()
+        KeyChar 'j' -> moveDown i
+        KeyChar 'k' -> moveUp i
+        KeyChar 'h' -> moveLeft i
+        KeyChar 'l' -> moveRight i
+        KeyChar 'g' -> scroll 0
+        KeyChar 'G' -> scroll (padLines - lines)
+        KeyChar 'e' -> runSelected
+        _           -> beep >> waitForKeys i
+
+
+</pre>

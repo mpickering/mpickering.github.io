@@ -1,0 +1,208 @@
+<a href="Fractional.hs12384895531882410547.out.html">prev</a></br><a href="failures.html">home</a></br><a href="Frame.hs197941363348318738.out.html">next</a></br></br><pre>38c38
+< isOptional ∷ Optional → Bool
+---
+> isOptional :: Optional -> Bool
+43c43
+< isRequired ∷ Optional → Bool
+---
+> isRequired :: Optional -> Bool
+49d48
+< fraction' ∷ (PositionalSystem s, Real α, Printer p)
+50d48
+<           ⇒ s
+51d48
+<           → p -- ^ Prefix for negative values
+52d48
+<           → p -- ^ Zero printer
+53d48
+<           → p -- ^ Prefix for positive values
+54d48
+<           → p -- ^ Numerator/denominator separator
+55d48
+<           → Optional -- ^ Whether to print invisible denominators
+56c49
+<           → α → p
+---
+> fraction' :: (PositionalSystem s, Real α, Printer p)
+56a50
+>           => s
+56a51
+>           -> p -- ^ Prefix for negative values
+56a52
+>           -> p -- ^ Zero printer
+56a53
+>           -> p -- ^ Prefix for positive values
+56a54
+>           -> p -- ^ Numerator/denominator separator
+56a55
+>           -> Optional -- ^ Whether to print invisible denominators
+56a56
+>           -> α -> p
+60d59
+<                     Optional → number' s neg z pos n
+61c60
+<                     Required →  number' s neg z pos n
+---
+>                     Optional -> number' s neg z pos n
+61a61
+>                     Required ->  number' s neg z pos n
+74c74
+< fraction ∷ (Real α, Printer p) ⇒ α → p
+---
+> fraction :: (Real α, Printer p) => α -> p
+76a77
+> 
+</pre></br><h2>original</h2></br><pre>{-# LANGUAGE UnicodeSyntax #-}
+{-# LANGUAGE DeriveDataTypeable #-}
+
+-- | Print fractions.
+module Text.Printer.Fractional
+  (
+  -- * Positional numeral systems
+    PositionalSystem(..)
+  , BitSystem(..)
+  , Binary(..)
+  , Octal(..)
+  , Decimal(..)
+  , Hexadecimal(..)
+  , LowHex(..)
+  , UpHex(..)
+  -- * Optionality characteristic
+  , Optional(..)
+  , isOptional
+  , isRequired
+  -- * Fraction printers
+  , fraction'
+  , fraction
+  ) where
+
+import Data.Typeable (Typeable)
+import Data.Ix (Ix)
+import Data.Monoid (mempty)
+import Data.Ratio (numerator, denominator)
+import Text.Printer
+import Text.Printer.Integral
+
+-- | Optionality characteristic.
+data Optional = Optional
+              | Required
+              deriving (Typeable, Show, Read, Eq, Ord, Enum, Bounded, Ix)
+
+-- | True if the supplied value is 'Optional' and false otherwise.
+isOptional ∷ Optional → Bool
+isOptional Optional = True
+isOptional Required = False
+
+-- | True if the supplied value is 'Required' and false otherwise.
+isRequired ∷ Optional → Bool
+isRequired Optional = False
+isRequired Required = True
+
+-- | Print a fraction, writing the numerator and the denominator in
+--   the specified positional numeral system.
+fraction' ∷ (PositionalSystem s, Real α, Printer p)
+          ⇒ s
+          → p -- ^ Prefix for negative values
+          → p -- ^ Zero printer
+          → p -- ^ Prefix for positive values
+          → p -- ^ Numerator/denominator separator
+          → Optional -- ^ Whether to print invisible denominators
+          → α → p
+fraction' s neg z pos sep i a
+    | n == 0    = z
+    | d == 1    = case i of
+                    Optional → number' s neg z pos n
+                    Required →  number' s neg z pos n
+                             <> sep
+                             <> (printDigitIn s $! intToDigitIn s 1)
+    | otherwise = if n < 0
+                  then neg <> nonPositive s n <> sep <> nonNegative s d
+                  else pos <> nonNegative s n <> sep <> nonNegative s d
+  where r = toRational a
+        n = numerator r
+        d = denominator r
+
+-- | Print a fraction. The numerator and the denominator are written in the
+--   decimal numeral system and separated by a slash. Negative values
+--   are prefixed with a minus sign. Invisible denominators are omitted.
+fraction ∷ (Real α, Printer p) ⇒ α → p
+fraction = fraction' Decimal (char7 '-') (char7 '0')
+                     mempty (char7 '/') Optional
+</pre></br><h2>printed</h2></br><pre>{-# LANGUAGE UnicodeSyntax #-}
+{-# LANGUAGE DeriveDataTypeable #-}
+
+-- | Print fractions.
+module Text.Printer.Fractional
+  (
+  -- * Positional numeral systems
+    PositionalSystem(..)
+  , BitSystem(..)
+  , Binary(..)
+  , Octal(..)
+  , Decimal(..)
+  , Hexadecimal(..)
+  , LowHex(..)
+  , UpHex(..)
+  -- * Optionality characteristic
+  , Optional(..)
+  , isOptional
+  , isRequired
+  -- * Fraction printers
+  , fraction'
+  , fraction
+  ) where
+
+import Data.Typeable (Typeable)
+import Data.Ix (Ix)
+import Data.Monoid (mempty)
+import Data.Ratio (numerator, denominator)
+import Text.Printer
+import Text.Printer.Integral
+
+-- | Optionality characteristic.
+data Optional = Optional
+              | Required
+              deriving (Typeable, Show, Read, Eq, Ord, Enum, Bounded, Ix)
+
+-- | True if the supplied value is 'Optional' and false otherwise.
+isOptional :: Optional -> Bool
+isOptional Optional = True
+isOptional Required = False
+
+-- | True if the supplied value is 'Required' and false otherwise.
+isRequired :: Optional -> Bool
+isRequired Optional = False
+isRequired Required = True
+
+-- | Print a fraction, writing the numerator and the denominator in
+--   the specified positional numeral system.
+fraction' :: (PositionalSystem s, Real α, Printer p)
+          => s
+          -> p -- ^ Prefix for negative values
+          -> p -- ^ Zero printer
+          -> p -- ^ Prefix for positive values
+          -> p -- ^ Numerator/denominator separator
+          -> Optional -- ^ Whether to print invisible denominators
+          -> α -> p
+fraction' s neg z pos sep i a
+    | n == 0    = z
+    | d == 1    = case i of
+                    Optional -> number' s neg z pos n
+                    Required ->  number' s neg z pos n
+                             <> sep
+                             <> (printDigitIn s $! intToDigitIn s 1)
+    | otherwise = if n < 0
+                  then neg <> nonPositive s n <> sep <> nonNegative s d
+                  else pos <> nonNegative s n <> sep <> nonNegative s d
+  where r = toRational a
+        n = numerator r
+        d = denominator r
+
+-- | Print a fraction. The numerator and the denominator are written in the
+--   decimal numeral system and separated by a slash. Negative values
+--   are prefixed with a minus sign. Invisible denominators are omitted.
+fraction :: (Real α, Printer p) => α -> p
+fraction = fraction' Decimal (char7 '-') (char7 '0')
+                     mempty (char7 '/') Optional
+
+</pre>

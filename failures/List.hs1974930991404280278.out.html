@@ -1,0 +1,80 @@
+<a href="List.hs19548990971636807826.out.html">prev</a></br><a href="failures.html">home</a></br><a href="List.hs21198788182049590396.out.html">next</a></br></br><pre>7d6
+<     Nil   :: List '[]
+8c7
+<     Cons  :: x -> List xs -> List (x ': xs)
+---
+>     Nil   :: List 
+8a8
+>     Cons  :: x -> List xs -> List (x  : xs)
+11d10
+< type instance '[] :++ ys       = ys
+12c11
+< type instance (x ': xs) :++ ys = x ': (xs :++ ys)
+---
+> type instance     :++ ys       = ys
+12a12
+> type instance           :++x  : xs)     ys = x  : (xs :++ ys)
+21c21
+< instance Split '[] xs where
+---
+> instance Split     xs where
+24c24
+< instance Split xs ys => Split (x ': xs) ys where
+---
+> instance Split xs ys => Split (x  : xs) ys where
+26a27
+> 
+</pre></br><h2>original</h2></br><pre>{-# LANGUAGE GADTs, DataKinds, KindSignatures, TypeOperators, TypeFamilies,
+             MultiParamTypeClasses, FlexibleInstances #-}
+
+module Control.Effect.Helpers.List where
+
+data List (l::[*]) where
+    Nil   :: List '[]
+    Cons  :: x -> List xs -> List (x ': xs)
+
+type family (:++) (s :: [*]) (t :: [*]) :: [*]
+type instance '[] :++ ys       = ys
+type instance (x ': xs) :++ ys = x ': (xs :++ ys)
+
+append :: List s -> List t -> List (s :++ t)
+append Nil xs = xs
+append (Cons x xs) ys = Cons x (append xs ys)
+
+class Split s t where
+    split :: List (s :++ t) -> (List s, List t)
+
+instance Split '[] xs where
+    split xs = (Nil, xs)
+
+instance Split xs ys => Split (x ': xs) ys where
+    split (Cons x xs) = let (xs', ys') = split xs
+                    in (Cons x xs', ys')
+</pre></br><h2>printed</h2></br><pre>{-# LANGUAGE GADTs, DataKinds, KindSignatures, TypeOperators, TypeFamilies,
+             MultiParamTypeClasses, FlexibleInstances #-}
+
+module Control.Effect.Helpers.List where
+
+data List (l::[*]) where
+    Nil   :: List 
+    Cons  :: x -> List xs -> List (x  : xs)
+
+type family (:++) (s :: [*]) (t :: [*]) :: [*]
+type instance     :++ ys       = ys
+type instance           :++x  : xs)     ys = x  : (xs :++ ys)
+
+append :: List s -> List t -> List (s :++ t)
+append Nil xs = xs
+append (Cons x xs) ys = Cons x (append xs ys)
+
+class Split s t where
+    split :: List (s :++ t) -> (List s, List t)
+
+instance Split     xs where
+    split xs = (Nil, xs)
+
+instance Split xs ys => Split (x  : xs) ys where
+    split (Cons x xs) = let (xs', ys') = split xs
+                    in (Cons x xs', ys')
+
+</pre>

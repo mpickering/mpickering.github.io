@@ -1,0 +1,178 @@
+<a href="LeadFollow.hs8849367161807130337.out.html">prev</a></br><a href="failures.html">home</a></br><a href="Legendre.hs1010275441457850878.out.html">next</a></br></br><pre>13c13
+< class LeftmostOutermost n where lmoPort ∷ n → Maybe Port
+---
+> class LeftmostOutermost n where lmoPort :: n -> Maybe Port
+15c15
+< instance LeftmostOutermost n ⇒ LeftmostOutermost (Wrapper n) where lmoPort = lmoPort . wrapped
+---
+> instance LeftmostOutermost n => LeftmostOutermost (Wrapper n) where lmoPort = lmoPort . wrapped
+17c17
+< getLmoPort ∷ (LeftmostOutermost n) ⇒ Node → Pattern n Port
+---
+> getLmoPort :: (LeftmostOutermost n) => Node -> Pattern n Port
+19c19
+<     node ← liftReader $ readNode n
+---
+>     node <- liftReader $ readNode n
+21d20
+<         Nothing → fail "Term is in WHNF"
+22c21
+<         Just lo → return lo
+---
+>         Nothing -> fail "Term is in WHNF"
+22a22
+>         Just lo -> return lo
+25c25
+< moveControl ∷ (View [Port] n, View Control n, LeftmostOutermost n) => Rule n
+---
+> moveControl :: (View [Port] n, View Control n, LeftmostOutermost n) => Rule n
+27d26
+<     Control {stack = s} ← node
+28d26
+<     control ← previous
+29d26
+<     lmo1 ← getLmoPort control
+30c27
+<     n ← branchNodes =<< liftReader . adverseNodes control =<< getLmoPort control
+---
+>     Control {stack = s} <- node
+30a28
+>     control <- previous
+30a29
+>     lmo1 <- getLmoPort control
+30a30
+>     n <- branchNodes =<< liftReader . adverseNodes control =<< getLmoPort control
+36c36
+< leftmostOutermost ∷ (View Control n, View [Port] n) ⇒ Rule n → Rule n
+---
+> leftmostOutermost :: (View Control n, View [Port] n) => Rule n -> Rule n
+38d37
+<     rewrite ← r
+39c38
+<     ns ← history -- we want the first node of the matching pattern
+---
+>     rewrite <- r
+39a39
+>     ns <- history -- we want the first node of the matching pattern
+41c41
+<     Control {stack = s} ← liftReader $ inspectNode topnode
+---
+>     Control {stack = s} <- liftReader $ inspectNode topnode
+44c44
+<         oldNodes ← readNodeList
+---
+>         oldNodes <- readNodeList
+46c46
+<         newNodes ← readNodeList
+---
+>         newNodes <- readNodeList
+53a54
+> 
+</pre></br><h2>original</h2></br><pre>{-# LANGUAGE UnicodeSyntax, FlexibleContexts #-}
+module GraphRewriting.Strategies.LeftmostOutermost where
+
+import GraphRewriting.Pattern
+import GraphRewriting.Graph.Write
+import GraphRewriting.Graph.Read
+import GraphRewriting.Rule
+import GraphRewriting.Strategies.Control
+import Data.List (intersect, (\\))
+
+
+-- | Gives us the the 'left' port for a given node
+class LeftmostOutermost n where lmoPort ∷ n → Maybe Port
+
+instance LeftmostOutermost n ⇒ LeftmostOutermost (Wrapper n) where lmoPort = lmoPort . wrapped
+
+getLmoPort ∷ (LeftmostOutermost n) ⇒ Node → Pattern n Port
+getLmoPort n = do
+    node ← liftReader $ readNode n
+    case lmoPort node of
+        Nothing → fail "Term is in WHNF"
+        Just lo → return lo
+
+-- It does not compile with this type signature, even when IncoherentInstances are given in Control.
+moveControl ∷ (View [Port] n, View Control n, LeftmostOutermost n) => Rule n
+moveControl = do
+    Control {stack = s} ← node
+    control ← previous
+    lmo1 ← getLmoPort control
+    n ← branchNodes =<< liftReader . adverseNodes control =<< getLmoPort control
+    return $ do
+        updateNode control NoControl
+        updateNode n (Control {stack = control : s})
+
+-- It does not compile with this type signature, even when IncoherentInstances are given in Control.
+leftmostOutermost ∷ (View Control n, View [Port] n) ⇒ Rule n → Rule n
+leftmostOutermost r = do
+    rewrite ← r
+    ns ← history -- we want the first node of the matching pattern
+    let topnode = last ns
+    Control {stack = s} ← liftReader $ inspectNode topnode
+    return $ do
+        updateNode topnode NoControl -- First we set the topnode to not be the control node any more
+        oldNodes ← readNodeList
+        rewrite -- then we perform the rewrite
+        newNodes ← readNodeList
+        let s' = intersect s newNodes -- only consider nodes for the control marker that exist
+        if null s' -- even the topmost node has been replaced
+            then do -- we assign the control marker to one of the newly created nodes
+                let addedNodes = newNodes \\ oldNodes
+                updateNode (head addedNodes) (Control {stack = []}) -- finally we set the previous node on the stack as the control node
+            else do -- set the previous node on the stack as the control node
+                updateNode (head s') (Control {stack = tail s'})
+</pre></br><h2>printed</h2></br><pre>{-# LANGUAGE UnicodeSyntax, FlexibleContexts #-}
+module GraphRewriting.Strategies.LeftmostOutermost where
+
+import GraphRewriting.Pattern
+import GraphRewriting.Graph.Write
+import GraphRewriting.Graph.Read
+import GraphRewriting.Rule
+import GraphRewriting.Strategies.Control
+import Data.List (intersect, (\\))
+
+
+-- | Gives us the the 'left' port for a given node
+class LeftmostOutermost n where lmoPort :: n -> Maybe Port
+
+instance LeftmostOutermost n => LeftmostOutermost (Wrapper n) where lmoPort = lmoPort . wrapped
+
+getLmoPort :: (LeftmostOutermost n) => Node -> Pattern n Port
+getLmoPort n = do
+    node <- liftReader $ readNode n
+    case lmoPort node of
+        Nothing -> fail "Term is in WHNF"
+        Just lo -> return lo
+
+-- It does not compile with this type signature, even when IncoherentInstances are given in Control.
+moveControl :: (View [Port] n, View Control n, LeftmostOutermost n) => Rule n
+moveControl = do
+    Control {stack = s} <- node
+    control <- previous
+    lmo1 <- getLmoPort control
+    n <- branchNodes =<< liftReader . adverseNodes control =<< getLmoPort control
+    return $ do
+        updateNode control NoControl
+        updateNode n (Control {stack = control : s})
+
+-- It does not compile with this type signature, even when IncoherentInstances are given in Control.
+leftmostOutermost :: (View Control n, View [Port] n) => Rule n -> Rule n
+leftmostOutermost r = do
+    rewrite <- r
+    ns <- history -- we want the first node of the matching pattern
+    let topnode = last ns
+    Control {stack = s} <- liftReader $ inspectNode topnode
+    return $ do
+        updateNode topnode NoControl -- First we set the topnode to not be the control node any more
+        oldNodes <- readNodeList
+        rewrite -- then we perform the rewrite
+        newNodes <- readNodeList
+        let s' = intersect s newNodes -- only consider nodes for the control marker that exist
+        if null s' -- even the topmost node has been replaced
+            then do -- we assign the control marker to one of the newly created nodes
+                let addedNodes = newNodes \\ oldNodes
+                updateNode (head addedNodes) (Control {stack = []}) -- finally we set the previous node on the stack as the control node
+            else do -- set the previous node on the stack as the control node
+                updateNode (head s') (Control {stack = tail s'})
+
+</pre>

@@ -1,0 +1,652 @@
+<a href="Dialogs.hs2817252261901915394.out.html">prev</a></br><a href="failures.html">home</a></br><a href="Dice.hs162515158078098867.out.html">next</a></br></br><pre>290c290
+<             "" [Enabled,Visible] "" "" -}
+---
+>             "" [Enabled,Visible] "" "" 
+311c311
+<         [{-Transparent,-}Enabled,Visible]
+---
+>         [{-Transparent,Enabled,Visible]
+320a321
+> 
+</pre></br><h2>original</h2></br><pre>--------------------------------------------------------------------
+-- |
+-- Module      : Bamse.DialogUtils
+-- Description : MSI dialogs + utilities for creating your own.
+-- Copyright   : (c) Sigbjorn Finne, 2004-2009
+-- License     : BSD3
+--
+-- Maintainer  : Sigbjorn Finne <sof@forkIO.com>
+-- Stability   : provisional
+-- Portability : portable
+--
+--  MSI dialogs + utilities for creating your own.
+--
+--------------------------------------------------------------------
+module Bamse.DialogUtils
+    ( ghcPkgDialog      -- :: Dialog
+    , cabalDialog           -- :: Dialog
+    , setupTypeDialog   -- :: Dialog
+    , customizeDialog   -- :: Dialog
+    ) where
+
+import Bamse.GhcPackage
+import Bamse.Dialog
+
+ghcPkgDialog :: Dialog
+ghcPkgDialog =
+  addControl (Control "Msg" (Text "foo") Nothing
+            (40,180) (180,40)
+        "WARNING: unable to locate 'ghc-pkg'; automatic installation not available"
+        [Transparent,Enabled]
+        "" "") $
+  addCond ("Msg", "Show", "GHCPKGDIR=\"\"") $
+  addCond ("InstallKind", "Disable", "GHCPKGDIR=\"\"") $
+  mkChoiceDialog "GhcPkgDialog"
+         "Package installation"
+         "{\\VerdanaBold13}Select [ProductName] package installation type"
+         "The [Wizard] can automatically register the package with GHC; do you want this?"
+         [ ("Yes", "1")
+         , ("No",  "0")
+         ]
+         ("InstallKind","RUNPKGMGR")
+         Nothing
+         "WelcomeDlg"
+         "NOT Installed"
+         [("InstallKind", "2")]
+
+cabalDialog :: CabalPackage -> Dialog
+cabalDialog pkg =
+  addControl (Control "Msg" (Text "foo") Nothing
+            (40,180) (180,40)
+        "WARNING: unable to locate 'runghc'; automatic installation not available"
+        [Transparent,Enabled]
+        "" "") $
+  addCond ("Msg", "Show", "GHCPKG=\"\"") $
+  addCond ("RegKind", "Disable", "GHCPKG=\"\"") $
+  (if (cabal_fromSource pkg)
+    then addCond ("BuildKind", "Disable", "GHCPKG=\"\"")
+    else id) $
+  mkChoiceDialog "CabalDialog"
+         "Cabal package installation"
+         "{\\VerdanaBold13}Select Cabal package installation type"
+         "The installer can automatically register the package; do you want to?"
+         yesNos
+         ("RegKind","RUNPKGMGR")
+         (if (cabal_fromSource pkg)
+           then (Just (yesNos,"Do you also want to configure and build from source?" ,("BuildKind","BUILDCABAL")))
+           else Nothing)
+         "WelcomeDlg"
+         "NOT Installed"
+         (("RegKind", "2") :(if cabal_fromSource pkg then [("BuildKind", "2")] else []))
+ where
+  yesNos= [ ("Yes", "1"), ("No",  "0") ]
+
+setupTypeDialog :: Dialog
+setupTypeDialog =
+   -- Hack: ALLUSERS needs to be undefined in order
+   -- to enable a per-user install. I've yet to be able
+   -- to use the RadioButton table to clear a property,
+   -- so instead an event is attached to the 'next' button
+   -- which clears the property should it be set to zero.
+   --
+  addEvent ("Next", SetProperty "ALLUSERS" "{}", "(InstallKind = 0) AND (Version9x = \"\")", "1") $
+  addEvent ("Next", SetProperty "ALLUSERS" "2",  "(InstallKind = 2) AND (Version9x = \"\")", "2") $
+  mkChoiceDialog "SetupKindDialog"
+         "Setup type"
+             "{\\VerdanaBold13}Select [ProductName] installation type"
+         "The [Wizard] will install [ProductName] on your computer. Please select who you want to install it for:"
+         [ ("Just for me", "0")
+         , ("Everyone",    "2")
+         ]
+         ("InstallKind","InstallKind")
+         Nothing
+         "WelcomeDlg"
+         "NOT Installed"
+         [("InstallKind", "2")]
+
+-- dialog for letting the user control the level of shell integration
+-- to use (file extensions, start menu, desktop shortcuts.)
+customizeDialog :: [(String, PropertyName, Bool)] -> Dialog
+customizeDialog ls =
+   mkOptionsDialog "opts"
+           "Customization options"
+           "{\\VerdanaBold13}[ProductName] customization options"
+           "Pick the shell integration features you want:"
+           ls
+           (map (\ (_,p,_) -> (p,"Yes")) ls)
+
+mkOptionsDialog :: String
+            -> String
+        -> String
+        -> String
+        -> [(String, PropertyName, Bool)]
+        -> [(PropertyName, String)]
+        -> Dialog
+mkOptionsDialog diaNm diaHeader diaTitle diaDesc opts props
+ = Dialog
+     { dia_name   = diaNm
+     , dia_ctrls  = controls
+     , dia_conds  = conditions
+     , dia_events = events
+     , dia_pos    = (50,50)
+     , dia_size   = (370,270)
+     , dia_attrs  = [DialogVisible, DialogModal]
+     , dia_title  = diaHeader
+     , dia_first  = "Next"
+     , dia_def    = ""
+     , dia_cancel = "cancelButton"
+     , dia_after  = "CustomizeDlg"
+     , dia_cond   = "1"
+     , dia_props  = props
+     }
+  where
+   controls
+    = withButtons "Bitmap"
+    [ Control "Title"  (Text "foo") Nothing
+          (135,20) (220,60)
+              diaTitle
+          [Transparent, NoPrefix, Enabled, Visible]
+          "" ""
+        , Control "Description"  (Text "foo") Nothing
+          (135,70) (220,60)
+          diaDesc
+          [Transparent, NoPrefix, Enabled, Visible]
+          "" ""
+        , Control "Bitmap" (Bitmap "bitmap") Nothing
+              (0,0) (125,234)
+          "[DialogBitmap]" [Visible, FixedSize]
+          "Back" ""
+    ] ++ opt_controls
+   opt_controls =
+      zipWith (\ (txt, prop, enabled) ypos ->
+           Control { ctrl_name  = "cbox"++show ypos -- to make it unique.
+               , ctrl_type  = CheckBox "Yes"
+               , ctrl_prop  = Just prop
+               , ctrl_pos   = (150,ypos)
+               , ctrl_size  = (200,30) -- max X: 260.
+               , ctrl_text  = txt
+               , ctrl_attrs = (if enabled then (Enabled:) else id)
+                        [Visible]
+               , ctrl_next  = ""
+               , ctrl_help  = ""
+               })
+           opts
+           [90, (90+30) ..]
+
+   conditions = []
+   events = [ ("cancelButton", EndDialog "Exit", "1", "1")
+       ]
+
+mkChoiceDialog :: String -- dialog name
+           -> String -- dialog header
+           -> String -- title
+           -> String -- description
+           -> [(String, String)]
+           -> (String, PropertyName)
+           -> Maybe ([(String, String)], String, (String,PropertyName))
+           -> DialogName
+           -> String
+           -> [(PropertyName, String)]
+           -> Dialog
+mkChoiceDialog diaNm diaHeader diaTitle diaDesc opts
+           (ctrlName,propName) mbSnd afterDiag afterDiagCond
+           initVals
+ = Dialog { dia_name   = diaNm
+      , dia_ctrls  = controls
+      , dia_conds  = conditions
+      , dia_events = events
+      , dia_pos    = (50,50)
+      , dia_size   = (370,270)
+      , dia_attrs  = [DialogVisible, DialogModal]
+      , dia_title  = diaHeader
+      , dia_first  = "Next"
+      , dia_def    = ""
+      , dia_cancel = "cancelButton"
+      , dia_after  = afterDiag
+      , dia_cond   = afterDiagCond
+      , dia_props  = initVals
+      }
+  where
+   controls
+    = withButtons "Bitmap"
+    [ Control "Title"  (Text "foo") Nothing
+          (125,20) (220,60)
+              diaTitle
+          [Transparent, NoPrefix, Enabled, Visible]
+          "" ""
+        , Control "Description"  (Text "foo") Nothing
+          (125,70) (220,60)
+          diaDesc
+          [Transparent, NoPrefix, Enabled, Visible]
+          "" ""
+        , Control "Bitmap" (Bitmap "bitmap") Nothing
+              (0,0) (370,234)
+          "[DialogBitmap]" [Visible]
+          "Back" ""
+        , Control ctrlName
+              (RadioButtonGroup (map (\(txt,val) -> RadioButton txt val) opts))
+          (Just propName)
+              (130,95) (radioTextWidth opts,40) ""
+          [{-Transparent,-}Enabled,Visible]
+          "" ""
+    ] ++
+     case mbSnd of
+       Nothing -> []
+       Just (opts2,dd,(cName,bPropName)) ->
+          [ Control ("Description_"++cName)  (Text "foo") Nothing
+          (125,140) (220,60)
+          dd
+          [Transparent, NoPrefix, Enabled, Visible]
+          "" ""
+          , Control cName
+              (RadioButtonGroup (map (\(txt,val) -> RadioButton txt val) opts2))
+          (Just bPropName)
+              (130,160) (radioTextWidth opts,40) ""
+          [{-Transparent,-}Enabled,Visible]
+          "" "" ]
+
+   conditions = []
+   events = [ ("cancelButton", EndDialog "Exit", "1", "1")
+       ]
+
+   radioTextWidth ls = 10 + 10*maximum (map (length.fst) ls)
+
+
+addEvent :: CEvent -> Dialog -> Dialog
+addEvent ev d     = d{dia_events=ev:dia_events d}
+
+addControl :: Control -> Dialog -> Dialog
+addControl ctrl d = d{dia_ctrls=ctrl:dia_ctrls d}
+
+addCond :: CCondition -> Dialog -> Dialog
+addCond cond d    = d{dia_conds=cond:dia_conds d}
+
+withButtons :: String -> [Control] -> [Control]
+withButtons next ctrls =
+    ctrls ++
+    [ Control "line"  (Line (100,2)) Nothing
+              (0,234) (374,0) "Line" [Visible] "" ""
+        , Control "Back" (PushButton "Back") Nothing
+                  (180,243) (56,17)
+              "[ButtonText_Back]" [Enabled,Visible] "Next" ""
+        , Control "Next" (PushButton "Next") Nothing
+                  (236,243) (56,17)
+              "[ButtonText_Next]" [Enabled,Visible] "cancelButton" ""
+        , Control "cancelButton" (PushButton "Cancel") Nothing
+                (304,243) (56,17)
+            "[ButtonText_Cancel]" [Enabled,Visible] next ""
+        ]
+
+
+{- Old test def:
+dialog = Dialog "TestDialog"
+        controls
+        conditions
+        events
+        (50,50)  -- centered on the screen
+        (370,270)
+        [ DialogVisible
+        , DialogModal
+        ]
+        "Setup type dialog"
+        "Next"
+        ""
+        "cancelButton"
+ where
+  controls
+    = withButtons "Bitmap"
+    [ {-Control "pathSelect" PathEdit (Just "TARGETDIR")
+            (10,10) (260,18)
+            "" [Enabled,Visible] "" "" -}
+    Control "Title"  (Text "foo") Nothing
+        (35,20) (220,60)
+            "{\\VerdanaBold13}Select [ProductName] installation type"
+        [Transparent, NoPrefix, Enabled, Visible]
+        "" ""
+      , Control "Description"  (Text "foo") Nothing
+        (35,70) (220,60)
+        "The [Wizard] will install [ProductName] on your computer. Please select the installation kind you want:"
+        [Transparent, NoPrefix, Enabled, Visible]
+        "" ""
+      , Control "Bitmap" (Bitmap "bitmap") Nothing
+            (0,0) (370,234)
+        "[DialogBitmap]" [Visible]
+        "Back" ""
+      , Control "InstallKind"
+            (RadioButtonGroup [ RadioButton "User only" "0"
+                      , RadioButton "Machine wide" "2"
+                  ])
+        (Just "ALLUSERS")
+            (40,120) (180,40) ""
+        [{-Transparent,-}Enabled,Visible]
+        "" ""
+      ]
+  conditions = []
+
+  events = [ -- ("okButton",     EndDialog "Return", "", "1")
+        ("cancelButton", EndDialog "Exit", "", "1")
+       ]
+-}
+
+</pre></br><h2>printed</h2></br><pre>--------------------------------------------------------------------
+-- |
+-- Module      : Bamse.DialogUtils
+-- Description : MSI dialogs + utilities for creating your own.
+-- Copyright   : (c) Sigbjorn Finne, 2004-2009
+-- License     : BSD3
+--
+-- Maintainer  : Sigbjorn Finne <sof@forkIO.com>
+-- Stability   : provisional
+-- Portability : portable
+--
+--  MSI dialogs + utilities for creating your own.
+--
+--------------------------------------------------------------------
+module Bamse.DialogUtils
+    ( ghcPkgDialog      -- :: Dialog
+    , cabalDialog           -- :: Dialog
+    , setupTypeDialog   -- :: Dialog
+    , customizeDialog   -- :: Dialog
+    ) where
+
+import Bamse.GhcPackage
+import Bamse.Dialog
+
+ghcPkgDialog :: Dialog
+ghcPkgDialog =
+  addControl (Control "Msg" (Text "foo") Nothing
+            (40,180) (180,40)
+        "WARNING: unable to locate 'ghc-pkg'; automatic installation not available"
+        [Transparent,Enabled]
+        "" "") $
+  addCond ("Msg", "Show", "GHCPKGDIR=\"\"") $
+  addCond ("InstallKind", "Disable", "GHCPKGDIR=\"\"") $
+  mkChoiceDialog "GhcPkgDialog"
+         "Package installation"
+         "{\\VerdanaBold13}Select [ProductName] package installation type"
+         "The [Wizard] can automatically register the package with GHC; do you want this?"
+         [ ("Yes", "1")
+         , ("No",  "0")
+         ]
+         ("InstallKind","RUNPKGMGR")
+         Nothing
+         "WelcomeDlg"
+         "NOT Installed"
+         [("InstallKind", "2")]
+
+cabalDialog :: CabalPackage -> Dialog
+cabalDialog pkg =
+  addControl (Control "Msg" (Text "foo") Nothing
+            (40,180) (180,40)
+        "WARNING: unable to locate 'runghc'; automatic installation not available"
+        [Transparent,Enabled]
+        "" "") $
+  addCond ("Msg", "Show", "GHCPKG=\"\"") $
+  addCond ("RegKind", "Disable", "GHCPKG=\"\"") $
+  (if (cabal_fromSource pkg)
+    then addCond ("BuildKind", "Disable", "GHCPKG=\"\"")
+    else id) $
+  mkChoiceDialog "CabalDialog"
+         "Cabal package installation"
+         "{\\VerdanaBold13}Select Cabal package installation type"
+         "The installer can automatically register the package; do you want to?"
+         yesNos
+         ("RegKind","RUNPKGMGR")
+         (if (cabal_fromSource pkg)
+           then (Just (yesNos,"Do you also want to configure and build from source?" ,("BuildKind","BUILDCABAL")))
+           else Nothing)
+         "WelcomeDlg"
+         "NOT Installed"
+         (("RegKind", "2") :(if cabal_fromSource pkg then [("BuildKind", "2")] else []))
+ where
+  yesNos= [ ("Yes", "1"), ("No",  "0") ]
+
+setupTypeDialog :: Dialog
+setupTypeDialog =
+   -- Hack: ALLUSERS needs to be undefined in order
+   -- to enable a per-user install. I've yet to be able
+   -- to use the RadioButton table to clear a property,
+   -- so instead an event is attached to the 'next' button
+   -- which clears the property should it be set to zero.
+   --
+  addEvent ("Next", SetProperty "ALLUSERS" "{}", "(InstallKind = 0) AND (Version9x = \"\")", "1") $
+  addEvent ("Next", SetProperty "ALLUSERS" "2",  "(InstallKind = 2) AND (Version9x = \"\")", "2") $
+  mkChoiceDialog "SetupKindDialog"
+         "Setup type"
+             "{\\VerdanaBold13}Select [ProductName] installation type"
+         "The [Wizard] will install [ProductName] on your computer. Please select who you want to install it for:"
+         [ ("Just for me", "0")
+         , ("Everyone",    "2")
+         ]
+         ("InstallKind","InstallKind")
+         Nothing
+         "WelcomeDlg"
+         "NOT Installed"
+         [("InstallKind", "2")]
+
+-- dialog for letting the user control the level of shell integration
+-- to use (file extensions, start menu, desktop shortcuts.)
+customizeDialog :: [(String, PropertyName, Bool)] -> Dialog
+customizeDialog ls =
+   mkOptionsDialog "opts"
+           "Customization options"
+           "{\\VerdanaBold13}[ProductName] customization options"
+           "Pick the shell integration features you want:"
+           ls
+           (map (\ (_,p,_) -> (p,"Yes")) ls)
+
+mkOptionsDialog :: String
+            -> String
+        -> String
+        -> String
+        -> [(String, PropertyName, Bool)]
+        -> [(PropertyName, String)]
+        -> Dialog
+mkOptionsDialog diaNm diaHeader diaTitle diaDesc opts props
+ = Dialog
+     { dia_name   = diaNm
+     , dia_ctrls  = controls
+     , dia_conds  = conditions
+     , dia_events = events
+     , dia_pos    = (50,50)
+     , dia_size   = (370,270)
+     , dia_attrs  = [DialogVisible, DialogModal]
+     , dia_title  = diaHeader
+     , dia_first  = "Next"
+     , dia_def    = ""
+     , dia_cancel = "cancelButton"
+     , dia_after  = "CustomizeDlg"
+     , dia_cond   = "1"
+     , dia_props  = props
+     }
+  where
+   controls
+    = withButtons "Bitmap"
+    [ Control "Title"  (Text "foo") Nothing
+          (135,20) (220,60)
+              diaTitle
+          [Transparent, NoPrefix, Enabled, Visible]
+          "" ""
+        , Control "Description"  (Text "foo") Nothing
+          (135,70) (220,60)
+          diaDesc
+          [Transparent, NoPrefix, Enabled, Visible]
+          "" ""
+        , Control "Bitmap" (Bitmap "bitmap") Nothing
+              (0,0) (125,234)
+          "[DialogBitmap]" [Visible, FixedSize]
+          "Back" ""
+    ] ++ opt_controls
+   opt_controls =
+      zipWith (\ (txt, prop, enabled) ypos ->
+           Control { ctrl_name  = "cbox"++show ypos -- to make it unique.
+               , ctrl_type  = CheckBox "Yes"
+               , ctrl_prop  = Just prop
+               , ctrl_pos   = (150,ypos)
+               , ctrl_size  = (200,30) -- max X: 260.
+               , ctrl_text  = txt
+               , ctrl_attrs = (if enabled then (Enabled:) else id)
+                        [Visible]
+               , ctrl_next  = ""
+               , ctrl_help  = ""
+               })
+           opts
+           [90, (90+30) ..]
+
+   conditions = []
+   events = [ ("cancelButton", EndDialog "Exit", "1", "1")
+       ]
+
+mkChoiceDialog :: String -- dialog name
+           -> String -- dialog header
+           -> String -- title
+           -> String -- description
+           -> [(String, String)]
+           -> (String, PropertyName)
+           -> Maybe ([(String, String)], String, (String,PropertyName))
+           -> DialogName
+           -> String
+           -> [(PropertyName, String)]
+           -> Dialog
+mkChoiceDialog diaNm diaHeader diaTitle diaDesc opts
+           (ctrlName,propName) mbSnd afterDiag afterDiagCond
+           initVals
+ = Dialog { dia_name   = diaNm
+      , dia_ctrls  = controls
+      , dia_conds  = conditions
+      , dia_events = events
+      , dia_pos    = (50,50)
+      , dia_size   = (370,270)
+      , dia_attrs  = [DialogVisible, DialogModal]
+      , dia_title  = diaHeader
+      , dia_first  = "Next"
+      , dia_def    = ""
+      , dia_cancel = "cancelButton"
+      , dia_after  = afterDiag
+      , dia_cond   = afterDiagCond
+      , dia_props  = initVals
+      }
+  where
+   controls
+    = withButtons "Bitmap"
+    [ Control "Title"  (Text "foo") Nothing
+          (125,20) (220,60)
+              diaTitle
+          [Transparent, NoPrefix, Enabled, Visible]
+          "" ""
+        , Control "Description"  (Text "foo") Nothing
+          (125,70) (220,60)
+          diaDesc
+          [Transparent, NoPrefix, Enabled, Visible]
+          "" ""
+        , Control "Bitmap" (Bitmap "bitmap") Nothing
+              (0,0) (370,234)
+          "[DialogBitmap]" [Visible]
+          "Back" ""
+        , Control ctrlName
+              (RadioButtonGroup (map (\(txt,val) -> RadioButton txt val) opts))
+          (Just propName)
+              (130,95) (radioTextWidth opts,40) ""
+          [{-Transparent,-}Enabled,Visible]
+          "" ""
+    ] ++
+     case mbSnd of
+       Nothing -> []
+       Just (opts2,dd,(cName,bPropName)) ->
+          [ Control ("Description_"++cName)  (Text "foo") Nothing
+          (125,140) (220,60)
+          dd
+          [Transparent, NoPrefix, Enabled, Visible]
+          "" ""
+          , Control cName
+              (RadioButtonGroup (map (\(txt,val) -> RadioButton txt val) opts2))
+          (Just bPropName)
+              (130,160) (radioTextWidth opts,40) ""
+          [{-Transparent,-}Enabled,Visible]
+          "" "" ]
+
+   conditions = []
+   events = [ ("cancelButton", EndDialog "Exit", "1", "1")
+       ]
+
+   radioTextWidth ls = 10 + 10*maximum (map (length.fst) ls)
+
+
+addEvent :: CEvent -> Dialog -> Dialog
+addEvent ev d     = d{dia_events=ev:dia_events d}
+
+addControl :: Control -> Dialog -> Dialog
+addControl ctrl d = d{dia_ctrls=ctrl:dia_ctrls d}
+
+addCond :: CCondition -> Dialog -> Dialog
+addCond cond d    = d{dia_conds=cond:dia_conds d}
+
+withButtons :: String -> [Control] -> [Control]
+withButtons next ctrls =
+    ctrls ++
+    [ Control "line"  (Line (100,2)) Nothing
+              (0,234) (374,0) "Line" [Visible] "" ""
+        , Control "Back" (PushButton "Back") Nothing
+                  (180,243) (56,17)
+              "[ButtonText_Back]" [Enabled,Visible] "Next" ""
+        , Control "Next" (PushButton "Next") Nothing
+                  (236,243) (56,17)
+              "[ButtonText_Next]" [Enabled,Visible] "cancelButton" ""
+        , Control "cancelButton" (PushButton "Cancel") Nothing
+                (304,243) (56,17)
+            "[ButtonText_Cancel]" [Enabled,Visible] next ""
+        ]
+
+
+{- Old test def:
+dialog = Dialog "TestDialog"
+        controls
+        conditions
+        events
+        (50,50)  -- centered on the screen
+        (370,270)
+        [ DialogVisible
+        , DialogModal
+        ]
+        "Setup type dialog"
+        "Next"
+        ""
+        "cancelButton"
+ where
+  controls
+    = withButtons "Bitmap"
+    [ {-Control "pathSelect" PathEdit (Just "TARGETDIR")
+            (10,10) (260,18)
+            "" [Enabled,Visible] "" "" 
+    Control "Title"  (Text "foo") Nothing
+        (35,20) (220,60)
+            "{\\VerdanaBold13}Select [ProductName] installation type"
+        [Transparent, NoPrefix, Enabled, Visible]
+        "" ""
+      , Control "Description"  (Text "foo") Nothing
+        (35,70) (220,60)
+        "The [Wizard] will install [ProductName] on your computer. Please select the installation kind you want:"
+        [Transparent, NoPrefix, Enabled, Visible]
+        "" ""
+      , Control "Bitmap" (Bitmap "bitmap") Nothing
+            (0,0) (370,234)
+        "[DialogBitmap]" [Visible]
+        "Back" ""
+      , Control "InstallKind"
+            (RadioButtonGroup [ RadioButton "User only" "0"
+                      , RadioButton "Machine wide" "2"
+                  ])
+        (Just "ALLUSERS")
+            (40,120) (180,40) ""
+        [{-Transparent,Enabled,Visible]
+        "" ""
+      ]
+  conditions = []
+
+  events = [ -- ("okButton",     EndDialog "Return", "", "1")
+        ("cancelButton", EndDialog "Exit", "", "1")
+       ]
+-}
+
+
+</pre>

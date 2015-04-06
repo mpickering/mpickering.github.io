@@ -1,0 +1,580 @@
+<a href="Rules.hs6441594889688008.out.html">prev</a></br><a href="failures.html">home</a></br><a href="Run.hs1681808623977764947.out.html">next</a></br></br><pre>168d167
+< applyBinaryOperation OpDiv = \l -> \r ->
+169d167
+<     if toDouble r == 0.0
+170d167
+<         then Null
+171d167
+<         else Double $ toDouble l / toDouble r
+172d167
+< applyBinaryOperation OpMod = \l -> \r ->
+173d167
+<     if toInteger r == 0
+174d167
+<         then Null
+175d167
+<         else Integer $ toInteger l `mod` toInteger r
+176d167
+< applyBinaryOperation OpEquals = \l -> \r ->
+177d167
+<     Bool $ l == r
+178d167
+< applyBinaryOperation OpNotEquals = \l -> \r ->
+179d167
+<     Bool $ l /= r
+180d167
+< applyBinaryOperation OpLooseEquals = \l -> \r ->
+181d167
+<     Bool $ l ~== r
+182d167
+< applyBinaryOperation OpLooseNotEquals = \l -> \r ->
+183d167
+<     Bool $ l ~/= r
+184d167
+< applyBinaryOperation OpLess = \l -> \r ->
+185d167
+<     Bool $ toDouble l < toDouble r
+186d167
+< applyBinaryOperation OpNotLess = \l -> \r ->
+187d167
+<     Bool $ toDouble l >= toDouble r
+188d167
+< applyBinaryOperation OpGreater = \l -> \r ->
+189d167
+<     Bool $ toDouble l > toDouble r
+190d167
+< applyBinaryOperation OpNotGreater = \l -> \r ->
+191d167
+<     Bool $ toDouble l <= toDouble r
+192d167
+< applyBinaryOperation (Flipped op) = \l -> \r ->
+193d167
+<     applyBinaryOperation op r l
+194d167
+< applyBinaryOperation OpCoalesce = \l -> \r ->
+195d167
+<     case l of
+196d167
+<         Null -> r
+197c168
+<         otherwise -> l
+---
+> applyBinaryOperation OpDiv = \l ->    ->r ->
+197a169
+>         if toDouble r == 0.0
+197a170
+>             then Null
+197a171
+>             else Double $ toDouble l / toDouble r
+197a172
+> applyBinaryOperation OpMod = \l ->    ->r ->
+197a173
+>         if toInteger r == 0
+197a174
+>             then Null
+197a175
+>             else Integer $ toInteger l `mod` toInteger r
+197a176
+> applyBinaryOperation OpEquals = \l ->    ->r ->
+197a177
+>         Bool $ l == r
+197a178
+> applyBinaryOperation OpNotEquals = \l ->    ->r ->
+197a179
+>         Bool $ l /= r
+197a180
+> applyBinaryOperation OpLooseEquals = \l ->    ->r ->
+197a181
+>         Bool $ l ~== r
+197a182
+> applyBinaryOperation OpLooseNotEquals = \l ->    ->r ->
+197a183
+>         Bool $ l ~/= r
+197a184
+> applyBinaryOperation OpLess = \l ->    ->r ->
+197a185
+>         Bool $ toDouble l < toDouble r
+197a186
+> applyBinaryOperation OpNotLess = \l ->    ->r ->
+197a187
+>         Bool $ toDouble l >= toDouble r
+197a188
+> applyBinaryOperation OpGreater = \l ->    ->r ->
+197a189
+>         Bool $ toDouble l > toDouble r
+197a190
+> applyBinaryOperation OpNotGreater = \l ->    ->r ->
+197a191
+>         Bool $ toDouble l <= toDouble r
+197a192
+> applyBinaryOperation (Flipped op) = \l ->    ->r ->
+197a193
+>         applyBinaryOperation op r l
+197a194
+> applyBinaryOperation OpCoalesce = \l ->    ->r ->
+197a195
+>         case l of
+197a196
+>             Null -> r
+197a197
+>             otherwise -> l
+203d202
+< applyBinaryOperation OpBooleanAnd = \l -> \r ->
+204d202
+<     Bool $ toBool l && toBool r
+205d202
+< applyBinaryOperation OpBooleanOr = \l -> \r ->
+206d202
+<     Bool $ toBool l || toBool r
+207d202
+< applyBinaryOperation OpBooleanXor = \l -> \r ->
+208d202
+<     let lb = toBool l
+209d202
+<         rb = toBool r
+210c203
+<     in Bool $ (lb || rb) && not (lb && rb)
+---
+> applyBinaryOperation OpBooleanAnd = \l ->    ->r ->
+210a204
+>         Bool $ toBool l && toBool r
+210a205
+> applyBinaryOperation OpBooleanOr = \l ->    ->r ->
+210a206
+>         Bool $ toBool l || toBool r
+210a207
+> applyBinaryOperation OpBooleanXor = \l ->    ->r ->
+210a208
+>         let lb = toBool l
+210a209
+>             rb = toBool r
+210a210
+>         in Bool $ (lb || rb) && not (lb && rb)
+212a213
+> 
+</pre></br><h2>original</h2></br><pre>{-#LANGUAGE ScopedTypeVariables #-}
+module Text.HPaco.Writers.Run
+        ( run, runWith
+        , RunState (..)
+        , RunOptions (..)
+        , defaultOptions
+        , runAST
+        , runStatement
+        , runExpression
+        )
+where
+
+import Prelude hiding (toInteger)
+import Data.Variant
+import Data.Variant.ToFrom
+import qualified Data.Variant as V
+import Data.Maybe
+import Data.Monoid
+import qualified Data.List as List
+import qualified Data.List.Split as Split
+import Control.Monad.State
+import Safe
+import Text.HPaco.Writers.Run.Encode
+import Text.HPaco.Writers.Run.Library
+import Text.HPaco.AST
+import Text.HPaco.AST.AST
+import Text.HPaco.AST.Statement
+import Text.HPaco.AST.Expression
+import System.IO
+
+data RunOptions = RunOptions
+                    { roTemplateName :: String
+                    , roOutput :: Handle
+                    }
+
+defaultOptions = RunOptions
+                    { roTemplateName = "unnamed"
+                    , roOutput = stdout
+                    }
+
+data RunState = RunState
+                    { rsScope :: Variant
+                    , rsOptions :: RunOptions
+                    , rsAST :: AST
+                    }
+
+type Run a = StateT RunState IO a
+
+run :: RunOptions -> AST -> IO ()
+run = runWith $ AList []
+
+runWith :: ToVariant a => a -> RunOptions -> AST -> IO ()
+runWith scope opts ast = do
+    let st = RunState { rsScope = toVariant scope, rsOptions = opts , rsAST = ast }
+    execStateT (runAST ast) st
+    return ()
+
+getVar :: String -> Run Variant
+getVar "." = gets rsScope
+getVar key = liftM (V.lookup $ String key) (gets rsScope)
+
+runAST :: AST -> Run ()
+runAST ast = do
+    runStatement . astRootStatement $ ast
+
+-- Statements
+
+runStatement :: Statement -> Run ()
+runStatement (PrintStatement e) = do
+    d <- runExpression e
+    h <- gets (roOutput . rsOptions)
+    liftIO . hPutStr h . flatten $ d
+runStatement (StatementSequence ss) = mapM_ runStatement ss
+runStatement (IfStatement cond true false) = do
+    b <- liftM toBool $ runExpression cond
+    runStatement $ if b then true else false
+runStatement (LetStatement ident expr stmt) =
+    runExpression expr >>= \e -> withIdentifiedScope ident e (runStatement stmt)
+runStatement (ForStatement Nothing ident expr stmt) = do
+    es <- runExpression expr
+    sequence_ $ vmap (\e -> withIdentifiedScope ident e (runStatement stmt)) es
+runStatement (ForStatement (Just iter) ident expr stmt) = do
+    es <- runExpression expr
+    sequence_ $ vamap (\(k, v) -> withIdentifiedScope iter k $ withIdentifiedScope ident v (runStatement stmt)) es
+runStatement (SwitchStatement expr branches) = do
+    ev <- runExpression expr
+    tests <- mapM runExpression $ map fst branches
+    let f test stmt = if ev ~== test then Just stmt else Nothing
+        branch = headMay $ catMaybes $ zipWith f tests (map snd branches)
+    maybe (return ()) runStatement branch
+runStatement NullStatement = return ()
+runStatement (CallStatement identifier) = do
+    ast <- gets rsAST
+    let body = fromMaybe NullStatement $ List.lookup identifier $ astDefs ast
+    runStatement body
+runStatement SourcePositionStatement {} = return ()
+
+-- Scope helpers
+
+-- Run with a completely independent scope; do not inherit parent scope
+withScope :: Variant -> Run a -> Run a
+withScope scope inner = do
+    oldScope <- gets rsScope
+    modify (\s -> s { rsScope = scope })
+    a <- inner
+    modify (\s -> s { rsScope = oldScope })
+    return a
+
+-- Run with a merged scope, based on local scope and parent scope. The local
+-- scope has precedence over the inherited one.
+withInheritingScope :: Variant -> Run a -> Run a
+withInheritingScope scope inner = do
+    oldScope <- gets rsScope
+    let newScope = V.scopeMerge scope oldScope
+    withScope newScope inner
+
+withLocalVar :: Variant -> Variant -> Run a -> Run a
+withLocalVar key val inner =
+    withInheritingScope (AList [(key, val)]) inner
+
+withIdentifiedScope :: String -> Variant -> Run a -> Run a
+withIdentifiedScope key val inner =
+    if key == "."
+        then withInheritingScope val inner
+        else withLocalVar (String key) val inner
+
+-- Expressions
+
+runExpression :: Expression -> Run Variant
+runExpression (StringLiteral str) = return $ String str
+runExpression (BooleanLiteral str) = return $ Bool str
+runExpression (IntLiteral str) = return $ Integer str
+runExpression (FloatLiteral str) = return $ Double str
+runExpression (ListExpression items) = List `liftM` mapM runExpression items
+runExpression (AListExpression items) = do
+                let (keys, values) = unzip items
+                keys' <- mapM runExpression keys
+                values' <- mapM runExpression values
+                return . AList $ zip keys' values'
+runExpression (EscapeExpression EscapeHTML e) = (String . htmlEncode . flatten) `liftM` runExpression e
+runExpression (EscapeExpression EscapeURL e) = (String . urlEncode . flatten) `liftM` runExpression e
+runExpression (TernaryExpression cond left right) = do
+    condVal <- runExpression cond
+    let expr =
+            if toBool condVal
+                then left
+                else right
+    runExpression expr
+runExpression (BinaryExpression op left right) = do
+    lhs <- runExpression left
+    rhs <- runExpression right
+    return $ applyBinaryOperation op lhs rhs
+runExpression (UnaryExpression op arg) = do
+    applyUnaryOperation op `liftM` runExpression arg
+runExpression (VariableReference varname) = getVar varname
+runExpression (FunctionCallExpression (VariableReference "library") (libnameExpr:_)) = do
+    libname <- runExpression libnameExpr
+    return $ loadLibrary $ V.flatten libname
+runExpression (FunctionCallExpression fn argExprs) = do
+    func <- runExpression fn
+    args <- mapM runExpression argExprs
+    return $ V.call func args
+
+applyBinaryOperation :: BinaryOperator -> Variant -> Variant -> Variant
+applyBinaryOperation OpPlus = (+)
+applyBinaryOperation OpMinus = (-)
+applyBinaryOperation OpMul = (*)
+applyBinaryOperation OpDiv = \l -> \r ->
+    if toDouble r == 0.0
+        then Null
+        else Double $ toDouble l / toDouble r
+applyBinaryOperation OpMod = \l -> \r ->
+    if toInteger r == 0
+        then Null
+        else Integer $ toInteger l `mod` toInteger r
+applyBinaryOperation OpEquals = \l -> \r ->
+    Bool $ l == r
+applyBinaryOperation OpNotEquals = \l -> \r ->
+    Bool $ l /= r
+applyBinaryOperation OpLooseEquals = \l -> \r ->
+    Bool $ l ~== r
+applyBinaryOperation OpLooseNotEquals = \l -> \r ->
+    Bool $ l ~/= r
+applyBinaryOperation OpLess = \l -> \r ->
+    Bool $ toDouble l < toDouble r
+applyBinaryOperation OpNotLess = \l -> \r ->
+    Bool $ toDouble l >= toDouble r
+applyBinaryOperation OpGreater = \l -> \r ->
+    Bool $ toDouble l > toDouble r
+applyBinaryOperation OpNotGreater = \l -> \r ->
+    Bool $ toDouble l <= toDouble r
+applyBinaryOperation (Flipped op) = \l -> \r ->
+    applyBinaryOperation op r l
+applyBinaryOperation OpCoalesce = \l -> \r ->
+    case l of
+        Null -> r
+        otherwise -> l
+
+applyBinaryOperation OpMember = flip V.lookup
+applyBinaryOperation OpInList = V.elem
+applyBinaryOperation OpConcat = mappend
+
+applyBinaryOperation OpBooleanAnd = \l -> \r ->
+    Bool $ toBool l && toBool r
+applyBinaryOperation OpBooleanOr = \l -> \r ->
+    Bool $ toBool l || toBool r
+applyBinaryOperation OpBooleanXor = \l -> \r ->
+    let lb = toBool l
+        rb = toBool r
+    in Bool $ (lb || rb) && not (lb && rb)
+
+applyUnaryOperation OpNot arg = Bool . not . V.toBool $ arg
+</pre></br><h2>printed</h2></br><pre>{-#LANGUAGE ScopedTypeVariables #-}
+module Text.HPaco.Writers.Run
+        ( run, runWith
+        , RunState (..)
+        , RunOptions (..)
+        , defaultOptions
+        , runAST
+        , runStatement
+        , runExpression
+        )
+where
+
+import Prelude hiding (toInteger)
+import Data.Variant
+import Data.Variant.ToFrom
+import qualified Data.Variant as V
+import Data.Maybe
+import Data.Monoid
+import qualified Data.List as List
+import qualified Data.List.Split as Split
+import Control.Monad.State
+import Safe
+import Text.HPaco.Writers.Run.Encode
+import Text.HPaco.Writers.Run.Library
+import Text.HPaco.AST
+import Text.HPaco.AST.AST
+import Text.HPaco.AST.Statement
+import Text.HPaco.AST.Expression
+import System.IO
+
+data RunOptions = RunOptions
+                    { roTemplateName :: String
+                    , roOutput :: Handle
+                    }
+
+defaultOptions = RunOptions
+                    { roTemplateName = "unnamed"
+                    , roOutput = stdout
+                    }
+
+data RunState = RunState
+                    { rsScope :: Variant
+                    , rsOptions :: RunOptions
+                    , rsAST :: AST
+                    }
+
+type Run a = StateT RunState IO a
+
+run :: RunOptions -> AST -> IO ()
+run = runWith $ AList []
+
+runWith :: ToVariant a => a -> RunOptions -> AST -> IO ()
+runWith scope opts ast = do
+    let st = RunState { rsScope = toVariant scope, rsOptions = opts , rsAST = ast }
+    execStateT (runAST ast) st
+    return ()
+
+getVar :: String -> Run Variant
+getVar "." = gets rsScope
+getVar key = liftM (V.lookup $ String key) (gets rsScope)
+
+runAST :: AST -> Run ()
+runAST ast = do
+    runStatement . astRootStatement $ ast
+
+-- Statements
+
+runStatement :: Statement -> Run ()
+runStatement (PrintStatement e) = do
+    d <- runExpression e
+    h <- gets (roOutput . rsOptions)
+    liftIO . hPutStr h . flatten $ d
+runStatement (StatementSequence ss) = mapM_ runStatement ss
+runStatement (IfStatement cond true false) = do
+    b <- liftM toBool $ runExpression cond
+    runStatement $ if b then true else false
+runStatement (LetStatement ident expr stmt) =
+    runExpression expr >>= \e -> withIdentifiedScope ident e (runStatement stmt)
+runStatement (ForStatement Nothing ident expr stmt) = do
+    es <- runExpression expr
+    sequence_ $ vmap (\e -> withIdentifiedScope ident e (runStatement stmt)) es
+runStatement (ForStatement (Just iter) ident expr stmt) = do
+    es <- runExpression expr
+    sequence_ $ vamap (\(k, v) -> withIdentifiedScope iter k $ withIdentifiedScope ident v (runStatement stmt)) es
+runStatement (SwitchStatement expr branches) = do
+    ev <- runExpression expr
+    tests <- mapM runExpression $ map fst branches
+    let f test stmt = if ev ~== test then Just stmt else Nothing
+        branch = headMay $ catMaybes $ zipWith f tests (map snd branches)
+    maybe (return ()) runStatement branch
+runStatement NullStatement = return ()
+runStatement (CallStatement identifier) = do
+    ast <- gets rsAST
+    let body = fromMaybe NullStatement $ List.lookup identifier $ astDefs ast
+    runStatement body
+runStatement SourcePositionStatement {} = return ()
+
+-- Scope helpers
+
+-- Run with a completely independent scope; do not inherit parent scope
+withScope :: Variant -> Run a -> Run a
+withScope scope inner = do
+    oldScope <- gets rsScope
+    modify (\s -> s { rsScope = scope })
+    a <- inner
+    modify (\s -> s { rsScope = oldScope })
+    return a
+
+-- Run with a merged scope, based on local scope and parent scope. The local
+-- scope has precedence over the inherited one.
+withInheritingScope :: Variant -> Run a -> Run a
+withInheritingScope scope inner = do
+    oldScope <- gets rsScope
+    let newScope = V.scopeMerge scope oldScope
+    withScope newScope inner
+
+withLocalVar :: Variant -> Variant -> Run a -> Run a
+withLocalVar key val inner =
+    withInheritingScope (AList [(key, val)]) inner
+
+withIdentifiedScope :: String -> Variant -> Run a -> Run a
+withIdentifiedScope key val inner =
+    if key == "."
+        then withInheritingScope val inner
+        else withLocalVar (String key) val inner
+
+-- Expressions
+
+runExpression :: Expression -> Run Variant
+runExpression (StringLiteral str) = return $ String str
+runExpression (BooleanLiteral str) = return $ Bool str
+runExpression (IntLiteral str) = return $ Integer str
+runExpression (FloatLiteral str) = return $ Double str
+runExpression (ListExpression items) = List `liftM` mapM runExpression items
+runExpression (AListExpression items) = do
+                let (keys, values) = unzip items
+                keys' <- mapM runExpression keys
+                values' <- mapM runExpression values
+                return . AList $ zip keys' values'
+runExpression (EscapeExpression EscapeHTML e) = (String . htmlEncode . flatten) `liftM` runExpression e
+runExpression (EscapeExpression EscapeURL e) = (String . urlEncode . flatten) `liftM` runExpression e
+runExpression (TernaryExpression cond left right) = do
+    condVal <- runExpression cond
+    let expr =
+            if toBool condVal
+                then left
+                else right
+    runExpression expr
+runExpression (BinaryExpression op left right) = do
+    lhs <- runExpression left
+    rhs <- runExpression right
+    return $ applyBinaryOperation op lhs rhs
+runExpression (UnaryExpression op arg) = do
+    applyUnaryOperation op `liftM` runExpression arg
+runExpression (VariableReference varname) = getVar varname
+runExpression (FunctionCallExpression (VariableReference "library") (libnameExpr:_)) = do
+    libname <- runExpression libnameExpr
+    return $ loadLibrary $ V.flatten libname
+runExpression (FunctionCallExpression fn argExprs) = do
+    func <- runExpression fn
+    args <- mapM runExpression argExprs
+    return $ V.call func args
+
+applyBinaryOperation :: BinaryOperator -> Variant -> Variant -> Variant
+applyBinaryOperation OpPlus = (+)
+applyBinaryOperation OpMinus = (-)
+applyBinaryOperation OpMul = (*)
+applyBinaryOperation OpDiv = \l ->    ->r ->
+        if toDouble r == 0.0
+            then Null
+            else Double $ toDouble l / toDouble r
+applyBinaryOperation OpMod = \l ->    ->r ->
+        if toInteger r == 0
+            then Null
+            else Integer $ toInteger l `mod` toInteger r
+applyBinaryOperation OpEquals = \l ->    ->r ->
+        Bool $ l == r
+applyBinaryOperation OpNotEquals = \l ->    ->r ->
+        Bool $ l /= r
+applyBinaryOperation OpLooseEquals = \l ->    ->r ->
+        Bool $ l ~== r
+applyBinaryOperation OpLooseNotEquals = \l ->    ->r ->
+        Bool $ l ~/= r
+applyBinaryOperation OpLess = \l ->    ->r ->
+        Bool $ toDouble l < toDouble r
+applyBinaryOperation OpNotLess = \l ->    ->r ->
+        Bool $ toDouble l >= toDouble r
+applyBinaryOperation OpGreater = \l ->    ->r ->
+        Bool $ toDouble l > toDouble r
+applyBinaryOperation OpNotGreater = \l ->    ->r ->
+        Bool $ toDouble l <= toDouble r
+applyBinaryOperation (Flipped op) = \l ->    ->r ->
+        applyBinaryOperation op r l
+applyBinaryOperation OpCoalesce = \l ->    ->r ->
+        case l of
+            Null -> r
+            otherwise -> l
+
+applyBinaryOperation OpMember = flip V.lookup
+applyBinaryOperation OpInList = V.elem
+applyBinaryOperation OpConcat = mappend
+
+applyBinaryOperation OpBooleanAnd = \l ->    ->r ->
+        Bool $ toBool l && toBool r
+applyBinaryOperation OpBooleanOr = \l ->    ->r ->
+        Bool $ toBool l || toBool r
+applyBinaryOperation OpBooleanXor = \l ->    ->r ->
+        let lb = toBool l
+            rb = toBool r
+        in Bool $ (lb || rb) && not (lb && rb)
+
+applyUnaryOperation OpNot arg = Bool . not . V.toBool $ arg
+
+</pre>

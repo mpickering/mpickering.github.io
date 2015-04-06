@@ -1,0 +1,530 @@
+<a href="IResource.hs159282276141000625.out.html">prev</a></br><a href="failures.html">home</a></br><a href="Is.hs18171295601131570933.out.html">next</a></br></br><pre>237c237
+<       forM_ ns $ uncurry insertVocab . (,Noun)
+---
+>       forM_ ns $ uncurry insertVocab . ( Noun)
+239c239
+<       forM_ as $ uncurry insertVocab . (,Adj)
+---
+>       forM_ as $ uncurry insertVocab . ( Adj)
+259a260
+> 
+</pre></br><h2>original</h2></br><pre>{-# LANGUAGE FlexibleContexts, RankNTypes, RecordWildCards, TupleSections, ConstraintKinds #-}
+
+{-
+  This module is part of Ironforge.
+  Copyfree (f) 2014 Marvin Cohrs
+
+  All wrongs revoked. Sharing is an act of love, not crime.
+  Please share Ironforge with everyone you like.
+
+  Redistribution and use in source and binary forms, with or without modification,
+  are permitted provided that the following conditions are met:
+
+      * Redistributions of source code must retain the above copyright notice,
+        this list of conditions and the following disclaimer.
+      * Redistributions in binary form must reproduce the above copyright notice,
+        this list of conditions and the following disclaimer in the documentation
+        and/or other materials provided with the distribution.
+      * Neither the name of Marvin Cohrs nor the names of other
+        contributors may be used to endorse or promote products derived
+        from this software without specific prior written permission.
+
+  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+  "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+  LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+  A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
+  CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+  EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+  PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+  PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+  LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+  NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+  SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+-}
+
+module Game.Antisplice.Dungeon.Ironforge.IronforgeCity where
+
+import Text.Chatty.Printer
+import Text.Chatty.Scanner
+import Text.Chatty.Expansion
+import Text.Chatty.Expansion.Vars
+import System.Chatty.Misc
+import Text.Chatty.Extended.Printer
+import Game.Antisplice
+import Game.Antisplice.Dungeon.Ironforge.Kinds
+import Data.Chatty.Graph
+import Control.Monad
+import Control.Monad.Error.Class
+import Data.Monoid
+import Text.Printf
+
+ironforgeCity :: Kinds -> Currencies -> Methods -> Atoms -> Constructor (NodeId,NodeId,NodeId)
+ironforgeCity Kinds{..} Currencies{..} Methods{..} Atoms{..} = do
+  --  IRONFORGE : THE GREAT FORGE
+  greatForge <- constructRoom $ do
+    ctorRoom "The Great Forge" "This is the Great Forge."
+    addRoomObject $ do
+      ctorSign
+            ("Dear traveler,\n\nit might occur that this is your first dungeon. "++
+             "You can play it by just typing in what you want to do, for instance "++
+             "\"go east\" or \"look at green sign\". By the time you will learn new "++
+             "actions by just trying them. Alternatively, you might want to visit our "++
+             "Dungeon School. You can reach it by typing \"descend\". It will teach "++
+             "you everything you need to know.\n\n"++
+             "Ironforge is a dungeon that primarily plays in Azeroth, but includes "++
+             "places and scenes from other narrations or reality. Most are intended "++
+             "to be funny, probably they aren't.\n\nAnyways, have fun and good luck :)")
+            ["green"]
+      addDescSeg "On one wall there is a green sign. Type \"read sign\" to read it."
+    onFirstEnter $ do
+      ebracket (Vivid Yellow) $ do
+        mprintLn "** Welcome to IRONFORGE, an experimental dungeon on top of Antisplice."
+        mprintLn "**"
+        mprintLn "** This is not a stable branch, but rather a technical demo."
+        mprintLn "** Actually this branch is about to die, since the implementor is looking"
+        mprintLn "** for a way to move the game content to runtime scripts. And their language"
+        mprintLn "** needs to be developed first, a bytecode interpreter and a compiler need"
+        mprintLn "** to be written, the content need to be ported, possibly the engine needs"
+        mprintLn "** a complete redesign, and so on and so on and so on... Don't expect more"
+        mprintLn "** content to be coming soon. It may take a lot of time :)"
+        mprintLn "**"
+        mprintLn "** Antisplice (c) 2014 Marvin Cohrs (http://hackage.haskell.org/package/antisplice)"
+        mprintLn "** Ironforge  (c) 2014 Marvin Cohrs (http://hackage.haskell.org/package/ironforge)"
+      mprintLn ""
+      mputv "user" $ Literal "Bernd"
+      mprintLn ""
+      mnomask =<< expand "Alright $user, here you are!\n"
+      mprintLn ""
+
+  --  IRONFORGE : THE MILITARY WARD
+  militaryW <- constructRoom $ do
+    ctorRoom "The Military Ward" "This is where the warriors meet."
+  bipath greatForge militaryW SouthEast
+
+  --  IRONFORGE : THE COMMONS
+  commonsW <- constructRoom $ do
+    ctorRoom "The Commons" "Here you see the bank and the auction house."
+    addRoomObject $ do
+      ctorAcq "a cup" "One might fill this with coffee." ["cup"] []
+      addDescSeg "There is a cup lying on the floor."
+  unipath greatForge commonsW South
+  unipath greatForge commonsW West
+  unipath commonsW greatForge NorthEast
+  bipath commonsW militaryW East
+
+  --  IRONFORGE : THE BANK
+  bankW <- constructRoom $ ctorRoom "The Bank" "This is the bank of Ironforge. The exit is to the west."
+  withRoom commonsW $ do
+    addRoomObject $ ctorRoomNesting "the bank" "This is the Ironforge bank." ["bank"] [] bankW
+  unipath bankW commonsW West
+
+  --  IRONFORGE : THE AUCTION HOUSE
+  auctionW <- constructRoom $ ctorRoom "The Auction House" "This is the auction house of Ironforge. The exit is to the east."
+  withRoom commonsW $ do
+    addRoomObject $ ctorRoomNesting "the auction house" "This is the Ironforge auction house." ["house"] ["auction"] auctionW -- TODO!
+  unipath auctionW commonsW East
+
+  --  IRONFORGE : THE TAVERN
+  billA <- newAtom
+  putAtom billA (0 :: Int)
+  tavernW <- constructRoom $ do
+    ctorRoom "The Tavern" "This is the tavern of Ironforge. It is known for its strong beer, so you might want to try one. To the west there is the toilet and the kitchen is to the south. The exit is to the east."
+    addRoomObject $ do
+      ctorMob "the barkeeper" ["barkeeper"] "This is the old and friendly barkeeper." ["old","friendly"]
+      barKeeperSte <- registerStereoM $ do
+        mergeSkill $ skill "order" !+ Noun "beer" :-: Nil #->> do
+              mapAtom (+250) billA
+              b <- getAtom billA
+              mprintLn =<< drunken (printf "The barkeeper brings you a beer.\nBarkeeper: \"That's $%i.%02i.\"" (b `div` 100) (b `mod` 100))
+              beer <- addRoomObject $ do
+                ctorAcq "a huge glass of strong beer" "This is a huge glass of dwarven strong beer." ["beer","glass"] ["huge","strong","dwarven"]
+                addFeature Drinkable
+                onDrink $ consumeAlcohol 12
+              acquireObject beer
+        mergeSkill $ skill "pay" !+ validCondition Nil (\_ -> do c <- getCurrency money; a <- getAtom billA; return (if c>=a then Nothing else Just $ Uncon "You don't have enough money."))
+                                 !+ Nil #->> (do a <- getAtom billA; modifyCurrency money (subtract a))
+                                 !+ Nil #->> putAtom billA 0
+      addFeature $ Stereo Near barKeeperSte
+    addRoomObject $ do
+      ctorAcq "a rusty dagger" "This is a rusty old dagger, probably lost by a rouge." ["dagger"] ["rusty","old"]
+      addDescSeg "A rusty old dagger lies on the ground."
+      addEquipSlot MainHand
+      addEquipSlot OffHand
+      rustyDaggerSte <- registerStereo $ statsStereo $
+        \get k -> case k of
+          AttackPower -> 7
+          _ -> 0
+      addFeature $ Stereo Worn $ rustyDaggerSte
+  unipath tavernW commonsW East
+  withRoom commonsW $ do
+    addRoomObject $ do
+      ctorRoomNesting "the tavern" "This is the Ironforge tavern." ["tavern"] [] tavernW
+      addDescSeg "Straight in front of you there is the tavern of Ironforge."
+
+  --  IRONFORGE : THE TAVERN'S TOILET
+  toiletW <- constructRoom $ do
+    ctorRoom "The Toilet" "This is the tavern's toilet."
+  withRoom toiletW $ addRoomObject $ do
+      ctorMob "%{V1;I}%{V2;g}%{D1;o}%{D2;r}" ["igor"] "This is Igor. I guess he doesn't like you." []
+      setMobRoute [tavernW]
+      o <- getObjectState
+      onSight $ schedule 0 $ guardRoom toiletW $ do
+        mprintLn "You enter the occupied toilet and see Igor sitting on the pot."
+        mprintLn "\"Oops, I'm sorry.\", you say and quickly return to the main room."
+        enterAndAnnounce tavernW
+        schedule 3000 $ continueMobRoute $ objectIdOf o
+  bipath toiletW tavernW East
+
+  --  IRONFORGE : THE TAVERN'S KITCHEN
+  kitchenW <- constructRoom $ do
+    ctorRoom "The Kitchen" "This is the tavern's kitchen."
+    addRoomObject $ do
+      ctorMob "the cook" ["cook","chef"] "This is the experienced cook. He's unfriendly and rude, but his meals are the best ones of Azeroth." ["experienced","unfriendly","rude"]
+  bipath tavernW kitchenW South
+
+  --  IRONFORGE : THE MYSTIC WARD
+  mysticSte <- registerStereoM $ do
+    mergeStereo $ statsStereo $
+      \get k -> case k of
+        Intelligence -> get Intelligence * 99
+        _ -> 0
+    mergeSkill $ skill "pray" !+ implyGlobalCooldownA !+ validConsumer Nil (\_ -> mprintLn "You're falling to your knees praying.\nYou stand up again.")
+  mysticW <- constructRoom $ do
+    ctorRoom "The Mystic Ward" "Here you will find a lot of mages."
+    addRoomObject $ do
+      addFeature $ Stereo Near mysticSte
+      addDescSeg "You feel intellectual."
+  bipath greatForge mysticW NorthWest
+  bipath commonsW mysticW North
+
+  --  IRONFORGE : THE FORLORN CAVERN
+  cavernW <- constructRoom $ ctorRoom "The Forlorn Cavern" "Uncanny. You see your home to the north."
+  bipath cavernW mysticW West
+
+  --  IRONFORGE : HOME
+  homeW <- constructRoom $ do
+    ctorRoom "Home" "Home, sweet home."
+    recipeSte <- registerStereoM $ do
+      mergeRecipe $ recipe byCooking "pancake"
+        !+ consumeKindA kMilk 1
+        !+ consumeKindA kEgg 1
+        !+ consumeKindA kFlour 1
+        !+ Nil #->> (do
+                       i <- liftM ObjectId countOn
+                       o <- constructObject (do
+                                                ctorAcq "a pancake" "Bring some of these to Jan and he will let you pass." ["pancake"] []
+                                                addFeature Eatable
+                                                onEat $ mprintLn "Yummie, that's really delicious!") (Just i) kPancake
+                       modifyPlayerState $ \p -> p{playerInventoryOf= anyBstInsert o $ playerInventoryOf p})
+    momSte <- registerStereoM $ do
+      mergeSkill $ skill "ask" !+ Prep "for" :-: Optional "pancake" :-: "recipe" :-: Nil #->> do
+                                                                                 mprintLn "Mom: \"Yes, of course I got one!\"\nMom gives you the recipe."
+                                                                                 i <- liftM ObjectId countOn
+                                                                                 k <- liftM KindId countOn
+                                                                                 o <- constructObject (do
+                                                                                                          ctorAcq "a pancake recipe" "Use this to bake pancakes." ["recipe"] []
+                                                                                                          addFeature $ Stereo Carried recipeSte) (Just i) k
+                                                                                 modifyPlayerState $ \p ->  p{playerInventoryOf= anyBstInsert o $ playerInventoryOf p}
+    addRoomObject $ do
+      ctorMob "mom" ["mom"] "This is your mom. She knows really %{V7;everything} about cooking." ["beloved"]
+      addFeature $ Stereo Near momSte
+  bipath cavernW homeW North
+
+  --  IRONFORGE : HALL OF EXPLORERS
+  halloeW <- constructRoom $ ctorRoom "Hall of Explorers" "Here you can be rewarded."
+  bipath cavernW halloeW East
+  bipath greatForge halloeW NorthEast
+
+  --  IRONFORGE : ECUADORIAN EMBASSY
+  embassyW <- constructRoom $ do
+    ctorRoom "Ecuadorian Embassy" "This is the Ecuadorian Embassy in Ironforge. The exit is to the south."
+    addRoomObject $ do
+      setObjectTitle "ambassador's desk"
+      setObjectDesc "This is the Ecuadorian ambassadors desk."
+      let ns = ["desk"]
+          as = ["ecuadorian","large"]
+      forM_ ns addObjectName
+      forM_ ns $ uncurry insertVocab . (,Noun)
+      forM_ as addObjectAttr
+      forM_ as $ uncurry insertVocab . (,Adj)
+      addDescSeg "On the other side of the room there is a large desk."
+  withRoom halloeW $ do
+    addRoomObject $ ctorRoomNesting "the Ecuadorian Embassy" "This is the Ecuadorian Embassy in Ironforge." ["embassy","ecuador"] ["ecuadorian"] embassyW
+  unipath embassyW halloeW South
+
+  --  IRONFORGE : TINKER TOWN
+  tinkerW <- constructRoom $ do
+    ctorRoom "Tinker Town" "Engineers all around you."
+  bipath halloeW tinkerW South
+  bipath tinkerW militaryW South
+
+  -- IRONFORGE : DEEPRUN TRAM STATION
+  stationW <- constructRoom $ do
+    ctorRoom "Ironforge Deeprun Tram Station" "This is the tram station of Ironforge, Dun Morogh."
+    addRoomObject $ ctorMob "the station overseer" ["overseer"]
+      "This is the badly-paid station overseer. His job is to answer all your questions, but probably he won't be that friendly."
+      ["badly-paid","unfriendly"]
+  bipath tinkerW stationW East
+
+  return (greatForge, stationW, commonsW)
+</pre></br><h2>printed</h2></br><pre>{-# LANGUAGE FlexibleContexts, RankNTypes, RecordWildCards, TupleSections, ConstraintKinds #-}
+
+{-
+  This module is part of Ironforge.
+  Copyfree (f) 2014 Marvin Cohrs
+
+  All wrongs revoked. Sharing is an act of love, not crime.
+  Please share Ironforge with everyone you like.
+
+  Redistribution and use in source and binary forms, with or without modification,
+  are permitted provided that the following conditions are met:
+
+      * Redistributions of source code must retain the above copyright notice,
+        this list of conditions and the following disclaimer.
+      * Redistributions in binary form must reproduce the above copyright notice,
+        this list of conditions and the following disclaimer in the documentation
+        and/or other materials provided with the distribution.
+      * Neither the name of Marvin Cohrs nor the names of other
+        contributors may be used to endorse or promote products derived
+        from this software without specific prior written permission.
+
+  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+  "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+  LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+  A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
+  CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+  EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+  PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+  PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+  LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+  NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+  SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+-}
+
+module Game.Antisplice.Dungeon.Ironforge.IronforgeCity where
+
+import Text.Chatty.Printer
+import Text.Chatty.Scanner
+import Text.Chatty.Expansion
+import Text.Chatty.Expansion.Vars
+import System.Chatty.Misc
+import Text.Chatty.Extended.Printer
+import Game.Antisplice
+import Game.Antisplice.Dungeon.Ironforge.Kinds
+import Data.Chatty.Graph
+import Control.Monad
+import Control.Monad.Error.Class
+import Data.Monoid
+import Text.Printf
+
+ironforgeCity :: Kinds -> Currencies -> Methods -> Atoms -> Constructor (NodeId,NodeId,NodeId)
+ironforgeCity Kinds{..} Currencies{..} Methods{..} Atoms{..} = do
+  --  IRONFORGE : THE GREAT FORGE
+  greatForge <- constructRoom $ do
+    ctorRoom "The Great Forge" "This is the Great Forge."
+    addRoomObject $ do
+      ctorSign
+            ("Dear traveler,\n\nit might occur that this is your first dungeon. "++
+             "You can play it by just typing in what you want to do, for instance "++
+             "\"go east\" or \"look at green sign\". By the time you will learn new "++
+             "actions by just trying them. Alternatively, you might want to visit our "++
+             "Dungeon School. You can reach it by typing \"descend\". It will teach "++
+             "you everything you need to know.\n\n"++
+             "Ironforge is a dungeon that primarily plays in Azeroth, but includes "++
+             "places and scenes from other narrations or reality. Most are intended "++
+             "to be funny, probably they aren't.\n\nAnyways, have fun and good luck :)")
+            ["green"]
+      addDescSeg "On one wall there is a green sign. Type \"read sign\" to read it."
+    onFirstEnter $ do
+      ebracket (Vivid Yellow) $ do
+        mprintLn "** Welcome to IRONFORGE, an experimental dungeon on top of Antisplice."
+        mprintLn "**"
+        mprintLn "** This is not a stable branch, but rather a technical demo."
+        mprintLn "** Actually this branch is about to die, since the implementor is looking"
+        mprintLn "** for a way to move the game content to runtime scripts. And their language"
+        mprintLn "** needs to be developed first, a bytecode interpreter and a compiler need"
+        mprintLn "** to be written, the content need to be ported, possibly the engine needs"
+        mprintLn "** a complete redesign, and so on and so on and so on... Don't expect more"
+        mprintLn "** content to be coming soon. It may take a lot of time :)"
+        mprintLn "**"
+        mprintLn "** Antisplice (c) 2014 Marvin Cohrs (http://hackage.haskell.org/package/antisplice)"
+        mprintLn "** Ironforge  (c) 2014 Marvin Cohrs (http://hackage.haskell.org/package/ironforge)"
+      mprintLn ""
+      mputv "user" $ Literal "Bernd"
+      mprintLn ""
+      mnomask =<< expand "Alright $user, here you are!\n"
+      mprintLn ""
+
+  --  IRONFORGE : THE MILITARY WARD
+  militaryW <- constructRoom $ do
+    ctorRoom "The Military Ward" "This is where the warriors meet."
+  bipath greatForge militaryW SouthEast
+
+  --  IRONFORGE : THE COMMONS
+  commonsW <- constructRoom $ do
+    ctorRoom "The Commons" "Here you see the bank and the auction house."
+    addRoomObject $ do
+      ctorAcq "a cup" "One might fill this with coffee." ["cup"] []
+      addDescSeg "There is a cup lying on the floor."
+  unipath greatForge commonsW South
+  unipath greatForge commonsW West
+  unipath commonsW greatForge NorthEast
+  bipath commonsW militaryW East
+
+  --  IRONFORGE : THE BANK
+  bankW <- constructRoom $ ctorRoom "The Bank" "This is the bank of Ironforge. The exit is to the west."
+  withRoom commonsW $ do
+    addRoomObject $ ctorRoomNesting "the bank" "This is the Ironforge bank." ["bank"] [] bankW
+  unipath bankW commonsW West
+
+  --  IRONFORGE : THE AUCTION HOUSE
+  auctionW <- constructRoom $ ctorRoom "The Auction House" "This is the auction house of Ironforge. The exit is to the east."
+  withRoom commonsW $ do
+    addRoomObject $ ctorRoomNesting "the auction house" "This is the Ironforge auction house." ["house"] ["auction"] auctionW -- TODO!
+  unipath auctionW commonsW East
+
+  --  IRONFORGE : THE TAVERN
+  billA <- newAtom
+  putAtom billA (0 :: Int)
+  tavernW <- constructRoom $ do
+    ctorRoom "The Tavern" "This is the tavern of Ironforge. It is known for its strong beer, so you might want to try one. To the west there is the toilet and the kitchen is to the south. The exit is to the east."
+    addRoomObject $ do
+      ctorMob "the barkeeper" ["barkeeper"] "This is the old and friendly barkeeper." ["old","friendly"]
+      barKeeperSte <- registerStereoM $ do
+        mergeSkill $ skill "order" !+ Noun "beer" :-: Nil #->> do
+              mapAtom (+250) billA
+              b <- getAtom billA
+              mprintLn =<< drunken (printf "The barkeeper brings you a beer.\nBarkeeper: \"That's $%i.%02i.\"" (b `div` 100) (b `mod` 100))
+              beer <- addRoomObject $ do
+                ctorAcq "a huge glass of strong beer" "This is a huge glass of dwarven strong beer." ["beer","glass"] ["huge","strong","dwarven"]
+                addFeature Drinkable
+                onDrink $ consumeAlcohol 12
+              acquireObject beer
+        mergeSkill $ skill "pay" !+ validCondition Nil (\_ -> do c <- getCurrency money; a <- getAtom billA; return (if c>=a then Nothing else Just $ Uncon "You don't have enough money."))
+                                 !+ Nil #->> (do a <- getAtom billA; modifyCurrency money (subtract a))
+                                 !+ Nil #->> putAtom billA 0
+      addFeature $ Stereo Near barKeeperSte
+    addRoomObject $ do
+      ctorAcq "a rusty dagger" "This is a rusty old dagger, probably lost by a rouge." ["dagger"] ["rusty","old"]
+      addDescSeg "A rusty old dagger lies on the ground."
+      addEquipSlot MainHand
+      addEquipSlot OffHand
+      rustyDaggerSte <- registerStereo $ statsStereo $
+        \get k -> case k of
+          AttackPower -> 7
+          _ -> 0
+      addFeature $ Stereo Worn $ rustyDaggerSte
+  unipath tavernW commonsW East
+  withRoom commonsW $ do
+    addRoomObject $ do
+      ctorRoomNesting "the tavern" "This is the Ironforge tavern." ["tavern"] [] tavernW
+      addDescSeg "Straight in front of you there is the tavern of Ironforge."
+
+  --  IRONFORGE : THE TAVERN'S TOILET
+  toiletW <- constructRoom $ do
+    ctorRoom "The Toilet" "This is the tavern's toilet."
+  withRoom toiletW $ addRoomObject $ do
+      ctorMob "%{V1;I}%{V2;g}%{D1;o}%{D2;r}" ["igor"] "This is Igor. I guess he doesn't like you." []
+      setMobRoute [tavernW]
+      o <- getObjectState
+      onSight $ schedule 0 $ guardRoom toiletW $ do
+        mprintLn "You enter the occupied toilet and see Igor sitting on the pot."
+        mprintLn "\"Oops, I'm sorry.\", you say and quickly return to the main room."
+        enterAndAnnounce tavernW
+        schedule 3000 $ continueMobRoute $ objectIdOf o
+  bipath toiletW tavernW East
+
+  --  IRONFORGE : THE TAVERN'S KITCHEN
+  kitchenW <- constructRoom $ do
+    ctorRoom "The Kitchen" "This is the tavern's kitchen."
+    addRoomObject $ do
+      ctorMob "the cook" ["cook","chef"] "This is the experienced cook. He's unfriendly and rude, but his meals are the best ones of Azeroth." ["experienced","unfriendly","rude"]
+  bipath tavernW kitchenW South
+
+  --  IRONFORGE : THE MYSTIC WARD
+  mysticSte <- registerStereoM $ do
+    mergeStereo $ statsStereo $
+      \get k -> case k of
+        Intelligence -> get Intelligence * 99
+        _ -> 0
+    mergeSkill $ skill "pray" !+ implyGlobalCooldownA !+ validConsumer Nil (\_ -> mprintLn "You're falling to your knees praying.\nYou stand up again.")
+  mysticW <- constructRoom $ do
+    ctorRoom "The Mystic Ward" "Here you will find a lot of mages."
+    addRoomObject $ do
+      addFeature $ Stereo Near mysticSte
+      addDescSeg "You feel intellectual."
+  bipath greatForge mysticW NorthWest
+  bipath commonsW mysticW North
+
+  --  IRONFORGE : THE FORLORN CAVERN
+  cavernW <- constructRoom $ ctorRoom "The Forlorn Cavern" "Uncanny. You see your home to the north."
+  bipath cavernW mysticW West
+
+  --  IRONFORGE : HOME
+  homeW <- constructRoom $ do
+    ctorRoom "Home" "Home, sweet home."
+    recipeSte <- registerStereoM $ do
+      mergeRecipe $ recipe byCooking "pancake"
+        !+ consumeKindA kMilk 1
+        !+ consumeKindA kEgg 1
+        !+ consumeKindA kFlour 1
+        !+ Nil #->> (do
+                       i <- liftM ObjectId countOn
+                       o <- constructObject (do
+                                                ctorAcq "a pancake" "Bring some of these to Jan and he will let you pass." ["pancake"] []
+                                                addFeature Eatable
+                                                onEat $ mprintLn "Yummie, that's really delicious!") (Just i) kPancake
+                       modifyPlayerState $ \p -> p{playerInventoryOf= anyBstInsert o $ playerInventoryOf p})
+    momSte <- registerStereoM $ do
+      mergeSkill $ skill "ask" !+ Prep "for" :-: Optional "pancake" :-: "recipe" :-: Nil #->> do
+                                                                                 mprintLn "Mom: \"Yes, of course I got one!\"\nMom gives you the recipe."
+                                                                                 i <- liftM ObjectId countOn
+                                                                                 k <- liftM KindId countOn
+                                                                                 o <- constructObject (do
+                                                                                                          ctorAcq "a pancake recipe" "Use this to bake pancakes." ["recipe"] []
+                                                                                                          addFeature $ Stereo Carried recipeSte) (Just i) k
+                                                                                 modifyPlayerState $ \p ->  p{playerInventoryOf= anyBstInsert o $ playerInventoryOf p}
+    addRoomObject $ do
+      ctorMob "mom" ["mom"] "This is your mom. She knows really %{V7;everything} about cooking." ["beloved"]
+      addFeature $ Stereo Near momSte
+  bipath cavernW homeW North
+
+  --  IRONFORGE : HALL OF EXPLORERS
+  halloeW <- constructRoom $ ctorRoom "Hall of Explorers" "Here you can be rewarded."
+  bipath cavernW halloeW East
+  bipath greatForge halloeW NorthEast
+
+  --  IRONFORGE : ECUADORIAN EMBASSY
+  embassyW <- constructRoom $ do
+    ctorRoom "Ecuadorian Embassy" "This is the Ecuadorian Embassy in Ironforge. The exit is to the south."
+    addRoomObject $ do
+      setObjectTitle "ambassador's desk"
+      setObjectDesc "This is the Ecuadorian ambassadors desk."
+      let ns = ["desk"]
+          as = ["ecuadorian","large"]
+      forM_ ns addObjectName
+      forM_ ns $ uncurry insertVocab . ( Noun)
+      forM_ as addObjectAttr
+      forM_ as $ uncurry insertVocab . ( Adj)
+      addDescSeg "On the other side of the room there is a large desk."
+  withRoom halloeW $ do
+    addRoomObject $ ctorRoomNesting "the Ecuadorian Embassy" "This is the Ecuadorian Embassy in Ironforge." ["embassy","ecuador"] ["ecuadorian"] embassyW
+  unipath embassyW halloeW South
+
+  --  IRONFORGE : TINKER TOWN
+  tinkerW <- constructRoom $ do
+    ctorRoom "Tinker Town" "Engineers all around you."
+  bipath halloeW tinkerW South
+  bipath tinkerW militaryW South
+
+  -- IRONFORGE : DEEPRUN TRAM STATION
+  stationW <- constructRoom $ do
+    ctorRoom "Ironforge Deeprun Tram Station" "This is the tram station of Ironforge, Dun Morogh."
+    addRoomObject $ ctorMob "the station overseer" ["overseer"]
+      "This is the badly-paid station overseer. His job is to answer all your questions, but probably he won't be that friendly."
+      ["badly-paid","unfriendly"]
+  bipath tinkerW stationW East
+
+  return (greatForge, stationW, commonsW)
+
+</pre>

@@ -1,0 +1,320 @@
+<a href="Sum.hs1850318675595278518.out.html">prev</a></br><a href="failures.html">home</a></br><a href="SumTypes.hs222122669889119397.out.html">next</a></br></br><pre>91c91
+< {-# INLINE maximumIndexU #-}
+---
+> {-# INLINE maximumIndexU #
+98c98
+< {-# INLINE maximumIndexByU #-}
+---
+> {-# INLINE maximumIndexByU #
+126c126
+< {-# INLINE minimumIndexU #-}
+---
+> {-# INLINE minimumIndexU #
+133c133
+< {-# INLINE minimumIndexByU #-}
+---
+> {-# INLINE minimumIndexByU #
+150a151
+> 
+</pre></br><h2>original</h2></br><pre>-----------------------------------------------------------------------------
+-- |
+-- Module      : Data.Array.Vector.Strict.Sums
+-- Copyright   : (c) [2001..2002] Manuel M T Chakravarty & Gabriele Keller
+--       (c) 2006         Manuel M T Chakravarty & Roman Leshchinskiy
+-- License     : see libraries/rl/LICENSE
+--
+-- Maintainer  : Roman Leshchinskiy <rl@cse.unsw.edu.au>
+-- Stability   : internal
+-- Portability : portable
+--
+-- Description ---------------------------------------------------------------
+--
+--  Various sum-like combinators for flat unlifted arrays.
+--
+-- Todo ----------------------------------------------------------------------
+--
+
+module Data.Array.Vector.Strict.Sums where
+
+import Data.Array.Vector.Prim.Hyperstrict (
+  (:*:)(..), fstS)
+import Data.Array.Vector.UArr (
+  UA, UArr)
+import Data.Array.Vector.Strict.Basics (
+  indexedU, mapU, foldU, fold1U, foldlU)
+import Data.Array.Vector.Strict.Stream (streamU)
+
+import Data.Array.Vector.Stream (elemS)
+
+infix  4 `elemU`, `notElemU`
+
+-- |/O(n)/. 'andU' yields the conjunction of a boolean array.
+andU :: UArr Bool -> Bool
+{-# INLINE andU #-}
+andU = foldU (&&) True
+
+-- |/O(n)/. 'andU' yields the disjunction of a boolean array.
+orU :: UArr Bool -> Bool
+{-# INLINE orU #-}
+orU = foldU (||) False
+
+-- |/O(n)/. @'allU' p u@ determines whether all elements in array @u@ satisfy
+-- predicate @p@.
+--
+allU :: UA e => (e -> Bool) -> UArr e -> Bool
+{-# INLINE allU #-}
+allU p = andU . mapU p
+
+-- |/O(n)/. @'anyU' p u@ determines whether any element in array @u@ satisfies
+-- predicate @p@.
+--
+anyU :: UA e => (e -> Bool) -> UArr e -> Bool
+{-# INLINE anyU #-}
+anyU p =  orU . mapU p
+
+-- |/O(n)/. 'sumU' computes the sum of an array of a 'Num' instance.
+--
+sumU :: (Num e, UA e) => UArr e -> e
+{-# INLINE sumU #-}
+sumU = foldU (+) 0
+
+-- |/O(n)/. 'productU' computes the product of an array of a 'Num' instance.
+--
+productU :: (Num e, UA e) => UArr e -> e
+{-# INLINE productU #-}
+productU = foldU (*) 1
+
+-- |/O(n)/. 'maximumU' finds the maximum element in an array of orderable
+-- elements.
+--
+maximumU :: (Ord e, UA e) => UArr e -> e
+{-# INLINE maximumU #-}
+maximumU = fold1U max
+
+-- |/O(n)/. 'maximumByU' finds the maximum element in an array under the given
+-- ordering.
+--
+maximumByU :: UA e => (e -> e -> Ordering) -> UArr e -> e
+{-# INLINE maximumByU #-}
+maximumByU = fold1U . maxBy
+  where
+    maxBy compare x y = case x `compare` y of
+                          GT -> x
+                          _  -> y
+
+{-
+-- |Determine the index of the maximum element in an array
+--
+maximumIndexU :: (Ord e, UA e) => UArr e -> Int
+{-# INLINE maximumIndexU #-}
+maximumIndexU = maximumIndexByU compare
+
+-- |Determine the index of the maximum element in an array under the given
+-- ordering
+--
+maximumIndexByU :: UA e => (e -> e -> Ordering) -> UArr e -> Int
+{-# INLINE maximumIndexByU #-}
+maximumIndexByU cmp = fstS . maximumByU cmp' . indexedU
+  where
+    cmp' (_ :*: x) (_ :*: y) = cmp x y
+-}
+
+-- |/O(n)/. 'minimumU' finds the minimum element in an array of orderable
+-- elements.
+--
+minimumU :: (Ord e, UA e) => UArr e -> e
+{-# INLINE minimumU #-}
+minimumU = fold1U min
+
+-- |/O(n)/. 'minimumByU' finds the minimum element in an array under the given
+-- ordering.
+--
+minimumByU :: UA e => (e -> e -> Ordering) -> UArr e -> e
+{-# INLINE minimumByU #-}
+minimumByU = fold1U . minBy
+  where
+    minBy compare x y = case x `compare` y of
+                          GT -> y
+                          _  -> x
+
+{-
+-- |Determine the index of the minimum element in an array
+--
+minimumIndexU :: (Ord e, UA e) => UArr e -> Int
+{-# INLINE minimumIndexU #-}
+minimumIndexU = minimumIndexByU compare
+
+-- |Determine the index of the minimum element in an array under the given
+-- ordering
+--
+minimumIndexByU :: UA e => (e -> e -> Ordering) -> UArr e -> Int
+{-# INLINE minimumIndexByU #-}
+minimumIndexByU cmp = fstS . minimumByU cmp' . indexedU
+  where
+    cmp' (_ :*: x) (_ :*: y) = cmp x y
+-}
+
+-- |/O(n)/. 'elemU' determines whether the given element is in an array.
+--
+elemU :: (Eq e, UA e) => e -> UArr e -> Bool
+elemU e = elemS e . streamU -- anyU (== e) (better code)
+{-# INLINE elemU #-}
+
+-- |/O(n)/. Negation of `elemU'.
+--
+notElemU :: (Eq e, UA e) => e -> UArr e -> Bool
+notElemU e = allU (/= e)
+{-# INLINE notElemU #-}
+
+</pre></br><h2>printed</h2></br><pre>-----------------------------------------------------------------------------
+-- |
+-- Module      : Data.Array.Vector.Strict.Sums
+-- Copyright   : (c) [2001..2002] Manuel M T Chakravarty & Gabriele Keller
+--       (c) 2006         Manuel M T Chakravarty & Roman Leshchinskiy
+-- License     : see libraries/rl/LICENSE
+--
+-- Maintainer  : Roman Leshchinskiy <rl@cse.unsw.edu.au>
+-- Stability   : internal
+-- Portability : portable
+--
+-- Description ---------------------------------------------------------------
+--
+--  Various sum-like combinators for flat unlifted arrays.
+--
+-- Todo ----------------------------------------------------------------------
+--
+
+module Data.Array.Vector.Strict.Sums where
+
+import Data.Array.Vector.Prim.Hyperstrict (
+  (:*:)(..), fstS)
+import Data.Array.Vector.UArr (
+  UA, UArr)
+import Data.Array.Vector.Strict.Basics (
+  indexedU, mapU, foldU, fold1U, foldlU)
+import Data.Array.Vector.Strict.Stream (streamU)
+
+import Data.Array.Vector.Stream (elemS)
+
+infix  4 `elemU`, `notElemU`
+
+-- |/O(n)/. 'andU' yields the conjunction of a boolean array.
+andU :: UArr Bool -> Bool
+{-# INLINE andU #-}
+andU = foldU (&&) True
+
+-- |/O(n)/. 'andU' yields the disjunction of a boolean array.
+orU :: UArr Bool -> Bool
+{-# INLINE orU #-}
+orU = foldU (||) False
+
+-- |/O(n)/. @'allU' p u@ determines whether all elements in array @u@ satisfy
+-- predicate @p@.
+--
+allU :: UA e => (e -> Bool) -> UArr e -> Bool
+{-# INLINE allU #-}
+allU p = andU . mapU p
+
+-- |/O(n)/. @'anyU' p u@ determines whether any element in array @u@ satisfies
+-- predicate @p@.
+--
+anyU :: UA e => (e -> Bool) -> UArr e -> Bool
+{-# INLINE anyU #-}
+anyU p =  orU . mapU p
+
+-- |/O(n)/. 'sumU' computes the sum of an array of a 'Num' instance.
+--
+sumU :: (Num e, UA e) => UArr e -> e
+{-# INLINE sumU #-}
+sumU = foldU (+) 0
+
+-- |/O(n)/. 'productU' computes the product of an array of a 'Num' instance.
+--
+productU :: (Num e, UA e) => UArr e -> e
+{-# INLINE productU #-}
+productU = foldU (*) 1
+
+-- |/O(n)/. 'maximumU' finds the maximum element in an array of orderable
+-- elements.
+--
+maximumU :: (Ord e, UA e) => UArr e -> e
+{-# INLINE maximumU #-}
+maximumU = fold1U max
+
+-- |/O(n)/. 'maximumByU' finds the maximum element in an array under the given
+-- ordering.
+--
+maximumByU :: UA e => (e -> e -> Ordering) -> UArr e -> e
+{-# INLINE maximumByU #-}
+maximumByU = fold1U . maxBy
+  where
+    maxBy compare x y = case x `compare` y of
+                          GT -> x
+                          _  -> y
+
+{-
+-- |Determine the index of the maximum element in an array
+--
+maximumIndexU :: (Ord e, UA e) => UArr e -> Int
+{-# INLINE maximumIndexU #
+maximumIndexU = maximumIndexByU compare
+
+-- |Determine the index of the maximum element in an array under the given
+-- ordering
+--
+maximumIndexByU :: UA e => (e -> e -> Ordering) -> UArr e -> Int
+{-# INLINE maximumIndexByU #
+maximumIndexByU cmp = fstS . maximumByU cmp' . indexedU
+  where
+    cmp' (_ :*: x) (_ :*: y) = cmp x y
+-}
+
+-- |/O(n)/. 'minimumU' finds the minimum element in an array of orderable
+-- elements.
+--
+minimumU :: (Ord e, UA e) => UArr e -> e
+{-# INLINE minimumU #-}
+minimumU = fold1U min
+
+-- |/O(n)/. 'minimumByU' finds the minimum element in an array under the given
+-- ordering.
+--
+minimumByU :: UA e => (e -> e -> Ordering) -> UArr e -> e
+{-# INLINE minimumByU #-}
+minimumByU = fold1U . minBy
+  where
+    minBy compare x y = case x `compare` y of
+                          GT -> y
+                          _  -> x
+
+{-
+-- |Determine the index of the minimum element in an array
+--
+minimumIndexU :: (Ord e, UA e) => UArr e -> Int
+{-# INLINE minimumIndexU #
+minimumIndexU = minimumIndexByU compare
+
+-- |Determine the index of the minimum element in an array under the given
+-- ordering
+--
+minimumIndexByU :: UA e => (e -> e -> Ordering) -> UArr e -> Int
+{-# INLINE minimumIndexByU #
+minimumIndexByU cmp = fstS . minimumByU cmp' . indexedU
+  where
+    cmp' (_ :*: x) (_ :*: y) = cmp x y
+-}
+
+-- |/O(n)/. 'elemU' determines whether the given element is in an array.
+--
+elemU :: (Eq e, UA e) => e -> UArr e -> Bool
+elemU e = elemS e . streamU -- anyU (== e) (better code)
+{-# INLINE elemU #-}
+
+-- |/O(n)/. Negation of `elemU'.
+--
+notElemU :: (Eq e, UA e) => e -> UArr e -> Bool
+notElemU e = allU (/= e)
+{-# INLINE notElemU #-}
+
+
+</pre>

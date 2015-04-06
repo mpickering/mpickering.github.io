@@ -1,0 +1,160 @@
+<a href="Graph.hs609352381936329094.out.html">prev</a></br><a href="failures.html">home</a></br><a href="Graph.hs794014915545293947.out.html">next</a></br></br><pre>11d10
+<     = Applicator {inp, out1, out2 ∷ Port}
+12d10
+<     | Variable   {inp ∷ Port, name ∷ Char}
+13c11
+<     | Root       {out ∷ Port}
+---
+>     = Applicator {inp, out1, out2 :: Port}
+13a12
+>     | Variable   {inp :: Port, name :: Char}
+13a13
+>     | Root       {out :: Port}
+17d16
+<         Applicator {inp = i, out1 = o1, out2 = o2} → [i,o1,o2]
+18d16
+<         Variable   {inp = i}                       → [i]
+19c17
+<         Root       {out = o}                       → [o]
+---
+>         Applicator {inp = i, out1 = o1, out2 = o2} -> [i,o1,o2]
+19a18
+>         Variable   {inp = i}                       -> [i]
+19a19
+>         Root       {out = o}                       -> [o]
+21d20
+<         Applicator {} → node {inp = i, out1 = o1, out2 = o2} where [i,o1,o2] = ports
+22d20
+<         Variable   {} → node {inp = i}                       where [i]       = ports
+23c21
+<         Root       {} → node {out = o}                       where [o]       = ports
+---
+>         Applicator {} -> node {inp = i, out1 = o1, out2 = o2} where [i,o1,o2] = ports
+23a22
+>         Variable   {} -> node {inp = i}                       where [i]       = ports
+23a23
+>         Root       {} -> node {out = o}                       where [o]       = ports
+25c25
+< fromTerm ∷ Term → Graph Vertex
+---
+> fromTerm :: Term -> Graph Vertex
+27c27
+<     e ← compile term
+---
+>     e <- compile term
+30c30
+< compile ∷ Term → Rewrite Vertex Edge
+---
+> compile :: Term -> Rewrite Vertex Edge
+32d31
+<     e ← newEdge
+33d31
+<     _ ← case term of
+34d31
+<         Var v → newNode Variable {inp = e, name = v}
+35d31
+<         App f x → do
+36d31
+<             ef ← compile f
+37c32
+<             ex ← compile x
+---
+>     e <- newEdge
+37a33
+>     _ <- case term of
+37a34
+>         Var v -> newNode Variable {inp = e, name = v}
+37a35
+>         App f x -> do
+37a36
+>             ef <- compile f
+37a37
+>             ex <- compile x
+42a43
+> 
+</pre></br><h2>original</h2></br><pre>{-# LANGUAGE UnicodeSyntax, FlexibleInstances, MultiParamTypeClasses #-}
+module Graph where
+
+import Data.View
+import GraphRewriting.Graph
+import GraphRewriting.Graph.Write
+import Term
+import Data.Maybe (listToMaybe)
+
+data Vertex
+    = Applicator {inp, out1, out2 ∷ Port}
+    | Variable   {inp ∷ Port, name ∷ Char}
+    | Root       {out ∷ Port}
+
+instance View [Port] Vertex where
+    inspect node = case node of
+        Applicator {inp = i, out1 = o1, out2 = o2} → [i,o1,o2]
+        Variable   {inp = i}                       → [i]
+        Root       {out = o}                       → [o]
+    update ports node = case node of
+        Applicator {} → node {inp = i, out1 = o1, out2 = o2} where [i,o1,o2] = ports
+        Variable   {} → node {inp = i}                       where [i]       = ports
+        Root       {} → node {out = o}                       where [o]       = ports
+
+fromTerm ∷ Term → Graph Vertex
+fromTerm term = flip execGraph emptyGraph $ do
+    e ← compile term
+    newNode Root {out = e}
+
+compile ∷ Term → Rewrite Vertex Edge
+compile term = do
+    e ← newEdge
+    _ ← case term of
+        Var v → newNode Variable {inp = e, name = v}
+        App f x → do
+            ef ← compile f
+            ex ← compile x
+            newNode Applicator {inp = e, out1 = ef, out2 = ex}
+    return e
+
+maybeRead :: Read a => String -> Maybe a
+maybeRead = fmap fst . listToMaybe . reads
+</pre></br><h2>printed</h2></br><pre>{-# LANGUAGE UnicodeSyntax, FlexibleInstances, MultiParamTypeClasses #-}
+module Graph where
+
+import Data.View
+import GraphRewriting.Graph
+import GraphRewriting.Graph.Write
+import Term
+import Data.Maybe (listToMaybe)
+
+data Vertex
+    = Applicator {inp, out1, out2 :: Port}
+    | Variable   {inp :: Port, name :: Char}
+    | Root       {out :: Port}
+
+instance View [Port] Vertex where
+    inspect node = case node of
+        Applicator {inp = i, out1 = o1, out2 = o2} -> [i,o1,o2]
+        Variable   {inp = i}                       -> [i]
+        Root       {out = o}                       -> [o]
+    update ports node = case node of
+        Applicator {} -> node {inp = i, out1 = o1, out2 = o2} where [i,o1,o2] = ports
+        Variable   {} -> node {inp = i}                       where [i]       = ports
+        Root       {} -> node {out = o}                       where [o]       = ports
+
+fromTerm :: Term -> Graph Vertex
+fromTerm term = flip execGraph emptyGraph $ do
+    e <- compile term
+    newNode Root {out = e}
+
+compile :: Term -> Rewrite Vertex Edge
+compile term = do
+    e <- newEdge
+    _ <- case term of
+        Var v -> newNode Variable {inp = e, name = v}
+        App f x -> do
+            ef <- compile f
+            ex <- compile x
+            newNode Applicator {inp = e, out1 = ef, out2 = ex}
+    return e
+
+maybeRead :: Read a => String -> Maybe a
+maybeRead = fmap fst . listToMaybe . reads
+
+</pre>

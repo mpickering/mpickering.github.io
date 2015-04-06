@@ -1,0 +1,590 @@
+<a href="Parameterized.hs1622650073984943658.out.html">prev</a></br><a href="failures.html">home</a></br><a href="Parse.hs1399125485156091745.out.html">next</a></br></br><pre>71c71
+< thread = foldr (\f g -> \a -> f a >>= g) return
+---
+> thread = foldr (\f g ->    ->a -> f a >>= g) return
+291a292
+> 
+</pre></br><h2>original</h2></br><pre>module Params
+
+where
+
+import System.Console.GetOpt ( OptDescr(..), ArgDescr(..), ArgOrder(..),
+                               getOpt, usageInfo )
+import Control.Monad.Error (MonadError(..))
+import Control.Applicative ( (<$>) )
+import System.Directory      ( getHomeDirectory, doesFileExist )
+import System.FilePath       ( (</>) )
+import System.Environment    ( getArgs )
+
+
+
+getParams :: IO (Either ParsingErrMsg Params)
+getParams =
+    do let clp_0 = defaultParams
+       m_rcfile <- findRc
+       parse_clp_1 <- case m_rcfile of
+                        Nothing -> return $ return clp_0
+                        Just f  -> do rc_args <- words <$> readFile f
+                                      return $  parseCmds rc_args clp_0
+                                              `catchError`
+                                                (\e -> fail $ f ++ ":\n" ++ e)
+       --
+       cmdline_args   <- getArgs
+       --
+       return $ do clp_1 <- parse_clp_1
+                   parseCmds cmdline_args clp_1
+
+
+
+rcfile :: FilePath
+rcfile = ".hgenrc"
+
+
+findRc :: IO (Maybe FilePath)
+findRc =
+    do existsInCurrent <- doesFileExist rcfile
+       if existsInCurrent
+         then return (Just rcfile)
+         else do
+             home <- getHomeDirectory
+             let inHome = home </> rcfile
+             --
+             existsInHome <- doesFileExist inHome
+             if existsInHome then return (Just inHome) else return Nothing
+
+
+usage :: String -> String
+usage header = unlines [
+    usageInfo header options,
+    "",
+    "If a file called `" ++  "." </> rcfile ++ "' or `" ++ "~" </> rcfile
+    ++ "' exists, it will be scanned for arguments first"
+    ]
+
+
+type ParamsModifier   = Params -> Either ParsingErrMsg Params
+type ParsingErrMsg    = String
+
+parseCmds :: [String] -> Params -> Either ParsingErrMsg Params
+parseCmds argv params =
+  case getOpt RequireOrder options argv of
+    (pMods, [],  []) -> thread pMods params
+    (   _, unk,  []) -> fail $ "Unknown option: " ++ unwords unk
+    (   _,   _,errs) -> fail $ unlines errs
+
+
+thread :: Monad m => [a -> m a] -> a -> m a
+thread = foldr (\f g -> \a -> f a >>= g) return
+
+options :: [OptDescr ParamsModifier]
+options =
+  [Option ['h','?']
+          ["help"]
+          (NoArg $ \p -> return p{showHelp = True})
+          "display this help and exit",
+   Option ['H']
+          ["hide-summary"]
+          (NoArg $ \p -> return p{hidesummary = True})
+           "hide summary of the options used",
+   Option ['#']
+          ["num-inst"]
+          (ReqArg ((not . null) ?-> \s p -> return p{numinst = read s}) "INT")
+          "number of formulas to generate",
+   Option ['c']
+          ["num-clauses"]
+          (ReqArg ((not . null) ?-> \s p -> return p{numclauses = read s}) "INT")
+          "number of clauses per formula",
+   Option []
+          ["clause-size"]
+          (ReqArg ((not . null) ?-> \s p -> return p{csize = read s}) "[INT]")
+          "size of a clause (ie [1,1,1] means same chance for length 1,2 or 3)",
+   Option []
+          ["mods"]
+          (ReqArg ((not . null) ?-> \s p -> return p{mods = read s}) "INT")
+          "number of modalities",
+   Option []
+          ["global-depth"]
+          (ReqArg ((not .null) ?-> \s p -> return p{gdepth = read s}) "INT")
+          "global (maximum) depth",
+   Option []
+          ["force-depths"]
+          (NoArg $ \p -> return p{forceDepths = True})
+          "wether or not to impose strict maximum depth per operator",
+   Option []
+          ["modal-depth"]
+          (ReqArg ((not . null) ?-> \s p -> return p{mdepth = read s}) "INT")
+          "modal depth",
+   Option []
+          ["at-depth"]
+          (ReqArg ((not . null) ?-> \s p -> return p{atdepth = read s}) "INT")
+           "@ depth",
+   Option []
+          ["down-arrow-depth"]
+          (ReqArg ((not . null) ?-> \s p -> return p{dwdepth = read s}) "INT")
+           "down arrow depth",
+   Option []
+          ["univ-mod-depth"]
+          (ReqArg ((not . null) ?-> \s p -> return p{umdepth = read s}) "INT")
+           "universal modality depth",
+   Option []
+          ["diff-univ-mod-depth"]
+          (ReqArg ((not . null) ?-> \s p -> return p{dumdepth = read s}) "INT")
+           "difference universal modality depth",
+   Option []
+          ["inv-mod-depth"]
+          (ReqArg ((not . null) ?-> \s p -> return p{invdepth = read s}) "INT")
+           "inverse modality depth",
+   Option []
+          ["prop-vars"]
+          (ReqArg ((not . null) ?-> \s p -> return p{pvars = read s}) "INT")
+           "number of propositional variables",
+   Option []
+          ["nom-vars"]
+          (ReqArg ((not . null) ?-> \s p -> return p{nomvars = read s}) "INT")
+           "number of nominal variables",
+   Option []
+          ["state-vars"]
+          (ReqArg ((not . null) ?-> \s p -> return p{stvars = read s}) "INT")
+           "number of state variables",
+   Option []
+          ["proba-mod"]
+          (ReqArg ((not . null) ?-> \s p -> return p{pmod = read s}) "INT")
+           "probability of a modal operator",
+   Option []
+          ["proba-at"]
+          (ReqArg ((not . null) ?-> \s p -> return p{pat = read s}) "INT")
+           "probability of a @ operator",
+   Option []
+          ["proba-down"]
+          (ReqArg ((not . null) ?-> \s p -> return p{pdown = read s}) "INT")
+           "probability of a down arrow operator",
+   Option []
+          ["proba-univ"]
+          (ReqArg ((not . null) ?-> \s p -> return p{puniv = read s}) "INT")
+           "probability of a universal modality",
+   Option []
+          ["proba-diff-univ"]
+          (ReqArg ((not . null) ?-> \s p -> return p{pduniv = read s}) "INT")
+           "probability of a difference universal modality",
+   Option []
+          ["proba-inv"]
+          (ReqArg ((not . null) ?-> \s p -> return p{pinv = read s}) "INT")
+           "probability of an inverse modality",
+   Option []
+          ["proba-prop"]
+          (ReqArg ((not . null) ?-> \s p -> return p{pprop = read s}) "INT")
+           "probability of a proposition",
+   Option []
+          ["proba-nom"]
+          (ReqArg ((not . null) ?-> \s p -> return p{pnom = read s}) "INT")
+           "probability of a nominal",
+   Option []
+          ["proba-state"]
+          (ReqArg ((not . null) ?-> \s p -> return p{psvar = read s}) "INT")
+           "probability of a state variable",
+   Option []
+          ["proba-neg"]
+          (ReqArg ((not . null) ?-> \s p -> return p{pneg = read s}) "INT")
+           "probability of a negation",
+   Option []
+          ["proba-op"]
+          (ReqArg ((not . null) ?-> \s p -> return p{pop = read s}) "INT")
+           "probability of an operator"
+  ]
+
+
+(?->) :: (String -> Bool) -> (String -> ParamsModifier) -> String -> ParamsModifier
+p ?-> m = \s -> if not (null s) && p s
+                  then m s
+                  else \_ -> throwError ("Invalid argument: '" ++ s ++ "'")
+
+
+defaultParams :: Params
+defaultParams
+       = Prms {numinst       = 1, -- Number of Instances to Generate.
+               numclauses    = 5, -- Number of Clauses to Generate per Instance.
+               csize         = [0,0,1], -- Size of a Clause. (ie [1,1,1] means same chance for length 1,2 or 3)
+               mods          = 1, -- Number of Modalities.
+               gdepth        = 6, -- Global (maximum) depth
+               forceDepths   = False, -- Force global max depth (ignore max depth per operator)
+               mdepth        = 2, -- Modal Depth.
+               atdepth       = 2, -- @ Depth.
+               dwdepth       = 0, -- Downarrow Depth.
+               umdepth       = 0, -- Universal Modality Depth.
+               dumdepth      = 0, -- Difference Universal Modality Depth.
+               invdepth      = 0, -- Inverse Modality Depth.
+               pvars         = 5, -- Number of prop vars.
+               nomvars       = 5, -- Number of nominals.
+               stvars        = 0, -- Number of state variables.
+               pmod          = 1, -- Probability of a modal operator.
+               pat           = 1, -- Probability of an @ operator
+               pdown         = 0, -- Probability of a downarrow operator
+               puniv         = 0, -- Probability of an univ. modality
+               pduniv        = 0, -- Probability of an diff. univ. modality
+               pinv          = 0, -- Probability of an inv. modality
+               pprop         = 1, -- Probability of a proposition
+               pnom          = 1, -- Probability of a nominal
+               psvar         = 0,  -- Probability of a state variable
+               pneg          = 50, -- Probability of a negation
+               pop           = 50,  -- Probability of an operator
+               simpleFormat  = False,
+               stdout        = False, -- Wether to save formulas in file or just display the first one on stdout
+               hidesummary   = False, -- Wether to hide or not the summary of parameters used
+               showHelp      = False -- Wether to display help instead of running
+ }
+
+
+data Params = Prms{
+           numinst       ::Int, -- Number of Instances to Generate.
+           numclauses    ::Int, -- Number of Clauses to Generate per Instance.
+           csize         ::[Int], -- Size of a Clause. (ie [1,1,1] means same chance for length 1,2 or 3)
+           mods          ::Int, -- Number of Modalities.
+           gdepth        ::Int, -- Global (maximum) Depth
+           forceDepths   ::Bool, -- whether or not to impose strict maximum depths per operator
+           mdepth        ::Int, -- Modal Depth.
+           atdepth       ::Int, -- @ Depth.
+           dwdepth       ::Int, -- Downarrow Depth.
+           umdepth       ::Int, -- Universal Modality Depth.
+               dumdepth      ::Int, -- Difference Universal Modality Depth.
+               invdepth      ::Int, -- Inverse Modality Depth.
+           pvars         ::Int, -- Number of prop vars.
+           nomvars       ::Int, -- Number of nominals.
+           stvars        ::Int, -- Number of state variables.
+           pmod          ::Int, -- Probability of a modal operator.
+           pat           ::Int, -- Probability of an @ operator
+           pdown         ::Int, -- Probability of a downarrow operator
+           puniv         ::Int, -- Probability of an universal modality
+               pduniv        ::Int, -- Probability of an diff. univ. modality
+               pinv          ::Int, -- Probability of an inverse modality
+           pprop         ::Int, -- Probability of a proposition
+           pnom          ::Int, -- Probability of a nominal
+           psvar         ::Int, -- Probability of a state variable
+           pneg          ::Int, -- Probability of a negation
+               pop           ::Int,  -- Probability of an operator
+               simpleFormat  ::Bool,
+               stdout        ::Bool, -- Wether to save formulas in file or just display the first one on stdout
+               hidesummary   ::Bool, -- Wether to hide or not the summary of parameters used
+               showHelp      ::Bool -- Wether to display help instead of running
+           }
+
+instance Show Params where
+  show p =
+   unlines ["Number of Instances to Generate           : numinst = " ++ show (numinst p),
+            "Number of Clauses to Generate per Instance: numclauses = " ++ show (numclauses p),
+            "Size of a Clause                          : csize = " ++ show (csize p),
+            "Number of Modalities                      : mods = " ++ show (mods p),
+            "Global (maximum) Depth                    : gdepth = " ++ show (gdepth p),
+            "Enformce maximum depths?                  : force-depths = " ++ show (forceDepths p),
+            "Modal Depth                               : mdepth = " ++ show (mdepth p),
+            "@ Depth                                   : atdepth = " ++ show (atdepth p),
+            "Downarrow Depth                           : dwdepth = " ++ show (dwdepth p),
+            "Universal Modality Depth                  : umdepth = " ++ show (umdepth p),
+            "Difference Universal Modality Depth       : dumdepth = " ++ show (dumdepth p),
+            "Inverse Modality Depth                    : invdepth = " ++ show (invdepth p),
+            "Number of propositional variables         : pvars = " ++ show (pvars p),
+            "Number of nominals                        : nomvars = " ++ show (nomvars p),
+            "Number of state variables                 : stvars = " ++ show (stvars p),
+            "Probability of a modal operator           : pmod = " ++ show (pmod p),
+            "Probability of an @ operator              : pat = " ++ show (pat p),
+            "Probability of a downarrow operator       : pdown = " ++ show (pdown p),
+            "Probability of an universal modality      : puniv = " ++ show (puniv p),
+            "Probability of a diff. universal modality : pduniv = " ++ show (pduniv p),
+            "Probability of an inverse modality        : pinv = " ++ show (pinv p),
+            "Probability of a propositional variable   : pprop = " ++ show (pprop p),
+            "Probability of a nominal                  : pnom = " ++ show (pnom p),
+            "Probability of a state variable           : psvar = " ++ show (psvar p),
+            "Probability of a negation                 : pneg = " ++ show (pneg p),
+            "Probability of an operator                : pop = " ++ show (pop p)]
+</pre></br><h2>printed</h2></br><pre>module Params
+
+where
+
+import System.Console.GetOpt ( OptDescr(..), ArgDescr(..), ArgOrder(..),
+                               getOpt, usageInfo )
+import Control.Monad.Error (MonadError(..))
+import Control.Applicative ( (<$>) )
+import System.Directory      ( getHomeDirectory, doesFileExist )
+import System.FilePath       ( (</>) )
+import System.Environment    ( getArgs )
+
+
+
+getParams :: IO (Either ParsingErrMsg Params)
+getParams =
+    do let clp_0 = defaultParams
+       m_rcfile <- findRc
+       parse_clp_1 <- case m_rcfile of
+                        Nothing -> return $ return clp_0
+                        Just f  -> do rc_args <- words <$> readFile f
+                                      return $  parseCmds rc_args clp_0
+                                              `catchError`
+                                                (\e -> fail $ f ++ ":\n" ++ e)
+       --
+       cmdline_args   <- getArgs
+       --
+       return $ do clp_1 <- parse_clp_1
+                   parseCmds cmdline_args clp_1
+
+
+
+rcfile :: FilePath
+rcfile = ".hgenrc"
+
+
+findRc :: IO (Maybe FilePath)
+findRc =
+    do existsInCurrent <- doesFileExist rcfile
+       if existsInCurrent
+         then return (Just rcfile)
+         else do
+             home <- getHomeDirectory
+             let inHome = home </> rcfile
+             --
+             existsInHome <- doesFileExist inHome
+             if existsInHome then return (Just inHome) else return Nothing
+
+
+usage :: String -> String
+usage header = unlines [
+    usageInfo header options,
+    "",
+    "If a file called `" ++  "." </> rcfile ++ "' or `" ++ "~" </> rcfile
+    ++ "' exists, it will be scanned for arguments first"
+    ]
+
+
+type ParamsModifier   = Params -> Either ParsingErrMsg Params
+type ParsingErrMsg    = String
+
+parseCmds :: [String] -> Params -> Either ParsingErrMsg Params
+parseCmds argv params =
+  case getOpt RequireOrder options argv of
+    (pMods, [],  []) -> thread pMods params
+    (   _, unk,  []) -> fail $ "Unknown option: " ++ unwords unk
+    (   _,   _,errs) -> fail $ unlines errs
+
+
+thread :: Monad m => [a -> m a] -> a -> m a
+thread = foldr (\f g ->    ->a -> f a >>= g) return
+
+options :: [OptDescr ParamsModifier]
+options =
+  [Option ['h','?']
+          ["help"]
+          (NoArg $ \p -> return p{showHelp = True})
+          "display this help and exit",
+   Option ['H']
+          ["hide-summary"]
+          (NoArg $ \p -> return p{hidesummary = True})
+           "hide summary of the options used",
+   Option ['#']
+          ["num-inst"]
+          (ReqArg ((not . null) ?-> \s p -> return p{numinst = read s}) "INT")
+          "number of formulas to generate",
+   Option ['c']
+          ["num-clauses"]
+          (ReqArg ((not . null) ?-> \s p -> return p{numclauses = read s}) "INT")
+          "number of clauses per formula",
+   Option []
+          ["clause-size"]
+          (ReqArg ((not . null) ?-> \s p -> return p{csize = read s}) "[INT]")
+          "size of a clause (ie [1,1,1] means same chance for length 1,2 or 3)",
+   Option []
+          ["mods"]
+          (ReqArg ((not . null) ?-> \s p -> return p{mods = read s}) "INT")
+          "number of modalities",
+   Option []
+          ["global-depth"]
+          (ReqArg ((not .null) ?-> \s p -> return p{gdepth = read s}) "INT")
+          "global (maximum) depth",
+   Option []
+          ["force-depths"]
+          (NoArg $ \p -> return p{forceDepths = True})
+          "wether or not to impose strict maximum depth per operator",
+   Option []
+          ["modal-depth"]
+          (ReqArg ((not . null) ?-> \s p -> return p{mdepth = read s}) "INT")
+          "modal depth",
+   Option []
+          ["at-depth"]
+          (ReqArg ((not . null) ?-> \s p -> return p{atdepth = read s}) "INT")
+           "@ depth",
+   Option []
+          ["down-arrow-depth"]
+          (ReqArg ((not . null) ?-> \s p -> return p{dwdepth = read s}) "INT")
+           "down arrow depth",
+   Option []
+          ["univ-mod-depth"]
+          (ReqArg ((not . null) ?-> \s p -> return p{umdepth = read s}) "INT")
+           "universal modality depth",
+   Option []
+          ["diff-univ-mod-depth"]
+          (ReqArg ((not . null) ?-> \s p -> return p{dumdepth = read s}) "INT")
+           "difference universal modality depth",
+   Option []
+          ["inv-mod-depth"]
+          (ReqArg ((not . null) ?-> \s p -> return p{invdepth = read s}) "INT")
+           "inverse modality depth",
+   Option []
+          ["prop-vars"]
+          (ReqArg ((not . null) ?-> \s p -> return p{pvars = read s}) "INT")
+           "number of propositional variables",
+   Option []
+          ["nom-vars"]
+          (ReqArg ((not . null) ?-> \s p -> return p{nomvars = read s}) "INT")
+           "number of nominal variables",
+   Option []
+          ["state-vars"]
+          (ReqArg ((not . null) ?-> \s p -> return p{stvars = read s}) "INT")
+           "number of state variables",
+   Option []
+          ["proba-mod"]
+          (ReqArg ((not . null) ?-> \s p -> return p{pmod = read s}) "INT")
+           "probability of a modal operator",
+   Option []
+          ["proba-at"]
+          (ReqArg ((not . null) ?-> \s p -> return p{pat = read s}) "INT")
+           "probability of a @ operator",
+   Option []
+          ["proba-down"]
+          (ReqArg ((not . null) ?-> \s p -> return p{pdown = read s}) "INT")
+           "probability of a down arrow operator",
+   Option []
+          ["proba-univ"]
+          (ReqArg ((not . null) ?-> \s p -> return p{puniv = read s}) "INT")
+           "probability of a universal modality",
+   Option []
+          ["proba-diff-univ"]
+          (ReqArg ((not . null) ?-> \s p -> return p{pduniv = read s}) "INT")
+           "probability of a difference universal modality",
+   Option []
+          ["proba-inv"]
+          (ReqArg ((not . null) ?-> \s p -> return p{pinv = read s}) "INT")
+           "probability of an inverse modality",
+   Option []
+          ["proba-prop"]
+          (ReqArg ((not . null) ?-> \s p -> return p{pprop = read s}) "INT")
+           "probability of a proposition",
+   Option []
+          ["proba-nom"]
+          (ReqArg ((not . null) ?-> \s p -> return p{pnom = read s}) "INT")
+           "probability of a nominal",
+   Option []
+          ["proba-state"]
+          (ReqArg ((not . null) ?-> \s p -> return p{psvar = read s}) "INT")
+           "probability of a state variable",
+   Option []
+          ["proba-neg"]
+          (ReqArg ((not . null) ?-> \s p -> return p{pneg = read s}) "INT")
+           "probability of a negation",
+   Option []
+          ["proba-op"]
+          (ReqArg ((not . null) ?-> \s p -> return p{pop = read s}) "INT")
+           "probability of an operator"
+  ]
+
+
+(?->) :: (String -> Bool) -> (String -> ParamsModifier) -> String -> ParamsModifier
+p ?-> m = \s -> if not (null s) && p s
+                  then m s
+                  else \_ -> throwError ("Invalid argument: '" ++ s ++ "'")
+
+
+defaultParams :: Params
+defaultParams
+       = Prms {numinst       = 1, -- Number of Instances to Generate.
+               numclauses    = 5, -- Number of Clauses to Generate per Instance.
+               csize         = [0,0,1], -- Size of a Clause. (ie [1,1,1] means same chance for length 1,2 or 3)
+               mods          = 1, -- Number of Modalities.
+               gdepth        = 6, -- Global (maximum) depth
+               forceDepths   = False, -- Force global max depth (ignore max depth per operator)
+               mdepth        = 2, -- Modal Depth.
+               atdepth       = 2, -- @ Depth.
+               dwdepth       = 0, -- Downarrow Depth.
+               umdepth       = 0, -- Universal Modality Depth.
+               dumdepth      = 0, -- Difference Universal Modality Depth.
+               invdepth      = 0, -- Inverse Modality Depth.
+               pvars         = 5, -- Number of prop vars.
+               nomvars       = 5, -- Number of nominals.
+               stvars        = 0, -- Number of state variables.
+               pmod          = 1, -- Probability of a modal operator.
+               pat           = 1, -- Probability of an @ operator
+               pdown         = 0, -- Probability of a downarrow operator
+               puniv         = 0, -- Probability of an univ. modality
+               pduniv        = 0, -- Probability of an diff. univ. modality
+               pinv          = 0, -- Probability of an inv. modality
+               pprop         = 1, -- Probability of a proposition
+               pnom          = 1, -- Probability of a nominal
+               psvar         = 0,  -- Probability of a state variable
+               pneg          = 50, -- Probability of a negation
+               pop           = 50,  -- Probability of an operator
+               simpleFormat  = False,
+               stdout        = False, -- Wether to save formulas in file or just display the first one on stdout
+               hidesummary   = False, -- Wether to hide or not the summary of parameters used
+               showHelp      = False -- Wether to display help instead of running
+ }
+
+
+data Params = Prms{
+           numinst       ::Int, -- Number of Instances to Generate.
+           numclauses    ::Int, -- Number of Clauses to Generate per Instance.
+           csize         ::[Int], -- Size of a Clause. (ie [1,1,1] means same chance for length 1,2 or 3)
+           mods          ::Int, -- Number of Modalities.
+           gdepth        ::Int, -- Global (maximum) Depth
+           forceDepths   ::Bool, -- whether or not to impose strict maximum depths per operator
+           mdepth        ::Int, -- Modal Depth.
+           atdepth       ::Int, -- @ Depth.
+           dwdepth       ::Int, -- Downarrow Depth.
+           umdepth       ::Int, -- Universal Modality Depth.
+               dumdepth      ::Int, -- Difference Universal Modality Depth.
+               invdepth      ::Int, -- Inverse Modality Depth.
+           pvars         ::Int, -- Number of prop vars.
+           nomvars       ::Int, -- Number of nominals.
+           stvars        ::Int, -- Number of state variables.
+           pmod          ::Int, -- Probability of a modal operator.
+           pat           ::Int, -- Probability of an @ operator
+           pdown         ::Int, -- Probability of a downarrow operator
+           puniv         ::Int, -- Probability of an universal modality
+               pduniv        ::Int, -- Probability of an diff. univ. modality
+               pinv          ::Int, -- Probability of an inverse modality
+           pprop         ::Int, -- Probability of a proposition
+           pnom          ::Int, -- Probability of a nominal
+           psvar         ::Int, -- Probability of a state variable
+           pneg          ::Int, -- Probability of a negation
+               pop           ::Int,  -- Probability of an operator
+               simpleFormat  ::Bool,
+               stdout        ::Bool, -- Wether to save formulas in file or just display the first one on stdout
+               hidesummary   ::Bool, -- Wether to hide or not the summary of parameters used
+               showHelp      ::Bool -- Wether to display help instead of running
+           }
+
+instance Show Params where
+  show p =
+   unlines ["Number of Instances to Generate           : numinst = " ++ show (numinst p),
+            "Number of Clauses to Generate per Instance: numclauses = " ++ show (numclauses p),
+            "Size of a Clause                          : csize = " ++ show (csize p),
+            "Number of Modalities                      : mods = " ++ show (mods p),
+            "Global (maximum) Depth                    : gdepth = " ++ show (gdepth p),
+            "Enformce maximum depths?                  : force-depths = " ++ show (forceDepths p),
+            "Modal Depth                               : mdepth = " ++ show (mdepth p),
+            "@ Depth                                   : atdepth = " ++ show (atdepth p),
+            "Downarrow Depth                           : dwdepth = " ++ show (dwdepth p),
+            "Universal Modality Depth                  : umdepth = " ++ show (umdepth p),
+            "Difference Universal Modality Depth       : dumdepth = " ++ show (dumdepth p),
+            "Inverse Modality Depth                    : invdepth = " ++ show (invdepth p),
+            "Number of propositional variables         : pvars = " ++ show (pvars p),
+            "Number of nominals                        : nomvars = " ++ show (nomvars p),
+            "Number of state variables                 : stvars = " ++ show (stvars p),
+            "Probability of a modal operator           : pmod = " ++ show (pmod p),
+            "Probability of an @ operator              : pat = " ++ show (pat p),
+            "Probability of a downarrow operator       : pdown = " ++ show (pdown p),
+            "Probability of an universal modality      : puniv = " ++ show (puniv p),
+            "Probability of a diff. universal modality : pduniv = " ++ show (pduniv p),
+            "Probability of an inverse modality        : pinv = " ++ show (pinv p),
+            "Probability of a propositional variable   : pprop = " ++ show (pprop p),
+            "Probability of a nominal                  : pnom = " ++ show (pnom p),
+            "Probability of a state variable           : psvar = " ++ show (psvar p),
+            "Probability of a negation                 : pneg = " ++ show (pneg p),
+            "Probability of an operator                : pop = " ++ show (pop p)]
+
+</pre>

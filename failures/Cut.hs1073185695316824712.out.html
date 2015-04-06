@@ -1,0 +1,572 @@
+<a href="Custom.hs12648177091998097157.out.html">prev</a></br><a href="failures.html">home</a></br><a href="Cut.hs1194314738318153057.out.html">next</a></br></br><pre>63c63
+< {- * dissection -}
+---
+> {- * dissection 
+282a283
+> 
+</pre></br><h2>original</h2></br><pre>{-# LANGUAGE NoImplicitPrelude #-}
+{- |
+Copyright   :  (c) Henning Thielemann 2007, 2008
+License     :  GPL
+
+Maintainer  :  synthesizer@henning-thielemann.de
+Stability   :  provisional
+Portability :  portable
+
+Design test of Synthesizer.Inference.Fix for basic Cut functions.
+This is still a copy of "Synthesizer.Inference.Func.Cut"
+and I assume that I remove it some time in the future
+because the underlying approach seems to be inferior
+to that of "Synthesizer.SampleRateContext.Cut".
+-}
+module Synthesizer.Inference.Fix.Cut (
+   {- * dissection -}
+   -- splitAt,
+   -- take,
+   -- drop,
+   takeUntilPause,
+   -- unzip,
+   -- unzip3,
+
+   {- * glueing -}
+   concat,
+   concatVolume,
+   append,
+   zip,
+   -- zip3,
+   arrange,
+   arrangeVolume,
+  ) where
+
+import qualified Synthesizer.Physical.Signal      as SigP
+import qualified Synthesizer.Physical.Cut         as CutP
+import qualified Synthesizer.Inference.Func.Signal as SigF
+
+import qualified Synthesizer.SampleRateContext.Signal as SigC
+import qualified Synthesizer.SampleRateContext.Rate as Rate
+import qualified Synthesizer.SampleRateContext.Cut as CutC
+
+import qualified Data.EventList.Relative.TimeBody as EventList
+import qualified Numeric.NonNegative.Class as NonNeg
+
+import qualified Algebra.NormedSpace.Maximum as NormedMax
+import qualified Algebra.OccasionallyScalar  as OccScalar
+import qualified Algebra.Module              as Module
+import qualified Algebra.RealField           as RealField
+import qualified Algebra.Field               as Field
+import qualified Algebra.Real                as Real
+import qualified Algebra.Ring                as Ring
+
+-- import qualified Data.List as List
+
+-- import Control.Monad.Fix(mfix)
+
+import PreludeBase hiding (zip, zip3, concat, )
+-- import NumericPrelude
+import Prelude (RealFrac)
+
+{-
+{- * dissection -}
+
+splitAt :: (RealField.C a, Field.C q, OccScalar.C a q) =>
+   q -> SigI.T a q v -> Process.T q (SigI.T a q v, SigI.T a q v)
+splitAt t0 x@(Cons sr amp ss) =
+   do t <- SigI.toTimeScalar x (Expr.constant t0)
+      let (ss0,ss1) = List.splitAt (round t) ss
+      return (Cons sr amp ss0, Cons sr amp ss1)
+
+take :: (RealField.C a, Field.C q, OccScalar.C a q) =>
+   q -> SigI.T a q v -> SigI.Process a q v
+take t = fmap fst . splitAt t
+
+drop :: (RealField.C a, Field.C q, OccScalar.C a q) =>
+   q -> SigI.T a q v -> SigI.Process a q v
+drop t = fmap snd . splitAt t
+-}
+
+takeUntilPause :: (RealField.C t, Ring.C t', OccScalar.C t t',
+                   Field.C y', NormedMax.C y yv, OccScalar.C y y') =>
+   y' -> t' -> SigF.T t t' y y' yv -> SigF.T t t' y y' yv
+takeUntilPause y' t' x =
+   SigF.cons $ \infered@(isr,iamp) ->
+      let x' = SigF.eval x infered
+          xp = SigP.replaceParameters isr iamp x'
+          zp = CutP.takeUntilPause y' t' xp
+      in  SigP.replaceParameters
+             (SigP.sampleRate x') (SigP.amplitude x') zp
+
+
+{-
+How can we assert sharing of the input signal
+with the output signals?
+
+unzip ::
+       SigF.T t t' y y' (yv0, yv1)
+   -> (SigF.T t t' y y' yv0, SigF.T t t' y y' yv1)
+unzip x =
+   (SigF.cons $ \inferedY@(isrY,iampY) -> ,
+    SigF.cons $ \inferedZ@(isrZ,iampZ) -> )
+
+
+unzip3 ::
+       SigF.T t t' y y' (yv0, yv1, yv2)
+   -> (SigF.T t t' y y' yv0, SigF.T t t' y y' yv1, SigF.T t t' y y' yv2)
+unzip3 = return . CutC.unzip3
+-}
+
+
+{- * glueing -}
+
+{- |
+  Similar to @foldr1 append@ but more efficient and accurate,
+  because it reduces the number of amplifications.
+  Does not work for infinite lists,
+  because in this case a maximum amplitude cannot be computed.
+-}
+concat ::
+   (Eq t', Real.C y', Field.C y', Module.C y yv, OccScalar.C y y') =>
+      [SigF.T t t' y y' yv]
+   ->  SigF.T t t' y y' yv
+concat xs =
+   SigF.cons $ \(isr,iamp) ->
+      let xs' = zipWith (\x amp -> SigF.eval x (isr, amp)) xs amps
+          amps = map SigF.guessAmplitude xs'
+          xps = zipWith SigF.contextFixAmplitude amps xs'
+          sampleRate = SigF.mergeSampleRates xs'
+      in  SigF.fromContextCheckAmplitude sampleRate iamp
+             (CutC.concat (Rate.fromNumber isr) xps)
+
+{- |
+  Like 'concat' but it expects a fixed output amplitude.
+  This way it can also handle infinitely many inputs
+  if one input or the output has a fixed sample rate.
+
+  'concatVolume' is one reason for the complicated handling
+  of sampling rates by lists of @Maybe@s.
+
+  The problem of finding an apropriate sampling rate is that
+  we must have an order of processing parallel signal processors
+  which guarantees termination if termination is possible.
+  Say @mix (concat infinitelist0) (concat infinitelist1)@.
+  Either infinite list can have signal with fixed sample rate or not.
+  There is no way to determine this a priori.
+  The only safe way is to process them in parallel.
+  That's why we must have a @[Maybe t']@ instead of @Maybe t'@.
+  Also @[t']@ is not enough,
+  because e.g. a concatenation of infinitely many sounds
+  with undetermined sampling rate
+  would have an empty list representing the sampling rate,
+  but computing the empty list needs infinite time.
+-}
+concatVolume ::
+   (Eq t', Real.C y', Field.C y', Module.C y yv, OccScalar.C y y') =>
+      [SigF.T t t' y y' yv]
+   ->  SigF.T t t' y y' yv
+concatVolume xs =
+   SigF.cons $ \(isr,iamp) ->
+      let xs' = zipWith (\x amp -> SigF.eval x (isr, amp)) xs amps
+          amps = map SigF.guessAmplitude xs'
+          xps = zipWith SigF.contextFixAmplitude amps xs'
+          sampleRate = SigF.mergeSampleRates xs'
+      in  SigF.fromContextFreeAmplitude sampleRate
+             (CutC.concatVolume iamp (Rate.fromNumber isr) xps)
+
+
+merge :: (Eq t', Real.C y', Field.C y', OccScalar.C y y',
+          Module.C y v0, Module.C y v1) =>
+      (Rate.T t t' -> SigC.T y y' v0 -> SigC.T y y' v1 -> SigC.T y y' v2)
+   -> SigF.T t t' y y' v0
+   -> SigF.T t t' y y' v1
+   -> SigF.T t t' y y' v2
+merge f x y =
+   SigF.cons $ \(isr,iamp) ->
+      let x' = SigF.eval x (isr, ampX)
+          y' = SigF.eval y (isr, ampY)
+          ampX = SigF.guessAmplitude x'
+          ampY = SigF.guessAmplitude y'
+          xp = SigF.contextFixAmplitude ampX x'
+          yp = SigF.contextFixAmplitude ampY y'
+          sampleRate = SigF.mergeSampleRate x' y'
+      in  SigF.fromContextCheckAmplitude sampleRate iamp
+             (f (Rate.fromNumber isr) xp yp)
+
+
+append :: (Eq t', Real.C y', Field.C y', OccScalar.C y y',
+         Module.C y yv) =>
+      SigF.T t t' y y' yv
+   -> SigF.T t t' y y' yv
+   -> SigF.T t t' y y' yv
+append = merge CutC.append
+
+
+zip :: (Eq t', Real.C y', Field.C y', OccScalar.C y y',
+        Module.C y v0, Module.C y v1) =>
+      SigF.T t t' y y' v0
+   -> SigF.T t t' y y' v1
+   -> SigF.T t t' y y' (v0,v1)
+zip = merge CutC.zip
+
+{-
+zip3 :: (Real.C q, Field.C q, Ord q, OccScalar.C a q,
+         Module.C a v0, Module.C a v1, Module.C a v2)
+   => SigI.T a q v0
+   -> SigI.T a q v1
+   -> SigI.T a q v2
+   -> SigI.Process a q (v0, v1, v2)
+zip3 x0 x1 x2 =
+   mfix (\z ->
+      do sampleRate <- Process.equalValues
+            [SigP.sampleRate x0, SigP.sampleRate x1, SigP.sampleRate x2]
+         amplitude  <- Process.fromExpr
+            (Expr.maximum [amplitudeExpr x0, amplitudeExpr x1, amplitudeExpr x2])
+         samp0 <- SigI.vectorSamples (toAmplitudeScalar z) x0
+         samp1 <- SigI.vectorSamples (toAmplitudeScalar z) x1
+         samp2 <- SigI.vectorSamples (toAmplitudeScalar z) x2
+         SigI.returnCons sampleRate amplitude
+            (List.zip3 samp0 samp1 samp2))
+-}
+
+
+
+scheduleToContext ::
+      t'
+   -> EventList.T time (SigF.T t t' y y' yv)
+   -> (SigF.Parameter t',
+       EventList.T time (SigC.T y y' yv))
+scheduleToContext isr sched =
+   let xps =
+          EventList.mapBody
+             (\x ->
+                 let y = SigF.eval x (isr, amp)
+                     amp = SigF.guessAmplitude y
+                     z = SigF.contextFixAmplitude amp y
+                 in  (y,z)) sched
+       schedp = EventList.mapBody snd xps
+       sampleRate = SigF.mergeSampleRates (map fst (EventList.getBodies xps))
+   in  (sampleRate, schedp)
+
+
+{- |
+  Given a list of signals with time stamps,
+  mix them into one signal as they occur in time.
+  Ideally for composing music.
+  Infinite schedules are not supported,
+  because no maximum amplitude can be computed.
+-}
+arrange ::
+   (RealFrac t, NonNeg.C t, Eq t', Ring.C t, Ring.C t', OccScalar.C t t',
+    Ord y', Field.C y', OccScalar.C y y',
+    Module.C y yv) =>
+      t'
+   -> EventList.T t (SigF.T t t' y y' yv)
+          {-^ A list of pairs: (relative start time, signal part),
+              The start time is relative
+              to the start time of the previous event. -}
+   -> SigF.T t t' y y' yv
+          {-^ The mixed signal. -}
+arrange unit sched =
+   SigF.cons $ \(isr,iamp) ->
+      let (sampleRate, schedp) = scheduleToContext isr sched
+      in  SigF.fromContextCheckAmplitude sampleRate iamp
+             (CutC.arrange unit (Rate.fromNumber isr) schedp)
+
+arrangeVolume ::
+   (RealFrac t, NonNeg.C t, Eq t', Ring.C t, Ring.C t', OccScalar.C t t',
+    Field.C y', OccScalar.C y y',
+    Module.C y yv) =>
+      t'
+   -> EventList.T t (SigF.T t t' y y' yv)
+          {-^ A list of pairs: (relative start time, signal part),
+              The start time is relative
+              to the start time of the previous event. -}
+   -> SigF.T t t' y y' yv
+          {-^ The mixed signal. -}
+arrangeVolume unit sched =
+   SigF.cons $ \(isr,iamp) ->
+      let (sampleRate, schedp) = scheduleToContext isr sched
+      in  SigF.fromContextFreeAmplitude sampleRate
+             (CutC.arrangeVolume iamp unit (Rate.fromNumber isr) schedp)
+</pre></br><h2>printed</h2></br><pre>{-# LANGUAGE NoImplicitPrelude #-}
+{- |
+Copyright   :  (c) Henning Thielemann 2007, 2008
+License     :  GPL
+
+Maintainer  :  synthesizer@henning-thielemann.de
+Stability   :  provisional
+Portability :  portable
+
+Design test of Synthesizer.Inference.Fix for basic Cut functions.
+This is still a copy of "Synthesizer.Inference.Func.Cut"
+and I assume that I remove it some time in the future
+because the underlying approach seems to be inferior
+to that of "Synthesizer.SampleRateContext.Cut".
+-}
+module Synthesizer.Inference.Fix.Cut (
+   {- * dissection -}
+   -- splitAt,
+   -- take,
+   -- drop,
+   takeUntilPause,
+   -- unzip,
+   -- unzip3,
+
+   {- * glueing -}
+   concat,
+   concatVolume,
+   append,
+   zip,
+   -- zip3,
+   arrange,
+   arrangeVolume,
+  ) where
+
+import qualified Synthesizer.Physical.Signal      as SigP
+import qualified Synthesizer.Physical.Cut         as CutP
+import qualified Synthesizer.Inference.Func.Signal as SigF
+
+import qualified Synthesizer.SampleRateContext.Signal as SigC
+import qualified Synthesizer.SampleRateContext.Rate as Rate
+import qualified Synthesizer.SampleRateContext.Cut as CutC
+
+import qualified Data.EventList.Relative.TimeBody as EventList
+import qualified Numeric.NonNegative.Class as NonNeg
+
+import qualified Algebra.NormedSpace.Maximum as NormedMax
+import qualified Algebra.OccasionallyScalar  as OccScalar
+import qualified Algebra.Module              as Module
+import qualified Algebra.RealField           as RealField
+import qualified Algebra.Field               as Field
+import qualified Algebra.Real                as Real
+import qualified Algebra.Ring                as Ring
+
+-- import qualified Data.List as List
+
+-- import Control.Monad.Fix(mfix)
+
+import PreludeBase hiding (zip, zip3, concat, )
+-- import NumericPrelude
+import Prelude (RealFrac)
+
+{-
+{- * dissection 
+
+splitAt :: (RealField.C a, Field.C q, OccScalar.C a q) =>
+   q -> SigI.T a q v -> Process.T q (SigI.T a q v, SigI.T a q v)
+splitAt t0 x@(Cons sr amp ss) =
+   do t <- SigI.toTimeScalar x (Expr.constant t0)
+      let (ss0,ss1) = List.splitAt (round t) ss
+      return (Cons sr amp ss0, Cons sr amp ss1)
+
+take :: (RealField.C a, Field.C q, OccScalar.C a q) =>
+   q -> SigI.T a q v -> SigI.Process a q v
+take t = fmap fst . splitAt t
+
+drop :: (RealField.C a, Field.C q, OccScalar.C a q) =>
+   q -> SigI.T a q v -> SigI.Process a q v
+drop t = fmap snd . splitAt t
+-}
+
+takeUntilPause :: (RealField.C t, Ring.C t', OccScalar.C t t',
+                   Field.C y', NormedMax.C y yv, OccScalar.C y y') =>
+   y' -> t' -> SigF.T t t' y y' yv -> SigF.T t t' y y' yv
+takeUntilPause y' t' x =
+   SigF.cons $ \infered@(isr,iamp) ->
+      let x' = SigF.eval x infered
+          xp = SigP.replaceParameters isr iamp x'
+          zp = CutP.takeUntilPause y' t' xp
+      in  SigP.replaceParameters
+             (SigP.sampleRate x') (SigP.amplitude x') zp
+
+
+{-
+How can we assert sharing of the input signal
+with the output signals?
+
+unzip ::
+       SigF.T t t' y y' (yv0, yv1)
+   -> (SigF.T t t' y y' yv0, SigF.T t t' y y' yv1)
+unzip x =
+   (SigF.cons $ \inferedY@(isrY,iampY) -> ,
+    SigF.cons $ \inferedZ@(isrZ,iampZ) -> )
+
+
+unzip3 ::
+       SigF.T t t' y y' (yv0, yv1, yv2)
+   -> (SigF.T t t' y y' yv0, SigF.T t t' y y' yv1, SigF.T t t' y y' yv2)
+unzip3 = return . CutC.unzip3
+-}
+
+
+{- * glueing -}
+
+{- |
+  Similar to @foldr1 append@ but more efficient and accurate,
+  because it reduces the number of amplifications.
+  Does not work for infinite lists,
+  because in this case a maximum amplitude cannot be computed.
+-}
+concat ::
+   (Eq t', Real.C y', Field.C y', Module.C y yv, OccScalar.C y y') =>
+      [SigF.T t t' y y' yv]
+   ->  SigF.T t t' y y' yv
+concat xs =
+   SigF.cons $ \(isr,iamp) ->
+      let xs' = zipWith (\x amp -> SigF.eval x (isr, amp)) xs amps
+          amps = map SigF.guessAmplitude xs'
+          xps = zipWith SigF.contextFixAmplitude amps xs'
+          sampleRate = SigF.mergeSampleRates xs'
+      in  SigF.fromContextCheckAmplitude sampleRate iamp
+             (CutC.concat (Rate.fromNumber isr) xps)
+
+{- |
+  Like 'concat' but it expects a fixed output amplitude.
+  This way it can also handle infinitely many inputs
+  if one input or the output has a fixed sample rate.
+
+  'concatVolume' is one reason for the complicated handling
+  of sampling rates by lists of @Maybe@s.
+
+  The problem of finding an apropriate sampling rate is that
+  we must have an order of processing parallel signal processors
+  which guarantees termination if termination is possible.
+  Say @mix (concat infinitelist0) (concat infinitelist1)@.
+  Either infinite list can have signal with fixed sample rate or not.
+  There is no way to determine this a priori.
+  The only safe way is to process them in parallel.
+  That's why we must have a @[Maybe t']@ instead of @Maybe t'@.
+  Also @[t']@ is not enough,
+  because e.g. a concatenation of infinitely many sounds
+  with undetermined sampling rate
+  would have an empty list representing the sampling rate,
+  but computing the empty list needs infinite time.
+-}
+concatVolume ::
+   (Eq t', Real.C y', Field.C y', Module.C y yv, OccScalar.C y y') =>
+      [SigF.T t t' y y' yv]
+   ->  SigF.T t t' y y' yv
+concatVolume xs =
+   SigF.cons $ \(isr,iamp) ->
+      let xs' = zipWith (\x amp -> SigF.eval x (isr, amp)) xs amps
+          amps = map SigF.guessAmplitude xs'
+          xps = zipWith SigF.contextFixAmplitude amps xs'
+          sampleRate = SigF.mergeSampleRates xs'
+      in  SigF.fromContextFreeAmplitude sampleRate
+             (CutC.concatVolume iamp (Rate.fromNumber isr) xps)
+
+
+merge :: (Eq t', Real.C y', Field.C y', OccScalar.C y y',
+          Module.C y v0, Module.C y v1) =>
+      (Rate.T t t' -> SigC.T y y' v0 -> SigC.T y y' v1 -> SigC.T y y' v2)
+   -> SigF.T t t' y y' v0
+   -> SigF.T t t' y y' v1
+   -> SigF.T t t' y y' v2
+merge f x y =
+   SigF.cons $ \(isr,iamp) ->
+      let x' = SigF.eval x (isr, ampX)
+          y' = SigF.eval y (isr, ampY)
+          ampX = SigF.guessAmplitude x'
+          ampY = SigF.guessAmplitude y'
+          xp = SigF.contextFixAmplitude ampX x'
+          yp = SigF.contextFixAmplitude ampY y'
+          sampleRate = SigF.mergeSampleRate x' y'
+      in  SigF.fromContextCheckAmplitude sampleRate iamp
+             (f (Rate.fromNumber isr) xp yp)
+
+
+append :: (Eq t', Real.C y', Field.C y', OccScalar.C y y',
+         Module.C y yv) =>
+      SigF.T t t' y y' yv
+   -> SigF.T t t' y y' yv
+   -> SigF.T t t' y y' yv
+append = merge CutC.append
+
+
+zip :: (Eq t', Real.C y', Field.C y', OccScalar.C y y',
+        Module.C y v0, Module.C y v1) =>
+      SigF.T t t' y y' v0
+   -> SigF.T t t' y y' v1
+   -> SigF.T t t' y y' (v0,v1)
+zip = merge CutC.zip
+
+{-
+zip3 :: (Real.C q, Field.C q, Ord q, OccScalar.C a q,
+         Module.C a v0, Module.C a v1, Module.C a v2)
+   => SigI.T a q v0
+   -> SigI.T a q v1
+   -> SigI.T a q v2
+   -> SigI.Process a q (v0, v1, v2)
+zip3 x0 x1 x2 =
+   mfix (\z ->
+      do sampleRate <- Process.equalValues
+            [SigP.sampleRate x0, SigP.sampleRate x1, SigP.sampleRate x2]
+         amplitude  <- Process.fromExpr
+            (Expr.maximum [amplitudeExpr x0, amplitudeExpr x1, amplitudeExpr x2])
+         samp0 <- SigI.vectorSamples (toAmplitudeScalar z) x0
+         samp1 <- SigI.vectorSamples (toAmplitudeScalar z) x1
+         samp2 <- SigI.vectorSamples (toAmplitudeScalar z) x2
+         SigI.returnCons sampleRate amplitude
+            (List.zip3 samp0 samp1 samp2))
+-}
+
+
+
+scheduleToContext ::
+      t'
+   -> EventList.T time (SigF.T t t' y y' yv)
+   -> (SigF.Parameter t',
+       EventList.T time (SigC.T y y' yv))
+scheduleToContext isr sched =
+   let xps =
+          EventList.mapBody
+             (\x ->
+                 let y = SigF.eval x (isr, amp)
+                     amp = SigF.guessAmplitude y
+                     z = SigF.contextFixAmplitude amp y
+                 in  (y,z)) sched
+       schedp = EventList.mapBody snd xps
+       sampleRate = SigF.mergeSampleRates (map fst (EventList.getBodies xps))
+   in  (sampleRate, schedp)
+
+
+{- |
+  Given a list of signals with time stamps,
+  mix them into one signal as they occur in time.
+  Ideally for composing music.
+  Infinite schedules are not supported,
+  because no maximum amplitude can be computed.
+-}
+arrange ::
+   (RealFrac t, NonNeg.C t, Eq t', Ring.C t, Ring.C t', OccScalar.C t t',
+    Ord y', Field.C y', OccScalar.C y y',
+    Module.C y yv) =>
+      t'
+   -> EventList.T t (SigF.T t t' y y' yv)
+          {-^ A list of pairs: (relative start time, signal part),
+              The start time is relative
+              to the start time of the previous event. -}
+   -> SigF.T t t' y y' yv
+          {-^ The mixed signal. -}
+arrange unit sched =
+   SigF.cons $ \(isr,iamp) ->
+      let (sampleRate, schedp) = scheduleToContext isr sched
+      in  SigF.fromContextCheckAmplitude sampleRate iamp
+             (CutC.arrange unit (Rate.fromNumber isr) schedp)
+
+arrangeVolume ::
+   (RealFrac t, NonNeg.C t, Eq t', Ring.C t, Ring.C t', OccScalar.C t t',
+    Field.C y', OccScalar.C y y',
+    Module.C y yv) =>
+      t'
+   -> EventList.T t (SigF.T t t' y y' yv)
+          {-^ A list of pairs: (relative start time, signal part),
+              The start time is relative
+              to the start time of the previous event. -}
+   -> SigF.T t t' y y' yv
+          {-^ The mixed signal. -}
+arrangeVolume unit sched =
+   SigF.cons $ \(isr,iamp) ->
+      let (sampleRate, schedp) = scheduleToContext isr sched
+      in  SigF.fromContextFreeAmplitude sampleRate
+             (CutC.arrangeVolume iamp unit (Rate.fromNumber isr) schedp)
+
+</pre>

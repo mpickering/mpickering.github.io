@@ -1,0 +1,218 @@
+<a href="QuickCheck.hs585640194937186357.out.html">prev</a></br><a href="failures.html">home</a></br><a href="Quote.hs16460350011025921153.out.html">next</a></br></br><pre>33c33
+< type instance Ixs TreeAST = '[ Tree ]
+---
+> type instance Ixs TreeAST =    Tree ]
+105a106
+> 
+</pre></br><h2>original</h2></br><pre>{-# LANGUAGE GADTs                 #-}
+{-# LANGUAGE KindSignatures        #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE TypeFamilies          #-}
+{-# LANGUAGE TypeOperators         #-}
+{-# LANGUAGE TypeSynonymInstances  #-}
+{-# LANGUAGE EmptyDataDecls        #-}
+{-# LANGUAGE TemplateHaskell       #-}
+{-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE OverlappingInstances  #-}
+{-# LANGUAGE DataKinds             #-}
+{-# LANGUAGE PolyKinds             #-}
+{-# LANGUAGE TypeFamilies          #-}
+{-# LANGUAGE StandaloneDeriving    #-}
+
+module Main where
+
+import Generics.MultiRec hiding (show)
+import Generics.MultiRec.TH
+import Test.QuickCheck
+import Test.QuickCheck.Random
+import Control.Monad
+import Generics.MultiRec.Transformations.Main
+import Generics.MultiRec.Transformations.MemoTable
+import Criterion.Main
+
+data Tree = Leaf Int | Branch1 Tree Tree | Branch2 Tree Tree | Test [(Tree,Int)]
+          deriving (Show, Ord, Eq)
+
+data TreeAST :: * -> * where
+  Tree :: TreeAST Tree
+
+type instance Ixs TreeAST = '[ Tree ]
+
+data Leaf
+data Branch1
+data Branch2
+data Test
+
+instance Constructor Leaf where
+  conName _ = "Leaf"
+instance Constructor Branch1 where
+  conName _ = "Branch1"
+instance Constructor Branch2 where
+  conName _ = "Branch2"
+instance Constructor Test where
+  conName _ = "Test"
+
+type instance PF TreeAST = (C Leaf (K Int) :+: C Branch1 (I Tree :*: I Tree) :+: C Branch2 (I Tree :*: I Tree) :+: (C Test ([] :.: (I Tree :*: K Int)))) :>: Tree
+
+instance El TreeAST Tree where
+  proof = Tree
+
+instance Fam TreeAST where
+  from Tree (Leaf f0)
+    = Tag (L (C (K f0)))
+  from Tree (Branch1 f0 f1)
+    = Tag (R (L (C ((:*:) ((I . I0) f0) ((I . I0) f1)))))
+  from Tree (Branch2 f0 f1)
+    = Tag (R (R (L (C ((:*:) ((I . I0) f0) ((I . I0) f1))))))
+  from Tree (Test f0)
+    = Tag (R (R (R (C (D [(I . I0) i :*: K t | (i,t) <- f0])))))
+  to Tree (Tag (L (C f0)))
+    = Leaf (unK f0)
+  to Tree (Tag (R (L (C ((:*:) f0 f1)))))
+    = Branch1 ((unI0 . unI) f0) ((unI0 . unI) f1)
+  to Tree (Tag (R (R (L (C ((:*:) f0 f1))))))
+    = Branch2 ((unI0 . unI) f0) ((unI0 . unI) f1)
+  to Tree (Tag (R (R (R (C (D f0))))))
+    = Test [((unI0 . unI) t, i) | t :*: K i <- f0]
+
+-- $(deriveAll ''TreeAST)
+
+-- Straight from the QC manual
+instance Arbitrary Tree where
+  shrink (Leaf v) = map Leaf (shrink v)
+  shrink (Branch1 l r) = [l,r]
+  shrink (Branch2 l r) = [l,r]
+  shrink (Test lst) = concatMap (map fst) (shrink lst)
+  arbitrary = sized tree'
+    where tree' 0 = liftM Leaf arbitrary
+          tree' n | n>0 =
+                oneof [liftM Leaf arbitrary,
+                       liftM2 Branch1 subtree subtree,
+                       liftM2 Branch2 subtree subtree,
+                       liftM Test genLst]
+            where subtree = tree' (n `div` 2)
+                  genLst  = do m <- choose (1,n)
+                               replicateM m (resize (n `div` m) arbitrary)
+
+-- Our diff property
+diffCorrect :: Tree -> Tree -> Bool
+diffCorrect a b = apply Tree a (diff Tree a b) == Just b
+
+main :: IO ()
+main = do
+  putStrLn "Generating testcases"
+  cases <- replicateM 40 (liftM2 (,) (generate arbitrary) (generate arbitrary))
+  putStrLn "Checking correctness"
+  forM_ cases $ \(a,b) -> do
+    when (not $ diffCorrect a b) $ putStrLn "Failed diffCorrect"
+  putStrLn "Benchmarking"
+  defaultMain [
+    bench "MultiRec" $ nf (map (uncurry diffCorrect)) cases
+    ]
+</pre></br><h2>printed</h2></br><pre>{-# LANGUAGE GADTs                 #-}
+{-# LANGUAGE KindSignatures        #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE TypeFamilies          #-}
+{-# LANGUAGE TypeOperators         #-}
+{-# LANGUAGE TypeSynonymInstances  #-}
+{-# LANGUAGE EmptyDataDecls        #-}
+{-# LANGUAGE TemplateHaskell       #-}
+{-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE OverlappingInstances  #-}
+{-# LANGUAGE DataKinds             #-}
+{-# LANGUAGE PolyKinds             #-}
+{-# LANGUAGE TypeFamilies          #-}
+{-# LANGUAGE StandaloneDeriving    #-}
+
+module Main where
+
+import Generics.MultiRec hiding (show)
+import Generics.MultiRec.TH
+import Test.QuickCheck
+import Test.QuickCheck.Random
+import Control.Monad
+import Generics.MultiRec.Transformations.Main
+import Generics.MultiRec.Transformations.MemoTable
+import Criterion.Main
+
+data Tree = Leaf Int | Branch1 Tree Tree | Branch2 Tree Tree | Test [(Tree,Int)]
+          deriving (Show, Ord, Eq)
+
+data TreeAST :: * -> * where
+  Tree :: TreeAST Tree
+
+type instance Ixs TreeAST =    Tree ]
+
+data Leaf
+data Branch1
+data Branch2
+data Test
+
+instance Constructor Leaf where
+  conName _ = "Leaf"
+instance Constructor Branch1 where
+  conName _ = "Branch1"
+instance Constructor Branch2 where
+  conName _ = "Branch2"
+instance Constructor Test where
+  conName _ = "Test"
+
+type instance PF TreeAST = (C Leaf (K Int) :+: C Branch1 (I Tree :*: I Tree) :+: C Branch2 (I Tree :*: I Tree) :+: (C Test ([] :.: (I Tree :*: K Int)))) :>: Tree
+
+instance El TreeAST Tree where
+  proof = Tree
+
+instance Fam TreeAST where
+  from Tree (Leaf f0)
+    = Tag (L (C (K f0)))
+  from Tree (Branch1 f0 f1)
+    = Tag (R (L (C ((:*:) ((I . I0) f0) ((I . I0) f1)))))
+  from Tree (Branch2 f0 f1)
+    = Tag (R (R (L (C ((:*:) ((I . I0) f0) ((I . I0) f1))))))
+  from Tree (Test f0)
+    = Tag (R (R (R (C (D [(I . I0) i :*: K t | (i,t) <- f0])))))
+  to Tree (Tag (L (C f0)))
+    = Leaf (unK f0)
+  to Tree (Tag (R (L (C ((:*:) f0 f1)))))
+    = Branch1 ((unI0 . unI) f0) ((unI0 . unI) f1)
+  to Tree (Tag (R (R (L (C ((:*:) f0 f1))))))
+    = Branch2 ((unI0 . unI) f0) ((unI0 . unI) f1)
+  to Tree (Tag (R (R (R (C (D f0))))))
+    = Test [((unI0 . unI) t, i) | t :*: K i <- f0]
+
+-- $(deriveAll ''TreeAST)
+
+-- Straight from the QC manual
+instance Arbitrary Tree where
+  shrink (Leaf v) = map Leaf (shrink v)
+  shrink (Branch1 l r) = [l,r]
+  shrink (Branch2 l r) = [l,r]
+  shrink (Test lst) = concatMap (map fst) (shrink lst)
+  arbitrary = sized tree'
+    where tree' 0 = liftM Leaf arbitrary
+          tree' n | n>0 =
+                oneof [liftM Leaf arbitrary,
+                       liftM2 Branch1 subtree subtree,
+                       liftM2 Branch2 subtree subtree,
+                       liftM Test genLst]
+            where subtree = tree' (n `div` 2)
+                  genLst  = do m <- choose (1,n)
+                               replicateM m (resize (n `div` m) arbitrary)
+
+-- Our diff property
+diffCorrect :: Tree -> Tree -> Bool
+diffCorrect a b = apply Tree a (diff Tree a b) == Just b
+
+main :: IO ()
+main = do
+  putStrLn "Generating testcases"
+  cases <- replicateM 40 (liftM2 (,) (generate arbitrary) (generate arbitrary))
+  putStrLn "Checking correctness"
+  forM_ cases $ \(a,b) -> do
+    when (not $ diffCorrect a b) $ putStrLn "Failed diffCorrect"
+  putStrLn "Benchmarking"
+  defaultMain [
+    bench "MultiRec" $ nf (map (uncurry diffCorrect)) cases
+    ]
+
+</pre>

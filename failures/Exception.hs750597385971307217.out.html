@@ -1,0 +1,1264 @@
+<a href="Exception.hs10447881241927702196.out.html">prev</a></br><a href="failures.html">home</a></br><a href="ExecutionPlan.hs1462789551711192801.out.html">next</a></br></br><pre>77c77
+< exception ∷ Exception e ⇒ e → α
+---
+> exception :: Exception e => e -> α
+80c80
+< evaluate ∷ MonadBase IO μ ⇒ α → μ α
+---
+> evaluate :: MonadBase IO μ => α -> μ α
+83c83
+< throw ∷ (MonadAbort SomeException μ, Exception e) ⇒ e → μ α
+---
+> throw :: (MonadAbort SomeException μ, Exception e) => e -> μ α
+86c86
+< throwIO ∷ (MonadBase IO μ, Exception e) ⇒ e → μ α
+---
+> throwIO :: (MonadBase IO μ, Exception e) => e -> μ α
+89d88
+< catch ∷ (MonadRecover SomeException μ, Exception e) ⇒ μ α → (e → μ α) → μ α
+90c89
+< catch m h = recover m $ \e → maybe (throw e) h (fromException e)
+---
+> catch :: (MonadRecover SomeException μ, Exception e) => μ α -> (e -> μ α) -> μ α
+90a90
+> catch m h = recover m $ \e -> maybe (throw e) h (fromException e)
+92d91
+< catchJust ∷ (MonadRecover SomeException μ, Exception e)
+93d91
+<           ⇒ (e → Maybe β) → μ α → (β → μ α) → μ α
+94c92
+< catchJust f m h = catch m $ \e → maybe (throw e) h $ f e
+---
+> catchJust :: (MonadRecover SomeException μ, Exception e)
+94a93
+>           => (e -> Maybe β) -> μ α -> (β -> μ α) -> μ α
+94a94
+> catchJust f m h = catch m $ \e -> maybe (throw e) h $ f e
+96c96
+< handle ∷ (MonadRecover SomeException μ, Exception e) ⇒ (e → μ α) → μ α → μ α
+---
+> handle :: (MonadRecover SomeException μ, Exception e) => (e -> μ α) -> μ α -> μ α
+99d98
+< handleJust ∷ (MonadRecover SomeException μ, Exception e)
+100c99
+<            ⇒ (e → Maybe β) → (β → μ α) → μ α → μ α
+---
+> handleJust :: (MonadRecover SomeException μ, Exception e)
+100a100
+>            => (e -> Maybe β) -> (β -> μ α) -> μ α -> μ α
+103c103
+< data Handler μ α = ∀ e . Exception e ⇒ Handler (e → μ α)
+---
+> data Handler μ α = forall e . Exception e => Handler (e -> μ α)
+105c105
+< catches ∷ MonadRecover SomeException μ ⇒ μ α → [Handler μ α] → μ α
+---
+> catches :: MonadRecover SomeException μ => μ α -> [Handler μ α] -> μ α
+110c110
+< try ∷ (MonadRecover SomeException μ, Exception e) ⇒ μ α → μ (Either e α)
+---
+> try :: (MonadRecover SomeException μ, Exception e) => μ α -> μ (Either e α)
+113d112
+< tryJust ∷ (MonadRecover SomeException μ, Exception e)
+114d112
+<         ⇒ (e → Maybe β) → μ α → μ (Either β α)
+115c113
+< tryJust f m = catch (m >>= return . Right) $ \e →
+---
+> tryJust :: (MonadRecover SomeException μ, Exception e)
+115a114
+>         => (e -> Maybe β) -> μ α -> μ (Either β α)
+115a115
+> tryJust f m = catch (m >>= return . Right) $ \e ->
+118d117
+< onException ∷ (MonadRecover SomeException μ, Exception e)
+119d117
+<             ⇒ μ α → (e → μ β) → μ α
+120c118
+< onException m h = catch m (\e → h e >> throw e)
+---
+> onException :: (MonadRecover SomeException μ, Exception e)
+120a119
+>             => μ α -> (e -> μ β) -> μ α
+120a120
+> onException m h = catch m (\e -> h e >> throw e)
+122d121
+< onExceptions ∷ MonadRecover SomeException μ
+123c122
+<              ⇒ μ α → [Handler μ β] → μ α
+---
+> onExceptions :: MonadRecover SomeException μ
+123a123
+>              => μ α -> [Handler μ β] -> μ α
+127c127
+<           maybe (hl hs e) (\e' → h e' >> abort e) $ fromException e
+---
+>           maybe (hl hs e) (\e' -> h e' >> abort e) $ fromException e
+129d128
+< class (Applicative μ, Monad μ) ⇒ MonadFinally μ where
+130d128
+<   finally' ∷ μ α → (Maybe α → μ β) → μ (α, β)
+131c129
+<   finally  ∷ μ α → μ β → μ α
+---
+> class (Applicative μ, Monad μ) => MonadFinally μ where
+131a130
+>   finally' :: μ α -> (Maybe α -> μ β) -> μ (α, β)
+131a131
+>   finally  :: μ α -> μ β -> μ α
+136c136
+<     a ← m
+---
+>     a <- m
+140d139
+<   finally' m f = E.mask $ \restore → do
+141d139
+<     a ← restore m `E.onException` f Nothing
+142c140
+<     b ← f $ Just a
+---
+>   finally' m f = E.mask $ \restore -> do
+142a141
+>     a <- restore m `E.onException` f Nothing
+142a142
+>     b <- f $ Just a
+145c145
+< instance MonadFinally μ ⇒ MonadFinally (MaybeT μ) where
+---
+> instance MonadFinally μ => MonadFinally (MaybeT μ) where
+147d146
+<     ~(mr, fr) ← finally' (runMaybeT m) $ \mbr →
+148d146
+<       runMaybeT $ f $ case mbr of
+149d146
+<         Just (Just a) → Just a
+150c147
+<         _             → Nothing
+---
+>     ~(mr, fr) <- finally' (runMaybeT m) $ \mbr ->
+150a148
+>        runMaybeT $ f $ case mbr of
+150a149
+>          Just (Just a) -> Just a
+150a150
+>          _             -> Nothing
+153c153
+< instance MonadFinally μ ⇒ MonadFinally (ListT μ) where
+---
+> instance MonadFinally μ => MonadFinally (ListT μ) where
+155d154
+<     ~(mrs, frss) ← finally' (runListT m) $ \mbr → case mbr of
+156d154
+<       Just rs@(_ : _) → forM rs $ runListT . f . Just
+157d154
+<       _ → fmap pure $ runListT $ f Nothing
+158c155
+<     return $ zip mrs frss >>= \(mr, frs) → zip (repeat mr) frs
+---
+>     ~(mrs, frss) <- finally' (runListT m) $ \mbr -> case mbr of
+158a156
+>        Just rs@(_ : _) -> forM rs $ runListT . f . Just
+158a157
+>        _ -> fmap pure $ runListT $ f Nothing
+158a158
+>     return $ zip mrs frss >>= \(mr, frs) -> zip (repeat mr) frs
+160c160
+< instance MonadFinally μ ⇒ MonadFinally (AbortT e μ) where
+---
+> instance MonadFinally μ => MonadFinally (AbortT e μ) where
+162d161
+<     ~(mr, fr) ← finally' (runAbortT m) $ \mbr →
+163d161
+<       runAbortT $ f $ case mbr of
+164d161
+<         Just (Right a) → Just a
+165c162
+<         _              → Nothing
+---
+>     ~(mr, fr) <- finally' (runAbortT m) $ \mbr ->
+165a163
+>        runAbortT $ f $ case mbr of
+165a164
+>          Just (Right a) -> Just a
+165a165
+>          _              -> Nothing
+168c168
+< instance MonadFinally μ ⇒ MonadFinally (FinishT β μ) where
+---
+> instance MonadFinally μ => MonadFinally (FinishT β μ) where
+170d169
+<     ~(mr, fr) ← finally' (runFinishT m) $ \mbr →
+171d169
+<       runFinishT $ f $ case mbr of
+172d169
+<         Just (Right a) → Just a
+173c170
+<         _              → Nothing
+---
+>     ~(mr, fr) <- finally' (runFinishT m) $ \mbr ->
+173a171
+>        runFinishT $ f $ case mbr of
+173a172
+>          Just (Right a) -> Just a
+173a173
+>          _              -> Nothing
+176c176
+< instance (MonadFinally μ, Error e) ⇒ MonadFinally (ErrorT e μ) where
+---
+> instance (MonadFinally μ, Error e) => MonadFinally (ErrorT e μ) where
+178d177
+<     ~(mr, fr) ← finally' (runErrorT m) $ \mbr →
+179d177
+<       runErrorT $ f $ case mbr of
+180d177
+<         Just (Right a) → Just a
+181c178
+<         _              → Nothing
+---
+>     ~(mr, fr) <- finally' (runErrorT m) $ \mbr ->
+181a179
+>        runErrorT $ f $ case mbr of
+181a180
+>          Just (Right a) -> Just a
+181a181
+>          _              -> Nothing
+184d183
+< instance MonadFinally μ ⇒ MonadFinally (ReaderT r μ) where
+185c184
+<   finally' m f = ReaderT $ \r →
+---
+> instance MonadFinally μ => MonadFinally (ReaderT r μ) where
+185a185
+>   finally' m f = ReaderT $ \r ->
+188d187
+< instance MonadFinally μ ⇒ MonadFinally (L.StateT s μ) where
+189d187
+<   finally' m f = L.StateT $ \s → do
+190d187
+<     ~(~(mr, _), ~(fr, s'')) ← finally' (L.runStateT m s) $ \mbr → do
+191d187
+<       let ~(a, s') = case mbr of
+192d187
+<              Just ~(x, t) → (Just x, t)
+193d187
+<              Nothing      → (Nothing, s)
+194c188
+<       L.runStateT (f a) s'
+---
+> instance MonadFinally μ => MonadFinally (L.StateT s μ) where
+194a189
+>   finally' m f = L.StateT $ \s -> do
+194a190
+>     ~(~(mr, _), ~(fr, s'')) <- finally' (L.runStateT m s) $ \mbr -> do
+194a191
+>        let ~(a, s') = case mbr of
+194a192
+>               Just ~(x, t) -> (Just x, t)
+194a193
+>               Nothing      -> (Nothing, s)
+194a194
+>        L.runStateT (f a) s'
+197d196
+< instance MonadFinally μ ⇒ MonadFinally (S.StateT s μ) where
+198d196
+<   finally' m f = S.StateT $ \s → do
+199d196
+<     ((mr, _), (fr, s'')) ← finally' (S.runStateT m s) $ \mbr → case mbr of
+200d196
+<       Just (a, s') → S.runStateT (f $ Just a) s'
+201c197
+<       Nothing      → S.runStateT (f Nothing) s
+---
+> instance MonadFinally μ => MonadFinally (S.StateT s μ) where
+201a198
+>   finally' m f = S.StateT $ \s -> do
+201a199
+>     ((mr, _), (fr, s'')) <- finally' (S.runStateT m s) $ \mbr -> case mbr of
+201a200
+>        Just (a, s') -> S.runStateT (f $ Just a) s'
+201a201
+>        Nothing      -> S.runStateT (f Nothing) s
+204c204
+< instance (MonadFinally μ, Monoid w) ⇒ MonadFinally (L.WriterT w μ) where
+---
+> instance (MonadFinally μ, Monoid w) => MonadFinally (L.WriterT w μ) where
+206c206
+<     ~(~(mr, w), ~(fr, w')) ← finally' (L.runWriterT m) $
+---
+>     ~(~(mr, w), ~(fr, w')) <- finally' (L.runWriterT m) $
+210c210
+< instance (MonadFinally μ, Monoid w) ⇒ MonadFinally (S.WriterT w μ) where
+---
+> instance (MonadFinally μ, Monoid w) => MonadFinally (S.WriterT w μ) where
+212d211
+<     ((mr, w), (fr, w')) ← finally' (S.runWriterT m) $ \mbr → case mbr of
+213d211
+<       Just (a, _) → S.runWriterT $ f $ Just a
+214c212
+<       Nothing     → S.runWriterT $ f Nothing
+---
+>     ((mr, w), (fr, w')) <- finally' (S.runWriterT m) $ \mbr -> case mbr of
+214a213
+>        Just (a, _) -> S.runWriterT $ f $ Just a
+214a214
+>        Nothing     -> S.runWriterT $ f Nothing
+217d216
+< instance (MonadFinally μ, Monoid w) ⇒ MonadFinally (L.RWST r w s μ) where
+218d216
+<   finally' m f = L.RWST $ \r s → do
+219d216
+<     ~(~(mr, _, w), ~(fr, s'', w')) ← finally' (L.runRWST m r s) $ \mbr → do
+220d216
+<       let ~(a, s') = case mbr of
+221d216
+<              Just ~(x, t, _) → (Just x, t)
+222d216
+<              Nothing         → (Nothing, s)
+223c217
+<       L.runRWST (f a) r s'
+---
+> instance (MonadFinally μ, Monoid w) => MonadFinally (L.RWST r w s μ) where
+223a218
+>   finally' m f = L.RWST $ \r s -> do
+223a219
+>     ~(~(mr, _, w), ~(fr, s'', w')) <- finally' (L.runRWST m r s) $ \mbr -> do
+223a220
+>        let ~(a, s') = case mbr of
+223a221
+>               Just ~(x, t, _) -> (Just x, t)
+223a222
+>               Nothing         -> (Nothing, s)
+223a223
+>        L.runRWST (f a) r s'
+226d225
+< instance (MonadFinally μ, Monoid w) ⇒ MonadFinally (S.RWST r w s μ) where
+227d225
+<   finally' m f = S.RWST $ \r s → do
+228d225
+<     ((mr, _, w), (fr, s'', w')) ← finally' (S.runRWST m r s) $ \mbr →
+229d225
+<       case mbr of
+230d225
+<         Just (a, s', _) → S.runRWST (f $ Just a) r s'
+231c226
+<         Nothing         → S.runRWST (f Nothing) r s
+---
+> instance (MonadFinally μ, Monoid w) => MonadFinally (S.RWST r w s μ) where
+231a227
+>   finally' m f = S.RWST $ \r s -> do
+231a228
+>     ((mr, _, w), (fr, s'', w')) <- finally' (S.runRWST m r s) $ \mbr ->
+231a229
+>        case mbr of
+231a230
+>          Just (a, s', _) -> S.runRWST (f $ Just a) r s'
+231a231
+>          Nothing         -> S.runRWST (f Nothing) r s
+234c234
+< onEscape ∷ MonadFinally μ ⇒ μ α → μ β → μ α
+---
+> onEscape :: MonadFinally μ => μ α -> μ β -> μ α
+237c237
+< tryAll ∷ MonadFinally μ ⇒ [μ α] → μ ()
+---
+> tryAll :: MonadFinally μ => [μ α] -> μ ()
+249d248
+<       ⇒ MonadMask m μ | μ → m where
+250d248
+<   getMaskingState ∷ μ m
+251c249
+<   setMaskingState ∷ m → μ α → μ α
+---
+>       => MonadMask m μ | μ -> m where
+251a250
+>   getMaskingState :: μ m
+251a251
+>   setMaskingState :: m -> μ α -> μ α
+263d262
+< liftSetMaskingState ∷ (MonadTransControl t, MonadMask m μ, Monad (t μ))
+264c263
+<                     ⇒ m → t μ α → t μ α
+---
+> liftSetMaskingState :: (MonadTransControl t, MonadMask m μ, Monad (t μ))
+264a264
+>                     => m -> t μ α -> t μ α
+266c266
+<   join $ liftM (restoreT . return) $ liftWith $ \run →
+---
+>   join $ liftM (restoreT . return) $ liftWith $ \run ->
+270c270
+< instance MonadMask m μ ⇒ MonadMask m (MaybeT μ) where
+---
+> instance MonadMask m μ => MonadMask m (MaybeT μ) where
+274c274
+< instance MonadMask m μ ⇒ MonadMask m (ListT μ) where
+---
+> instance MonadMask m μ => MonadMask m (ListT μ) where
+278c278
+< instance MonadMask m μ ⇒ MonadMask m (AbortT e μ) where
+---
+> instance MonadMask m μ => MonadMask m (AbortT e μ) where
+282c282
+< instance MonadMask m μ ⇒ MonadMask m (FinishT β μ) where
+---
+> instance MonadMask m μ => MonadMask m (FinishT β μ) where
+286c286
+< instance (MonadMask m μ, Error e) ⇒ MonadMask m (ErrorT e μ) where
+---
+> instance (MonadMask m μ, Error e) => MonadMask m (ErrorT e μ) where
+290c290
+< instance MonadMask m μ ⇒ MonadMask m (ReaderT r μ) where
+---
+> instance MonadMask m μ => MonadMask m (ReaderT r μ) where
+294c294
+< instance MonadMask m μ ⇒ MonadMask m (L.StateT s μ) where
+---
+> instance MonadMask m μ => MonadMask m (L.StateT s μ) where
+298c298
+< instance MonadMask m μ ⇒ MonadMask m (S.StateT s μ) where
+---
+> instance MonadMask m μ => MonadMask m (S.StateT s μ) where
+302c302
+< instance (MonadMask m μ, Monoid w) ⇒ MonadMask m (L.WriterT w μ) where
+---
+> instance (MonadMask m μ, Monoid w) => MonadMask m (L.WriterT w μ) where
+306c306
+< instance (MonadMask m μ, Monoid w) ⇒ MonadMask m (S.WriterT w μ) where
+---
+> instance (MonadMask m μ, Monoid w) => MonadMask m (S.WriterT w μ) where
+310c310
+< instance (MonadMask m μ, Monoid w) ⇒ MonadMask m (L.RWST r w s μ) where
+---
+> instance (MonadMask m μ, Monoid w) => MonadMask m (L.RWST r w s μ) where
+314c314
+< instance (MonadMask m μ, Monoid w) ⇒ MonadMask m (S.RWST r w s μ) where
+---
+> instance (MonadMask m μ, Monoid w) => MonadMask m (S.RWST r w s μ) where
+318d317
+< withMaskingState ∷ MonadMask m μ
+319c318
+<                  ⇒ m → ((∀ η β . MonadMask m η ⇒ η β → η β) → μ α) → μ α
+---
+> withMaskingState :: MonadMask m μ
+319a319
+>                  => m -> ((forall η β . MonadMask m η => η β -> η β) -> μ α) -> μ α
+321c321
+<   ms ← getMaskingState
+---
+>   ms <- getMaskingState
+326c326
+< withMaskingState_ ∷ MonadMask m μ ⇒ m → μ α → μ α
+---
+> withMaskingState_ :: MonadMask m μ => m -> μ α -> μ α
+329c329
+< mask ∷ MonadMask m μ ⇒ ((∀ η β . MonadMask m η ⇒ η β → η β) → μ α) → μ α
+---
+> mask :: MonadMask m μ => ((forall η β . MonadMask m η => η β -> η β) -> μ α) -> μ α
+332c332
+< mask_ ∷ MonadMask m μ ⇒ μ α → μ α
+---
+> mask_ :: MonadMask m μ => μ α -> μ α
+335d334
+< uninterruptibleMask ∷ MonadMask MaskingState μ
+336d334
+<                     ⇒ ((∀ η β . MonadMask MaskingState η ⇒ η β → η β) → μ α)
+337c335
+<                     → μ α
+---
+> uninterruptibleMask :: MonadMask MaskingState μ
+337a336
+>                     => ((forall η β . MonadMask MaskingState η => η β -> η β) -> μ α)
+337a337
+>                     -> μ α
+340c340
+< uninterruptibleMask_ ∷ MonadMask MaskingState μ ⇒ μ α → μ α
+---
+> uninterruptibleMask_ :: MonadMask MaskingState μ => μ α -> μ α
+343d342
+< bracket ∷ (MonadFinally μ, MonadMask m μ)
+344d342
+<         ⇒ μ α → (α → μ β) → (α → μ γ) → μ γ
+345d342
+< bracket acq release m = mask $ \restore → do
+346c343
+<   a ← acq
+---
+> bracket :: (MonadFinally μ, MonadMask m μ)
+346a344
+>         => μ α -> (α -> μ β) -> (α -> μ γ) -> μ γ
+346a345
+> bracket acq release m = mask $ \restore -> do
+346a346
+>   a <- acq
+349c349
+< bracket_ ∷ (MonadFinally μ, MonadMask m μ) ⇒ μ α → μ β → μ γ → μ γ
+---
+> bracket_ :: (MonadFinally μ, MonadMask m μ) => μ α -> μ β -> μ γ -> μ γ
+352d351
+< bracketOnEscape ∷ (MonadFinally μ, MonadMask m μ)
+353d351
+<                 ⇒ μ α → (α → μ β) → (α → μ γ) → μ γ
+354d351
+< bracketOnEscape acq release m = mask $ \restore → do
+355c352
+<   a ← acq
+---
+> bracketOnEscape :: (MonadFinally μ, MonadMask m μ)
+355a353
+>                 => μ α -> (α -> μ β) -> (α -> μ γ) -> μ γ
+355a354
+> bracketOnEscape acq release m = mask $ \restore -> do
+355a355
+>   a <- acq
+358d357
+< bracketOnError ∷ (MonadRecover e μ, MonadMask m μ)
+359d357
+<                ⇒ μ α → (α → μ β) → (α → μ γ) → μ γ
+360d357
+< bracketOnError acq release m = mask $ \restore → do
+361d357
+<   a ← acq
+362c358
+<   r ← restore (m a) `onError_` release a
+---
+> bracketOnError :: (MonadRecover e μ, MonadMask m μ)
+362a359
+>                => μ α -> (α -> μ β) -> (α -> μ γ) -> μ γ
+362a360
+> bracketOnError acq release m = mask $ \restore -> do
+362a361
+>   a <- acq
+362a362
+>   r <- restore (m a) `onError_` release a
+364a365
+> 
+</pre></br><h2>original</h2></br><pre>{-# LANGUAGE UnicodeSyntax #-}
+{-# LANGUAGE MagicHash #-}
+{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE FunctionalDependencies #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE UndecidableInstances #-}
+{-# OPTIONS_GHC -fno-warn-orphans #-}
+
+module Control.Monad.Exception (
+    exception,
+    evaluate,
+    throw,
+    throwIO,
+    catch,
+    catchJust,
+    handle,
+    handleJust,
+    Handler(..),
+    catches,
+    try,
+    tryJust,
+    onException,
+    onExceptions,
+    MonadFinally(..),
+    onEscape,
+    tryAll,
+    MonadMask(..),
+    mask,
+    mask_,
+    uninterruptibleMask,
+    uninterruptibleMask_,
+    bracket,
+    bracket_,
+    bracketOnEscape,
+    bracketOnError,
+    module Control.Monad.Abort.Class,
+    module Control.Exception
+  ) where
+
+import Prelude hiding (catch)
+import Data.Monoid
+import Data.Default
+import Data.Traversable
+import Data.Functor.Identity
+import Control.Applicative
+import Control.Monad (join, liftM)
+import Control.Monad.Base
+import Control.Monad.Trans.Class
+import Control.Monad.Trans.Control
+import Control.Monad.Trans.Abort hiding (abort, recover)
+import Control.Monad.Trans.Finish
+import Control.Monad.Trans.Maybe
+import Control.Monad.Trans.List
+import Control.Monad.Trans.Error
+import Control.Monad.Trans.Reader
+import qualified Control.Monad.Trans.State.Lazy as L
+import qualified Control.Monad.Trans.State.Strict as S
+import qualified Control.Monad.Trans.Writer.Lazy as L
+import qualified Control.Monad.Trans.Writer.Strict as S
+import qualified Control.Monad.Trans.RWS.Lazy as L
+import qualified Control.Monad.Trans.RWS.Strict as S
+import Control.Monad.Abort.Class
+import Control.Exception hiding (
+  evaluate, throw, throwIO, catch, catchJust, handle, handleJust,
+  Handler(..), catches, try, tryJust, finally, onException,
+  block, unblock, blocked, getMaskingState, mask, mask_, uninterruptibleMask,
+  uninterruptibleMask_, bracket, bracket_, bracketOnError)
+import qualified Control.Exception as E
+import GHC.Base (maskAsyncExceptions#, maskUninterruptible#,
+                 unmaskAsyncExceptions#)
+import GHC.IO (IO(..))
+
+exception ∷ Exception e ⇒ e → α
+exception = E.throw
+
+evaluate ∷ MonadBase IO μ ⇒ α → μ α
+evaluate = liftBase . E.evaluate
+
+throw ∷ (MonadAbort SomeException μ, Exception e) ⇒ e → μ α
+throw = abort . toException
+
+throwIO ∷ (MonadBase IO μ, Exception e) ⇒ e → μ α
+throwIO = liftBase . E.throwIO
+
+catch ∷ (MonadRecover SomeException μ, Exception e) ⇒ μ α → (e → μ α) → μ α
+catch m h = recover m $ \e → maybe (throw e) h (fromException e)
+
+catchJust ∷ (MonadRecover SomeException μ, Exception e)
+          ⇒ (e → Maybe β) → μ α → (β → μ α) → μ α
+catchJust f m h = catch m $ \e → maybe (throw e) h $ f e
+
+handle ∷ (MonadRecover SomeException μ, Exception e) ⇒ (e → μ α) → μ α → μ α
+handle = flip catch
+
+handleJust ∷ (MonadRecover SomeException μ, Exception e)
+           ⇒ (e → Maybe β) → (β → μ α) → μ α → μ α
+handleJust = flip . catchJust
+
+data Handler μ α = ∀ e . Exception e ⇒ Handler (e → μ α)
+
+catches ∷ MonadRecover SomeException μ ⇒ μ α → [Handler μ α] → μ α
+catches m = recover m . hl
+  where hl [] e = abort e
+        hl (Handler h : hs) e = maybe (hl hs e) h $ fromException e
+
+try ∷ (MonadRecover SomeException μ, Exception e) ⇒ μ α → μ (Either e α)
+try m = catch (m >>= return . Right) (return . Left)
+
+tryJust ∷ (MonadRecover SomeException μ, Exception e)
+        ⇒ (e → Maybe β) → μ α → μ (Either β α)
+tryJust f m = catch (m >>= return . Right) $ \e →
+                maybe (throw e) (return . Left) $ f e
+
+onException ∷ (MonadRecover SomeException μ, Exception e)
+            ⇒ μ α → (e → μ β) → μ α
+onException m h = catch m (\e → h e >> throw e)
+
+onExceptions ∷ MonadRecover SomeException μ
+             ⇒ μ α → [Handler μ β] → μ α
+onExceptions m = recover m . hl
+  where hl [] e = abort e
+        hl (Handler h : hs) e =
+          maybe (hl hs e) (\e' → h e' >> abort e) $ fromException e
+
+class (Applicative μ, Monad μ) ⇒ MonadFinally μ where
+  finally' ∷ μ α → (Maybe α → μ β) → μ (α, β)
+  finally  ∷ μ α → μ β → μ α
+  finally m = fmap fst . finally' m . const
+
+instance MonadFinally Identity where
+  finally' m f = do
+    a ← m
+    return (a, runIdentity $ f $ Just a)
+
+instance MonadFinally IO where
+  finally' m f = E.mask $ \restore → do
+    a ← restore m `E.onException` f Nothing
+    b ← f $ Just a
+    return (a, b)
+
+instance MonadFinally μ ⇒ MonadFinally (MaybeT μ) where
+  finally' m f = MaybeT $ do
+    ~(mr, fr) ← finally' (runMaybeT m) $ \mbr →
+      runMaybeT $ f $ case mbr of
+        Just (Just a) → Just a
+        _             → Nothing
+    return $ (,) <$> mr <*> fr
+
+instance MonadFinally μ ⇒ MonadFinally (ListT μ) where
+  finally' m f = ListT $ do
+    ~(mrs, frss) ← finally' (runListT m) $ \mbr → case mbr of
+      Just rs@(_ : _) → forM rs $ runListT . f . Just
+      _ → fmap pure $ runListT $ f Nothing
+    return $ zip mrs frss >>= \(mr, frs) → zip (repeat mr) frs
+
+instance MonadFinally μ ⇒ MonadFinally (AbortT e μ) where
+  finally' m f = AbortT $ do
+    ~(mr, fr) ← finally' (runAbortT m) $ \mbr →
+      runAbortT $ f $ case mbr of
+        Just (Right a) → Just a
+        _              → Nothing
+    return $ (,) <$> mr <*> fr
+
+instance MonadFinally μ ⇒ MonadFinally (FinishT β μ) where
+  finally' m f = FinishT $ do
+    ~(mr, fr) ← finally' (runFinishT m) $ \mbr →
+      runFinishT $ f $ case mbr of
+        Just (Right a) → Just a
+        _              → Nothing
+    return $ (,) <$> mr <*> fr
+
+instance (MonadFinally μ, Error e) ⇒ MonadFinally (ErrorT e μ) where
+  finally' m f = ErrorT $ do
+    ~(mr, fr) ← finally' (runErrorT m) $ \mbr →
+      runErrorT $ f $ case mbr of
+        Just (Right a) → Just a
+        _              → Nothing
+    return $ (,) <$> mr <*> fr
+
+instance MonadFinally μ ⇒ MonadFinally (ReaderT r μ) where
+  finally' m f = ReaderT $ \r →
+    finally' (runReaderT m r) ((`runReaderT` r) . f)
+
+instance MonadFinally μ ⇒ MonadFinally (L.StateT s μ) where
+  finally' m f = L.StateT $ \s → do
+    ~(~(mr, _), ~(fr, s'')) ← finally' (L.runStateT m s) $ \mbr → do
+      let ~(a, s') = case mbr of
+             Just ~(x, t) → (Just x, t)
+             Nothing      → (Nothing, s)
+      L.runStateT (f a) s'
+    return ((mr, fr), s'')
+
+instance MonadFinally μ ⇒ MonadFinally (S.StateT s μ) where
+  finally' m f = S.StateT $ \s → do
+    ((mr, _), (fr, s'')) ← finally' (S.runStateT m s) $ \mbr → case mbr of
+      Just (a, s') → S.runStateT (f $ Just a) s'
+      Nothing      → S.runStateT (f Nothing) s
+    return ((mr, fr), s'')
+
+instance (MonadFinally μ, Monoid w) ⇒ MonadFinally (L.WriterT w μ) where
+  finally' m f = L.WriterT $ do
+    ~(~(mr, w), ~(fr, w')) ← finally' (L.runWriterT m) $
+      L.runWriterT . f . fmap fst
+    return ((mr, fr), w `mappend` w')
+
+instance (MonadFinally μ, Monoid w) ⇒ MonadFinally (S.WriterT w μ) where
+  finally' m f = S.WriterT $ do
+    ((mr, w), (fr, w')) ← finally' (S.runWriterT m) $ \mbr → case mbr of
+      Just (a, _) → S.runWriterT $ f $ Just a
+      Nothing     → S.runWriterT $ f Nothing
+    return ((mr, fr), w `mappend` w')
+
+instance (MonadFinally μ, Monoid w) ⇒ MonadFinally (L.RWST r w s μ) where
+  finally' m f = L.RWST $ \r s → do
+    ~(~(mr, _, w), ~(fr, s'', w')) ← finally' (L.runRWST m r s) $ \mbr → do
+      let ~(a, s') = case mbr of
+             Just ~(x, t, _) → (Just x, t)
+             Nothing         → (Nothing, s)
+      L.runRWST (f a) r s'
+    return ((mr, fr), s'', w `mappend` w')
+
+instance (MonadFinally μ, Monoid w) ⇒ MonadFinally (S.RWST r w s μ) where
+  finally' m f = S.RWST $ \r s → do
+    ((mr, _, w), (fr, s'', w')) ← finally' (S.runRWST m r s) $ \mbr →
+      case mbr of
+        Just (a, s', _) → S.runRWST (f $ Just a) r s'
+        Nothing         → S.runRWST (f Nothing) r s
+    return ((mr, fr), s'', w `mappend` w')
+
+onEscape ∷ MonadFinally μ ⇒ μ α → μ β → μ α
+onEscape m f = fmap fst $ finally' m $ maybe (() <$ f) (const $ return ())
+
+tryAll ∷ MonadFinally μ ⇒ [μ α] → μ ()
+tryAll []       = return ()
+tryAll (m : ms) = finally (() <$ m) $ tryAll ms
+
+deriving instance Ord MaskingState
+deriving instance Enum MaskingState
+deriving instance Bounded MaskingState
+
+instance Default MaskingState where
+  def = MaskedInterruptible
+
+class (Applicative μ, Monad μ, Ord m, Bounded m, Default m)
+      ⇒ MonadMask m μ | μ → m where
+  getMaskingState ∷ μ m
+  setMaskingState ∷ m → μ α → μ α
+
+instance MonadMask () Identity where
+  getMaskingState = return ()
+  setMaskingState = const id
+
+instance MonadMask MaskingState IO where
+  getMaskingState = E.getMaskingState
+  setMaskingState Unmasked (IO io) = IO $ unmaskAsyncExceptions# io
+  setMaskingState MaskedInterruptible (IO io) = IO $ maskAsyncExceptions# io
+  setMaskingState MaskedUninterruptible (IO io) = IO $ maskUninterruptible# io
+
+liftSetMaskingState ∷ (MonadTransControl t, MonadMask m μ, Monad (t μ))
+                    ⇒ m → t μ α → t μ α
+liftSetMaskingState ms m =
+  join $ liftM (restoreT . return) $ liftWith $ \run →
+    setMaskingState ms (run m)
+{-# INLINE liftSetMaskingState #-}
+
+instance MonadMask m μ ⇒ MonadMask m (MaybeT μ) where
+  getMaskingState = lift getMaskingState
+  setMaskingState = liftSetMaskingState
+
+instance MonadMask m μ ⇒ MonadMask m (ListT μ) where
+  getMaskingState = lift getMaskingState
+  setMaskingState = liftSetMaskingState
+
+instance MonadMask m μ ⇒ MonadMask m (AbortT e μ) where
+  getMaskingState = lift getMaskingState
+  setMaskingState = liftSetMaskingState
+
+instance MonadMask m μ ⇒ MonadMask m (FinishT β μ) where
+  getMaskingState = lift getMaskingState
+  setMaskingState = liftSetMaskingState
+
+instance (MonadMask m μ, Error e) ⇒ MonadMask m (ErrorT e μ) where
+  getMaskingState = lift getMaskingState
+  setMaskingState = liftSetMaskingState
+
+instance MonadMask m μ ⇒ MonadMask m (ReaderT r μ) where
+  getMaskingState = lift getMaskingState
+  setMaskingState = liftSetMaskingState
+
+instance MonadMask m μ ⇒ MonadMask m (L.StateT s μ) where
+  getMaskingState = lift getMaskingState
+  setMaskingState = liftSetMaskingState
+
+instance MonadMask m μ ⇒ MonadMask m (S.StateT s μ) where
+  getMaskingState = lift getMaskingState
+  setMaskingState = liftSetMaskingState
+
+instance (MonadMask m μ, Monoid w) ⇒ MonadMask m (L.WriterT w μ) where
+  getMaskingState = lift getMaskingState
+  setMaskingState = liftSetMaskingState
+
+instance (MonadMask m μ, Monoid w) ⇒ MonadMask m (S.WriterT w μ) where
+  getMaskingState = lift getMaskingState
+  setMaskingState = liftSetMaskingState
+
+instance (MonadMask m μ, Monoid w) ⇒ MonadMask m (L.RWST r w s μ) where
+  getMaskingState = lift getMaskingState
+  setMaskingState = liftSetMaskingState
+
+instance (MonadMask m μ, Monoid w) ⇒ MonadMask m (S.RWST r w s μ) where
+  getMaskingState = lift getMaskingState
+  setMaskingState = liftSetMaskingState
+
+withMaskingState ∷ MonadMask m μ
+                 ⇒ m → ((∀ η β . MonadMask m η ⇒ η β → η β) → μ α) → μ α
+withMaskingState ms' m = do
+  ms ← getMaskingState
+  if ms' > ms
+    then setMaskingState ms' $ m $ setMaskingState ms
+    else m id
+
+withMaskingState_ ∷ MonadMask m μ ⇒ m → μ α → μ α
+withMaskingState_ m = withMaskingState m . const
+
+mask ∷ MonadMask m μ ⇒ ((∀ η β . MonadMask m η ⇒ η β → η β) → μ α) → μ α
+mask = withMaskingState def
+
+mask_ ∷ MonadMask m μ ⇒ μ α → μ α
+mask_ = withMaskingState_ def
+
+uninterruptibleMask ∷ MonadMask MaskingState μ
+                    ⇒ ((∀ η β . MonadMask MaskingState η ⇒ η β → η β) → μ α)
+                    → μ α
+uninterruptibleMask = withMaskingState MaskedUninterruptible
+
+uninterruptibleMask_ ∷ MonadMask MaskingState μ ⇒ μ α → μ α
+uninterruptibleMask_ = withMaskingState_ MaskedUninterruptible
+
+bracket ∷ (MonadFinally μ, MonadMask m μ)
+        ⇒ μ α → (α → μ β) → (α → μ γ) → μ γ
+bracket acq release m = mask $ \restore → do
+  a ← acq
+  finally (restore $ m a) (release a)
+
+bracket_ ∷ (MonadFinally μ, MonadMask m μ) ⇒ μ α → μ β → μ γ → μ γ
+bracket_ acq release m = bracket acq (const release) (const m)
+
+bracketOnEscape ∷ (MonadFinally μ, MonadMask m μ)
+                ⇒ μ α → (α → μ β) → (α → μ γ) → μ γ
+bracketOnEscape acq release m = mask $ \restore → do
+  a ← acq
+  restore (m a) `onEscape` release a
+
+bracketOnError ∷ (MonadRecover e μ, MonadMask m μ)
+               ⇒ μ α → (α → μ β) → (α → μ γ) → μ γ
+bracketOnError acq release m = mask $ \restore → do
+  a ← acq
+  r ← restore (m a) `onError_` release a
+  r <$ release a
+
+</pre></br><h2>printed</h2></br><pre>{-# LANGUAGE UnicodeSyntax #-}
+{-# LANGUAGE MagicHash #-}
+{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE FunctionalDependencies #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE UndecidableInstances #-}
+{-# OPTIONS_GHC -fno-warn-orphans #-}
+
+module Control.Monad.Exception (
+    exception,
+    evaluate,
+    throw,
+    throwIO,
+    catch,
+    catchJust,
+    handle,
+    handleJust,
+    Handler(..),
+    catches,
+    try,
+    tryJust,
+    onException,
+    onExceptions,
+    MonadFinally(..),
+    onEscape,
+    tryAll,
+    MonadMask(..),
+    mask,
+    mask_,
+    uninterruptibleMask,
+    uninterruptibleMask_,
+    bracket,
+    bracket_,
+    bracketOnEscape,
+    bracketOnError,
+    module Control.Monad.Abort.Class,
+    module Control.Exception
+  ) where
+
+import Prelude hiding (catch)
+import Data.Monoid
+import Data.Default
+import Data.Traversable
+import Data.Functor.Identity
+import Control.Applicative
+import Control.Monad (join, liftM)
+import Control.Monad.Base
+import Control.Monad.Trans.Class
+import Control.Monad.Trans.Control
+import Control.Monad.Trans.Abort hiding (abort, recover)
+import Control.Monad.Trans.Finish
+import Control.Monad.Trans.Maybe
+import Control.Monad.Trans.List
+import Control.Monad.Trans.Error
+import Control.Monad.Trans.Reader
+import qualified Control.Monad.Trans.State.Lazy as L
+import qualified Control.Monad.Trans.State.Strict as S
+import qualified Control.Monad.Trans.Writer.Lazy as L
+import qualified Control.Monad.Trans.Writer.Strict as S
+import qualified Control.Monad.Trans.RWS.Lazy as L
+import qualified Control.Monad.Trans.RWS.Strict as S
+import Control.Monad.Abort.Class
+import Control.Exception hiding (
+  evaluate, throw, throwIO, catch, catchJust, handle, handleJust,
+  Handler(..), catches, try, tryJust, finally, onException,
+  block, unblock, blocked, getMaskingState, mask, mask_, uninterruptibleMask,
+  uninterruptibleMask_, bracket, bracket_, bracketOnError)
+import qualified Control.Exception as E
+import GHC.Base (maskAsyncExceptions#, maskUninterruptible#,
+                 unmaskAsyncExceptions#)
+import GHC.IO (IO(..))
+
+exception :: Exception e => e -> α
+exception = E.throw
+
+evaluate :: MonadBase IO μ => α -> μ α
+evaluate = liftBase . E.evaluate
+
+throw :: (MonadAbort SomeException μ, Exception e) => e -> μ α
+throw = abort . toException
+
+throwIO :: (MonadBase IO μ, Exception e) => e -> μ α
+throwIO = liftBase . E.throwIO
+
+catch :: (MonadRecover SomeException μ, Exception e) => μ α -> (e -> μ α) -> μ α
+catch m h = recover m $ \e -> maybe (throw e) h (fromException e)
+
+catchJust :: (MonadRecover SomeException μ, Exception e)
+          => (e -> Maybe β) -> μ α -> (β -> μ α) -> μ α
+catchJust f m h = catch m $ \e -> maybe (throw e) h $ f e
+
+handle :: (MonadRecover SomeException μ, Exception e) => (e -> μ α) -> μ α -> μ α
+handle = flip catch
+
+handleJust :: (MonadRecover SomeException μ, Exception e)
+           => (e -> Maybe β) -> (β -> μ α) -> μ α -> μ α
+handleJust = flip . catchJust
+
+data Handler μ α = forall e . Exception e => Handler (e -> μ α)
+
+catches :: MonadRecover SomeException μ => μ α -> [Handler μ α] -> μ α
+catches m = recover m . hl
+  where hl [] e = abort e
+        hl (Handler h : hs) e = maybe (hl hs e) h $ fromException e
+
+try :: (MonadRecover SomeException μ, Exception e) => μ α -> μ (Either e α)
+try m = catch (m >>= return . Right) (return . Left)
+
+tryJust :: (MonadRecover SomeException μ, Exception e)
+        => (e -> Maybe β) -> μ α -> μ (Either β α)
+tryJust f m = catch (m >>= return . Right) $ \e ->
+                maybe (throw e) (return . Left) $ f e
+
+onException :: (MonadRecover SomeException μ, Exception e)
+            => μ α -> (e -> μ β) -> μ α
+onException m h = catch m (\e -> h e >> throw e)
+
+onExceptions :: MonadRecover SomeException μ
+             => μ α -> [Handler μ β] -> μ α
+onExceptions m = recover m . hl
+  where hl [] e = abort e
+        hl (Handler h : hs) e =
+          maybe (hl hs e) (\e' -> h e' >> abort e) $ fromException e
+
+class (Applicative μ, Monad μ) => MonadFinally μ where
+  finally' :: μ α -> (Maybe α -> μ β) -> μ (α, β)
+  finally  :: μ α -> μ β -> μ α
+  finally m = fmap fst . finally' m . const
+
+instance MonadFinally Identity where
+  finally' m f = do
+    a <- m
+    return (a, runIdentity $ f $ Just a)
+
+instance MonadFinally IO where
+  finally' m f = E.mask $ \restore -> do
+    a <- restore m `E.onException` f Nothing
+    b <- f $ Just a
+    return (a, b)
+
+instance MonadFinally μ => MonadFinally (MaybeT μ) where
+  finally' m f = MaybeT $ do
+    ~(mr, fr) <- finally' (runMaybeT m) $ \mbr ->
+       runMaybeT $ f $ case mbr of
+         Just (Just a) -> Just a
+         _             -> Nothing
+    return $ (,) <$> mr <*> fr
+
+instance MonadFinally μ => MonadFinally (ListT μ) where
+  finally' m f = ListT $ do
+    ~(mrs, frss) <- finally' (runListT m) $ \mbr -> case mbr of
+       Just rs@(_ : _) -> forM rs $ runListT . f . Just
+       _ -> fmap pure $ runListT $ f Nothing
+    return $ zip mrs frss >>= \(mr, frs) -> zip (repeat mr) frs
+
+instance MonadFinally μ => MonadFinally (AbortT e μ) where
+  finally' m f = AbortT $ do
+    ~(mr, fr) <- finally' (runAbortT m) $ \mbr ->
+       runAbortT $ f $ case mbr of
+         Just (Right a) -> Just a
+         _              -> Nothing
+    return $ (,) <$> mr <*> fr
+
+instance MonadFinally μ => MonadFinally (FinishT β μ) where
+  finally' m f = FinishT $ do
+    ~(mr, fr) <- finally' (runFinishT m) $ \mbr ->
+       runFinishT $ f $ case mbr of
+         Just (Right a) -> Just a
+         _              -> Nothing
+    return $ (,) <$> mr <*> fr
+
+instance (MonadFinally μ, Error e) => MonadFinally (ErrorT e μ) where
+  finally' m f = ErrorT $ do
+    ~(mr, fr) <- finally' (runErrorT m) $ \mbr ->
+       runErrorT $ f $ case mbr of
+         Just (Right a) -> Just a
+         _              -> Nothing
+    return $ (,) <$> mr <*> fr
+
+instance MonadFinally μ => MonadFinally (ReaderT r μ) where
+  finally' m f = ReaderT $ \r ->
+    finally' (runReaderT m r) ((`runReaderT` r) . f)
+
+instance MonadFinally μ => MonadFinally (L.StateT s μ) where
+  finally' m f = L.StateT $ \s -> do
+    ~(~(mr, _), ~(fr, s'')) <- finally' (L.runStateT m s) $ \mbr -> do
+       let ~(a, s') = case mbr of
+              Just ~(x, t) -> (Just x, t)
+              Nothing      -> (Nothing, s)
+       L.runStateT (f a) s'
+    return ((mr, fr), s'')
+
+instance MonadFinally μ => MonadFinally (S.StateT s μ) where
+  finally' m f = S.StateT $ \s -> do
+    ((mr, _), (fr, s'')) <- finally' (S.runStateT m s) $ \mbr -> case mbr of
+       Just (a, s') -> S.runStateT (f $ Just a) s'
+       Nothing      -> S.runStateT (f Nothing) s
+    return ((mr, fr), s'')
+
+instance (MonadFinally μ, Monoid w) => MonadFinally (L.WriterT w μ) where
+  finally' m f = L.WriterT $ do
+    ~(~(mr, w), ~(fr, w')) <- finally' (L.runWriterT m) $
+      L.runWriterT . f . fmap fst
+    return ((mr, fr), w `mappend` w')
+
+instance (MonadFinally μ, Monoid w) => MonadFinally (S.WriterT w μ) where
+  finally' m f = S.WriterT $ do
+    ((mr, w), (fr, w')) <- finally' (S.runWriterT m) $ \mbr -> case mbr of
+       Just (a, _) -> S.runWriterT $ f $ Just a
+       Nothing     -> S.runWriterT $ f Nothing
+    return ((mr, fr), w `mappend` w')
+
+instance (MonadFinally μ, Monoid w) => MonadFinally (L.RWST r w s μ) where
+  finally' m f = L.RWST $ \r s -> do
+    ~(~(mr, _, w), ~(fr, s'', w')) <- finally' (L.runRWST m r s) $ \mbr -> do
+       let ~(a, s') = case mbr of
+              Just ~(x, t, _) -> (Just x, t)
+              Nothing         -> (Nothing, s)
+       L.runRWST (f a) r s'
+    return ((mr, fr), s'', w `mappend` w')
+
+instance (MonadFinally μ, Monoid w) => MonadFinally (S.RWST r w s μ) where
+  finally' m f = S.RWST $ \r s -> do
+    ((mr, _, w), (fr, s'', w')) <- finally' (S.runRWST m r s) $ \mbr ->
+       case mbr of
+         Just (a, s', _) -> S.runRWST (f $ Just a) r s'
+         Nothing         -> S.runRWST (f Nothing) r s
+    return ((mr, fr), s'', w `mappend` w')
+
+onEscape :: MonadFinally μ => μ α -> μ β -> μ α
+onEscape m f = fmap fst $ finally' m $ maybe (() <$ f) (const $ return ())
+
+tryAll :: MonadFinally μ => [μ α] -> μ ()
+tryAll []       = return ()
+tryAll (m : ms) = finally (() <$ m) $ tryAll ms
+
+deriving instance Ord MaskingState
+deriving instance Enum MaskingState
+deriving instance Bounded MaskingState
+
+instance Default MaskingState where
+  def = MaskedInterruptible
+
+class (Applicative μ, Monad μ, Ord m, Bounded m, Default m)
+      => MonadMask m μ | μ -> m where
+  getMaskingState :: μ m
+  setMaskingState :: m -> μ α -> μ α
+
+instance MonadMask () Identity where
+  getMaskingState = return ()
+  setMaskingState = const id
+
+instance MonadMask MaskingState IO where
+  getMaskingState = E.getMaskingState
+  setMaskingState Unmasked (IO io) = IO $ unmaskAsyncExceptions# io
+  setMaskingState MaskedInterruptible (IO io) = IO $ maskAsyncExceptions# io
+  setMaskingState MaskedUninterruptible (IO io) = IO $ maskUninterruptible# io
+
+liftSetMaskingState :: (MonadTransControl t, MonadMask m μ, Monad (t μ))
+                    => m -> t μ α -> t μ α
+liftSetMaskingState ms m =
+  join $ liftM (restoreT . return) $ liftWith $ \run ->
+    setMaskingState ms (run m)
+{-# INLINE liftSetMaskingState #-}
+
+instance MonadMask m μ => MonadMask m (MaybeT μ) where
+  getMaskingState = lift getMaskingState
+  setMaskingState = liftSetMaskingState
+
+instance MonadMask m μ => MonadMask m (ListT μ) where
+  getMaskingState = lift getMaskingState
+  setMaskingState = liftSetMaskingState
+
+instance MonadMask m μ => MonadMask m (AbortT e μ) where
+  getMaskingState = lift getMaskingState
+  setMaskingState = liftSetMaskingState
+
+instance MonadMask m μ => MonadMask m (FinishT β μ) where
+  getMaskingState = lift getMaskingState
+  setMaskingState = liftSetMaskingState
+
+instance (MonadMask m μ, Error e) => MonadMask m (ErrorT e μ) where
+  getMaskingState = lift getMaskingState
+  setMaskingState = liftSetMaskingState
+
+instance MonadMask m μ => MonadMask m (ReaderT r μ) where
+  getMaskingState = lift getMaskingState
+  setMaskingState = liftSetMaskingState
+
+instance MonadMask m μ => MonadMask m (L.StateT s μ) where
+  getMaskingState = lift getMaskingState
+  setMaskingState = liftSetMaskingState
+
+instance MonadMask m μ => MonadMask m (S.StateT s μ) where
+  getMaskingState = lift getMaskingState
+  setMaskingState = liftSetMaskingState
+
+instance (MonadMask m μ, Monoid w) => MonadMask m (L.WriterT w μ) where
+  getMaskingState = lift getMaskingState
+  setMaskingState = liftSetMaskingState
+
+instance (MonadMask m μ, Monoid w) => MonadMask m (S.WriterT w μ) where
+  getMaskingState = lift getMaskingState
+  setMaskingState = liftSetMaskingState
+
+instance (MonadMask m μ, Monoid w) => MonadMask m (L.RWST r w s μ) where
+  getMaskingState = lift getMaskingState
+  setMaskingState = liftSetMaskingState
+
+instance (MonadMask m μ, Monoid w) => MonadMask m (S.RWST r w s μ) where
+  getMaskingState = lift getMaskingState
+  setMaskingState = liftSetMaskingState
+
+withMaskingState :: MonadMask m μ
+                 => m -> ((forall η β . MonadMask m η => η β -> η β) -> μ α) -> μ α
+withMaskingState ms' m = do
+  ms <- getMaskingState
+  if ms' > ms
+    then setMaskingState ms' $ m $ setMaskingState ms
+    else m id
+
+withMaskingState_ :: MonadMask m μ => m -> μ α -> μ α
+withMaskingState_ m = withMaskingState m . const
+
+mask :: MonadMask m μ => ((forall η β . MonadMask m η => η β -> η β) -> μ α) -> μ α
+mask = withMaskingState def
+
+mask_ :: MonadMask m μ => μ α -> μ α
+mask_ = withMaskingState_ def
+
+uninterruptibleMask :: MonadMask MaskingState μ
+                    => ((forall η β . MonadMask MaskingState η => η β -> η β) -> μ α)
+                    -> μ α
+uninterruptibleMask = withMaskingState MaskedUninterruptible
+
+uninterruptibleMask_ :: MonadMask MaskingState μ => μ α -> μ α
+uninterruptibleMask_ = withMaskingState_ MaskedUninterruptible
+
+bracket :: (MonadFinally μ, MonadMask m μ)
+        => μ α -> (α -> μ β) -> (α -> μ γ) -> μ γ
+bracket acq release m = mask $ \restore -> do
+  a <- acq
+  finally (restore $ m a) (release a)
+
+bracket_ :: (MonadFinally μ, MonadMask m μ) => μ α -> μ β -> μ γ -> μ γ
+bracket_ acq release m = bracket acq (const release) (const m)
+
+bracketOnEscape :: (MonadFinally μ, MonadMask m μ)
+                => μ α -> (α -> μ β) -> (α -> μ γ) -> μ γ
+bracketOnEscape acq release m = mask $ \restore -> do
+  a <- acq
+  restore (m a) `onEscape` release a
+
+bracketOnError :: (MonadRecover e μ, MonadMask m μ)
+               => μ α -> (α -> μ β) -> (α -> μ γ) -> μ γ
+bracketOnError acq release m = mask $ \restore -> do
+  a <- acq
+  r <- restore (m a) `onError_` release a
+  r <$ release a
+
+
+</pre>

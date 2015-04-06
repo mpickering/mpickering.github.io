@@ -1,0 +1,1015 @@
+<a href="Main.hs843998877959637304.out.html">prev</a></br><a href="failures.html">home</a></br><a href="Main.hs8849367161807130337.out.html">next</a></br></br><pre>174c174
+<              ;if dp then postGUIAsync $ saveDups  filesave stbar stcx attvarr1 tbcod1
+---
+>              ;if dp
+174a175
+> 
+174a176
+>              ; postGUIAsync $ saveDups  filesave stbar stcx attvarr1 tbcod1
+211c213
+<     ;if ambp then statusbarPush stbar stcx "Building rules and checking for ambiguities..."
+---
+>     ;if ambp
+211a214
+> 
+211a215
+>     ; statusbarPush stbar stcx "Building rules and checking for ambiguities..."
+222c226
+<              then postGUIAsync $ saveAmbs filesave stbar stcx attvarr2 rlspart
+---
+> 
+222a227
+> 
+222a228
+>          ; postGUIAsync $ saveAmbs filesave stbar stcx attvarr2 rlspart
+269c275
+<        then return ()
+---
+> 
+269a276
+> 
+269a277
+> 
+269a278
+> 
+269a279
+> 
+269a280
+>                                            -- selection can be called more times
+269a281
+> 
+269a282
+>                                                                            -- all reduced rules for that value
+269a283
+>                                                                            -- all original rules for that value
+269a284
+> 
+269a285
+> 
+269a286
+> 
+269a287
+>                                           -- user can select another without doing abduction on the prior one
+269a288
+> 
+269a289
+> 
+269a290
+> 
+269a291
+> 
+269a292
+>               -- end else
+269a293
+>             -- end forkIO
+269a294
+> 
+269a295
+>           -- end else
+269a296
+>     ; return ()
+274c301
+<          ;allreds2 <- readMVar globAllReds -- selection can be called more times
+---
+>          ;allreds2 <- readMVar globAllReds
+276d302
+<          ;let abdr1 = filter (\r -> snd (snd r) == vsix) (concat allreds2) -- all reduced rules for that value
+277c303
+<               orig1 =filter (\r -> snd (snd r) == vsix) (concat allorigs2) -- all original rules for that value
+---
+>          ;let abdr1 = filter (\r -> snd (snd r) == vsix) (concat allreds2)
+277a304
+>               orig1 =filter (\r -> snd (snd r) == vsix) (concat allorigs2)
+281c308
+<               tryTakeMVar globAbduReds    -- user can select another without doing abduction on the prior one
+---
+>               tryTakeMVar globAbduReds
+286d312
+<             } -- end else
+287c313
+<           } -- end forkIO
+---
+>             }
+287a314
+>           }
+289c316
+<         } -- end else
+---
+>         }
+443a471
+> 
+</pre></br><h2>original</h2></br><pre>{- | Module Main
+Emping 0.6 (provisional)
+
+Module Main performs the GUI and I\/O tasks for the reduction and abduction of heuristic rules. The input is a table in a comma separated file (.csv) format as produced by the Open Office Calc spreadsheet. The reduction output is in the same format and can be read by OO Calc. Dependencies between reduced rules are shown as a graph in .dot format, which can be viewed with a GraphViz viewer like dotty or gzviewer.
+
+The user can open a .csv file, select an attribute which is to be the consequent, and Emping will find all shortest rules which predict the values of the selected attribute.
+For the same attribute, the user can select a value, and Emping will find implications (entailments) between the reduced rules.
+
+For example, in a table containing the name of a disease, and 'yes' and 'no' in its column,  with a list of symptoms and values like 'yes', 'no', or 'absent', 'mild', 'severe', and so on, in the table rows, Emping will find the smallest sets of symptoms that predict that disease, and also those that predict its absence.
+Selecting 'yes' will then produce a graph of all relationships between the groups of symptoms that predict the disease. Selecting 'no' will find the relationships between the syptom sets that disprove that disease.
+
+See the white paper \"Deriving Heuristic Rules from Facts\" (January 2007) for more on the foundation and algorithm.
+
+Tue 26 May 2009 05:23:44 PM CEST -}
+
+module Main (main) where
+import Graphics.UI.Gtk
+import Control.Concurrent
+import Data.Maybe (fromJust)
+import Data.Array
+import CsvParse
+import Codec
+import DefRules
+import CsvTable
+import Reduce
+import Abduce
+
+main :: IO ()
+main = do
+  initGUI
+  timeoutAddFull (yield >> return True) priorityDefaultIdle 50
+  window <- windowNew
+  set window [windowTitle := "Emping",  windowDefaultWidth := 470,
+              windowDefaultHeight := 140]
+  vbox1 <- vBoxNew False 0
+  containerAdd window vbox1
+
+  file <- actionNew "FileMenu" "File" (Just "Open and exit") (Just stockFile)
+  newsrc <- actionNew "NewSrc" "New Table" (Just "Get a new source (.csv) file") (Just stockNew)
+  open <- actionNew "OpenSrc" "Open" (Just "Open a source (.csv) file") (Just stockOpen)
+  dupchk <- toggleActionNew "DupChck" "Table Check" (Just "Check table for duplicate rows") Nothing
+  quit <- actionNew "QuitAct" "Quit" Nothing (Just stockQuit)
+
+  rule <- actionNew "RuleMenu" "Rule" (Just "Construct a rule") (Just stockNew)
+  newatt <- actionNew "NewAtt" "New Rules" (Just "Define a new consequent attribute") (Just stockNew)
+  cons <- actionNew "SelCons" "Select" (Just "Select the attribute which is to be the consequent") (Just stockProperties)
+  ambchk <- toggleActionNew "AmbChck" "Rule Check" (Just "Check whether some rules are ambiguous") Nothing
+
+  rdmenu <- actionNew "RedMenu" "Reduction" (Just "Reduced normal form of all the rules") (Just stockConvert)
+  reduce <- actionNew "Reduce" "Reduce All" (Just "Reduce all rules to shortest") (Just stockExecute)
+
+  abmenu <- actionNew "AbduMenu" "Abduction" (Just "Entailments of rules with the same consequent")  (Just stockSortDescending)
+  abdsel <- actionNew "SelAbd" "Choose" (Just "Select consequent value for rule abduction") (Just stockProperties)
+  abduce <- actionNew "Abduce" "Abduce"  (Just "Show rule entailments for selected consequent") (Just stockZoom100)
+  abdgsl <- toggleActionNew "AbdGsl" "Most General" (Just "Checked is most, unchecked is least general") Nothing
+  abdmlg <- actionNew "AbdMgn" "M/L General"  (Just "Show most/least general rules for selected consequent") (Just stockGotoBottom)
+
+  infmenu <- actionNew "InfMenu"  "About"  (Just "Summary Information") Nothing
+  about <- actionNew "About"  "About"  (Just "Summary Information") (Just stockAbout)
+
+  actgrp <- actionGroupNew "ActGrp"
+  mapM_ (actionGroupAddAction actgrp) [file,newsrc,open,quit,rule,newatt, cons,rdmenu,reduce,abmenu,abdsel,abduce, abdmlg,infmenu,about]
+  mapM_ (flip actionSetSensitive False) [newsrc,cons,newatt,reduce,abdsel,abduce,abdmlg]
+  mapM_ (actionGroupAddAction actgrp) [dupchk,ambchk,abdgsl]
+  toggleActionSetActive dupchk False
+  toggleActionSetActive ambchk True
+  toggleActionSetActive abdgsl True
+
+  manager <- uiManagerNew
+  uiManagerAddUiFromString manager uiDecl
+  uiManagerInsertActionGroup manager actgrp 0
+
+  mbMenubar <- uiManagerGetWidget manager "ui/menubar"
+  boxPackStart vbox1 (fromJust mbMenubar) PackNatural 0
+
+  stbar <- statusbarNew
+  boxPackEnd vbox1 stbar PackNatural 0
+  stcx <- statusbarGetContextId stbar "General"
+
+  mbToolbar <- uiManagerGetWidget manager "ui/toolbar"
+  boxPackEnd vbox1 (fromJust mbToolbar) PackNatural 0
+
+  filesrc <- fileChooserDialogNew   (Just "Source File in CSV") (Just window)
+                                     FileChooserActionOpen
+                                     [("Cancel", ResponseCancel), ("Open", ResponseAccept)]
+  csvfilt <- fileFilterNew
+  fileFilterAddPattern csvfilt "*.csv"
+  fileFilterSetName csvfilt "CSV Source"
+  fileChooserAddFilter filesrc csvfilt
+
+  filesave <- fileChooserDialogNew  (Just "Save File") (Just window)
+                                     FileChooserActionSave
+                                     [("Cancel", ResponseCancel), ("Save", ResponseAccept)]
+  fileChooserSetDoOverwriteConfirmation filesave True
+
+  apop <- windowNewPopup
+  set apop [ windowDefaultWidth := 100, windowDefaultHeight := 100,
+             windowTypeHint := WindowTypeHintCombo, windowWindowPosition := WinPosMouse]
+  apbox <- vBoxNew False 0
+  containerAdd apop apbox
+  asb <- comboBoxNewText
+  set asb [comboBoxHasFrame := True]
+  boxPackStart apbox asb PackGrow 0
+
+  vpop <- windowNewPopup
+  set vpop [ windowDefaultWidth := 100, windowDefaultHeight := 100,
+             windowTypeHint := WindowTypeHintCombo, windowWindowPosition := WinPosMouse]
+  vpbox <- vBoxNew False 0
+  containerAdd vpop vpbox
+  vsb <- comboBoxNewText
+  set vsb [comboBoxHasFrame := True]
+  boxPackStart vpbox vsb PackGrow 0
+
+  globNameArray <- newEmptyMVar
+  globTableCode <- newEmptyMVar
+  globRulesPartition <- newEmptyMVar
+  globAttIndex <- newEmptyMVar
+  globAllReds <- newEmptyMVar
+  globAbduReds <- newEmptyMVar
+  globAbduOrigs <- newEmptyMVar
+  globAbdGraph <- newEmptyMVar
+  globAttLength <- newEmptyMVar
+  globValLength <- newEmptyMVar
+
+  abop <- windowNewPopup
+  set abop [windowDefaultWidth := 100, windowDefaultHeight := 100,
+            windowTypeHint := WindowTypeHintNotification]
+  abovb <- vBoxNew False 0
+  containerAdd abop abovb
+  abclose <- buttonNewFromStock stockClose
+  boxPackStart abovb abclose PackNatural 0
+  frame <- frameNew
+  boxPackStart abovb frame PackNatural 0
+  label <- labelNew (Just "\n\n   Emping: version 0.6\n   (c) 2006-2009 Hans van Thiel  \n   Licence: GPL\n   www.muitovar.com\n\n")
+  containerAdd frame label
+  frameSetShadowType frame ShadowOut
+  widgetModifyBg abop StateNormal (Color 0 0 35000)
+  widgetModifyFg label StateNormal (Color 65535 65535 65535 )
+  image <- imageNewFromFile "./HaskellM.png"
+  boxPackStart abovb image PackNatural 0
+
+
+  onActionActivate newsrc $ do {      -- reset everything
+    mapM_ (flip actionSetSensitive False) [open,cons,reduce,abdsel,abduce,abdmlg]
+    ;tryTakeMVar globNameArray
+    ;tryTakeMVar globTableCode
+    ;tryTakeMVar globRulesPartition
+    ;tryTakeMVar globAttIndex
+    ;tryTakeMVar globAllReds
+    ;tryTakeMVar globAbduReds
+    ;tryTakeMVar globAbduOrigs
+    ;tryTakeMVar globAbdGraph
+    ;attln1 <- takeMVar globAttLength  -- at reset, there's always a combo initialised
+    ;clearCombo asb attln1
+    ;mbvalln1 <- tryTakeMVar globValLength
+    ;case mbvalln1 of
+       Nothing ->  return ()
+       Just valln1 ->  clearCombo vsb valln1
+    ;statusbarPush stbar stcx "Open another source file..."
+    ;actionSetSensitive open True
+  } -- end newsrc
+
+  onActionActivate open $ do
+    mbf1 <- empFileName filesrc
+    case mbf1 of
+       Nothing -> return ()
+       Just fpath1 ->  do
+         { statusbarPush stbar stcx "Reading and parsing .csv table..."
+           ;dp <- get dupchk toggleActionActive
+           ;forkIO $ do {
+             ;tbstr <- getTable fpath1
+             ;let attvarr1 = tableToArray tbstr
+                  tbcod1 = tableCode tbstr
+             ;if dp then postGUIAsync $ saveDups  filesave stbar stcx attvarr1 tbcod1
+                    else return ()
+             ;let  als = (fst . unzip) (elems attvarr1)
+             ;postGUIAsync $ mapM_ (comboBoxAppendText asb) als
+             ;putMVar globAttLength (length als)               -- initialize new attribute list
+             ;putMVar globNameArray attvarr1                   -- should be empty if reset by action new
+             ;putMVar globTableCode (cleanFacts dp tbcod1)     -- only no dupplicates guaranteed if user checked the box!
+             ;postGUIAsync $ actionSetSensitive newsrc True
+             ;postGUIAsync $ actionSetSensitive cons True
+             ;postGUIAsync $ statusbarPush stbar stcx ".csv table read and parsed.."  >> return ()
+             } -- end fork
+             ;actionSetSensitive open False
+       } -- end Just
+
+  onActionActivate newatt $ do { -- just like newsrc, except for the source table and its name array and the attribute length ??
+    mapM_ (flip actionSetSensitive False) [reduce,abdsel,abduce,abdmlg]
+    ;tryTakeMVar globRulesPartition
+    ;tryTakeMVar globAttIndex
+    ;tryTakeMVar globAllReds
+    ;tryTakeMVar globAbduReds
+    ;tryTakeMVar globAbduOrigs
+    ;tryTakeMVar globAbdGraph
+    ;mbvalln2 <- tryTakeMVar globValLength
+    ;case mbvalln2 of
+        Nothing -> return ()
+        Just valln2 ->  clearCombo vsb valln2
+    ;comboBoxSetActive asb (-1)
+    ;actionSetSensitive cons True
+    ;statusbarPush stbar stcx "Define rules with another consequent attribute..."
+    ;return ()
+  }
+
+  onActionActivate cons $ do widgetShowAll apop
+
+  onChanged asb $ do {
+    mbasix1 <- comboBoxGetActive asb
+    ;ambp <- get ambchk toggleActionActive
+    ;if ambp then statusbarPush stbar stcx "Building rules and checking for ambiguities..."
+             else statusbarPush stbar stcx "Building rules..."
+    ;case mbasix1 of
+       Nothing -> return ()
+       Just asix1 -> do {
+         forkIO $ do {
+         ;tbcod2 <- readMVar globTableCode
+         ;attvarr2 <- readMVar globNameArray
+         ;let rlspart = factsToPartition asix1 tbcod2
+              rsp = partitionToSets rlspart
+         ;if ambp
+             then postGUIAsync $ saveAmbs filesave stbar stcx attvarr2 rlspart
+             else postGUIAsync $ (statusbarPush stbar stcx "Not checked for ambiguous rules...") >> return ()
+         ;putMVar globRulesPartition rsp -- write rules
+         ;putMVar globAttIndex asix1  -- write which attribute
+         ;postGUIAsync $ actionSetSensitive reduce True
+         ;postGUIAsync $ actionSetSensitive newatt True
+         }  -- end forkIO
+       ;actionSetSensitive cons False
+       } -- end Just
+      ;widgetHideAll apop
+     } -- end onChange
+
+  onActionActivate reduce $ do {
+    statusbarPush stbar stcx  "Reducing all rules, this may take a while..."
+    ;forkIO $ do {
+       asix2 <- readMVar globAttIndex
+       ;attvarr3 <- readMVar globNameArray
+       ;let attname = fst (attvarr3 ! asix2)
+       ;allorigs1 <- readMVar globRulesPartition
+       ;let allreds1 = reduceAll allorigs1
+       ;mbf1 <- empFileName filesave
+       ;case mbf1 of
+             Nothing -> postGUIAsync $ statusbarPush stbar stcx  ("Save of reduced rules for " ++ attname ++ " cancelled")  >> return ()
+             Just fpath -> do writeFile (fpath ++ ".csv") (redTbShow allreds1 attvarr3)
+                              postGUIAsync $ statusbarPush stbar stcx  ("Finished reduction for " ++ attname ) >> return ()
+       ;putMVar globAllReds allreds1
+       ;mbvalln3 <- tryTakeMVar globValLength
+       ;case  mbvalln3 of
+             Nothing  -> return ()
+             Just valln3 -> postGUIAsync $ clearCombo vsb valln3 -- remove any previous value strings
+       ;let vls =  snd (attvarr3 ! asix2)
+       ;postGUIAsync $ mapM_ (comboBoxAppendText vsb) vls
+       ;putMVar globValLength (length vls) -- initialize value selection for abduction
+       ;actionSetSensitive abdsel True
+       } -- end forkIO
+     ;actionSetSensitive abduce False
+     ;actionSetSensitive abdmlg False
+     ;actionSetSensitive reduce False
+    ;return ()
+  } -- end reduce
+
+  onActionActivate abdsel $ widgetShowAll vpop
+
+  onChanged vsb $ do {
+    mbvsix <- comboBoxGetActive vsb
+    ;mbvnam1 <- comboBoxGetActiveText vsb
+    ;if mbvsix == Nothing || mbvnam1 == Nothing
+       then return ()
+       else  do {
+         let vsix = fromJust mbvsix
+             vnam1 = fromJust mbvnam1
+         ;forkIO $ do {
+         ;allreds2 <- readMVar globAllReds -- selection can be called more times
+         ;allorigs2 <- readMVar globRulesPartition
+         ;let abdr1 = filter (\r -> snd (snd r) == vsix) (concat allreds2) -- all reduced rules for that value
+              orig1 =filter (\r -> snd (snd r) == vsix) (concat allorigs2) -- all original rules for that value
+         ;if abdr1 == []
+            then postGUIAsync $ statusbarPush stbar stcx  ("No rules found, for " ++ vnam1 ++ " ,possibly because of ambiguity") >> return ()
+            else do {
+              tryTakeMVar globAbduReds    -- user can select another without doing abduction on the prior one
+              ;putMVar globAbduReds abdr1
+              ;tryTakeMVar globAbduOrigs
+              ;putMVar globAbduOrigs orig1
+              ;postGUIAsync $ actionSetSensitive abduce True
+            } -- end else
+          } -- end forkIO
+         ;return ()
+        } -- end else
+    ;actionSetSensitive abdsel False
+    ;widgetHideAll vpop
+   } -- end onChanged
+
+  onActionActivate abduce $ do {
+    statusbarPush stbar stcx "Searching for rule entailments"
+    ;(Just vnam2) <- comboBoxGetActiveText vsb
+    ;forkIO $ do {
+      abdr2 <- readMVar globAbduReds
+      ;orig2 <- readMVar globAbduOrigs
+      ;attvarr4 <- readMVar globNameArray
+      ;asix3 <- readMVar globAttIndex
+      ;let abg1 = abduceReds abdr2 orig2
+           anam = fst (attvarr4 ! asix3 )
+      ;tryTakeMVar globAbdGraph
+      ;putMVar globAbdGraph abg1
+      ;if graphHasImps abg1 == False
+         then postGUIAsync $ statusbarPush stbar stcx ("No entailments in " ++ anam ++ " : " ++ vnam2 ++ " rules") >> return ()
+         else do {
+           mbf2 <- empFileName filesave
+           ;case mbf2 of
+              Nothing -> postGUIAsync $ statusbarPush stbar stcx ("Save of entailment results for " ++ anam ++ " : " ++ vnam2 ++ " cancelled") >> return ()
+              Just fpath ->  do writeFile (fpath ++ ".dot") (eqivGraphShow abg1 "emping")
+                                writeFile (fpath ++ ".csv") (legendGrTbShow abg1 attvarr4)
+                                postGUIAsync $ statusbarPush stbar stcx  ("Saved rule entailments for " ++ anam ++ " : " ++ vnam2 ) >> return ()
+                                actionSetSensitive abdsel True
+            } -- end else
+    } -- end forkIO
+   ;actionSetSensitive abduce False
+   ;actionSetSensitive abdsel False
+   ;actionSetSensitive abdmlg True
+  } -- end abduce
+
+  onActionActivate abdmlg $ do {
+    mstg <- get abdgsl toggleActionActive
+    ;let cs = if mstg then " most " else " least "
+    ;statusbarPush stbar stcx ("Getting" ++ cs ++ "general rules")
+    ;forkIO $ do {
+       attvarr5 <- readMVar globNameArray
+       ;abg2 <- readMVar globAbdGraph
+       ;let mgg = graphMLGen mstg abg2
+       ;mbf3 <- empFileName filesave
+       ;case mbf3 of
+             Nothing -> postGUIAsync $ statusbarPush stbar stcx ("Save of" ++ cs ++ "general rules cancelled") >> return ()
+             Just fpath ->  do  writeFile (fpath ++ ".csv") (legendGrTbShow mgg attvarr5)
+                                postGUIAsync $ statusbarPush stbar stcx  ("Saved" ++ cs ++ "general rules") >> return ()
+    } -- end fork
+   ; return ()
+  } -- end activate
+
+
+  onActionActivate about $ widgetShowAll abop
+
+  onClicked abclose $ widgetHideAll abop
+
+  widgetShowAll window
+  onActionActivate quit $ do {
+    widgetDestroy window
+    ;widgetDestroy apop
+    ;widgetDestroy vpop
+    ;widgetDestroy abop
+                              }
+  onDestroy window mainQuit
+  mainGUI
+
+uiDecl :: String
+uiDecl = "<ui>\
+\            <menubar>\
+\             <menu action=\"FileMenu\">\
+\                <menuitem action=\"NewSrc\" />\
+\                <menuitem action=\"OpenSrc\" />\
+\                <menuitem action=\"DupChck\" />\
+\                <menuitem action=\"QuitAct\" />\
+\              </menu>\
+\             <menu action=\"RuleMenu\">\
+\                <menuitem action=\"NewAtt\" />\
+\                <menuitem action=\"SelCons\" />\
+\                <menuitem action=\"AmbChck\" />\
+\             </menu>\
+\            <menu action=\"RedMenu\">\
+\                <menuitem action=\"Reduce\" />\
+\            </menu>\
+\            <menu action=\"AbduMenu\">\
+\                <menuitem action=\"SelAbd\" />\
+\                <menuitem action=\"Abduce\" />\
+\                <menuitem action=\"AbdGsl\" />\
+\                <menuitem action=\"AbdMgn\" />\
+\            </menu>\
+\            <menu action=\"InfMenu\">\
+\                <menuitem action=\"About\" />\
+\            </menu>\
+\            </menubar>\
+\            <toolbar>\
+\              <toolitem action=\"OpenSrc\" />\
+\              <toolitem action=\"SelCons\" />\
+\              <toolitem action=\"Reduce\" />\
+\              <toolitem action=\"SelAbd\" />\
+\              <toolitem action=\"Abduce\" />\
+\            </toolbar>\
+\         </ui>"
+
+
+-- helper function to get file path
+empFileName :: FileChooserDialog ->  IO (Maybe FilePath)
+empFileName fs =
+  do resp <- dialogRun fs
+     widgetHide fs
+     case resp of
+          ResponseAccept -> fileChooserGetFilename fs
+          (_) -> return Nothing
+
+-- let the user save a .csv file of duplicate table rows with counts
+saveDups :: FileChooserDialog -> Statusbar -> ContextId -> Array Int (String,[String])-> [[AVp]] -> IO  ()
+saveDups  fs dupstat dupcontext attvarr cfac = do {
+  statusbarPush dupstat dupcontext "Checking for duplicates..."
+  ;let dups = getDups cfac
+  ;if dups == []
+     then statusbarPush dupstat dupcontext "No duplicate rows found in the table" >> return ()
+     else do {mbf <- empFileName fs
+       ;case mbf of
+          Nothing -> statusbarPush dupstat dupcontext "Save of row duplicates cancelled" >> return ()
+          Just fpath -> do
+            { writeFile (fpath ++ ".csv") (dupTbShow  dups attvarr)
+              ;statusbarPush dupstat dupcontext ("Duplicate rows written to " ++ fpath ++ ".csv")
+              ;return ()
+            } -- end Just
+      } -- end else
+  } -- end saveDups
+
+-- let the user save ambiguous rules in .csv format
+saveAmbs :: FileChooserDialog -> Statusbar -> ContextId -> Array Int (String,[String])-> [[([AVp], AVp)]] -> IO  ()
+saveAmbs  fs ambstat ambcontext attvarr rpart = do {
+  let allambs = getAmbiguousRules rpart
+  ;if allambs == []
+     then statusbarPush ambstat ambcontext "No ambiguous rules found" >>  return ()
+     else do { mbf <- empFileName fs
+       ;case mbf of
+          Nothing -> statusbarPush ambstat ambcontext "Save of ambiguous rules cancelled" >> return ()
+          Just fpath -> do {
+            writeFile  (fpath ++ ".csv") (ambigTbShow  allambs attvarr)
+            ;statusbarPush ambstat ambcontext ("Ambiguous rules written to " ++ fpath ++ ".csv")
+            ;return ()
+          } -- end Just
+       } -- end else
+  } -- end saveAmbs
+
+-- helper function to clear combo box
+clearCombo :: ComboBoxClass self => self -> Int -> IO ()
+clearCombo cb ln = mapM_  (comboBoxRemoveText cb) (reverse [0..(ln-1)])
+
+
+
+
+
+</pre></br><h2>printed</h2></br><pre>{- | Module Main
+Emping 0.6 (provisional)
+
+Module Main performs the GUI and I\/O tasks for the reduction and abduction of heuristic rules. The input is a table in a comma separated file (.csv) format as produced by the Open Office Calc spreadsheet. The reduction output is in the same format and can be read by OO Calc. Dependencies between reduced rules are shown as a graph in .dot format, which can be viewed with a GraphViz viewer like dotty or gzviewer.
+
+The user can open a .csv file, select an attribute which is to be the consequent, and Emping will find all shortest rules which predict the values of the selected attribute.
+For the same attribute, the user can select a value, and Emping will find implications (entailments) between the reduced rules.
+
+For example, in a table containing the name of a disease, and 'yes' and 'no' in its column,  with a list of symptoms and values like 'yes', 'no', or 'absent', 'mild', 'severe', and so on, in the table rows, Emping will find the smallest sets of symptoms that predict that disease, and also those that predict its absence.
+Selecting 'yes' will then produce a graph of all relationships between the groups of symptoms that predict the disease. Selecting 'no' will find the relationships between the syptom sets that disprove that disease.
+
+See the white paper \"Deriving Heuristic Rules from Facts\" (January 2007) for more on the foundation and algorithm.
+
+Tue 26 May 2009 05:23:44 PM CEST -}
+
+module Main (main) where
+import Graphics.UI.Gtk
+import Control.Concurrent
+import Data.Maybe (fromJust)
+import Data.Array
+import CsvParse
+import Codec
+import DefRules
+import CsvTable
+import Reduce
+import Abduce
+
+main :: IO ()
+main = do
+  initGUI
+  timeoutAddFull (yield >> return True) priorityDefaultIdle 50
+  window <- windowNew
+  set window [windowTitle := "Emping",  windowDefaultWidth := 470,
+              windowDefaultHeight := 140]
+  vbox1 <- vBoxNew False 0
+  containerAdd window vbox1
+
+  file <- actionNew "FileMenu" "File" (Just "Open and exit") (Just stockFile)
+  newsrc <- actionNew "NewSrc" "New Table" (Just "Get a new source (.csv) file") (Just stockNew)
+  open <- actionNew "OpenSrc" "Open" (Just "Open a source (.csv) file") (Just stockOpen)
+  dupchk <- toggleActionNew "DupChck" "Table Check" (Just "Check table for duplicate rows") Nothing
+  quit <- actionNew "QuitAct" "Quit" Nothing (Just stockQuit)
+
+  rule <- actionNew "RuleMenu" "Rule" (Just "Construct a rule") (Just stockNew)
+  newatt <- actionNew "NewAtt" "New Rules" (Just "Define a new consequent attribute") (Just stockNew)
+  cons <- actionNew "SelCons" "Select" (Just "Select the attribute which is to be the consequent") (Just stockProperties)
+  ambchk <- toggleActionNew "AmbChck" "Rule Check" (Just "Check whether some rules are ambiguous") Nothing
+
+  rdmenu <- actionNew "RedMenu" "Reduction" (Just "Reduced normal form of all the rules") (Just stockConvert)
+  reduce <- actionNew "Reduce" "Reduce All" (Just "Reduce all rules to shortest") (Just stockExecute)
+
+  abmenu <- actionNew "AbduMenu" "Abduction" (Just "Entailments of rules with the same consequent")  (Just stockSortDescending)
+  abdsel <- actionNew "SelAbd" "Choose" (Just "Select consequent value for rule abduction") (Just stockProperties)
+  abduce <- actionNew "Abduce" "Abduce"  (Just "Show rule entailments for selected consequent") (Just stockZoom100)
+  abdgsl <- toggleActionNew "AbdGsl" "Most General" (Just "Checked is most, unchecked is least general") Nothing
+  abdmlg <- actionNew "AbdMgn" "M/L General"  (Just "Show most/least general rules for selected consequent") (Just stockGotoBottom)
+
+  infmenu <- actionNew "InfMenu"  "About"  (Just "Summary Information") Nothing
+  about <- actionNew "About"  "About"  (Just "Summary Information") (Just stockAbout)
+
+  actgrp <- actionGroupNew "ActGrp"
+  mapM_ (actionGroupAddAction actgrp) [file,newsrc,open,quit,rule,newatt, cons,rdmenu,reduce,abmenu,abdsel,abduce, abdmlg,infmenu,about]
+  mapM_ (flip actionSetSensitive False) [newsrc,cons,newatt,reduce,abdsel,abduce,abdmlg]
+  mapM_ (actionGroupAddAction actgrp) [dupchk,ambchk,abdgsl]
+  toggleActionSetActive dupchk False
+  toggleActionSetActive ambchk True
+  toggleActionSetActive abdgsl True
+
+  manager <- uiManagerNew
+  uiManagerAddUiFromString manager uiDecl
+  uiManagerInsertActionGroup manager actgrp 0
+
+  mbMenubar <- uiManagerGetWidget manager "ui/menubar"
+  boxPackStart vbox1 (fromJust mbMenubar) PackNatural 0
+
+  stbar <- statusbarNew
+  boxPackEnd vbox1 stbar PackNatural 0
+  stcx <- statusbarGetContextId stbar "General"
+
+  mbToolbar <- uiManagerGetWidget manager "ui/toolbar"
+  boxPackEnd vbox1 (fromJust mbToolbar) PackNatural 0
+
+  filesrc <- fileChooserDialogNew   (Just "Source File in CSV") (Just window)
+                                     FileChooserActionOpen
+                                     [("Cancel", ResponseCancel), ("Open", ResponseAccept)]
+  csvfilt <- fileFilterNew
+  fileFilterAddPattern csvfilt "*.csv"
+  fileFilterSetName csvfilt "CSV Source"
+  fileChooserAddFilter filesrc csvfilt
+
+  filesave <- fileChooserDialogNew  (Just "Save File") (Just window)
+                                     FileChooserActionSave
+                                     [("Cancel", ResponseCancel), ("Save", ResponseAccept)]
+  fileChooserSetDoOverwriteConfirmation filesave True
+
+  apop <- windowNewPopup
+  set apop [ windowDefaultWidth := 100, windowDefaultHeight := 100,
+             windowTypeHint := WindowTypeHintCombo, windowWindowPosition := WinPosMouse]
+  apbox <- vBoxNew False 0
+  containerAdd apop apbox
+  asb <- comboBoxNewText
+  set asb [comboBoxHasFrame := True]
+  boxPackStart apbox asb PackGrow 0
+
+  vpop <- windowNewPopup
+  set vpop [ windowDefaultWidth := 100, windowDefaultHeight := 100,
+             windowTypeHint := WindowTypeHintCombo, windowWindowPosition := WinPosMouse]
+  vpbox <- vBoxNew False 0
+  containerAdd vpop vpbox
+  vsb <- comboBoxNewText
+  set vsb [comboBoxHasFrame := True]
+  boxPackStart vpbox vsb PackGrow 0
+
+  globNameArray <- newEmptyMVar
+  globTableCode <- newEmptyMVar
+  globRulesPartition <- newEmptyMVar
+  globAttIndex <- newEmptyMVar
+  globAllReds <- newEmptyMVar
+  globAbduReds <- newEmptyMVar
+  globAbduOrigs <- newEmptyMVar
+  globAbdGraph <- newEmptyMVar
+  globAttLength <- newEmptyMVar
+  globValLength <- newEmptyMVar
+
+  abop <- windowNewPopup
+  set abop [windowDefaultWidth := 100, windowDefaultHeight := 100,
+            windowTypeHint := WindowTypeHintNotification]
+  abovb <- vBoxNew False 0
+  containerAdd abop abovb
+  abclose <- buttonNewFromStock stockClose
+  boxPackStart abovb abclose PackNatural 0
+  frame <- frameNew
+  boxPackStart abovb frame PackNatural 0
+  label <- labelNew (Just "\n\n   Emping: version 0.6\n   (c) 2006-2009 Hans van Thiel  \n   Licence: GPL\n   www.muitovar.com\n\n")
+  containerAdd frame label
+  frameSetShadowType frame ShadowOut
+  widgetModifyBg abop StateNormal (Color 0 0 35000)
+  widgetModifyFg label StateNormal (Color 65535 65535 65535 )
+  image <- imageNewFromFile "./HaskellM.png"
+  boxPackStart abovb image PackNatural 0
+
+
+  onActionActivate newsrc $ do {      -- reset everything
+    mapM_ (flip actionSetSensitive False) [open,cons,reduce,abdsel,abduce,abdmlg]
+    ;tryTakeMVar globNameArray
+    ;tryTakeMVar globTableCode
+    ;tryTakeMVar globRulesPartition
+    ;tryTakeMVar globAttIndex
+    ;tryTakeMVar globAllReds
+    ;tryTakeMVar globAbduReds
+    ;tryTakeMVar globAbduOrigs
+    ;tryTakeMVar globAbdGraph
+    ;attln1 <- takeMVar globAttLength  -- at reset, there's always a combo initialised
+    ;clearCombo asb attln1
+    ;mbvalln1 <- tryTakeMVar globValLength
+    ;case mbvalln1 of
+       Nothing ->  return ()
+       Just valln1 ->  clearCombo vsb valln1
+    ;statusbarPush stbar stcx "Open another source file..."
+    ;actionSetSensitive open True
+  } -- end newsrc
+
+  onActionActivate open $ do
+    mbf1 <- empFileName filesrc
+    case mbf1 of
+       Nothing -> return ()
+       Just fpath1 ->  do
+         { statusbarPush stbar stcx "Reading and parsing .csv table..."
+           ;dp <- get dupchk toggleActionActive
+           ;forkIO $ do {
+             ;tbstr <- getTable fpath1
+             ;let attvarr1 = tableToArray tbstr
+                  tbcod1 = tableCode tbstr
+             ;if dp
+
+             ; postGUIAsync $ saveDups  filesave stbar stcx attvarr1 tbcod1
+                    else return ()
+             ;let  als = (fst . unzip) (elems attvarr1)
+             ;postGUIAsync $ mapM_ (comboBoxAppendText asb) als
+             ;putMVar globAttLength (length als)               -- initialize new attribute list
+             ;putMVar globNameArray attvarr1                   -- should be empty if reset by action new
+             ;putMVar globTableCode (cleanFacts dp tbcod1)     -- only no dupplicates guaranteed if user checked the box!
+             ;postGUIAsync $ actionSetSensitive newsrc True
+             ;postGUIAsync $ actionSetSensitive cons True
+             ;postGUIAsync $ statusbarPush stbar stcx ".csv table read and parsed.."  >> return ()
+             } -- end fork
+             ;actionSetSensitive open False
+       } -- end Just
+
+  onActionActivate newatt $ do { -- just like newsrc, except for the source table and its name array and the attribute length ??
+    mapM_ (flip actionSetSensitive False) [reduce,abdsel,abduce,abdmlg]
+    ;tryTakeMVar globRulesPartition
+    ;tryTakeMVar globAttIndex
+    ;tryTakeMVar globAllReds
+    ;tryTakeMVar globAbduReds
+    ;tryTakeMVar globAbduOrigs
+    ;tryTakeMVar globAbdGraph
+    ;mbvalln2 <- tryTakeMVar globValLength
+    ;case mbvalln2 of
+        Nothing -> return ()
+        Just valln2 ->  clearCombo vsb valln2
+    ;comboBoxSetActive asb (-1)
+    ;actionSetSensitive cons True
+    ;statusbarPush stbar stcx "Define rules with another consequent attribute..."
+    ;return ()
+  }
+
+  onActionActivate cons $ do widgetShowAll apop
+
+  onChanged asb $ do {
+    mbasix1 <- comboBoxGetActive asb
+    ;ambp <- get ambchk toggleActionActive
+    ;if ambp
+
+    ; statusbarPush stbar stcx "Building rules and checking for ambiguities..."
+             else statusbarPush stbar stcx "Building rules..."
+    ;case mbasix1 of
+       Nothing -> return ()
+       Just asix1 -> do {
+         forkIO $ do {
+         ;tbcod2 <- readMVar globTableCode
+         ;attvarr2 <- readMVar globNameArray
+         ;let rlspart = factsToPartition asix1 tbcod2
+              rsp = partitionToSets rlspart
+         ;if ambp
+
+
+         ; postGUIAsync $ saveAmbs filesave stbar stcx attvarr2 rlspart
+             else postGUIAsync $ (statusbarPush stbar stcx "Not checked for ambiguous rules...") >> return ()
+         ;putMVar globRulesPartition rsp -- write rules
+         ;putMVar globAttIndex asix1  -- write which attribute
+         ;postGUIAsync $ actionSetSensitive reduce True
+         ;postGUIAsync $ actionSetSensitive newatt True
+         }  -- end forkIO
+       ;actionSetSensitive cons False
+       } -- end Just
+      ;widgetHideAll apop
+     } -- end onChange
+
+  onActionActivate reduce $ do {
+    statusbarPush stbar stcx  "Reducing all rules, this may take a while..."
+    ;forkIO $ do {
+       asix2 <- readMVar globAttIndex
+       ;attvarr3 <- readMVar globNameArray
+       ;let attname = fst (attvarr3 ! asix2)
+       ;allorigs1 <- readMVar globRulesPartition
+       ;let allreds1 = reduceAll allorigs1
+       ;mbf1 <- empFileName filesave
+       ;case mbf1 of
+             Nothing -> postGUIAsync $ statusbarPush stbar stcx  ("Save of reduced rules for " ++ attname ++ " cancelled")  >> return ()
+             Just fpath -> do writeFile (fpath ++ ".csv") (redTbShow allreds1 attvarr3)
+                              postGUIAsync $ statusbarPush stbar stcx  ("Finished reduction for " ++ attname ) >> return ()
+       ;putMVar globAllReds allreds1
+       ;mbvalln3 <- tryTakeMVar globValLength
+       ;case  mbvalln3 of
+             Nothing  -> return ()
+             Just valln3 -> postGUIAsync $ clearCombo vsb valln3 -- remove any previous value strings
+       ;let vls =  snd (attvarr3 ! asix2)
+       ;postGUIAsync $ mapM_ (comboBoxAppendText vsb) vls
+       ;putMVar globValLength (length vls) -- initialize value selection for abduction
+       ;actionSetSensitive abdsel True
+       } -- end forkIO
+     ;actionSetSensitive abduce False
+     ;actionSetSensitive abdmlg False
+     ;actionSetSensitive reduce False
+    ;return ()
+  } -- end reduce
+
+  onActionActivate abdsel $ widgetShowAll vpop
+
+  onChanged vsb $ do {
+    mbvsix <- comboBoxGetActive vsb
+    ;mbvnam1 <- comboBoxGetActiveText vsb
+    ;if mbvsix == Nothing || mbvnam1 == Nothing
+
+
+
+
+
+                                           -- selection can be called more times
+
+                                                                           -- all reduced rules for that value
+                                                                           -- all original rules for that value
+
+
+
+                                          -- user can select another without doing abduction on the prior one
+
+
+
+
+              -- end else
+            -- end forkIO
+
+          -- end else
+    ; return ()
+       else  do {
+         let vsix = fromJust mbvsix
+             vnam1 = fromJust mbvnam1
+         ;forkIO $ do {
+         ;allreds2 <- readMVar globAllReds
+         ;allorigs2 <- readMVar globRulesPartition
+         ;let abdr1 = filter (\r -> snd (snd r) == vsix) (concat allreds2)
+              orig1 =filter (\r -> snd (snd r) == vsix) (concat allorigs2)
+         ;if abdr1 == []
+            then postGUIAsync $ statusbarPush stbar stcx  ("No rules found, for " ++ vnam1 ++ " ,possibly because of ambiguity") >> return ()
+            else do {
+              tryTakeMVar globAbduReds
+              ;putMVar globAbduReds abdr1
+              ;tryTakeMVar globAbduOrigs
+              ;putMVar globAbduOrigs orig1
+              ;postGUIAsync $ actionSetSensitive abduce True
+            }
+          }
+         ;return ()
+        }
+    ;actionSetSensitive abdsel False
+    ;widgetHideAll vpop
+   } -- end onChanged
+
+  onActionActivate abduce $ do {
+    statusbarPush stbar stcx "Searching for rule entailments"
+    ;(Just vnam2) <- comboBoxGetActiveText vsb
+    ;forkIO $ do {
+      abdr2 <- readMVar globAbduReds
+      ;orig2 <- readMVar globAbduOrigs
+      ;attvarr4 <- readMVar globNameArray
+      ;asix3 <- readMVar globAttIndex
+      ;let abg1 = abduceReds abdr2 orig2
+           anam = fst (attvarr4 ! asix3 )
+      ;tryTakeMVar globAbdGraph
+      ;putMVar globAbdGraph abg1
+      ;if graphHasImps abg1 == False
+         then postGUIAsync $ statusbarPush stbar stcx ("No entailments in " ++ anam ++ " : " ++ vnam2 ++ " rules") >> return ()
+         else do {
+           mbf2 <- empFileName filesave
+           ;case mbf2 of
+              Nothing -> postGUIAsync $ statusbarPush stbar stcx ("Save of entailment results for " ++ anam ++ " : " ++ vnam2 ++ " cancelled") >> return ()
+              Just fpath ->  do writeFile (fpath ++ ".dot") (eqivGraphShow abg1 "emping")
+                                writeFile (fpath ++ ".csv") (legendGrTbShow abg1 attvarr4)
+                                postGUIAsync $ statusbarPush stbar stcx  ("Saved rule entailments for " ++ anam ++ " : " ++ vnam2 ) >> return ()
+                                actionSetSensitive abdsel True
+            } -- end else
+    } -- end forkIO
+   ;actionSetSensitive abduce False
+   ;actionSetSensitive abdsel False
+   ;actionSetSensitive abdmlg True
+  } -- end abduce
+
+  onActionActivate abdmlg $ do {
+    mstg <- get abdgsl toggleActionActive
+    ;let cs = if mstg then " most " else " least "
+    ;statusbarPush stbar stcx ("Getting" ++ cs ++ "general rules")
+    ;forkIO $ do {
+       attvarr5 <- readMVar globNameArray
+       ;abg2 <- readMVar globAbdGraph
+       ;let mgg = graphMLGen mstg abg2
+       ;mbf3 <- empFileName filesave
+       ;case mbf3 of
+             Nothing -> postGUIAsync $ statusbarPush stbar stcx ("Save of" ++ cs ++ "general rules cancelled") >> return ()
+             Just fpath ->  do  writeFile (fpath ++ ".csv") (legendGrTbShow mgg attvarr5)
+                                postGUIAsync $ statusbarPush stbar stcx  ("Saved" ++ cs ++ "general rules") >> return ()
+    } -- end fork
+   ; return ()
+  } -- end activate
+
+
+  onActionActivate about $ widgetShowAll abop
+
+  onClicked abclose $ widgetHideAll abop
+
+  widgetShowAll window
+  onActionActivate quit $ do {
+    widgetDestroy window
+    ;widgetDestroy apop
+    ;widgetDestroy vpop
+    ;widgetDestroy abop
+                              }
+  onDestroy window mainQuit
+  mainGUI
+
+uiDecl :: String
+uiDecl = "<ui>\
+\            <menubar>\
+\             <menu action=\"FileMenu\">\
+\                <menuitem action=\"NewSrc\" />\
+\                <menuitem action=\"OpenSrc\" />\
+\                <menuitem action=\"DupChck\" />\
+\                <menuitem action=\"QuitAct\" />\
+\              </menu>\
+\             <menu action=\"RuleMenu\">\
+\                <menuitem action=\"NewAtt\" />\
+\                <menuitem action=\"SelCons\" />\
+\                <menuitem action=\"AmbChck\" />\
+\             </menu>\
+\            <menu action=\"RedMenu\">\
+\                <menuitem action=\"Reduce\" />\
+\            </menu>\
+\            <menu action=\"AbduMenu\">\
+\                <menuitem action=\"SelAbd\" />\
+\                <menuitem action=\"Abduce\" />\
+\                <menuitem action=\"AbdGsl\" />\
+\                <menuitem action=\"AbdMgn\" />\
+\            </menu>\
+\            <menu action=\"InfMenu\">\
+\                <menuitem action=\"About\" />\
+\            </menu>\
+\            </menubar>\
+\            <toolbar>\
+\              <toolitem action=\"OpenSrc\" />\
+\              <toolitem action=\"SelCons\" />\
+\              <toolitem action=\"Reduce\" />\
+\              <toolitem action=\"SelAbd\" />\
+\              <toolitem action=\"Abduce\" />\
+\            </toolbar>\
+\         </ui>"
+
+
+-- helper function to get file path
+empFileName :: FileChooserDialog ->  IO (Maybe FilePath)
+empFileName fs =
+  do resp <- dialogRun fs
+     widgetHide fs
+     case resp of
+          ResponseAccept -> fileChooserGetFilename fs
+          (_) -> return Nothing
+
+-- let the user save a .csv file of duplicate table rows with counts
+saveDups :: FileChooserDialog -> Statusbar -> ContextId -> Array Int (String,[String])-> [[AVp]] -> IO  ()
+saveDups  fs dupstat dupcontext attvarr cfac = do {
+  statusbarPush dupstat dupcontext "Checking for duplicates..."
+  ;let dups = getDups cfac
+  ;if dups == []
+     then statusbarPush dupstat dupcontext "No duplicate rows found in the table" >> return ()
+     else do {mbf <- empFileName fs
+       ;case mbf of
+          Nothing -> statusbarPush dupstat dupcontext "Save of row duplicates cancelled" >> return ()
+          Just fpath -> do
+            { writeFile (fpath ++ ".csv") (dupTbShow  dups attvarr)
+              ;statusbarPush dupstat dupcontext ("Duplicate rows written to " ++ fpath ++ ".csv")
+              ;return ()
+            } -- end Just
+      } -- end else
+  } -- end saveDups
+
+-- let the user save ambiguous rules in .csv format
+saveAmbs :: FileChooserDialog -> Statusbar -> ContextId -> Array Int (String,[String])-> [[([AVp], AVp)]] -> IO  ()
+saveAmbs  fs ambstat ambcontext attvarr rpart = do {
+  let allambs = getAmbiguousRules rpart
+  ;if allambs == []
+     then statusbarPush ambstat ambcontext "No ambiguous rules found" >>  return ()
+     else do { mbf <- empFileName fs
+       ;case mbf of
+          Nothing -> statusbarPush ambstat ambcontext "Save of ambiguous rules cancelled" >> return ()
+          Just fpath -> do {
+            writeFile  (fpath ++ ".csv") (ambigTbShow  allambs attvarr)
+            ;statusbarPush ambstat ambcontext ("Ambiguous rules written to " ++ fpath ++ ".csv")
+            ;return ()
+          } -- end Just
+       } -- end else
+  } -- end saveAmbs
+
+-- helper function to clear combo box
+clearCombo :: ComboBoxClass self => self -> Int -> IO ()
+clearCombo cb ln = mapM_  (comboBoxRemoveText cb) (reverse [0..(ln-1)])
+
+
+
+
+
+
+</pre>

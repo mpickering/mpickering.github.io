@@ -1,0 +1,330 @@
+<a href="Server.hs571540977194847408.out.html">prev</a></br><a href="failures.html">home</a></br><a href="Server.hs823378840143542612.out.html">next</a></br></br><pre>16d15
+< import "mtl" Control.Monad.Reader
+17c16
+< import "mtl" Control.Monad.State hiding (get)
+---
+> import  Control.Monad.Reader
+17a17
+> import  Control.Monad.State hiding (get)
+159a160
+> 
+</pre></br><h2>original</h2></br><pre>{-# LANGUAGE PackageImports #-}
+
+module CodeMushu.Server where
+
+import CodeMushu.Env
+import Prelude ()
+import CodeMushu.Repo
+
+import Network.Loli
+
+import Text.JSON.Generic
+import Hack.Contrib.Request
+import Hack.Contrib.Response
+import Hack.Contrib.Utils hiding (get)
+
+import "mtl" Control.Monad.Reader
+import "mtl" Control.Monad.State hiding (get)
+
+import Control.Concurrent
+import Control.Concurrent.STM
+import Data.Unique
+
+import System.Posix
+
+import Hack (Application)
+
+import Data.ByteString.Lazy.Char8 (pack, unpack)
+
+import Data.StateVar hiding (get)
+
+import qualified Data.Map as M
+
+import Network.Loli.Type
+
+
+test_git_repo = create_project dummy_cb 0 Git dummy_git_repo
+
+test_hg_repo = create_project dummy_cb 0 Hg dummy_hg_repo
+
+test_darcs_repo = create_project dummy_cb 0 Darcs dummy_darcs_repo
+
+test_raw_repo = create_project dummy_cb 0 Raw dummy_raw_repo
+
+test_archive_repo = create_project dummy_cb 0 Archive dummy_archive_repo
+
+test_svn_repo = create_project dummy_cb 0 SVN dummy_svn_repo
+
+gen_id = now_in_micro_seconds
+
+json :: (Data a) => a -> AppUnit
+json x = do
+  modify - set_content_type "application/json"
+  modify - set_body - x.encodeJSON.pack
+
+stateful_callback :: (TVar JobStatus) -> StatusCallback
+stateful_callback state_ref state = do
+  atom - do
+    last_state <- readTVar state_ref
+    case last_state of
+      Failed _ -> return ()
+      _ -> writeTVar state_ref state
+
+  log - show state
+
+test_repo_with_state :: (TVar JobStatus) -> IO ()
+test_repo_with_state ref =
+  create_project (stateful_callback ref) 0 Git dummy_git_repo
+
+user_error x = do
+  text x
+  modify - set_status 500
+
+is_validate_url :: String -> Bool
+is_validate_url x =
+  let
+    repo_formats =
+      [
+        "http://"
+      ]
+  in
+  [
+    repo_formats.any (\f -> x.starts_with f)
+  , not - x.has '@'
+  ]
+  .and
+
+
+code_mushu_app :: (TVar RepoState) -> Application
+code_mushu_app repo_state = loli - do
+
+  public (Just "public") ["/repo/download"]
+
+  get "/repo/create/:repo" - do
+    _params <- ask ^ params
+    _captures <- captures
+
+    case _captures.lookup "repo" >>= readMay of
+      Nothing -> json - JobCreateFailed "unsupported repo format"
+      Just _repo -> do
+        case _params.lookup "url" of
+          Nothing -> json - JobCreateFailed "invalid query format"
+          Just _url -> do
+            let escaped_url = _url.unescape_uri
+
+            if not - escaped_url.is_validate_url
+              then
+                json - JobCreateFailed "invalid protocal"
+              else
+                with_dummy_create escaped_url - do
+
+                  io - log - "received request for url: " + escaped_url
+                  state_ref <- io - newTVarIO def
+                  job_id <- io - now_in_milli_seconds
+
+                  io - forkIO -
+                    create_project (stateful_callback state_ref) job_id _repo escaped_url
+
+                  io - repo_state $~ mod __states_map (M.insert job_id state_ref)
+
+                  json - JobCreateSuccess job_id
+
+  get "/repo/query/:job_id" - do
+    _captures <- captures
+
+    case _captures .lookup "job_id" >>= readMay of
+      Nothing -> json - JobQueryFailed "job id is invalid"
+      Just job_id ->
+        with_dummy_query job_id - do
+
+          state <- io - atom - do
+            _map <- readTVar repo_state ^ states_map
+            case _map.M.lookup job_id of
+              Nothing -> return Nothing
+              Just ref -> do
+                readTVar ref ^ Just
+          -- status <- io - read ref
+
+          case state of
+            Nothing -> json - JobQueryFailed "job id doesn't exist"
+            Just _state -> do
+              json - JobQuerySuccess _state
+
+
+
+  get "/" - text "hello world\n"
+
+
+
+with_dummy_query :: Integer -> AppUnit -> AppUnit
+with_dummy_query job_id m
+  | job_id.is (-1) = json - JobQuerySuccess - Completed dummy_good_project
+  | job_id.is (-2) = json - JobQuerySuccess - Failed FailedToFetchRepo
+  | otherwise = m
+
+with_dummy_create :: String -> AppUnit -> AppUnit
+with_dummy_create url m
+  | url.is (dummy_good_project.project_url) = json - JobCreateSuccess (-1)
+  | url.is (dummy_bad_project.project_url) = json - JobCreateSuccess (-2)
+  | otherwise = m
+</pre></br><h2>printed</h2></br><pre>{-# LANGUAGE PackageImports #-}
+
+module CodeMushu.Server where
+
+import CodeMushu.Env
+import Prelude ()
+import CodeMushu.Repo
+
+import Network.Loli
+
+import Text.JSON.Generic
+import Hack.Contrib.Request
+import Hack.Contrib.Response
+import Hack.Contrib.Utils hiding (get)
+
+import  Control.Monad.Reader
+import  Control.Monad.State hiding (get)
+
+import Control.Concurrent
+import Control.Concurrent.STM
+import Data.Unique
+
+import System.Posix
+
+import Hack (Application)
+
+import Data.ByteString.Lazy.Char8 (pack, unpack)
+
+import Data.StateVar hiding (get)
+
+import qualified Data.Map as M
+
+import Network.Loli.Type
+
+
+test_git_repo = create_project dummy_cb 0 Git dummy_git_repo
+
+test_hg_repo = create_project dummy_cb 0 Hg dummy_hg_repo
+
+test_darcs_repo = create_project dummy_cb 0 Darcs dummy_darcs_repo
+
+test_raw_repo = create_project dummy_cb 0 Raw dummy_raw_repo
+
+test_archive_repo = create_project dummy_cb 0 Archive dummy_archive_repo
+
+test_svn_repo = create_project dummy_cb 0 SVN dummy_svn_repo
+
+gen_id = now_in_micro_seconds
+
+json :: (Data a) => a -> AppUnit
+json x = do
+  modify - set_content_type "application/json"
+  modify - set_body - x.encodeJSON.pack
+
+stateful_callback :: (TVar JobStatus) -> StatusCallback
+stateful_callback state_ref state = do
+  atom - do
+    last_state <- readTVar state_ref
+    case last_state of
+      Failed _ -> return ()
+      _ -> writeTVar state_ref state
+
+  log - show state
+
+test_repo_with_state :: (TVar JobStatus) -> IO ()
+test_repo_with_state ref =
+  create_project (stateful_callback ref) 0 Git dummy_git_repo
+
+user_error x = do
+  text x
+  modify - set_status 500
+
+is_validate_url :: String -> Bool
+is_validate_url x =
+  let
+    repo_formats =
+      [
+        "http://"
+      ]
+  in
+  [
+    repo_formats.any (\f -> x.starts_with f)
+  , not - x.has '@'
+  ]
+  .and
+
+
+code_mushu_app :: (TVar RepoState) -> Application
+code_mushu_app repo_state = loli - do
+
+  public (Just "public") ["/repo/download"]
+
+  get "/repo/create/:repo" - do
+    _params <- ask ^ params
+    _captures <- captures
+
+    case _captures.lookup "repo" >>= readMay of
+      Nothing -> json - JobCreateFailed "unsupported repo format"
+      Just _repo -> do
+        case _params.lookup "url" of
+          Nothing -> json - JobCreateFailed "invalid query format"
+          Just _url -> do
+            let escaped_url = _url.unescape_uri
+
+            if not - escaped_url.is_validate_url
+              then
+                json - JobCreateFailed "invalid protocal"
+              else
+                with_dummy_create escaped_url - do
+
+                  io - log - "received request for url: " + escaped_url
+                  state_ref <- io - newTVarIO def
+                  job_id <- io - now_in_milli_seconds
+
+                  io - forkIO -
+                    create_project (stateful_callback state_ref) job_id _repo escaped_url
+
+                  io - repo_state $~ mod __states_map (M.insert job_id state_ref)
+
+                  json - JobCreateSuccess job_id
+
+  get "/repo/query/:job_id" - do
+    _captures <- captures
+
+    case _captures .lookup "job_id" >>= readMay of
+      Nothing -> json - JobQueryFailed "job id is invalid"
+      Just job_id ->
+        with_dummy_query job_id - do
+
+          state <- io - atom - do
+            _map <- readTVar repo_state ^ states_map
+            case _map.M.lookup job_id of
+              Nothing -> return Nothing
+              Just ref -> do
+                readTVar ref ^ Just
+          -- status <- io - read ref
+
+          case state of
+            Nothing -> json - JobQueryFailed "job id doesn't exist"
+            Just _state -> do
+              json - JobQuerySuccess _state
+
+
+
+  get "/" - text "hello world\n"
+
+
+
+with_dummy_query :: Integer -> AppUnit -> AppUnit
+with_dummy_query job_id m
+  | job_id.is (-1) = json - JobQuerySuccess - Completed dummy_good_project
+  | job_id.is (-2) = json - JobQuerySuccess - Failed FailedToFetchRepo
+  | otherwise = m
+
+with_dummy_create :: String -> AppUnit -> AppUnit
+with_dummy_create url m
+  | url.is (dummy_good_project.project_url) = json - JobCreateSuccess (-1)
+  | url.is (dummy_bad_project.project_url) = json - JobCreateSuccess (-2)
+  | otherwise = m
+
+</pre>

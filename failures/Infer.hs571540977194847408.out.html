@@ -1,0 +1,342 @@
+<a href="Infer.hs13585809791624379149.out.html">prev</a></br><a href="failures.html">home</a></br><a href="Inference.hs16353394251654001669.out.html">next</a></br></br><pre>137c137
+<     | month >= 1, month <= 12, day >= 1, day <= 31
+---
+>     | month >= 1, month <= 12  day >= 1  day <= 31
+167a168
+> 
+</pre></br><h2>original</h2></br><pre>{-# LANGUAGE RecordPuns, ParallelListComp, PatternGuards, PatternSignatures #-}
+module Text.PageIO.Infer where
+import Text.PageIO.Types
+import Data.Char (isAlphaNum, toUpper)
+import Data.Maybe (catMaybes)
+import Data.Monoid
+import Control.Applicative
+import Data.Array (elems, (!))
+import Text.Regex.TDFA
+import Text.Regex.Base.RegexLike
+import qualified Data.ByteString.Char8 as S
+import qualified Text.PageIO.LabelMap as LM
+import Debug.Trace
+
+inferSheet :: FilePath -> [Page] -> Sheet
+inferSheet fn pages = MkSheet
+    { sheetName = name
+    , sheetBox  = MkBox
+        { boxTop    = 1
+        , boxLeft   = 1
+        , boxBottom = rows
+        , boxRight  = cols
+        }
+    , sheetPatterns = mempty
+    , sheetFields   = LM.fromList
+        ( mkField "b_id" 1 1 4 1
+        : case pages of
+            []      -> []
+            (p:_)   -> inferPageNameField p : inferPageDateFields p
+        )
+    , sheetFrames   = []
+    , sheetOrderBy  = [toLabel "b_id"]
+    , sheetGroupBy  = [toLabel "b_id"]
+    , sheetUseBlockSortPriority = True
+    }
+    where
+    lns     = pageLines <$> pages
+    rows    = maximum $ length <$> lns
+    cols    = maximum $ S.length <$> concat lns
+    name    = toLabel $ toUpper <$> takeWhile isAlphaNum fn
+
+mkField :: String -> Col -> Row -> Col -> Row -> (Label, Field)
+mkField lbl l t r b = (,) (toLabel lbl) MkField
+    { fieldBox        = MkBox
+        { boxLeft   = l
+        , boxTop    = t
+        , boxRight  = r
+        , boxBottom = b
+        }
+    , fieldVariable   = Nothing
+    , fieldKeepSpaces = False
+    , fieldFormat     = FGeneral
+    }
+
+namePattern :: Value
+namePattern = S.concat
+    [ S.pack "(([^ ]+ {0,2})*[^ ]*("
+    , keywords
+    , S.pack ")[^< ]*)"
+    ]
+    where
+    keywords = S.intercalate (S.pack "|") $ S.pack <$>
+        [ "\xB3\xF8"    -- 報
+        , "\xAA\xED"    -- 表
+        , "\xB1\x62"    -- 帳
+        , "\xC3\xAF"    -- 簿
+        , "\xB3\xE6"    -- 單
+        , "\xA5\x55"    -- 冊
+        , "\xB2\xD3"    -- 細
+        , "\xBF\xFD"    -- 錄
+        , "\xB8\xEA"    -- 資
+        , "\xAE\xC6"    -- 料
+        , "\xAE\xD1"    -- 書
+        , "\xC0\xC9"    -- 檔
+        , "\xC1\x60"    -- 總
+        , "\xAD\x70"    -- 計
+        ]
+
+datePattern :: Value
+datePattern = S.pack $ concat
+    [ "( {0,2}[0-9]{2,4} {0,2})"
+    , "([^ 0-9]{1,4}|  )"
+    , "( {0,3}[0-9]{1,2}) {0,2}"
+    , "(([^ 0-9]{1,4}|  )"
+    , "( {0,3}[0-9]{1,2} {0,1}))?"
+    ]
+
+data DateMatch = MkDateMatch
+    { matchLine     :: Int
+    , matchIsROC    :: Bool
+    , matchYear     :: (Int, Int)
+    , matchMonth    :: (Int, Int)
+    , matchDay      :: Maybe (Int, Int)
+    }
+    deriving (Show, Eq, Ord)
+
+inferPageNameField :: Page -> (Label, Field)
+inferPageNameField page = case concatMap tryMatchName (take 6 lns) of
+    []      -> mkField "r_name" 1 1 0 0 -- error "No r_name found!"
+    (f:_)   -> f
+    where
+    lns = [1..] `zip` pageLines page
+
+tryMatchName :: (Int, Value) -> [(Label, Field)]
+tryMatchName (lineNum, content) =
+    [ mkField "r_name" (start+delta+1) lineNum (start+len) lineNum
+    | (text, (start, len)) <- (! (0 :: Int)) <$> content =~ namePattern
+    , let delta = tryDelta text
+    ]
+    where
+    tryDelta text = case text `matchSubstring` MkMatch commercialBank of
+        Nothing     -> 0
+        Just off    -> off + S.length commercialBank
+    commercialBank = S.pack "\xB0\xD3\xB7\x7E\xBB\xC8\xA6\xE6\xA1\x40"
+
+-- Algorithm: Find the first line with three consecutive integers
+--            that looks sufficiently like a date.  We do so by
+--            finding each 3-grams of digits close enough together
+--            (distance 7 or less), then inspect the actual values,
+--            then finally capture the spaces around them too.
+--            If the year is >= 1900 then it's "year" else it's "year_roc".
+inferPageDateFields :: Page -> [(Label, Field)]
+inferPageDateFields page = case concatMap tryMatchDate lns of
+    []      -> []
+    (m:_)   -> dateMatchToFields m
+    where
+    lns = [1..] `zip` pageLines page
+
+tryMatchDate :: (Int, Value) -> [DateMatch]
+tryMatchDate (lineNum, content) =
+    [ dateMatch{ matchLine = lineNum }
+    | Just dateMatch <- validateMatch <$> reverse (content =~ datePattern)
+    ]
+
+validateMatch :: MatchText Value -> Maybe DateMatch
+validateMatch match
+    | month >= 1, month <= 12, day >= 1, day <= 31
+    = Just MkDateMatch
+        { matchLine     = undefined
+        , matchIsROC    = year < 1900
+        , matchYear     = yearPos
+        , matchMonth    = monthPos
+        , matchDay      = if S.null dayText then Nothing else Just dayPos
+        }
+    | otherwise
+    = Nothing
+    where
+    [ _, (yearText,  yearPos)
+       , _
+       , (monthText, monthPos)
+       , _
+       , _
+       , (dayText,   dayPos) ] = elems match
+    [year, month, day] = valToInt <$> [yearText, monthText, dateText']
+    dateText' | S.null dayText  = S.singleton '1'
+              | otherwise       = dayText
+
+dateMatchToFields :: DateMatch -> [(Label, Field)]
+dateMatchToFields MkDateMatch{ matchLine, matchIsROC, matchYear, matchMonth, matchDay } =
+    ( dateField yearLabel matchYear
+    : dateField "month" matchMonth
+    : maybe [] ((:[]) . dateField "day") matchDay
+    )
+    where
+    dateField lbl (start, len) = mkField lbl (start+1) matchLine (start+len) matchLine
+    yearLabel = if matchIsROC then "year_roc" else "year"
+
+</pre></br><h2>printed</h2></br><pre>{-# LANGUAGE RecordPuns, ParallelListComp, PatternGuards, PatternSignatures #-}
+module Text.PageIO.Infer where
+import Text.PageIO.Types
+import Data.Char (isAlphaNum, toUpper)
+import Data.Maybe (catMaybes)
+import Data.Monoid
+import Control.Applicative
+import Data.Array (elems, (!))
+import Text.Regex.TDFA
+import Text.Regex.Base.RegexLike
+import qualified Data.ByteString.Char8 as S
+import qualified Text.PageIO.LabelMap as LM
+import Debug.Trace
+
+inferSheet :: FilePath -> [Page] -> Sheet
+inferSheet fn pages = MkSheet
+    { sheetName = name
+    , sheetBox  = MkBox
+        { boxTop    = 1
+        , boxLeft   = 1
+        , boxBottom = rows
+        , boxRight  = cols
+        }
+    , sheetPatterns = mempty
+    , sheetFields   = LM.fromList
+        ( mkField "b_id" 1 1 4 1
+        : case pages of
+            []      -> []
+            (p:_)   -> inferPageNameField p : inferPageDateFields p
+        )
+    , sheetFrames   = []
+    , sheetOrderBy  = [toLabel "b_id"]
+    , sheetGroupBy  = [toLabel "b_id"]
+    , sheetUseBlockSortPriority = True
+    }
+    where
+    lns     = pageLines <$> pages
+    rows    = maximum $ length <$> lns
+    cols    = maximum $ S.length <$> concat lns
+    name    = toLabel $ toUpper <$> takeWhile isAlphaNum fn
+
+mkField :: String -> Col -> Row -> Col -> Row -> (Label, Field)
+mkField lbl l t r b = (,) (toLabel lbl) MkField
+    { fieldBox        = MkBox
+        { boxLeft   = l
+        , boxTop    = t
+        , boxRight  = r
+        , boxBottom = b
+        }
+    , fieldVariable   = Nothing
+    , fieldKeepSpaces = False
+    , fieldFormat     = FGeneral
+    }
+
+namePattern :: Value
+namePattern = S.concat
+    [ S.pack "(([^ ]+ {0,2})*[^ ]*("
+    , keywords
+    , S.pack ")[^< ]*)"
+    ]
+    where
+    keywords = S.intercalate (S.pack "|") $ S.pack <$>
+        [ "\xB3\xF8"    -- 報
+        , "\xAA\xED"    -- 表
+        , "\xB1\x62"    -- 帳
+        , "\xC3\xAF"    -- 簿
+        , "\xB3\xE6"    -- 單
+        , "\xA5\x55"    -- 冊
+        , "\xB2\xD3"    -- 細
+        , "\xBF\xFD"    -- 錄
+        , "\xB8\xEA"    -- 資
+        , "\xAE\xC6"    -- 料
+        , "\xAE\xD1"    -- 書
+        , "\xC0\xC9"    -- 檔
+        , "\xC1\x60"    -- 總
+        , "\xAD\x70"    -- 計
+        ]
+
+datePattern :: Value
+datePattern = S.pack $ concat
+    [ "( {0,2}[0-9]{2,4} {0,2})"
+    , "([^ 0-9]{1,4}|  )"
+    , "( {0,3}[0-9]{1,2}) {0,2}"
+    , "(([^ 0-9]{1,4}|  )"
+    , "( {0,3}[0-9]{1,2} {0,1}))?"
+    ]
+
+data DateMatch = MkDateMatch
+    { matchLine     :: Int
+    , matchIsROC    :: Bool
+    , matchYear     :: (Int, Int)
+    , matchMonth    :: (Int, Int)
+    , matchDay      :: Maybe (Int, Int)
+    }
+    deriving (Show, Eq, Ord)
+
+inferPageNameField :: Page -> (Label, Field)
+inferPageNameField page = case concatMap tryMatchName (take 6 lns) of
+    []      -> mkField "r_name" 1 1 0 0 -- error "No r_name found!"
+    (f:_)   -> f
+    where
+    lns = [1..] `zip` pageLines page
+
+tryMatchName :: (Int, Value) -> [(Label, Field)]
+tryMatchName (lineNum, content) =
+    [ mkField "r_name" (start+delta+1) lineNum (start+len) lineNum
+    | (text, (start, len)) <- (! (0 :: Int)) <$> content =~ namePattern
+    , let delta = tryDelta text
+    ]
+    where
+    tryDelta text = case text `matchSubstring` MkMatch commercialBank of
+        Nothing     -> 0
+        Just off    -> off + S.length commercialBank
+    commercialBank = S.pack "\xB0\xD3\xB7\x7E\xBB\xC8\xA6\xE6\xA1\x40"
+
+-- Algorithm: Find the first line with three consecutive integers
+--            that looks sufficiently like a date.  We do so by
+--            finding each 3-grams of digits close enough together
+--            (distance 7 or less), then inspect the actual values,
+--            then finally capture the spaces around them too.
+--            If the year is >= 1900 then it's "year" else it's "year_roc".
+inferPageDateFields :: Page -> [(Label, Field)]
+inferPageDateFields page = case concatMap tryMatchDate lns of
+    []      -> []
+    (m:_)   -> dateMatchToFields m
+    where
+    lns = [1..] `zip` pageLines page
+
+tryMatchDate :: (Int, Value) -> [DateMatch]
+tryMatchDate (lineNum, content) =
+    [ dateMatch{ matchLine = lineNum }
+    | Just dateMatch <- validateMatch <$> reverse (content =~ datePattern)
+    ]
+
+validateMatch :: MatchText Value -> Maybe DateMatch
+validateMatch match
+    | month >= 1, month <= 12  day >= 1  day <= 31
+    = Just MkDateMatch
+        { matchLine     = undefined
+        , matchIsROC    = year < 1900
+        , matchYear     = yearPos
+        , matchMonth    = monthPos
+        , matchDay      = if S.null dayText then Nothing else Just dayPos
+        }
+    | otherwise
+    = Nothing
+    where
+    [ _, (yearText,  yearPos)
+       , _
+       , (monthText, monthPos)
+       , _
+       , _
+       , (dayText,   dayPos) ] = elems match
+    [year, month, day] = valToInt <$> [yearText, monthText, dateText']
+    dateText' | S.null dayText  = S.singleton '1'
+              | otherwise       = dayText
+
+dateMatchToFields :: DateMatch -> [(Label, Field)]
+dateMatchToFields MkDateMatch{ matchLine, matchIsROC, matchYear, matchMonth, matchDay } =
+    ( dateField yearLabel matchYear
+    : dateField "month" matchMonth
+    : maybe [] ((:[]) . dateField "day") matchDay
+    )
+    where
+    dateField lbl (start, len) = mkField lbl (start+1) matchLine (start+len) matchLine
+    yearLabel = if matchIsROC then "year_roc" else "year"
+
+
+</pre>

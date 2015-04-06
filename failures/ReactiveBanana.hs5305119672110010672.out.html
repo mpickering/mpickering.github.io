@@ -1,0 +1,176 @@
+<a href="Reactive.hs726943819710298150.out.html">prev</a></br><a href="failures.html">home</a></br><a href="Read.hs1137623865997389814.out.html">next</a></br></br><pre>18d17
+< playBanana ∷ Display -- ^ The display method
+19d17
+<            → Color   -- ^ The background colour
+20d17
+<            → Int     -- ^ The refresh rate, in Hertz
+21d17
+<            → (∀ t. Frameworks t
+22d17
+<               ⇒ Event t Float
+23d17
+<               → Event t InputEvent
+24c18
+<               → Moment t (Behavior t Picture))
+---
+> playBanana :: Display -- ^ The display method
+24a19
+>            -> Color   -- ^ The background colour
+24a20
+>            -> Int     -- ^ The refresh rate, in Hertz
+24a21
+>            -> (forall t. Frameworks t
+24a22
+>               => Event t Float
+24a23
+>               -> Event t InputEvent
+24a24
+>               -> Moment t (Behavior t Picture))
+29c29
+<            → IO ()
+---
+>            -> IO ()
+31d30
+<   pictureref ← newIORef blank
+32d30
+<   (tickHandler,  tick)  ← newAddHandler
+33c31
+<   (eventHandler, event) ← newAddHandler
+---
+>   pictureref <- newIORef blank
+33a32
+>   (tickHandler,  tick)  <- newAddHandler
+33a33
+>   (eventHandler, event) <- newAddHandler
+36d35
+<     (\      _ → readIORef pictureref)
+37d35
+<     (\ ev   _ → () <$ event ev)
+38c36
+<     (\ time _ → () <$ tick time)
+---
+>     (\      _ -> readIORef pictureref)
+38a37
+>     (\ ev   _ -> () <$ event ev)
+38a38
+>     (\ time _ -> () <$ tick time)
+41d40
+<       eTick  ← fromAddHandler tickHandler
+42d40
+<       eEvent ← fromAddHandler eventHandler
+43c41
+<       bRawPicture ← mPicture eTick eEvent
+---
+>       eTick  <- fromAddHandler tickHandler
+43a42
+>       eEvent <- fromAddHandler eventHandler
+43a43
+>       bRawPicture <- mPicture eTick eEvent
+52a53
+> 
+</pre></br><h2>original</h2></br><pre>{-# LANGUAGE UnicodeSyntax, Rank2Types #-}
+
+module Graphics.Gloss.Interface.FRP.ReactiveBanana (playBanana, InputEvent) where
+
+import Graphics.Gloss
+import Graphics.Gloss.Interface.IO.Game (playIO)
+import qualified Graphics.Gloss.Interface.IO.Game as G
+import Reactive.Banana
+import Reactive.Banana.Frameworks
+import Data.IORef (IORef, newIORef, readIORef, writeIORef)
+
+-- | A useful type synonym for Gloss event values, to avoid confusion between
+--   Gloss and ReactiveBanana.
+type InputEvent = G.Event
+
+-- | Play the game in a window, updating when the value of the provided
+--   Behavior t Picture changes.
+playBanana ∷ Display -- ^ The display method
+           → Color   -- ^ The background colour
+           → Int     -- ^ The refresh rate, in Hertz
+           → (∀ t. Frameworks t
+              ⇒ Event t Float
+              → Event t InputEvent
+              → Moment t (Behavior t Picture))
+           -- ^ A Moment t action to generate the Picture Behavior, taking
+           --   the refresh and input Events with respect to which to build it.
+           --   The refresh event generates a Float indicating the time delta
+           --   since the last refresh.
+           → IO ()
+playBanana display colour frequency mPicture = do
+  pictureref ← newIORef blank
+  (tickHandler,  tick)  ← newAddHandler
+  (eventHandler, event) ← newAddHandler
+  compile (makeNetwork tickHandler eventHandler $ writeIORef pictureref) >>= actuate
+  playIO display colour frequency ()
+    (\      _ → readIORef pictureref)
+    (\ ev   _ → () <$ event ev)
+    (\ time _ → () <$ tick time)
+  where
+    makeNetwork tickHandler eventHandler change = do
+      eTick  ← fromAddHandler tickHandler
+      eEvent ← fromAddHandler eventHandler
+      bRawPicture ← mPicture eTick eEvent
+
+      -- make sure the Behavior doesn't leak memory if mPicture ignores
+      -- one or both kind of events
+      let bPicture = bRawPicture
+                  <* stepper undefined eTick
+                  <* stepper undefined eEvent
+
+      changes bPicture >>= reactimate' . fmap (fmap change)
+      initial bPicture >>= liftIO . change
+</pre></br><h2>printed</h2></br><pre>{-# LANGUAGE UnicodeSyntax, Rank2Types #-}
+
+module Graphics.Gloss.Interface.FRP.ReactiveBanana (playBanana, InputEvent) where
+
+import Graphics.Gloss
+import Graphics.Gloss.Interface.IO.Game (playIO)
+import qualified Graphics.Gloss.Interface.IO.Game as G
+import Reactive.Banana
+import Reactive.Banana.Frameworks
+import Data.IORef (IORef, newIORef, readIORef, writeIORef)
+
+-- | A useful type synonym for Gloss event values, to avoid confusion between
+--   Gloss and ReactiveBanana.
+type InputEvent = G.Event
+
+-- | Play the game in a window, updating when the value of the provided
+--   Behavior t Picture changes.
+playBanana :: Display -- ^ The display method
+           -> Color   -- ^ The background colour
+           -> Int     -- ^ The refresh rate, in Hertz
+           -> (forall t. Frameworks t
+              => Event t Float
+              -> Event t InputEvent
+              -> Moment t (Behavior t Picture))
+           -- ^ A Moment t action to generate the Picture Behavior, taking
+           --   the refresh and input Events with respect to which to build it.
+           --   The refresh event generates a Float indicating the time delta
+           --   since the last refresh.
+           -> IO ()
+playBanana display colour frequency mPicture = do
+  pictureref <- newIORef blank
+  (tickHandler,  tick)  <- newAddHandler
+  (eventHandler, event) <- newAddHandler
+  compile (makeNetwork tickHandler eventHandler $ writeIORef pictureref) >>= actuate
+  playIO display colour frequency ()
+    (\      _ -> readIORef pictureref)
+    (\ ev   _ -> () <$ event ev)
+    (\ time _ -> () <$ tick time)
+  where
+    makeNetwork tickHandler eventHandler change = do
+      eTick  <- fromAddHandler tickHandler
+      eEvent <- fromAddHandler eventHandler
+      bRawPicture <- mPicture eTick eEvent
+
+      -- make sure the Behavior doesn't leak memory if mPicture ignores
+      -- one or both kind of events
+      let bPicture = bRawPicture
+                  <* stepper undefined eTick
+                  <* stepper undefined eEvent
+
+      changes bPicture >>= reactimate' . fmap (fmap change)
+      initial bPicture >>= liftIO . change
+
+</pre>

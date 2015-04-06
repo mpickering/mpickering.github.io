@@ -1,0 +1,1040 @@
+<a href="Parser.hs2035308228158374933.out.html">prev</a></br><a href="failures.html">home</a></br><a href="Parser.hs270649095428975319.out.html">next</a></br></br><pre>458c458
+< -}
+---
+> 
+516a517
+> 
+</pre></br><h2>original</h2></br><pre>{-|
+This is a tag soup parser with a custom tag data structure.
+
+The parser works only on proper Unicode texts,
+that is, you must have decoded it before,
+e.g. using decoding functions from hxt or encoding package.
+-}
+module Text.HTML.TagSoup.HT.Parser (
+    CharType,
+    runSoup, runSoupWithPositions, runSoupWithPositionsName,
+    runTag, runInnerOfTag,
+  ) where
+
+import Text.HTML.TagSoup.HT.Parser.Combinator
+   (allowFail, withDefault,
+    char, dropSpaces, getPos,
+    many, manyNull, many0toN, many1toN,
+    many1Satisfy, readUntil,
+    satisfy, string,
+    emit, modifyEmission, )
+
+import qualified Text.HTML.TagSoup.HT.Parser.Combinator as Parser
+
+import qualified Text.HTML.TagSoup.HT.PositionTag as PosTag
+import qualified Text.HTML.TagSoup.HT.Tag         as Tag
+import qualified Text.XML.Basic.Position    as Position
+import qualified Text.HTML.Basic.Character    as HTMLChar
+import qualified Text.XML.Basic.ProcessingInstruction as PI
+import qualified Text.XML.Basic.Attribute   as Attr
+import qualified Text.XML.Basic.Name        as Name
+import qualified Text.XML.Basic.Tag         as TagName
+
+import qualified Text.HTML.TagSoup.HT.Parser.Stream as Stream
+
+import qualified Text.HTML.Basic.Entity as HTMLEntity
+
+import qualified Control.Monad.Exception.Synchronous as Exc
+
+import Control.Monad.Fix (MonadFix, mfix, )
+import Control.Monad (mplus, msum, when, liftM, )
+
+import Data.Monoid (Monoid, mempty, mconcat, )
+
+import qualified Data.Map as Map
+
+import Data.Tuple.HT (mapSnd, )
+import Data.Char (isAlphaNum, isAscii, chr, ord, )
+import Data.Maybe (fromMaybe, )
+
+-- import qualified Numeric
+
+
+-- * run parser in several ways
+
+{- |
+Parse a single tag, throws an error if there is a syntax error.
+This is useful for parsing a match pattern.
+-}
+runTag ::
+   (Stream.C source, StringType sink, Show sink,
+    Name.Attribute name, Name.Tag name, Eq name, Show name) =>
+   source -> Tag.T name sink
+runTag str =
+   let tags =
+          fromMaybe (error "runTag: no parse at all") $
+          Parser.write "string" parsePosTag str
+       makeError = error $
+          "runTag: parsing results in\n" ++
+          unlines (map show tags)
+   in  case tags of
+          [postag] ->
+             let tag = PosTag.tag_ postag
+             in  if Tag.isWarning tag
+                   then makeError
+                   else tag
+          _ -> makeError
+
+{- |
+Parse the inner of a single tag.
+That is, @runTag \"\<bla\>\"@ is the same as @runInnerOfTag \"\<bla\>\"@.
+-}
+runInnerOfTag ::
+   (StringType sink, Show sink,
+    Name.Attribute name, Name.Tag name, Eq name, Show name) =>
+   String -> Tag.T name sink
+runInnerOfTag str = runTag $ "<"++str++">"
+
+
+
+runSoupWithPositionsName ::
+   (Stream.C source, StringType sink,
+    Name.Attribute name, Name.Tag name, Eq name) =>
+   FilePath -> source -> [PosTag.T name sink]
+runSoupWithPositionsName fileName =
+   PosTag.concatTexts .
+   Parser.runIdentity .
+   Parser.write fileName (manyNull parsePosTag)
+
+
+-- | Parse an HTML document to a list of 'Tag.T'.
+-- Automatically expands out escape characters.
+runSoupWithPositions ::
+   (Stream.C source, StringType sink,
+    Name.Attribute name, Name.Tag name, Eq name) =>
+   source -> [PosTag.T name sink]
+runSoupWithPositions =
+   runSoupWithPositionsName "input"
+
+-- | Like 'runSoupWithPositions' but hides source file positions.
+runSoup ::
+   (Stream.C source, StringType sink,
+    Name.Attribute name, Name.Tag name, Eq name) =>
+   source -> [Tag.T name sink]
+runSoup = map PosTag.tag_ . runSoupWithPositions
+
+
+
+-- * parser parts
+
+type Parser     name source sink a = Parser.Full     source (PosTag.T name sink) a
+type ParserEmit name source sink a = Parser.Emitting source (PosTag.T name sink) a
+
+
+parsePosTag ::
+   (Stream.C source, StringType sink,
+    Name.Attribute name, Name.Tag name, Eq name) =>
+   Parser name source sink ()
+parsePosTag = do
+   pos <- getPos
+   mplus
+      (do char '<'
+          allowFail $ withDefault
+             (msum $
+                parseSpecialTag pos :
+                parseProcessingTag pos :
+                parseCloseTag pos :
+                parseOpenTag pos :
+                [])
+             (do emitTag pos (Tag.Text $ stringFromChar '<')
+                 emitWarning pos "A '<', that is not part of a tag. Encode it as &lt; please."))
+      (parseText pos)
+
+
+parseOpenTag ::
+   (Stream.C source, StringType sink,
+    Name.Attribute name, Name.Tag name) =>
+   Position.T -> Parser name source sink ()
+parseOpenTag pos =
+   do name <- parseName
+      allowFail $
+         do dropSpaces
+            emittingTag pos (Tag.Open name) $
+               modifyEmission (restrictSoup 10) $ many parseAttribute
+            withDefault
+               (do closePos <- getPos
+                   string "/>"
+                   allowFail $ emitTag closePos (Tag.Close name))
+               (do junkPos <- getPos
+                   readUntilTerm
+                      (\ junk ->
+                         emitWarningWhen
+                            (not $ null junk)
+                            junkPos ("Junk in opening tag: \"" ++ junk ++ "\""))
+                      ("Unterminated open tag \"" ++ Name.toString name ++ "\"") ">")
+
+parseCloseTag ::
+   (Stream.C source, Name.Tag name) =>
+   Position.T -> Parser name source sink ()
+parseCloseTag pos =
+   do char '/'
+      name <- parseName
+      allowFail $
+         do emitTag pos (Tag.Close name)
+            dropSpaces
+            junkPos <- getPos
+            readUntilTerm
+               (\ junk ->
+                  emitWarningWhen
+                     (not $ null junk)
+                     junkPos ("Junk in closing tag: \"" ++ junk ++"\""))
+               ("Unterminated closing tag \"" ++ Name.toString name ++"\"") ">"
+
+parseSpecialTag ::
+   (Stream.C source, Name.Tag name) =>
+   Position.T -> Parser name source sink ()
+parseSpecialTag pos =
+   do char '!'
+      msum $
+       (do string "--"
+           allowFail $ readUntilTerm
+              (\ cmt -> emitTag pos (Tag.Comment cmt))
+              "Unterminated comment" "-->") :
+       (do string TagName.cdataString
+           allowFail $ readUntilTerm
+              (\ cdata -> emitTag pos (Tag.Special (Name.fromString TagName.cdataString) cdata))
+              "Unterminated cdata" "]]>") :
+       (do name <- parseName
+           allowFail $
+              do dropSpaces
+                 readUntilTerm
+                    (\ info -> emitTag pos (Tag.Special name info))
+                    ("Unterminated special tag \"" ++ Name.toString name ++ "\"") ">") :
+       []
+
+parseProcessingTag ::
+   (Stream.C source, StringType sink,
+    Name.Attribute name, Name.Tag name, Eq name) =>
+   Position.T -> Parser name source sink ()
+parseProcessingTag pos =
+   do char '?'
+      name <- parseName
+      allowFail $
+         do dropSpaces
+            emittingTag pos (Tag.Processing name) $
+               if Name.matchAny ["xml", "xml-stylesheet"] name
+                 then
+                   do attrs <- many parseAttribute
+                      junkPos <- getPos
+                      readUntilTerm
+                         (\ junk ->
+                            emitWarningWhen (not $ null junk) junkPos
+                               ("Junk in processing info tag: \"" ++ junk ++ "\""))
+                         ("Unterminated processing info tag \"" ++ Name.toString name ++ "\"") "?>"
+                      return $ PI.Known attrs
+                 else readUntilTerm (return . PI.Unknown)
+                         "Unterminated processing instruction" "?>"
+
+parseText ::
+   (Stream.C source, StringType sink) =>
+   Position.T -> Parser name source sink ()
+parseText pos =
+   emittingTag pos Tag.Text (parseCharAsString (const True))
+--   emittingTag pos Tag.Text (parseCharAsString ('<'/=))
+--   emittingTag pos Tag.Text (parseString1 ('<'/=))
+
+
+parseAttribute ::
+   (Stream.C source, StringType sink, Name.Attribute name) =>
+   Parser name source sink (Attr.T name sink)
+parseAttribute =
+   parseName >>= \name -> allowFail $
+   do dropSpaces
+      value <-
+         withDefault
+            (string "=" >> allowFail (dropSpaces >> parseValue))
+            (return mempty)
+      dropSpaces
+      return $ Attr.Cons name value
+
+parseName ::
+   (Stream.C source, Name.C pname) =>
+   Parser name source sink pname
+parseName =
+   liftM Name.fromString $
+   -- we must restrict to ASCII alphanum characters in order to exclude umlauts
+   many1Satisfy (\c -> isAlphaNum c && isAscii c || c `elem` "_-.:")
+
+parseValue ::
+   (Stream.C source, StringType sink) =>
+   ParserEmit name source sink sink
+parseValue =
+   (msum $
+      parseQuoted "Unterminated doubly quoted value string" '"' :
+      parseQuoted "Unterminated singly quoted value string" '\'' :
+      [])
+   `withDefault`
+   parseUnquotedValueAsString
+
+parseUnquotedValueChar ::
+   (Stream.C source) =>
+   ParserEmit name source String String
+parseUnquotedValueChar =
+   let parseValueChar =
+          do pos <- getPos
+             str <- parseUnicodeChar (not . flip elem " >\"\'")
+             let wrong = filter (not . isValidValueChar) str
+             allowFail $
+                emitWarningWhen (not (null wrong)) pos $
+                "Illegal characters in unquoted value: " ++ wrong
+             return str
+   in  liftM concat $ many parseValueChar
+
+parseUnquotedValueHTMLChar ::
+   (Stream.C source) =>
+   ParserEmit name source [HTMLChar.T] [HTMLChar.T]
+parseUnquotedValueHTMLChar =
+   let parseValueChar =
+          do pos <- getPos
+             hc <- parseHTMLChar (not . flip elem " >\"\'")
+             {- We do the check after each parseHTMLChar
+                and not after (many parseValueChar)
+                in order to correctly interleave warnings. -}
+             allowFail $ mapM_ (checkUnquotedChar pos) hc
+             return hc
+   in  liftM concat $ many parseValueChar
+
+checkUnquotedChar :: Position.T -> HTMLChar.T -> ParserEmit name source sink ()
+checkUnquotedChar pos x =
+   case x of
+      HTMLChar.Unicode c ->
+         emitWarningWhen (not (isValidValueChar c)) pos $
+            "Illegal characters in unquoted value: '" ++ c : "'"
+      _ -> return ()
+
+
+isValidValueChar :: Char -> Bool
+isValidValueChar c  =  isAlphaNum c || c `elem` "_-:."
+
+parseQuoted ::
+   (Stream.C source, StringType sink) =>
+   String -> Char -> Parser name source sink sink
+parseQuoted termMsg quote =
+   char quote >>
+   (allowFail $
+    do str <- parseString (quote/=)
+       withDefault
+          (char quote >> return ())
+          (do termPos <- getPos
+              emitWarning termPos termMsg)
+       return str)
+
+{-
+Instead of using 'generateTag' we could also wrap the call to 'readUntilTerm'
+in 'mfix' in order to emit a tag, where some information is read later.
+-}
+readUntilTerm ::
+   (Stream.C source) =>
+   (String -> ParserEmit name source sink a) -> String -> String -> ParserEmit name source sink a
+readUntilTerm generateTag termWarning termPat =
+   do ~(termFound,str) <- readUntil termPat
+      result <- generateTag str
+      termPos <- getPos
+      emitWarningWhen (not termFound) termPos termWarning
+      return result
+
+
+class CharType char where
+   fromChar :: Char -> char
+   parseChar :: (Stream.C source) => (Char -> Bool) -> Parser name source sink [char]
+   parseUnquotedValue :: (Stream.C source) => ParserEmit name source [char] [char]
+
+instance CharType Char where
+   fromChar = id
+   parseChar = parseUnicodeChar
+   parseUnquotedValue = parseUnquotedValueChar
+
+instance CharType HTMLChar.T where
+   fromChar = HTMLChar.Unicode
+   parseChar = parseHTMLChar
+   parseUnquotedValue = parseUnquotedValueHTMLChar
+
+
+class Monoid sink => StringType sink where
+   stringFromChar :: Char -> sink
+   parseCharAsString ::
+      (Stream.C source) =>
+      (Char -> Bool) -> Parser name source sink sink
+   parseUnquotedValueAsString ::
+      (Stream.C source) =>
+      ParserEmit name source sink sink
+
+instance CharType char => StringType [char] where
+   stringFromChar c = [fromChar c]
+   parseCharAsString = parseChar
+   parseUnquotedValueAsString = parseUnquotedValue
+
+
+parseString  ::
+   (Stream.C source, StringType sink) =>
+   (Char -> Bool) -> ParserEmit name source sink sink
+parseString  p = liftM mconcat $ many  (parseCharAsString p)
+
+{-
+parseString1 ::
+   (Stream.C source, StringType sink) =>
+   (Char -> Bool) -> Parser     name source sink sink
+parseString1 p = liftM mconcat $ many1 (parseCharAsString p)
+-}
+
+
+
+parseUnicodeChar ::
+   (Stream.C source) =>
+   (Char -> Bool) -> Parser name source sink String
+parseUnicodeChar p =
+   do pos <- getPos
+      x <- parseHTMLChar p
+      allowFail $ liftM concat $
+         mapM (htmlCharToString pos) x
+
+htmlCharToString ::
+   Position.T -> HTMLChar.T -> ParserEmit name source sink String
+htmlCharToString pos x =
+   let returnChar c = return $ c:[]
+   in  case x of
+          HTMLChar.Unicode c -> returnChar c
+          HTMLChar.CharRef num -> returnChar (chr num)
+          HTMLChar.EntityRef name ->
+             maybe
+                (let refName = '&':name++";"
+                 in  emitWarning pos ("Unknown HTML entity " ++ refName) >>
+                     return refName)
+                returnChar
+                (Map.lookup name HTMLEntity.mapNameToChar)
+
+{- |
+Only well formed entity references are interpreted as single HTMLChars,
+whereas ill-formed entity references are interpreted as sequence of unicode characters without special meaning.
+E.g. "&amp ;" is considered as plain "&amp ;",
+and only "&amp;" is considered an escaped ampersand.
+It is a very common error in HTML documents to not escape an ampersand.
+With the interpretation used here,
+those ampersands are left as they are.
+
+At most one warning can be emitted.
+-}
+parseHTMLChar ::
+   (Stream.C source) =>
+   (Char -> Bool) -> Parser name source sink [HTMLChar.T]
+parseHTMLChar p =
+   do pos <- getPos
+      c <- satisfy p
+      allowFail $
+        if c=='&'
+          then
+            withDefault
+              (do ent <-
+                     mplus
+                        (do char '#'
+                            digits <- allowFail $ many0toN 10 (satisfy isAlphaNum)
+                               -- exclude ';', '"', '<'
+                               -- include 'x'
+                            Exc.switch
+                               (\e ->
+                                  allowFail (emitWarning pos ("Error in numeric entity: " ++ e)) >>
+                                  return (map HTMLChar.fromUnicode ('&':'#':digits)))
+                               (return . (:[]) . HTMLChar.CharRef . ord)
+                               (HTMLEntity.numberToChar digits))
+                        (liftM ((:[]) . HTMLChar.EntityRef) $
+                         many1toN 10 (satisfy isAlphaNum))
+                  char ';'
+                  return ent)
+              (emitWarning pos "Non-terminated entity reference" >>
+               return [HTMLChar.Unicode '&'])
+          else return [HTMLChar.Unicode c]
+
+{-
+readHex :: (Num a) => String -> a
+readHex str =
+   case Numeric.readHex str of
+      [(n,"")] -> n
+      _ -> error "readHex: no parse"
+
+{-
+We cannot emit specific warnings,
+because the sub-parsers simply fail
+and then throw away the warnings.
+-}
+parseHTMLCharGenericWarning ::
+   (Stream.C source) =>
+   (Char -> Bool) -> Parser name source sink [HTMLChar.T]
+parseHTMLCharGenericWarning p =
+   do pos <- getPos
+      c <- satisfy p
+      allowFail $
+        if c=='&'
+          then
+            withDefault
+              (do ent <-
+                     mplus
+                        (char '#' >>
+                         liftM HTMLChar.CharRef
+                            (mplus
+                               (char 'x' >> liftM readHex (many1toN 8 (satisfy isHexDigit)))
+                               (liftM read (many1toN 10 (satisfy isDigit)))))
+                        (liftM HTMLChar.EntityRef $ many1toN 10 (satisfy isAlphaNum))
+                  char ';'
+                  return [ent])
+              (emitWarning pos "Ill formed entity" >>
+               return [HTMLChar.Unicode '&'])
+          else return [HTMLChar.Unicode c]
+-}
+
+
+restrictSoup :: Int -> [PosTag.T name sink] -> [PosTag.T name sink]
+restrictSoup n =
+   uncurry (++) .
+   mapSnd
+      (\rest ->
+          case rest of
+             (PosTag.Cons pos _) : _ ->
+                [PosTag.Cons pos (Tag.Warning "further warnings suppressed")]
+             _ -> []) .
+   splitAt n
+
+
+-- these functions have intentionally restricted types
+
+emitWarningWhen :: Bool -> Position.T -> String -> ParserEmit name source sink ()
+emitWarningWhen cond pos msg =
+   when cond $ emitWarning pos msg
+
+emitWarning :: Position.T -> String -> ParserEmit name source sink ()
+emitWarning pos msg = emitTag pos (Tag.Warning msg)
+
+emitTag :: Position.T -> Tag.T name sink -> ParserEmit name source sink ()
+emitTag p t = emit (PosTag.cons p t)
+
+emittingTag ::
+   (MonadFix fail) =>
+   Position.T ->
+   (a -> Tag.T name sink) ->
+   Parser.T source [PosTag.T name sink] fail a ->
+   Parser.T source [PosTag.T name sink] fail ()
+emittingTag pos f x =
+   mfix (\r -> emit (PosTag.cons pos (f r)) >> x) >> return ()
+</pre></br><h2>printed</h2></br><pre>{-|
+This is a tag soup parser with a custom tag data structure.
+
+The parser works only on proper Unicode texts,
+that is, you must have decoded it before,
+e.g. using decoding functions from hxt or encoding package.
+-}
+module Text.HTML.TagSoup.HT.Parser (
+    CharType,
+    runSoup, runSoupWithPositions, runSoupWithPositionsName,
+    runTag, runInnerOfTag,
+  ) where
+
+import Text.HTML.TagSoup.HT.Parser.Combinator
+   (allowFail, withDefault,
+    char, dropSpaces, getPos,
+    many, manyNull, many0toN, many1toN,
+    many1Satisfy, readUntil,
+    satisfy, string,
+    emit, modifyEmission, )
+
+import qualified Text.HTML.TagSoup.HT.Parser.Combinator as Parser
+
+import qualified Text.HTML.TagSoup.HT.PositionTag as PosTag
+import qualified Text.HTML.TagSoup.HT.Tag         as Tag
+import qualified Text.XML.Basic.Position    as Position
+import qualified Text.HTML.Basic.Character    as HTMLChar
+import qualified Text.XML.Basic.ProcessingInstruction as PI
+import qualified Text.XML.Basic.Attribute   as Attr
+import qualified Text.XML.Basic.Name        as Name
+import qualified Text.XML.Basic.Tag         as TagName
+
+import qualified Text.HTML.TagSoup.HT.Parser.Stream as Stream
+
+import qualified Text.HTML.Basic.Entity as HTMLEntity
+
+import qualified Control.Monad.Exception.Synchronous as Exc
+
+import Control.Monad.Fix (MonadFix, mfix, )
+import Control.Monad (mplus, msum, when, liftM, )
+
+import Data.Monoid (Monoid, mempty, mconcat, )
+
+import qualified Data.Map as Map
+
+import Data.Tuple.HT (mapSnd, )
+import Data.Char (isAlphaNum, isAscii, chr, ord, )
+import Data.Maybe (fromMaybe, )
+
+-- import qualified Numeric
+
+
+-- * run parser in several ways
+
+{- |
+Parse a single tag, throws an error if there is a syntax error.
+This is useful for parsing a match pattern.
+-}
+runTag ::
+   (Stream.C source, StringType sink, Show sink,
+    Name.Attribute name, Name.Tag name, Eq name, Show name) =>
+   source -> Tag.T name sink
+runTag str =
+   let tags =
+          fromMaybe (error "runTag: no parse at all") $
+          Parser.write "string" parsePosTag str
+       makeError = error $
+          "runTag: parsing results in\n" ++
+          unlines (map show tags)
+   in  case tags of
+          [postag] ->
+             let tag = PosTag.tag_ postag
+             in  if Tag.isWarning tag
+                   then makeError
+                   else tag
+          _ -> makeError
+
+{- |
+Parse the inner of a single tag.
+That is, @runTag \"\<bla\>\"@ is the same as @runInnerOfTag \"\<bla\>\"@.
+-}
+runInnerOfTag ::
+   (StringType sink, Show sink,
+    Name.Attribute name, Name.Tag name, Eq name, Show name) =>
+   String -> Tag.T name sink
+runInnerOfTag str = runTag $ "<"++str++">"
+
+
+
+runSoupWithPositionsName ::
+   (Stream.C source, StringType sink,
+    Name.Attribute name, Name.Tag name, Eq name) =>
+   FilePath -> source -> [PosTag.T name sink]
+runSoupWithPositionsName fileName =
+   PosTag.concatTexts .
+   Parser.runIdentity .
+   Parser.write fileName (manyNull parsePosTag)
+
+
+-- | Parse an HTML document to a list of 'Tag.T'.
+-- Automatically expands out escape characters.
+runSoupWithPositions ::
+   (Stream.C source, StringType sink,
+    Name.Attribute name, Name.Tag name, Eq name) =>
+   source -> [PosTag.T name sink]
+runSoupWithPositions =
+   runSoupWithPositionsName "input"
+
+-- | Like 'runSoupWithPositions' but hides source file positions.
+runSoup ::
+   (Stream.C source, StringType sink,
+    Name.Attribute name, Name.Tag name, Eq name) =>
+   source -> [Tag.T name sink]
+runSoup = map PosTag.tag_ . runSoupWithPositions
+
+
+
+-- * parser parts
+
+type Parser     name source sink a = Parser.Full     source (PosTag.T name sink) a
+type ParserEmit name source sink a = Parser.Emitting source (PosTag.T name sink) a
+
+
+parsePosTag ::
+   (Stream.C source, StringType sink,
+    Name.Attribute name, Name.Tag name, Eq name) =>
+   Parser name source sink ()
+parsePosTag = do
+   pos <- getPos
+   mplus
+      (do char '<'
+          allowFail $ withDefault
+             (msum $
+                parseSpecialTag pos :
+                parseProcessingTag pos :
+                parseCloseTag pos :
+                parseOpenTag pos :
+                [])
+             (do emitTag pos (Tag.Text $ stringFromChar '<')
+                 emitWarning pos "A '<', that is not part of a tag. Encode it as &lt; please."))
+      (parseText pos)
+
+
+parseOpenTag ::
+   (Stream.C source, StringType sink,
+    Name.Attribute name, Name.Tag name) =>
+   Position.T -> Parser name source sink ()
+parseOpenTag pos =
+   do name <- parseName
+      allowFail $
+         do dropSpaces
+            emittingTag pos (Tag.Open name) $
+               modifyEmission (restrictSoup 10) $ many parseAttribute
+            withDefault
+               (do closePos <- getPos
+                   string "/>"
+                   allowFail $ emitTag closePos (Tag.Close name))
+               (do junkPos <- getPos
+                   readUntilTerm
+                      (\ junk ->
+                         emitWarningWhen
+                            (not $ null junk)
+                            junkPos ("Junk in opening tag: \"" ++ junk ++ "\""))
+                      ("Unterminated open tag \"" ++ Name.toString name ++ "\"") ">")
+
+parseCloseTag ::
+   (Stream.C source, Name.Tag name) =>
+   Position.T -> Parser name source sink ()
+parseCloseTag pos =
+   do char '/'
+      name <- parseName
+      allowFail $
+         do emitTag pos (Tag.Close name)
+            dropSpaces
+            junkPos <- getPos
+            readUntilTerm
+               (\ junk ->
+                  emitWarningWhen
+                     (not $ null junk)
+                     junkPos ("Junk in closing tag: \"" ++ junk ++"\""))
+               ("Unterminated closing tag \"" ++ Name.toString name ++"\"") ">"
+
+parseSpecialTag ::
+   (Stream.C source, Name.Tag name) =>
+   Position.T -> Parser name source sink ()
+parseSpecialTag pos =
+   do char '!'
+      msum $
+       (do string "--"
+           allowFail $ readUntilTerm
+              (\ cmt -> emitTag pos (Tag.Comment cmt))
+              "Unterminated comment" "-->") :
+       (do string TagName.cdataString
+           allowFail $ readUntilTerm
+              (\ cdata -> emitTag pos (Tag.Special (Name.fromString TagName.cdataString) cdata))
+              "Unterminated cdata" "]]>") :
+       (do name <- parseName
+           allowFail $
+              do dropSpaces
+                 readUntilTerm
+                    (\ info -> emitTag pos (Tag.Special name info))
+                    ("Unterminated special tag \"" ++ Name.toString name ++ "\"") ">") :
+       []
+
+parseProcessingTag ::
+   (Stream.C source, StringType sink,
+    Name.Attribute name, Name.Tag name, Eq name) =>
+   Position.T -> Parser name source sink ()
+parseProcessingTag pos =
+   do char '?'
+      name <- parseName
+      allowFail $
+         do dropSpaces
+            emittingTag pos (Tag.Processing name) $
+               if Name.matchAny ["xml", "xml-stylesheet"] name
+                 then
+                   do attrs <- many parseAttribute
+                      junkPos <- getPos
+                      readUntilTerm
+                         (\ junk ->
+                            emitWarningWhen (not $ null junk) junkPos
+                               ("Junk in processing info tag: \"" ++ junk ++ "\""))
+                         ("Unterminated processing info tag \"" ++ Name.toString name ++ "\"") "?>"
+                      return $ PI.Known attrs
+                 else readUntilTerm (return . PI.Unknown)
+                         "Unterminated processing instruction" "?>"
+
+parseText ::
+   (Stream.C source, StringType sink) =>
+   Position.T -> Parser name source sink ()
+parseText pos =
+   emittingTag pos Tag.Text (parseCharAsString (const True))
+--   emittingTag pos Tag.Text (parseCharAsString ('<'/=))
+--   emittingTag pos Tag.Text (parseString1 ('<'/=))
+
+
+parseAttribute ::
+   (Stream.C source, StringType sink, Name.Attribute name) =>
+   Parser name source sink (Attr.T name sink)
+parseAttribute =
+   parseName >>= \name -> allowFail $
+   do dropSpaces
+      value <-
+         withDefault
+            (string "=" >> allowFail (dropSpaces >> parseValue))
+            (return mempty)
+      dropSpaces
+      return $ Attr.Cons name value
+
+parseName ::
+   (Stream.C source, Name.C pname) =>
+   Parser name source sink pname
+parseName =
+   liftM Name.fromString $
+   -- we must restrict to ASCII alphanum characters in order to exclude umlauts
+   many1Satisfy (\c -> isAlphaNum c && isAscii c || c `elem` "_-.:")
+
+parseValue ::
+   (Stream.C source, StringType sink) =>
+   ParserEmit name source sink sink
+parseValue =
+   (msum $
+      parseQuoted "Unterminated doubly quoted value string" '"' :
+      parseQuoted "Unterminated singly quoted value string" '\'' :
+      [])
+   `withDefault`
+   parseUnquotedValueAsString
+
+parseUnquotedValueChar ::
+   (Stream.C source) =>
+   ParserEmit name source String String
+parseUnquotedValueChar =
+   let parseValueChar =
+          do pos <- getPos
+             str <- parseUnicodeChar (not . flip elem " >\"\'")
+             let wrong = filter (not . isValidValueChar) str
+             allowFail $
+                emitWarningWhen (not (null wrong)) pos $
+                "Illegal characters in unquoted value: " ++ wrong
+             return str
+   in  liftM concat $ many parseValueChar
+
+parseUnquotedValueHTMLChar ::
+   (Stream.C source) =>
+   ParserEmit name source [HTMLChar.T] [HTMLChar.T]
+parseUnquotedValueHTMLChar =
+   let parseValueChar =
+          do pos <- getPos
+             hc <- parseHTMLChar (not . flip elem " >\"\'")
+             {- We do the check after each parseHTMLChar
+                and not after (many parseValueChar)
+                in order to correctly interleave warnings. -}
+             allowFail $ mapM_ (checkUnquotedChar pos) hc
+             return hc
+   in  liftM concat $ many parseValueChar
+
+checkUnquotedChar :: Position.T -> HTMLChar.T -> ParserEmit name source sink ()
+checkUnquotedChar pos x =
+   case x of
+      HTMLChar.Unicode c ->
+         emitWarningWhen (not (isValidValueChar c)) pos $
+            "Illegal characters in unquoted value: '" ++ c : "'"
+      _ -> return ()
+
+
+isValidValueChar :: Char -> Bool
+isValidValueChar c  =  isAlphaNum c || c `elem` "_-:."
+
+parseQuoted ::
+   (Stream.C source, StringType sink) =>
+   String -> Char -> Parser name source sink sink
+parseQuoted termMsg quote =
+   char quote >>
+   (allowFail $
+    do str <- parseString (quote/=)
+       withDefault
+          (char quote >> return ())
+          (do termPos <- getPos
+              emitWarning termPos termMsg)
+       return str)
+
+{-
+Instead of using 'generateTag' we could also wrap the call to 'readUntilTerm'
+in 'mfix' in order to emit a tag, where some information is read later.
+-}
+readUntilTerm ::
+   (Stream.C source) =>
+   (String -> ParserEmit name source sink a) -> String -> String -> ParserEmit name source sink a
+readUntilTerm generateTag termWarning termPat =
+   do ~(termFound,str) <- readUntil termPat
+      result <- generateTag str
+      termPos <- getPos
+      emitWarningWhen (not termFound) termPos termWarning
+      return result
+
+
+class CharType char where
+   fromChar :: Char -> char
+   parseChar :: (Stream.C source) => (Char -> Bool) -> Parser name source sink [char]
+   parseUnquotedValue :: (Stream.C source) => ParserEmit name source [char] [char]
+
+instance CharType Char where
+   fromChar = id
+   parseChar = parseUnicodeChar
+   parseUnquotedValue = parseUnquotedValueChar
+
+instance CharType HTMLChar.T where
+   fromChar = HTMLChar.Unicode
+   parseChar = parseHTMLChar
+   parseUnquotedValue = parseUnquotedValueHTMLChar
+
+
+class Monoid sink => StringType sink where
+   stringFromChar :: Char -> sink
+   parseCharAsString ::
+      (Stream.C source) =>
+      (Char -> Bool) -> Parser name source sink sink
+   parseUnquotedValueAsString ::
+      (Stream.C source) =>
+      ParserEmit name source sink sink
+
+instance CharType char => StringType [char] where
+   stringFromChar c = [fromChar c]
+   parseCharAsString = parseChar
+   parseUnquotedValueAsString = parseUnquotedValue
+
+
+parseString  ::
+   (Stream.C source, StringType sink) =>
+   (Char -> Bool) -> ParserEmit name source sink sink
+parseString  p = liftM mconcat $ many  (parseCharAsString p)
+
+{-
+parseString1 ::
+   (Stream.C source, StringType sink) =>
+   (Char -> Bool) -> Parser     name source sink sink
+parseString1 p = liftM mconcat $ many1 (parseCharAsString p)
+-}
+
+
+
+parseUnicodeChar ::
+   (Stream.C source) =>
+   (Char -> Bool) -> Parser name source sink String
+parseUnicodeChar p =
+   do pos <- getPos
+      x <- parseHTMLChar p
+      allowFail $ liftM concat $
+         mapM (htmlCharToString pos) x
+
+htmlCharToString ::
+   Position.T -> HTMLChar.T -> ParserEmit name source sink String
+htmlCharToString pos x =
+   let returnChar c = return $ c:[]
+   in  case x of
+          HTMLChar.Unicode c -> returnChar c
+          HTMLChar.CharRef num -> returnChar (chr num)
+          HTMLChar.EntityRef name ->
+             maybe
+                (let refName = '&':name++";"
+                 in  emitWarning pos ("Unknown HTML entity " ++ refName) >>
+                     return refName)
+                returnChar
+                (Map.lookup name HTMLEntity.mapNameToChar)
+
+{- |
+Only well formed entity references are interpreted as single HTMLChars,
+whereas ill-formed entity references are interpreted as sequence of unicode characters without special meaning.
+E.g. "&amp ;" is considered as plain "&amp ;",
+and only "&amp;" is considered an escaped ampersand.
+It is a very common error in HTML documents to not escape an ampersand.
+With the interpretation used here,
+those ampersands are left as they are.
+
+At most one warning can be emitted.
+-}
+parseHTMLChar ::
+   (Stream.C source) =>
+   (Char -> Bool) -> Parser name source sink [HTMLChar.T]
+parseHTMLChar p =
+   do pos <- getPos
+      c <- satisfy p
+      allowFail $
+        if c=='&'
+          then
+            withDefault
+              (do ent <-
+                     mplus
+                        (do char '#'
+                            digits <- allowFail $ many0toN 10 (satisfy isAlphaNum)
+                               -- exclude ';', '"', '<'
+                               -- include 'x'
+                            Exc.switch
+                               (\e ->
+                                  allowFail (emitWarning pos ("Error in numeric entity: " ++ e)) >>
+                                  return (map HTMLChar.fromUnicode ('&':'#':digits)))
+                               (return . (:[]) . HTMLChar.CharRef . ord)
+                               (HTMLEntity.numberToChar digits))
+                        (liftM ((:[]) . HTMLChar.EntityRef) $
+                         many1toN 10 (satisfy isAlphaNum))
+                  char ';'
+                  return ent)
+              (emitWarning pos "Non-terminated entity reference" >>
+               return [HTMLChar.Unicode '&'])
+          else return [HTMLChar.Unicode c]
+
+{-
+readHex :: (Num a) => String -> a
+readHex str =
+   case Numeric.readHex str of
+      [(n,"")] -> n
+      _ -> error "readHex: no parse"
+
+{-
+We cannot emit specific warnings,
+because the sub-parsers simply fail
+and then throw away the warnings.
+
+parseHTMLCharGenericWarning ::
+   (Stream.C source) =>
+   (Char -> Bool) -> Parser name source sink [HTMLChar.T]
+parseHTMLCharGenericWarning p =
+   do pos <- getPos
+      c <- satisfy p
+      allowFail $
+        if c=='&'
+          then
+            withDefault
+              (do ent <-
+                     mplus
+                        (char '#' >>
+                         liftM HTMLChar.CharRef
+                            (mplus
+                               (char 'x' >> liftM readHex (many1toN 8 (satisfy isHexDigit)))
+                               (liftM read (many1toN 10 (satisfy isDigit)))))
+                        (liftM HTMLChar.EntityRef $ many1toN 10 (satisfy isAlphaNum))
+                  char ';'
+                  return [ent])
+              (emitWarning pos "Ill formed entity" >>
+               return [HTMLChar.Unicode '&'])
+          else return [HTMLChar.Unicode c]
+-}
+
+
+restrictSoup :: Int -> [PosTag.T name sink] -> [PosTag.T name sink]
+restrictSoup n =
+   uncurry (++) .
+   mapSnd
+      (\rest ->
+          case rest of
+             (PosTag.Cons pos _) : _ ->
+                [PosTag.Cons pos (Tag.Warning "further warnings suppressed")]
+             _ -> []) .
+   splitAt n
+
+
+-- these functions have intentionally restricted types
+
+emitWarningWhen :: Bool -> Position.T -> String -> ParserEmit name source sink ()
+emitWarningWhen cond pos msg =
+   when cond $ emitWarning pos msg
+
+emitWarning :: Position.T -> String -> ParserEmit name source sink ()
+emitWarning pos msg = emitTag pos (Tag.Warning msg)
+
+emitTag :: Position.T -> Tag.T name sink -> ParserEmit name source sink ()
+emitTag p t = emit (PosTag.cons p t)
+
+emittingTag ::
+   (MonadFix fail) =>
+   Position.T ->
+   (a -> Tag.T name sink) ->
+   Parser.T source [PosTag.T name sink] fail a ->
+   Parser.T source [PosTag.T name sink] fail ()
+emittingTag pos f x =
+   mfix (\r -> emit (PosTag.cons pos (f r)) >> x) >> return ()
+
+</pre>

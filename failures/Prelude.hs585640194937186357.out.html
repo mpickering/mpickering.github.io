@@ -1,0 +1,348 @@
+<a href="Prelude.hs563613512101929267.out.html">prev</a></br><a href="failures.html">home</a></br><a href="Prelude.hs922285743319518555.out.html">next</a></br></br><pre>13c13
+< avg ∷ Fractional a ⇒ [a] → a
+---
+> avg :: Fractional a => [a] -> a
+16c16
+< zero ∷ Num a ⇒ a
+---
+> zero :: Num a => a
+19c19
+< one ∷ Num a ⇒ a
+---
+> one :: Num a => a
+22c22
+< iterateStn ∷ Int → (s → (a,s)) → s → ([a],s)
+---
+> iterateStn :: Int -> (s -> (a,s)) -> s -> ([a],s)
+25d24
+<     (a, s)      ← return $ f s
+26c25
+<     (as,s)      ← return $ iterateStn (n-1) f s
+---
+>     (a, s)      <- return $ f s
+26a26
+>     (as,s)      <- return $ iterateStn (n-1) f s
+29c29
+< singleOutElems ∷ [a] → [(a,[a])]
+---
+> singleOutElems :: [a] -> [(a,[a])]
+31c31
+<     singleOut ∷ [a] → [a] → [(a,[a])]
+---
+>     singleOut :: [a] -> [a] -> [(a,[a])]
+36c36
+< spanfilter ∷ (a → Bool) → [a] → ([a],[a])
+---
+> spanfilter :: (a -> Bool) -> [a] -> ([a],[a])
+45c45
+< spanfilterSt ∷ (a → s → (Bool,s)) → [a] → s → (([a],[a]),s)
+---
+> spanfilterSt :: (a -> s -> (Bool,s)) -> [a] -> s -> (([a],[a]),s)
+49d48
+<     (ok,s)      ← return $ cond x s
+50c49
+<     ((yes,no),s)    ← return $ spanfilterSt cond xs s
+---
+>     (ok,s)      <- return $ cond x s
+50a50
+>     ((yes,no),s)    <- return $ spanfilterSt cond xs s
+58c58
+< break' ∷ (a → Bool) → [a] → ([a],[a],[a])
+---
+> break' :: (a -> Bool) -> [a] -> ([a],[a],[a])
+69c69
+< break1 ∷ (a → Bool) → [a] → ([a],a,[a])
+---
+> break1 :: (a -> Bool) -> [a] -> ([a],a,[a])
+72d71
+<         (a,[b],c)   → (a,b,c)
+73c72
+<         (a,b,c)     → error ("break1: [B] is of length: " ++ show (length b) ++ "\n")
+---
+>         (a,[b],c)   -> (a,b,c)
+73a73
+>         (a,b,c)     -> error ("break1: [B] is of length: " ++ show (length b) ++ "\n")
+76c76
+< unbreak ∷ ([a],[a],[a]) → [a]
+---
+> unbreak :: ([a],[a],[a]) -> [a]
+81c81
+< unbreak1 ∷ ([a],a,[a]) → [a]
+---
+> unbreak1 :: ([a],a,[a]) -> [a]
+97c97
+< boundedBy ∷ Ord a ⇒ a → (a,a) → a
+---
+> boundedBy :: Ord a => a -> (a,a) -> a
+106c106
+< isbetween ∷ Ord a ⇒ a → a → a → Bool
+---
+> isbetween :: Ord a => a -> a -> a -> Bool
+111c111
+< minmax ∷ Ord a ⇒ (a,a) → (a,a)
+---
+> minmax :: Ord a => (a,a) -> (a,a)
+117c117
+< perhaps ∷ (a → Bool) → (Maybe a) → Bool
+---
+> perhaps :: (a -> Bool) -> (Maybe a) -> Bool
+120c120
+< removeMember ∷ (Eq a) ⇒ a → [a] → [a]
+---
+> removeMember :: (Eq a) => a -> [a] -> [a]
+123c123
+< removeMembers ∷ (Eq a) ⇒ [a] → [a] → [a]
+---
+> removeMembers :: (Eq a) => [a] -> [a] -> [a]
+124a125
+> 
+</pre></br><h2>original</h2></br><pre>{-# LANGUAGE UnicodeSyntax, Rank2Types #-}
+-- | Collection of functions of more general purpose.
+module SoccerFun.Prelude    where
+
+import Data.Maybe
+import Control.Monad.Identity
+
+
+fst3 (x,y,z) = x
+snd3 (x,y,z) = y
+thd3 (x,y,z) = z
+
+avg ∷ Fractional a ⇒ [a] → a
+avg xs = sum xs / fromIntegral (length xs)
+
+zero ∷ Num a ⇒ a
+zero = fromIntegral 0
+
+one ∷ Num a ⇒ a
+one = fromIntegral 1
+
+iterateStn ∷ Int → (s → (a,s)) → s → ([a],s)
+iterateStn 0 _ s    = ([],s)
+iterateStn n f s = runIdentity $ do
+    (a, s)      ← return $ f s
+    (as,s)      ← return $ iterateStn (n-1) f s
+    return $ ((a:as),s)
+
+singleOutElems ∷ [a] → [(a,[a])]
+singleOutElems as = singleOut [] as where
+    singleOut ∷ [a] → [a] → [(a,[a])]
+    singleOut _ [] = []
+    singleOut prefix (a:as)= ((a,prefix++as) : singleOut (prefix++[a]) as)
+
+-- | spanfilter cond xs = (filter cond xs, filter (not . cond) xs)
+spanfilter ∷ (a → Bool) → [a] → ([a],[a])
+spanfilter cond []
+    = ([],[])
+spanfilter cond (x:xs)
+    | cond x    = ((x:yes),no)
+    | otherwise = (yes,(x:no))
+    where
+    (yes,no)    = spanfilter cond xs
+
+spanfilterSt ∷ (a → s → (Bool,s)) → [a] → s → (([a],[a]),s)
+spanfilterSt cond [] s
+    = (([],[]),s)
+spanfilterSt cond (x:xs) s = runIdentity $ do
+    (ok,s)      ← return $ cond x s
+    ((yes,no),s)    ← return $ spanfilterSt cond xs s
+    return $ if ok  then (((x:yes),no),s) else ((yes,(x:no)),s)
+
+{-| break cond (A ++ B ++ C) = (A,B,C)
+        where for each x in A: not cond x     /\
+          for each x in B:     cond x     /\
+          if C=(x:_):      not cond x
+-}
+break' ∷ (a → Bool) → [a] → ([a],[a],[a])
+break' c xs = let
+        (no,yes)     = span (not . c) xs
+        (yes',no') = span c yes
+    in (no,yes',no')
+
+{-| break1 cond (A ++ [B] ++ C) = (A,B,C)
+        where for each x in A: not cond x     /\
+                               cond B     /\
+          if C=(x:_):      not cond x
+-}
+break1 ∷ (a → Bool) → [a] → ([a],a,[a])
+break1 c xs
+    = case break' c xs of
+        (a,[b],c)   → (a,b,c)
+        (a,b,c)     → error ("break1: [B] is of length: " ++ show (length b) ++ "\n")
+
+-- | unbreak (a,b,c) = a ++ b ++ c
+unbreak ∷ ([a],[a],[a]) → [a]
+unbreak (a,b,c) = a ++ b ++ c
+
+
+-- | unbreak1 (a,b,c) = a ++ [b] ++ c
+unbreak1 ∷ ([a],a,[a]) → [a]
+unbreak1 (a,b,c) = a ++ [b] ++ c
+
+{- [a1..x..aN] x = i
+        where
+        aJ /= x for all j<i
+        aJ == x for j==i
+-}
+--(??) infixl 9 ∷ [a] → a → Int | == a
+--(??) ys x = search ((==) x) ys 0
+--
+--(???) infixl 9 ∷ [a] → (a → Bool) → Int
+--(???) ys c = search c ys 0
+
+type AssocList k v = [(k,v)]
+
+boundedBy ∷ Ord a ⇒ a → (a,a) → a
+boundedBy x (low,up)
+    | low > x   = low
+    | x > up    = up
+    | otherwise = x
+
+{-| isbetween x low up
+        returns True iff low <= x <= up
+-}
+isbetween ∷ Ord a ⇒ a → a → a → Bool
+isbetween x low up
+    = low <= x && x <= up
+
+-- | minmax (a,b) = (a,b) if a<=b; (b,a) otherwise
+minmax ∷ Ord a ⇒ (a,a) → (a,a)
+minmax (a,b)
+    | a<=b      = (a,b)
+    | otherwise = (b,a)
+
+-- | perhaps p Nothing = False, and perhaps p (Just a) = p a
+perhaps ∷ (a → Bool) → (Maybe a) → Bool
+perhaps p = maybe False p
+
+removeMember ∷ (Eq a) ⇒ a → [a] → [a]
+removeMember x = filter (/= x)
+
+removeMembers ∷ (Eq a) ⇒ [a] → [a] → [a]
+removeMembers xs ys = foldr removeMember xs ys
+</pre></br><h2>printed</h2></br><pre>{-# LANGUAGE UnicodeSyntax, Rank2Types #-}
+-- | Collection of functions of more general purpose.
+module SoccerFun.Prelude    where
+
+import Data.Maybe
+import Control.Monad.Identity
+
+
+fst3 (x,y,z) = x
+snd3 (x,y,z) = y
+thd3 (x,y,z) = z
+
+avg :: Fractional a => [a] -> a
+avg xs = sum xs / fromIntegral (length xs)
+
+zero :: Num a => a
+zero = fromIntegral 0
+
+one :: Num a => a
+one = fromIntegral 1
+
+iterateStn :: Int -> (s -> (a,s)) -> s -> ([a],s)
+iterateStn 0 _ s    = ([],s)
+iterateStn n f s = runIdentity $ do
+    (a, s)      <- return $ f s
+    (as,s)      <- return $ iterateStn (n-1) f s
+    return $ ((a:as),s)
+
+singleOutElems :: [a] -> [(a,[a])]
+singleOutElems as = singleOut [] as where
+    singleOut :: [a] -> [a] -> [(a,[a])]
+    singleOut _ [] = []
+    singleOut prefix (a:as)= ((a,prefix++as) : singleOut (prefix++[a]) as)
+
+-- | spanfilter cond xs = (filter cond xs, filter (not . cond) xs)
+spanfilter :: (a -> Bool) -> [a] -> ([a],[a])
+spanfilter cond []
+    = ([],[])
+spanfilter cond (x:xs)
+    | cond x    = ((x:yes),no)
+    | otherwise = (yes,(x:no))
+    where
+    (yes,no)    = spanfilter cond xs
+
+spanfilterSt :: (a -> s -> (Bool,s)) -> [a] -> s -> (([a],[a]),s)
+spanfilterSt cond [] s
+    = (([],[]),s)
+spanfilterSt cond (x:xs) s = runIdentity $ do
+    (ok,s)      <- return $ cond x s
+    ((yes,no),s)    <- return $ spanfilterSt cond xs s
+    return $ if ok  then (((x:yes),no),s) else ((yes,(x:no)),s)
+
+{-| break cond (A ++ B ++ C) = (A,B,C)
+        where for each x in A: not cond x     /\
+          for each x in B:     cond x     /\
+          if C=(x:_):      not cond x
+-}
+break' :: (a -> Bool) -> [a] -> ([a],[a],[a])
+break' c xs = let
+        (no,yes)     = span (not . c) xs
+        (yes',no') = span c yes
+    in (no,yes',no')
+
+{-| break1 cond (A ++ [B] ++ C) = (A,B,C)
+        where for each x in A: not cond x     /\
+                               cond B     /\
+          if C=(x:_):      not cond x
+-}
+break1 :: (a -> Bool) -> [a] -> ([a],a,[a])
+break1 c xs
+    = case break' c xs of
+        (a,[b],c)   -> (a,b,c)
+        (a,b,c)     -> error ("break1: [B] is of length: " ++ show (length b) ++ "\n")
+
+-- | unbreak (a,b,c) = a ++ b ++ c
+unbreak :: ([a],[a],[a]) -> [a]
+unbreak (a,b,c) = a ++ b ++ c
+
+
+-- | unbreak1 (a,b,c) = a ++ [b] ++ c
+unbreak1 :: ([a],a,[a]) -> [a]
+unbreak1 (a,b,c) = a ++ [b] ++ c
+
+{- [a1..x..aN] x = i
+        where
+        aJ /= x for all j<i
+        aJ == x for j==i
+-}
+--(??) infixl 9 ∷ [a] → a → Int | == a
+--(??) ys x = search ((==) x) ys 0
+--
+--(???) infixl 9 ∷ [a] → (a → Bool) → Int
+--(???) ys c = search c ys 0
+
+type AssocList k v = [(k,v)]
+
+boundedBy :: Ord a => a -> (a,a) -> a
+boundedBy x (low,up)
+    | low > x   = low
+    | x > up    = up
+    | otherwise = x
+
+{-| isbetween x low up
+        returns True iff low <= x <= up
+-}
+isbetween :: Ord a => a -> a -> a -> Bool
+isbetween x low up
+    = low <= x && x <= up
+
+-- | minmax (a,b) = (a,b) if a<=b; (b,a) otherwise
+minmax :: Ord a => (a,a) -> (a,a)
+minmax (a,b)
+    | a<=b      = (a,b)
+    | otherwise = (b,a)
+
+-- | perhaps p Nothing = False, and perhaps p (Just a) = p a
+perhaps :: (a -> Bool) -> (Maybe a) -> Bool
+perhaps p = maybe False p
+
+removeMember :: (Eq a) => a -> [a] -> [a]
+removeMember x = filter (/= x)
+
+removeMembers :: (Eq a) => [a] -> [a] -> [a]
+removeMembers xs ys = foldr removeMember xs ys
+
+</pre>

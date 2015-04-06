@@ -1,0 +1,280 @@
+<a href="Parsing.hs1148079871137522503.out.html">prev</a></br><a href="failures.html">home</a></br><a href="Partial.hs13640931281925270571.out.html">next</a></br></br><pre>30c30
+<     Just reason <- lookup "reason" m,
+---
+>     Just reason <- lookup "reason" m
+42c42
+<     Just (Aeson.Bool True) <- lookup "deleted" valueM,
+---
+>     Just (Aeson.Bool True) <- lookup "deleted" valueM
+46c46
+<     Just _ <- lookup "value" m,
+---
+>     Just _ <- lookup "value" m
+57c57
+<     Just doc <- o .? "doc",
+---
+>     Just doc <- o .? "doc"
+79d78
+<     Just (Aeson.Object valueM) <- lookup "value" m,
+80d78
+<     Just (Aeson.Bool True) <- lookup "deleted" valueM,
+81c79
+<     Just rev <- lookup "rev" valueM,
+---
+>     Just (Aeson.Object valueM) <- lookup "value" m
+81a80
+>     Just (Aeson.Bool True) <- lookup "deleted" valueM
+81a81
+>     Just rev <- lookup "rev" valueM
+86d85
+<     Just (Aeson.Object valueM) <- lookup "value" m,
+87d85
+<     Just doc <- lookup "doc" m,
+88d85
+<     Aeson.Object docM <- doc,
+89c86
+<     Just rev <- lookup "_rev" docM,
+---
+>     Just (Aeson.Object valueM) <- lookup "value" m
+89a87
+>     Just doc <- lookup "doc" m
+89a88
+>     Aeson.Object docM <- doc
+89a89
+>     Just rev <- lookup "_rev" docM
+116a117
+> 
+</pre></br><h2>original</h2></br><pre>{-# LANGUAGE OverloadedStrings, NoMonomorphismRestriction, FlexibleContexts #-}
+module EZCouch.Parsing where
+
+import Prelude ()
+import ClassyPrelude
+import EZCouch.Types
+import Data.Aeson as Aeson
+
+type Parser a = Aeson.Value -> Either Text a
+
+runParser parser response =
+  either (throwIO . ParsingException) return $ parser response
+
+rowsParser1 :: Parser (Vector Aeson.Value)
+rowsParser1 json
+  | Just (Aeson.Array rows) <- json .? "rows" = Right rows
+  | otherwise = Left $ unexpectedJSONValue "rowsParser1" json
+
+rowsParser2 :: Parser (Vector Aeson.Value)
+rowsParser2 json
+  | Aeson.Array rows <- json = Right rows
+  | otherwise = Left $ unexpectedJSONValue "rowsParser2" json
+
+idRevParser :: Parser (Text, Maybe Text)
+idRevParser o @ (Aeson.Object m)
+  | Just rev <- lookup "rev" m,
+    Just id <- lookup "id" m
+    = (,) <$> fromJSON' id <*> (Just <$> fromJSON' rev)
+  | Just code <- lookup "error" m,
+    Just reason <- lookup "reason" m,
+    Just id <- lookup "id" m
+    = (,) <$> fromJSON' id <*> pure Nothing
+  | otherwise
+    = Left $ unexpectedJSONValue "idRevParser" o
+
+keyExistsParser :: (FromJSON k) => Parser (k, Bool)
+keyExistsParser o @ (Aeson.Object m)
+  | Just "not_found" <- lookup "error" m,
+    Just key <- lookup "key" m
+    = (,) <$> fromJSON' key <*> pure False
+  | Just (Aeson.Object valueM) <- lookup "value" m,
+    Just (Aeson.Bool True) <- lookup "deleted" valueM,
+    Just key <- lookup "key" m
+    = (,) <$> fromJSON' key <*> pure False
+  | Just id <- lookup "id" m,
+    Just _ <- lookup "value" m,
+    Just key <- lookup "key" m
+    = (,) <$> fromJSON' key <*> pure True
+  | otherwise
+    = Left $ unexpectedJSONValue "keyExistsParser" o
+
+persistedParser :: (FromJSON a) => Parser (Maybe (Persisted a))
+persistedParser o
+  | Just (Aeson.Bool True) <- o .? "value" ?.? "deleted"
+    = Right Nothing
+  | Just id <- o .? "id",
+    Just doc <- o .? "doc",
+    Just rev <- doc .? "_rev"
+    = fmap Just $ Persisted <$> fromJSON' id <*> fromJSON' rev <*> fromJSON' doc
+  | o .? "doc" == Just Aeson.Null
+    = Right Nothing
+  | otherwise
+    = Left $ unexpectedJSONValue "persistedParser" o
+
+errorPersistedParser :: (FromJSON a) => Parser (Either (Text, Text) (Persisted a))
+errorPersistedParser o @ (Aeson.Object m)
+  | Just id <- lookup "_id" m,
+    Just rev <- lookup "_rev" m
+    = fmap Right $ Persisted <$> fromJSON' id <*> fromJSON' rev <*> fromJSON' o
+  | Just error <- lookup "error" m, Just reason <- lookup "reason" m
+    = fmap Left $ (,) <$> fromJSON' error <*> fromJSON' reason
+  | otherwise
+    = Left $ unexpectedJSONValue "errorPersistedParser" o
+
+maybePersistedByKeyParser :: (FromJSON a, FromJSON k) => Parser (k, Maybe (Persisted a))
+maybePersistedByKeyParser o @ (Aeson.Object m)
+  -- deleted
+  | Just id <- lookup "id" m,
+    Just (Aeson.Object valueM) <- lookup "value" m,
+    Just (Aeson.Bool True) <- lookup "deleted" valueM,
+    Just rev <- lookup "rev" valueM,
+    Just key <- lookup "key" m
+    = (,) <$> fromJSON' key <*> pure Nothing
+  -- found
+  | Just id <- lookup "id" m,
+    Just (Aeson.Object valueM) <- lookup "value" m,
+    Just doc <- lookup "doc" m,
+    Aeson.Object docM <- doc,
+    Just rev <- lookup "_rev" docM,
+    Just key <- lookup "key" m
+    = (,) <$> fromJSON' key <*> (Just <$> (Persisted <$> fromJSON' id <*> fromJSON' rev <*> fromJSON' doc))
+  -- not found
+  | Just "not_found" <- lookup "error" m,
+    Just key <- lookup "key" m
+    = (,) <$> fromJSON' key <*> pure Nothing
+  | otherwise
+    = Left $ unexpectedJSONValue "maybePersistedByKeyParser" o
+
+
+
+fromJSON' json = case fromJSON json of
+  Aeson.Success z -> Right $ z
+  Aeson.Error s -> Left $ "fromJSON failed with a message `"
+    ++ fromString s
+    ++ "` on the following value: "
+    ++ (toStrict . decodeUtf8 $ Aeson.encode json)
+
+unexpectedJSONValue parserName json =
+  parserName ++ ": "
+    ++ "Unexpected JSON value: "
+    ++ (toStrict . decodeUtf8 $ Aeson.encode json)
+
+o .? k = pure o ?.? k
+o ?.? k = o >>= objectKey k
+objectKey k (Aeson.Object m) = lookup k m
+objectKey _ _ = Nothing
+</pre></br><h2>printed</h2></br><pre>{-# LANGUAGE OverloadedStrings, NoMonomorphismRestriction, FlexibleContexts #-}
+module EZCouch.Parsing where
+
+import Prelude ()
+import ClassyPrelude
+import EZCouch.Types
+import Data.Aeson as Aeson
+
+type Parser a = Aeson.Value -> Either Text a
+
+runParser parser response =
+  either (throwIO . ParsingException) return $ parser response
+
+rowsParser1 :: Parser (Vector Aeson.Value)
+rowsParser1 json
+  | Just (Aeson.Array rows) <- json .? "rows" = Right rows
+  | otherwise = Left $ unexpectedJSONValue "rowsParser1" json
+
+rowsParser2 :: Parser (Vector Aeson.Value)
+rowsParser2 json
+  | Aeson.Array rows <- json = Right rows
+  | otherwise = Left $ unexpectedJSONValue "rowsParser2" json
+
+idRevParser :: Parser (Text, Maybe Text)
+idRevParser o @ (Aeson.Object m)
+  | Just rev <- lookup "rev" m,
+    Just id <- lookup "id" m
+    = (,) <$> fromJSON' id <*> (Just <$> fromJSON' rev)
+  | Just code <- lookup "error" m,
+    Just reason <- lookup "reason" m
+    Just id <- lookup "id" m
+    = (,) <$> fromJSON' id <*> pure Nothing
+  | otherwise
+    = Left $ unexpectedJSONValue "idRevParser" o
+
+keyExistsParser :: (FromJSON k) => Parser (k, Bool)
+keyExistsParser o @ (Aeson.Object m)
+  | Just "not_found" <- lookup "error" m,
+    Just key <- lookup "key" m
+    = (,) <$> fromJSON' key <*> pure False
+  | Just (Aeson.Object valueM) <- lookup "value" m,
+    Just (Aeson.Bool True) <- lookup "deleted" valueM
+    Just key <- lookup "key" m
+    = (,) <$> fromJSON' key <*> pure False
+  | Just id <- lookup "id" m,
+    Just _ <- lookup "value" m
+    Just key <- lookup "key" m
+    = (,) <$> fromJSON' key <*> pure True
+  | otherwise
+    = Left $ unexpectedJSONValue "keyExistsParser" o
+
+persistedParser :: (FromJSON a) => Parser (Maybe (Persisted a))
+persistedParser o
+  | Just (Aeson.Bool True) <- o .? "value" ?.? "deleted"
+    = Right Nothing
+  | Just id <- o .? "id",
+    Just doc <- o .? "doc"
+    Just rev <- doc .? "_rev"
+    = fmap Just $ Persisted <$> fromJSON' id <*> fromJSON' rev <*> fromJSON' doc
+  | o .? "doc" == Just Aeson.Null
+    = Right Nothing
+  | otherwise
+    = Left $ unexpectedJSONValue "persistedParser" o
+
+errorPersistedParser :: (FromJSON a) => Parser (Either (Text, Text) (Persisted a))
+errorPersistedParser o @ (Aeson.Object m)
+  | Just id <- lookup "_id" m,
+    Just rev <- lookup "_rev" m
+    = fmap Right $ Persisted <$> fromJSON' id <*> fromJSON' rev <*> fromJSON' o
+  | Just error <- lookup "error" m, Just reason <- lookup "reason" m
+    = fmap Left $ (,) <$> fromJSON' error <*> fromJSON' reason
+  | otherwise
+    = Left $ unexpectedJSONValue "errorPersistedParser" o
+
+maybePersistedByKeyParser :: (FromJSON a, FromJSON k) => Parser (k, Maybe (Persisted a))
+maybePersistedByKeyParser o @ (Aeson.Object m)
+  -- deleted
+  | Just id <- lookup "id" m,
+    Just (Aeson.Object valueM) <- lookup "value" m
+    Just (Aeson.Bool True) <- lookup "deleted" valueM
+    Just rev <- lookup "rev" valueM
+    Just key <- lookup "key" m
+    = (,) <$> fromJSON' key <*> pure Nothing
+  -- found
+  | Just id <- lookup "id" m,
+    Just (Aeson.Object valueM) <- lookup "value" m
+    Just doc <- lookup "doc" m
+    Aeson.Object docM <- doc
+    Just rev <- lookup "_rev" docM
+    Just key <- lookup "key" m
+    = (,) <$> fromJSON' key <*> (Just <$> (Persisted <$> fromJSON' id <*> fromJSON' rev <*> fromJSON' doc))
+  -- not found
+  | Just "not_found" <- lookup "error" m,
+    Just key <- lookup "key" m
+    = (,) <$> fromJSON' key <*> pure Nothing
+  | otherwise
+    = Left $ unexpectedJSONValue "maybePersistedByKeyParser" o
+
+
+
+fromJSON' json = case fromJSON json of
+  Aeson.Success z -> Right $ z
+  Aeson.Error s -> Left $ "fromJSON failed with a message `"
+    ++ fromString s
+    ++ "` on the following value: "
+    ++ (toStrict . decodeUtf8 $ Aeson.encode json)
+
+unexpectedJSONValue parserName json =
+  parserName ++ ": "
+    ++ "Unexpected JSON value: "
+    ++ (toStrict . decodeUtf8 $ Aeson.encode json)
+
+o .? k = pure o ?.? k
+o ?.? k = o >>= objectKey k
+objectKey k (Aeson.Object m) = lookup k m
+objectKey _ _ = Nothing
+
+</pre>

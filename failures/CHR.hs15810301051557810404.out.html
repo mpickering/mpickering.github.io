@@ -1,0 +1,425 @@
+<a href="CHR.hs14656452031461495731.out.html">prev</a></br><a href="failures.html">home</a></br><a href="Chr.hs5305119672110010672.out.html">next</a></br></br><pre>23c23
+< {-# LINE 33 "src/ehc/CHR.chs" #-}
+---
+> 
+23a24
+> 
+23a25
+> 
+23a26
+> 
+23a27
+> 
+23a28
+> 
+23a29
+> 
+23a30
+> 
+23a31
+> 
+23a32
+> 
+37c46
+< {-# LINE 50 "src/ehc/CHR.chs" #-}
+---
+> 
+37a47
+> 
+37a48
+> 
+37a49
+> 
+41c53
+< {-# LINE 55 "src/ehc/CHR.chs" #-}
+---
+> 
+41a54
+> 
+57c70
+< {-# LINE 77 "src/ehc/CHR.chs" #-}
+---
+> 
+57a71
+> 
+57a72
+> 
+57a73
+> 
+57a74
+> 
+57a75
+> 
+57a76
+> 
+61c80
+< {-# LINE 86 "src/ehc/CHR.chs" #-}
+---
+> 
+61a81
+> 
+61a82
+> 
+61a83
+> 
+61a84
+> 
+61a85
+> 
+70c94
+< {-# LINE 102 "src/ehc/CHR.chs" #-}
+---
+> 
+70a95
+> 
+70a96
+> 
+70a97
+> 
+70a98
+> 
+70a99
+> 
+70a100
+> 
+70a101
+> 
+74c105
+< {-# LINE 113 "src/ehc/CHR.chs" #-}
+---
+> 
+74a106
+> 
+74a107
+> 
+74a108
+> 
+74a109
+> 
+74a110
+> 
+74a111
+> 
+74a112
+> 
+78c116
+< {-# LINE 124 "src/ehc/CHR.chs" #-}
+---
+> 
+78a117
+> 
+78a118
+> 
+78a119
+> 
+78a120
+> 
+78a121
+> 
+78a122
+> 
+78a123
+> 
+82c127
+< {-# LINE 133 "src/ehc/CHR.chs" #-}
+---
+> 
+82a128
+> 
+82a129
+> 
+82a130
+> 
+82a131
+> 
+82a132
+> 
+93c143
+< {-# LINE 157 "src/ehc/CHR.chs" #-}
+---
+> 
+93a144
+> 
+93a145
+> 
+93a146
+> 
+93a147
+> 
+93a148
+> 
+93a149
+> 
+93a150
+> 
+93a151
+> 
+93a152
+> 
+93a153
+> 
+93a154
+> 
+93a155
+> 
+93a156
+> 
+96a160
+> 
+</pre></br><h2>original</h2></br><pre>module UHC.Light.Compiler.CHR
+( module UHC.Light.Compiler.CHR.Key
+, CHR (..)
+, CHREmptySubstitution (..)
+, CHRMatchable (..)
+, CHRCheckable (..)
+, (<==>), (==>), (|>) )
+where
+import qualified UHC.Light.Compiler.Base.TreeTrie as TreeTrie
+import UHC.Light.Compiler.Base.Common
+import UHC.Light.Compiler.Substitutable
+import UHC.Light.Compiler.VarMp
+import Data.Monoid
+import qualified Data.Set as Set
+import UHC.Util.Pretty
+import UHC.Light.Compiler.CHR.Key
+import Control.Monad
+import UHC.Util.Binary
+import UHC.Util.Serialize
+
+
+
+{-# LINE 33 "src/ehc/CHR.chs" #-}
+-- | A CHR (rule) consist of head (simplification + propagation, boundary indicated by an Int), guard, and a body. All may be empty, but not all at the same time.
+data CHR cnstr guard subst
+  = CHR
+      { chrHead         :: ![cnstr]
+      , chrSimpSz       :: !Int             -- length of the part of the head which is the simplification part
+      , chrGuard        :: ![guard]         -- subst -> Maybe subst
+      , chrBody         :: ![cnstr]
+      }
+  deriving (Typeable, Data)
+
+emptyCHRGuard :: [a]
+emptyCHRGuard = []
+
+{-# LINE 50 "src/ehc/CHR.chs" #-}
+instance Show (CHR c g s) where
+  show _ = "CHR"
+
+{-# LINE 55 "src/ehc/CHR.chs" #-}
+instance (PP c,PP g) => PP (CHR c g s) where
+  pp chr
+    = case chr of
+        (CHR h@(_:_)  sz g b) | sz == 0        -> ppChr ([ppL h, pp  "==>"] ++ ppGB g b)
+        (CHR h@(_:_)  sz g b) | sz == length h -> ppChr ([ppL h, pp "<==>"] ++ ppGB g b)
+        (CHR h@(_:_)  sz g b)                  -> ppChr ([ppL (take sz h), pp "|", ppL (drop sz h), pp "<==>"] ++ ppGB g b)
+        (CHR []       _  g b)                  -> ppChr (ppGB g b)
+    where ppGB g@(_:_) b@(_:_) = [ppL g, "|" >#< ppL b]
+          ppGB g@(_:_) []      = [ppL g >#< "|"]
+          ppGB []      b@(_:_) = [ppL b]
+          ppGB []      []      = []
+          ppL [x] = pp x
+          ppL xs  = ppBracketsCommasBlock xs -- ppParensCommasBlock xs
+          ppChr l = vlist l -- ppCurlysBlock
+
+{-# LINE 77 "src/ehc/CHR.chs" #-}
+instance TTKeyable cnstr => TTKeyable (CHR cnstr guard subst) where
+  toTTKey' o chr = toTTKey' o $ head $ chrHead chr
+
+{-# LINE 86 "src/ehc/CHR.chs" #-}
+instance (VarExtractable c v,VarExtractable g v) => VarExtractable (CHR c g s) v where
+  varFreeSet          (CHR {chrHead=h, chrGuard=g, chrBody=b})
+    = Set.unions $ concat [map varFreeSet h, map varFreeSet g, map varFreeSet b]
+
+instance (VarUpdatable c s,VarUpdatable g s) => VarUpdatable (CHR c g s) s where
+  varUpd s r@(CHR {chrHead=h, chrGuard=g, chrBody=b})
+    = r {chrHead = map (varUpd s) h, chrGuard = map (varUpd s) g, chrBody = map (varUpd s) b}
+
+{-# LINE 102 "src/ehc/CHR.chs" #-}
+class CHREmptySubstitution subst where
+  chrEmptySubst :: subst
+
+{-# LINE 113 "src/ehc/CHR.chs" #-}
+class (TTKeyable x) => CHRMatchable env x subst where --- | x -> subst env where
+  chrMatchTo      :: env -> subst -> x -> x -> Maybe subst
+
+{-# LINE 124 "src/ehc/CHR.chs" #-}
+class CHRCheckable env x subst where
+  chrCheck      :: env -> subst -> x -> Maybe subst
+
+{-# LINE 133 "src/ehc/CHR.chs" #-}
+infix   1 <==>, ==>
+infixr  0 |>
+
+(<==>), (==>) :: [c] -> [c] -> CHR c g s
+hs <==>  bs = CHR hs (length hs) emptyCHRGuard bs
+hs  ==>  bs = CHR hs 0 emptyCHRGuard bs
+
+(|>) :: CHR c g s -> [g] -> CHR c g s
+chr |> g = chr {chrGuard = chrGuard chr ++ g}
+
+{-# LINE 157 "src/ehc/CHR.chs" #-}
+instance (Serialize c,Serialize g,Serialize s) => Serialize (CHR c g s) where
+  sput (CHR a b c d) = sput a >> sput b >> sput c >> sput d
+  sget = liftM4 CHR sget sget sget sget
+</pre></br><h2>printed</h2></br><pre>module UHC.Light.Compiler.CHR
+( module UHC.Light.Compiler.CHR.Key
+, CHR (..)
+, CHREmptySubstitution (..)
+, CHRMatchable (..)
+, CHRCheckable (..)
+, (<==>), (==>), (|>) )
+where
+import qualified UHC.Light.Compiler.Base.TreeTrie as TreeTrie
+import UHC.Light.Compiler.Base.Common
+import UHC.Light.Compiler.Substitutable
+import UHC.Light.Compiler.VarMp
+import Data.Monoid
+import qualified Data.Set as Set
+import UHC.Util.Pretty
+import UHC.Light.Compiler.CHR.Key
+import Control.Monad
+import UHC.Util.Binary
+import UHC.Util.Serialize
+
+
+
+
+
+
+
+
+
+
+
+
+
+-- | A CHR (rule) consist of head (simplification + propagation, boundary indicated by an Int), guard, and a body. All may be empty, but not all at the same time.
+data CHR cnstr guard subst
+  = CHR
+      { chrHead         :: ![cnstr]
+      , chrSimpSz       :: !Int             -- length of the part of the head which is the simplification part
+      , chrGuard        :: ![guard]         -- subst -> Maybe subst
+      , chrBody         :: ![cnstr]
+      }
+  deriving (Typeable, Data)
+
+emptyCHRGuard :: [a]
+emptyCHRGuard = []
+
+
+
+
+
+instance Show (CHR c g s) where
+  show _ = "CHR"
+
+
+
+instance (PP c,PP g) => PP (CHR c g s) where
+  pp chr
+    = case chr of
+        (CHR h@(_:_)  sz g b) | sz == 0        -> ppChr ([ppL h, pp  "==>"] ++ ppGB g b)
+        (CHR h@(_:_)  sz g b) | sz == length h -> ppChr ([ppL h, pp "<==>"] ++ ppGB g b)
+        (CHR h@(_:_)  sz g b)                  -> ppChr ([ppL (take sz h), pp "|", ppL (drop sz h), pp "<==>"] ++ ppGB g b)
+        (CHR []       _  g b)                  -> ppChr (ppGB g b)
+    where ppGB g@(_:_) b@(_:_) = [ppL g, "|" >#< ppL b]
+          ppGB g@(_:_) []      = [ppL g >#< "|"]
+          ppGB []      b@(_:_) = [ppL b]
+          ppGB []      []      = []
+          ppL [x] = pp x
+          ppL xs  = ppBracketsCommasBlock xs -- ppParensCommasBlock xs
+          ppChr l = vlist l -- ppCurlysBlock
+
+
+
+
+
+
+
+
+instance TTKeyable cnstr => TTKeyable (CHR cnstr guard subst) where
+  toTTKey' o chr = toTTKey' o $ head $ chrHead chr
+
+
+
+
+
+
+
+instance (VarExtractable c v,VarExtractable g v) => VarExtractable (CHR c g s) v where
+  varFreeSet          (CHR {chrHead=h, chrGuard=g, chrBody=b})
+    = Set.unions $ concat [map varFreeSet h, map varFreeSet g, map varFreeSet b]
+
+instance (VarUpdatable c s,VarUpdatable g s) => VarUpdatable (CHR c g s) s where
+  varUpd s r@(CHR {chrHead=h, chrGuard=g, chrBody=b})
+    = r {chrHead = map (varUpd s) h, chrGuard = map (varUpd s) g, chrBody = map (varUpd s) b}
+
+
+
+
+
+
+
+
+
+class CHREmptySubstitution subst where
+  chrEmptySubst :: subst
+
+
+
+
+
+
+
+
+
+class (TTKeyable x) => CHRMatchable env x subst where --- | x -> subst env where
+  chrMatchTo      :: env -> subst -> x -> x -> Maybe subst
+
+
+
+
+
+
+
+
+
+class CHRCheckable env x subst where
+  chrCheck      :: env -> subst -> x -> Maybe subst
+
+
+
+
+
+
+
+infix   1 <==>, ==>
+infixr  0 |>
+
+(<==>), (==>) :: [c] -> [c] -> CHR c g s
+hs <==>  bs = CHR hs (length hs) emptyCHRGuard bs
+hs  ==>  bs = CHR hs 0 emptyCHRGuard bs
+
+(|>) :: CHR c g s -> [g] -> CHR c g s
+chr |> g = chr {chrGuard = chrGuard chr ++ g}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+instance (Serialize c,Serialize g,Serialize s) => Serialize (CHR c g s) where
+  sput (CHR a b c d) = sput a >> sput b >> sput c >> sput d
+  sget = liftM4 CHR sget sget sget sget
+
+</pre>

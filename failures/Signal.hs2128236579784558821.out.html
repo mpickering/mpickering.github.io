@@ -1,0 +1,1440 @@
+<a href="Signal.hs21187978011060806853.out.html">prev</a></br><a href="failures.html">home</a></br><a href="Signal.hs616783871382955828.out.html">next</a></br></br><pre>341c341
+< {-# INLINE crochetLAppend #-}
+---
+> {-# INLINE crochetLAppend #
+716a717
+> 
+</pre></br><h2>original</h2></br><pre>{-# LANGUAGE NoImplicitPrelude #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# OPTIONS_GHC -fglasgow-exts #-}
+{- glasgow-exts are for the rules -}
+module Synthesizer.FusionList.Signal where
+
+import qualified Synthesizer.Plain.Signal   as Sig
+import qualified Synthesizer.Plain.Modifier as Modifier
+import qualified Data.List as List
+
+import qualified Data.StorableVector.Lazy as Vector
+import Data.StorableVector.Lazy (ChunkSize, Vector)
+import Foreign.Storable (Storable, )
+
+import qualified Algebra.Module   as Module
+import qualified Algebra.Additive as Additive
+import Algebra.Additive (zero)
+
+import Algebra.Module ((*>))
+
+import qualified Synthesizer.Format as Format
+
+import Control.Monad.Trans.State (runState, )
+
+import Data.Monoid (Monoid, mempty, mappend, )
+
+import qualified Data.List.HT    as ListHT
+import Data.Tuple.HT (mapFst, mapSnd, mapPair, fst3, snd3, thd3, )
+
+import Data.Maybe.HT (toMaybe)
+import NumericPrelude (fromInteger, )
+
+import Text.Show (Show(showsPrec), showParen, showString, )
+import Data.Maybe (Maybe(Just, Nothing), maybe)
+import Prelude
+   ((.), ($), id, const, flip, curry, uncurry, fst, snd, error,
+    (>), (>=), max, Ord,
+    succ, pred, Bool, not, Int, Functor, fmap,
+    (>>), (>>=), fail, return, (=<<),
+--    fromInteger,
+    )
+-- import qualified Prelude as P
+{-
+import Prelude hiding
+   ((++), iterate, foldl, map, repeat, replicate,
+    zipWith, zipWith3, take, takeWhile)
+-}
+
+
+newtype T y = Cons {decons :: [y]}
+
+instance (Show y) => Show (T y) where
+   showsPrec p x =
+      showParen (p >= 10)
+         (showString "FusionList.fromList " . showsPrec 11 (toList x))
+
+instance Format.C T where
+   format = showsPrec
+
+instance Functor T where
+   fmap = map
+
+instance Monoid (T y) where
+   mempty = empty
+   mappend = append
+
+
+{- * functions based on 'generate' -}
+
+{-# NOINLINE [0] generate #-}
+generate :: (acc -> Maybe (y, acc)) -> acc -> T y
+generate f = Cons . snd . Sig.unfoldR f
+
+{-# INLINE unfoldR #-}
+unfoldR :: (acc -> Maybe (y, acc)) -> acc -> T y
+unfoldR = generate
+
+{-# INLINE generateInfinite #-}
+generateInfinite :: (acc -> (y, acc)) -> acc -> T y
+generateInfinite f = generate (Just . f)
+
+{-# INLINE fromList #-}
+fromList :: [y] -> T y
+fromList = generate ListHT.viewL
+
+{-# INLINE toList #-}
+toList :: T y -> [y]
+toList = decons
+
+
+toStorableSignal :: Storable y => ChunkSize -> T y -> Vector y
+toStorableSignal size  =  Vector.pack size . decons
+
+fromStorableSignal :: Storable y => Vector y -> T y
+fromStorableSignal  =  Cons . Vector.unpack
+
+
+{-# INLINE iterate #-}
+iterate :: (a -> a) -> a -> T a
+iterate f = generateInfinite (\x -> (x, f x))
+
+{-# INLINE iterateAssociative #-}
+iterateAssociative :: (a -> a -> a) -> a -> T a
+iterateAssociative op x = iterate (op x) x -- should be optimized
+
+{-# INLINE repeat #-}
+repeat :: a -> T a
+repeat = iterate id
+
+
+{- * functions based on 'crochetL' -}
+
+{-# NOINLINE [0] crochetL #-}
+crochetL :: (x -> acc -> Maybe (y, acc)) -> acc -> T x -> T y
+crochetL f a = Cons . Sig.crochetL f a . decons
+
+{-# INLINE scanL #-}
+scanL :: (acc -> x -> acc) -> acc -> T x -> T acc
+{-
+scanL f start xs =
+   cons start
+     (crochetL (\x acc -> let y = f acc x in Just (y, y)) start xs)
+-}
+scanL f start =
+   cons start .
+   crochetL (\x acc -> let y = f acc x in Just (y, y)) start
+
+-- | input and output have equal length, that's better for fusion
+scanLClip :: (acc -> x -> acc) -> acc -> T x -> T acc
+scanLClip f start =
+   crochetL (\x acc -> Just (acc, f acc x)) start
+
+{-# INLINE map #-}
+map :: (a -> b) -> (T a -> T b)
+map f = crochetL (\x _ -> Just (f x, ())) ()
+
+{-# RULEZ
+  "FusionList.map-crochetL" forall f.
+     map f = crochetL (\x _ -> Just (f x, ())) () ;
+
+  "FusionList.repeat-iterate"
+     repeat = iterate id ;
+
+  "FusionList.iterate-generate" forall f.
+     iterate f = generate (\x -> Just (x, f x)) ;
+
+  "FusionList.take-crochetL"
+     take = crochetL (\x n -> toMaybe (n>zero) (x, pred n)) ;
+
+  "FusionList.unfold-dollar" forall f x.
+     f $ x = f x ;
+
+  "FusionList.unfold-dot" forall f g.
+     f . g  =  \x -> f (g x) ;
+  #-}
+
+{-# INLINE unzip #-}
+unzip :: T (a,b) -> (T a, T b)
+unzip x = (map fst x, map snd x)
+
+{-# INLINE unzip3 #-}
+unzip3 :: T (a,b,c) -> (T a, T b, T c)
+unzip3 xs = (map fst3 xs, map snd3 xs, map thd3 xs)
+
+
+{-# INLINE delay1 #-}
+{- |
+This is a fusion friendly implementation of delay.
+However, in order to be a 'crochetL'
+the output has the same length as the input,
+that is, the last element is removed - at least for finite input.
+-}
+delay1 :: a -> T a -> T a
+delay1 = crochetL (flip (curry Just))
+
+{-# INLINE delay #-}
+delay :: y -> Int -> T y -> T y
+delay z n = append (replicate n z)
+
+
+{-# INLINE take #-}
+take :: Int -> T a -> T a
+take = crochetL (\x n -> toMaybe (n>zero) (x, pred n))
+
+{-# INLINE takeWhile #-}
+takeWhile :: (a -> Bool) -> T a -> T a
+takeWhile p = crochetL (\x _ -> toMaybe (p x) (x, ())) ()
+
+{-# INLINE replicate #-}
+replicate :: Int -> a -> T a
+replicate n = take n . repeat
+
+{-# RULES
+  "FusionList.map/repeat" forall f x.
+     map f (repeat x) = repeat (f x) ;
+
+  "FusionList.map/replicate" forall f n x.
+     map f (replicate n x) = replicate n (f x) ;
+
+  "FusionList.map/cons" forall f x xs.
+      map f (cons x xs) = cons (f x) (map f xs) ;
+
+  "FusionList.map/append" forall f xs ys.
+      map f (append xs ys) = append (map f xs) (map f ys) ;
+
+  {- should be subsumed by the map/cons rule,
+       but it doesn't fire sometimes
+  "FusionList.map/cons/compose" forall f g x xs.
+      map f ((cons x . g) xs) = cons (f x) (map f (g xs)) ;
+  -}
+
+  {- this does not fire, since 'map' is inlined, crochetL/cons should fire instead -}
+  "FusionList.map/scanL" forall f g x0 xs.
+      map g (scanL f x0 xs) =
+         cons (g x0)
+            (crochetL (\x acc -> let y = f acc x in Just (g y, y)) x0 xs) ;
+
+  "FusionList.map/zipWith" forall f g x y.
+     map f (zipWith g x y) =
+        zipWith (\xi yi -> f (g xi yi)) x y ;
+
+  "FusionList.zipWith/map,*" forall f g x y.
+     zipWith g (map f x) y =
+        zipWith (\xi yi -> g (f xi) yi) x y ;
+
+  "FusionList.zipWith/*,map" forall f g x y.
+     zipWith g x (map f y) =
+        zipWith (\xi yi -> g xi (f yi)) x y ;
+  #-}
+
+{- * functions consuming multiple lists -}
+
+{-# NOINLINE [0] zipWith #-}
+zipWith :: (a -> b -> c) -> (T a -> T b -> T c)
+zipWith f s0 s1 =
+   Cons $ List.zipWith f (decons s0) (decons s1)
+
+{-# INLINE zipWith3 #-}
+zipWith3 :: (a -> b -> c -> d) -> (T a -> T b -> T c -> T d)
+zipWith3 f s0 s1 =
+   zipWith (uncurry f) (zip s0 s1)
+
+{-# INLINE zipWith4 #-}
+zipWith4 :: (a -> b -> c -> d -> e) -> (T a -> T b -> T c -> T d -> T e)
+zipWith4 f s0 s1 =
+   zipWith3 (uncurry f) (zip s0 s1)
+
+
+{-# INLINE zip #-}
+zip :: T a -> T b -> T (a,b)
+zip = zipWith (,)
+
+{-# INLINE zip3 #-}
+zip3 :: T a -> T b -> T c -> T (a,b,c)
+zip3 = zipWith3 (,,)
+
+{-# INLINE zip4 #-}
+zip4 :: T a -> T b -> T c -> T d -> T (a,b,c,d)
+zip4 = zipWith4 (,,,)
+
+
+{- * functions based on 'reduceL' -}
+
+reduceL :: (x -> acc -> Maybe acc) -> acc -> T x -> acc
+reduceL f x = Sig.reduceL f x . decons
+
+{-# INLINE foldL' #-}
+foldL' :: (x -> acc -> acc) -> acc -> T x -> acc
+foldL' f = reduceL (\x -> Just . f x)
+
+{-# INLINE foldL #-}
+foldL :: (acc -> x -> acc) -> acc -> T x -> acc
+foldL f = foldL' (flip f)
+
+{-# INLINE lengthSlow #-}
+{- | can be used to check against native length implementation -}
+lengthSlow :: T a -> Int
+lengthSlow = foldL' (const succ) zero
+
+
+{-
+Do we still need rules for fusion of
+  map f (repeat x)
+  zipWith f (repeat x) ys
+?
+-}
+
+{- * Fusion helpers -}
+
+{-# INLINE zipWithGenerate #-}
+zipWithGenerate ::
+      (a -> b -> c)
+   -> (acc -> Maybe (a, acc))
+   -> acc
+   -> T b -> T c
+zipWithGenerate h f a y =
+   crochetL (\y0 a0 ->
+       do (x0,a1) <- f a0
+          Just (h x0 y0, a1)) a y
+
+{-# INLINE zipWithCrochetL #-}
+zipWithCrochetL ::
+      (a -> b -> c)
+   -> (x -> acc -> Maybe (a, acc))
+   -> acc
+   -> T x -> T b -> T c
+zipWithCrochetL h f a x y =
+   crochetL (\(x0,y0) a0 ->
+       do (z0,a1) <- f x0 a0
+          Just (h z0 y0, a1))
+      a (zip x y)
+
+{-# INLINE mixGenerate #-}
+mixGenerate :: (Additive.C a) =>
+      (a -> a -> a)
+   -> (acc -> Maybe (a, acc))
+   -> acc
+   -> T a -> T a
+mixGenerate plus f a =
+   crochetL
+      (\y0 a0 ->
+         Just (maybe
+            (y0, Nothing)
+            (\(x0,a1) -> (plus x0 y0, Just a1))
+            (f =<< a0)))
+      (Just a)
+
+{-# INLINE crochetLCons #-}
+crochetLCons ::
+      (a -> acc -> Maybe (b, acc))
+   -> acc
+   -> a -> T a -> T b
+crochetLCons f a0 x xs =
+   maybe
+      empty
+      (\(y,a1) -> cons y (crochetL f a1 xs))
+      (f x a0)
+
+{-
+{-# INLINE crochetLAppend #-}
+crochetLAppend ::
+      (a -> acc -> Maybe (b, acc))
+   -> acc
+   -> a -> T a -> T a -> T b
+crochetLAppend f a0 x xs ys =
+   maybe
+      empty
+      (\(y,a1) -> cons y (crochetL f a1 xs))
+      (f x a0)
+-}
+
+{-# INLINE reduceLCons #-}
+reduceLCons ::
+      (a -> acc -> Maybe acc)
+   -> acc
+   -> a -> T a -> acc
+reduceLCons f a0 x xs =
+   maybe a0 (flip (reduceL f) xs) (f x a0)
+
+
+{-
+applyThroughCons ::
+   (a -> Maybe (b,acc)) -> (T a -> acc -> T b) -> T a -> T b
+applyThroughCons f g =
+   maybe empty
+      (\(x,xs) -> cons (f x) (g xs)) . viewL
+-}
+
+{-# INLINE zipWithCons #-}
+zipWithCons ::
+      (a -> b -> c)
+   -> a -> T a -> T b -> T c
+zipWithCons f x xs =
+   maybe
+      empty
+      (\(y,ys) -> cons (f x y) (zipWith f xs ys))
+    . viewL
+
+
+{-# RULES
+  "FusionList.crochetL/generate" forall f g a b.
+     crochetL g b (generate f a) =
+        generate (\(a0,b0) ->
+            do (y0,a1) <- f a0
+               (z0,b1) <- g y0 b0
+               Just (z0, (a1,b1))) (a,b) ;
+
+  "FusionList.crochetL/crochetL" forall f g a b x.
+     crochetL g b (crochetL f a x) =
+        crochetL (\x0 (a0,b0) ->
+            do (y0,a1) <- f x0 a0
+               (z0,b1) <- g y0 b0
+               Just (z0, (a1,b1))) (a,b) x ;
+
+  "FusionList.crochetL/cons" forall g b x xs.
+     crochetL g b (cons x xs) =
+        crochetLCons g b x xs ;
+
+
+  "FusionList.tail/generate" forall f a.
+     tail (generate f a) =
+        maybe (error "FusionList.tail: empty list")
+           (generate f . snd) (f a) ;
+
+  "FusionList.tail/cons" forall x xs.
+     tail (cons x xs) = xs ;
+
+  "FusionList.zipWith/generate,*" forall f h a y.
+     zipWith h (generate f a) y =
+        zipWithGenerate h f a y ;
+
+  "FusionList.zipWith/crochetL,*" forall f h a x y.
+     zipWith h (crochetL f a x) y =
+        zipWithCrochetL h f a x y ;
+
+  "FusionList.zipWith/*,generate" forall f h a y.
+     zipWith h y (generate f a) =
+        zipWithGenerate (flip h) f a y ;
+
+  "FusionList.zipWith/*,crochetL" forall f h a x y.
+     zipWith h y (crochetL f a x) =
+        zipWithCrochetL (flip h) f a x y ;
+
+  "FusionList.mix/generate,*" forall f a y.
+     mix (generate f a) y =
+        mixGenerate (Additive.+) f a y ;
+
+  "FusionList.mix/*,generate" forall f a y.
+     mix y (generate f a) =
+        mixGenerate (flip (Additive.+)) f a y ;
+
+
+{- this blocks further fusion and
+   is not necessary if the non-cons operand is a 'generate'
+  "FusionList.zipWith/cons,*" forall h x xs ys.
+     zipWith h (cons x xs) ys =
+        zipWithCons h x xs ys ;
+
+  "FusionList.zipWith/*,cons" forall h x xs ys.
+     zipWith h ys (cons x xs) =
+        zipWithCons (flip h) x xs ys ;
+-}
+
+  "FusionList.zipWith/cons,cons" forall h x xs y ys.
+     zipWith h (cons x xs) (cons y ys) =
+        cons (h x y) (zipWith h xs ys) ;
+
+  "FusionList.zipWith/share" forall (h :: a->a->b) (x :: T a).
+     zipWith h x x = map (\xi -> h xi xi) x ;
+
+
+
+  "FusionList.reduceL/generate" forall f g a b.
+     reduceL g b (generate f a) =
+        snd
+          (recourse (\(a0,b0) ->
+              do (y,a1) <- f a0
+                 b1 <- g y b0
+                 Just (a1, b1)) (a,b)) ;
+
+  "FusionList.reduceL/crochetL" forall f g a b x.
+     reduceL g b (crochetL f a x) =
+        snd
+          (reduceL (\x0 (a0,b0) ->
+              do (y,a1) <- f x0 a0
+                 b1 <- g y b0
+                 Just (a1, b1)) (a,b) x) ;
+
+  "FusionList.reduceL/cons" forall g b x xs.
+     reduceL g b (cons x xs) =
+        reduceLCons g b x xs ;
+
+
+  "FusionList.viewL/cons" forall x xs.
+     viewL (cons x xs) = Just (x,xs) ;
+
+  "FusionList.viewL/generateInfinite" forall f x.
+     viewL (generateInfinite f x) =
+        Just (mapSnd (generateInfinite f) (f x)) ;
+
+  "FusionList.viewL/generate" forall f x.
+     viewL (generate f x) =
+        fmap (mapSnd (generate f)) (f x) ;
+
+  "FusionList.viewL/crochetL" forall f a xt.
+     viewL (crochetL f a xt) =
+        do (x,xs) <- viewL xt
+           (y,a') <- f x a
+           return (y, crochetL f a' xs) ;
+  #-}
+
+
+{- * Other functions -}
+
+null :: T a -> Bool
+null = List.null . decons
+
+empty :: T a
+empty = Cons []
+
+singleton :: a -> T a
+singleton = Cons . (: [])
+
+{-# NOINLINE [0] cons #-}
+cons :: a -> T a -> T a
+cons x = Cons . (x :) . decons
+
+length :: T a -> Int
+length = List.length . decons
+
+viewL :: T a -> Maybe (a, T a)
+viewL =
+   fmap (mapSnd Cons) . ListHT.viewL . decons
+
+viewR :: T a -> Maybe (T a, a)
+viewR =
+   fmap (mapFst Cons) . ListHT.viewR . decons
+
+extendConstant :: T a -> T a
+extendConstant xt =
+   maybe empty (append xt . repeat . snd) $
+   viewR xt
+
+{-# NOINLINE [0] tail #-}
+tail :: T a -> T a
+tail = Cons . List.tail . decons
+
+head :: T a -> a
+head = List.head . decons
+
+drop :: Int -> T a -> T a
+drop n = Cons . List.drop n . decons
+
+dropMarginRem :: Int -> Int -> T a -> (Int, T a)
+dropMarginRem n m = mapSnd Cons . Sig.dropMarginRem n m . decons
+
+{-
+This implementation does only walk once through the dropped prefix.
+It is maximally lazy and minimally space consuming.
+-}
+dropMargin :: Int -> Int -> T a -> T a
+dropMargin n m = Cons . Sig.dropMargin n m . decons
+
+
+index :: Int -> T a -> a
+index n = (List.!! n) . decons
+
+
+splitAt :: Int -> T a -> (T a, T a)
+splitAt n = mapPair (Cons, Cons) . List.splitAt n . decons
+
+dropWhile :: (a -> Bool) -> T a -> T a
+dropWhile p = Cons . List.dropWhile p . decons
+
+span :: (a -> Bool) -> T a -> (T a, T a)
+span p = mapPair (Cons, Cons) . List.span p . decons
+
+mapAccumL :: (acc -> x -> (acc, y)) -> acc -> T x -> (acc, T y)
+mapAccumL f acc = mapSnd Cons . List.mapAccumL f acc . decons
+
+mapAccumR :: (acc -> x -> (acc, y)) -> acc -> T x -> (acc, T y)
+mapAccumR f acc = mapSnd Cons . List.mapAccumR f acc . decons
+
+
+cycle :: T a -> T a
+cycle = Cons . List.cycle . decons
+
+{-# NOINLINE [0] mix #-}
+mix :: Additive.C a => T a -> T a -> T a
+mix (Cons xs) (Cons ys)  =  Cons (xs Additive.+ ys)
+
+{-# NOINLINE [0] sub #-}
+sub :: Additive.C a => T a -> T a -> T a
+sub (Cons xs) (Cons ys)  =  Cons (xs Additive.- ys)
+
+{-# NOINLINE [0] neg #-}
+neg :: Additive.C a => T a -> T a
+neg (Cons xs)  =  Cons (Additive.negate xs)
+
+instance Additive.C y => Additive.C (T y) where
+   zero = empty
+   (+) = mix
+   (-) = sub
+   negate = neg
+
+instance Module.C y yv => Module.C y (T yv) where
+   (*>) x y = map (x*>) y
+
+
+infixr 5 `append`
+
+{-# NOINLINE [0] append #-}
+append :: T a -> T a -> T a
+append (Cons xs) (Cons ys)  =  Cons (xs List.++ ys)
+
+concat :: [T a] -> T a
+concat  =  Cons . List.concat . List.map decons
+
+reverse :: T a -> T a
+reverse = Cons . List.reverse . decons
+
+
+
+sum :: (Additive.C a) => T a -> a
+sum = foldL' (Additive.+) Additive.zero
+
+maximum :: (Ord a) => T a -> a
+maximum =
+   maybe
+      (error "FusionList.maximum: empty list")
+      (uncurry (foldL' max))
+    . viewL
+
+tails :: T y -> [T y]
+tails = List.map Cons . List.tails . decons
+
+init :: T y -> T y
+init = Cons . List.init . decons
+
+sliceVert :: Int -> T y -> [T y]
+sliceVert n =
+   List.map (take n) . List.takeWhile (not . null) . List.iterate (drop n)
+
+
+zapWith :: (a -> a -> b) -> T a -> T b
+zapWith f xs0 =
+   let xs1 = maybe empty snd (viewL xs0)
+   in  zipWith f xs0 xs1
+
+modifyStatic :: Modifier.Simple s ctrl a b -> ctrl -> T a -> T b
+modifyStatic modif control x =
+   crochetL
+      (\a acc ->
+         Just (runState (Modifier.step modif control a) acc))
+      (Modifier.init modif) x
+
+{-| Here the control may vary over the time. -}
+modifyModulated :: Modifier.Simple s ctrl a b -> T ctrl -> T a -> T b
+modifyModulated modif control x =
+   crochetL
+      (\ca acc ->
+         Just (runState (uncurry (Modifier.step modif) ca) acc))
+      (Modifier.init modif)
+      (zip control x)
+
+
+-- cf. Module.linearComb
+linearComb ::
+   (Module.C t y) =>
+   T t -> T y -> y
+linearComb ts ys =
+   sum $ zipWith (*>) ts ys
+
+
+-- comonadic 'bind'
+-- only non-empty suffixes are processed
+mapTails ::
+   (T y0 -> y1) -> T y0 -> T y1
+mapTails f =
+   generate (\xs ->
+      do (_,ys) <- viewL xs
+         return (f xs, ys))
+
+-- only non-empty suffixes are processed
+zipWithTails ::
+   (y0 -> T y1 -> y2) -> T y0 -> T y1 -> T y2
+zipWithTails f =
+   curry $ generate (\(xs0,ys0) ->
+      do (x,xs) <- viewL xs0
+         (_,ys) <- viewL ys0
+         return (f x ys0, (xs,ys)))
+
+zipWithRest ::
+   (y0 -> y0 -> y1) ->
+   T y0 -> T y0 ->
+   (T y1, (Bool, T y0))
+zipWithRest f xs ys =
+   mapPair (fromList, mapSnd fromList) $
+   Sig.zipWithRest f
+      (toList xs) (toList ys)
+
+zipWithAppend ::
+   (y -> y -> y) ->
+   T y -> T y -> T y
+zipWithAppend f xs ys =
+   uncurry append $ mapSnd snd $ zipWithRest f xs ys
+
+delayLoop ::
+      (T y -> T y)
+            -- ^ processor that shall be run in a feedback loop
+   -> T y   -- ^ prefix of the output, its length determines the delay
+   -> T y
+delayLoop proc prefix =
+   let ys = append prefix (proc ys)
+   in  ys
+
+delayLoopOverlap ::
+   (Additive.C y) =>
+      Int
+   -> (T y -> T y)
+            -- ^ processor that shall be run in a feedback loop
+   -> T y   -- ^ input
+   -> T y   -- ^ output has the same length as the input
+delayLoopOverlap time proc xs =
+   let ys = zipWith (Additive.+) xs (delay zero time (proc ys))
+   in  ys
+
+
+-- maybe candidate for Utility
+
+recourse :: (acc -> Maybe acc) -> acc -> acc
+recourse f =
+   let aux x = maybe x aux (f x)
+   in  aux
+
+</pre></br><h2>printed</h2></br><pre>{-# LANGUAGE NoImplicitPrelude #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# OPTIONS_GHC -fglasgow-exts #-}
+{- glasgow-exts are for the rules -}
+module Synthesizer.FusionList.Signal where
+
+import qualified Synthesizer.Plain.Signal   as Sig
+import qualified Synthesizer.Plain.Modifier as Modifier
+import qualified Data.List as List
+
+import qualified Data.StorableVector.Lazy as Vector
+import Data.StorableVector.Lazy (ChunkSize, Vector)
+import Foreign.Storable (Storable, )
+
+import qualified Algebra.Module   as Module
+import qualified Algebra.Additive as Additive
+import Algebra.Additive (zero)
+
+import Algebra.Module ((*>))
+
+import qualified Synthesizer.Format as Format
+
+import Control.Monad.Trans.State (runState, )
+
+import Data.Monoid (Monoid, mempty, mappend, )
+
+import qualified Data.List.HT    as ListHT
+import Data.Tuple.HT (mapFst, mapSnd, mapPair, fst3, snd3, thd3, )
+
+import Data.Maybe.HT (toMaybe)
+import NumericPrelude (fromInteger, )
+
+import Text.Show (Show(showsPrec), showParen, showString, )
+import Data.Maybe (Maybe(Just, Nothing), maybe)
+import Prelude
+   ((.), ($), id, const, flip, curry, uncurry, fst, snd, error,
+    (>), (>=), max, Ord,
+    succ, pred, Bool, not, Int, Functor, fmap,
+    (>>), (>>=), fail, return, (=<<),
+--    fromInteger,
+    )
+-- import qualified Prelude as P
+{-
+import Prelude hiding
+   ((++), iterate, foldl, map, repeat, replicate,
+    zipWith, zipWith3, take, takeWhile)
+-}
+
+
+newtype T y = Cons {decons :: [y]}
+
+instance (Show y) => Show (T y) where
+   showsPrec p x =
+      showParen (p >= 10)
+         (showString "FusionList.fromList " . showsPrec 11 (toList x))
+
+instance Format.C T where
+   format = showsPrec
+
+instance Functor T where
+   fmap = map
+
+instance Monoid (T y) where
+   mempty = empty
+   mappend = append
+
+
+{- * functions based on 'generate' -}
+
+{-# NOINLINE [0] generate #-}
+generate :: (acc -> Maybe (y, acc)) -> acc -> T y
+generate f = Cons . snd . Sig.unfoldR f
+
+{-# INLINE unfoldR #-}
+unfoldR :: (acc -> Maybe (y, acc)) -> acc -> T y
+unfoldR = generate
+
+{-# INLINE generateInfinite #-}
+generateInfinite :: (acc -> (y, acc)) -> acc -> T y
+generateInfinite f = generate (Just . f)
+
+{-# INLINE fromList #-}
+fromList :: [y] -> T y
+fromList = generate ListHT.viewL
+
+{-# INLINE toList #-}
+toList :: T y -> [y]
+toList = decons
+
+
+toStorableSignal :: Storable y => ChunkSize -> T y -> Vector y
+toStorableSignal size  =  Vector.pack size . decons
+
+fromStorableSignal :: Storable y => Vector y -> T y
+fromStorableSignal  =  Cons . Vector.unpack
+
+
+{-# INLINE iterate #-}
+iterate :: (a -> a) -> a -> T a
+iterate f = generateInfinite (\x -> (x, f x))
+
+{-# INLINE iterateAssociative #-}
+iterateAssociative :: (a -> a -> a) -> a -> T a
+iterateAssociative op x = iterate (op x) x -- should be optimized
+
+{-# INLINE repeat #-}
+repeat :: a -> T a
+repeat = iterate id
+
+
+{- * functions based on 'crochetL' -}
+
+{-# NOINLINE [0] crochetL #-}
+crochetL :: (x -> acc -> Maybe (y, acc)) -> acc -> T x -> T y
+crochetL f a = Cons . Sig.crochetL f a . decons
+
+{-# INLINE scanL #-}
+scanL :: (acc -> x -> acc) -> acc -> T x -> T acc
+{-
+scanL f start xs =
+   cons start
+     (crochetL (\x acc -> let y = f acc x in Just (y, y)) start xs)
+-}
+scanL f start =
+   cons start .
+   crochetL (\x acc -> let y = f acc x in Just (y, y)) start
+
+-- | input and output have equal length, that's better for fusion
+scanLClip :: (acc -> x -> acc) -> acc -> T x -> T acc
+scanLClip f start =
+   crochetL (\x acc -> Just (acc, f acc x)) start
+
+{-# INLINE map #-}
+map :: (a -> b) -> (T a -> T b)
+map f = crochetL (\x _ -> Just (f x, ())) ()
+
+{-# RULEZ
+  "FusionList.map-crochetL" forall f.
+     map f = crochetL (\x _ -> Just (f x, ())) () ;
+
+  "FusionList.repeat-iterate"
+     repeat = iterate id ;
+
+  "FusionList.iterate-generate" forall f.
+     iterate f = generate (\x -> Just (x, f x)) ;
+
+  "FusionList.take-crochetL"
+     take = crochetL (\x n -> toMaybe (n>zero) (x, pred n)) ;
+
+  "FusionList.unfold-dollar" forall f x.
+     f $ x = f x ;
+
+  "FusionList.unfold-dot" forall f g.
+     f . g  =  \x -> f (g x) ;
+  #-}
+
+{-# INLINE unzip #-}
+unzip :: T (a,b) -> (T a, T b)
+unzip x = (map fst x, map snd x)
+
+{-# INLINE unzip3 #-}
+unzip3 :: T (a,b,c) -> (T a, T b, T c)
+unzip3 xs = (map fst3 xs, map snd3 xs, map thd3 xs)
+
+
+{-# INLINE delay1 #-}
+{- |
+This is a fusion friendly implementation of delay.
+However, in order to be a 'crochetL'
+the output has the same length as the input,
+that is, the last element is removed - at least for finite input.
+-}
+delay1 :: a -> T a -> T a
+delay1 = crochetL (flip (curry Just))
+
+{-# INLINE delay #-}
+delay :: y -> Int -> T y -> T y
+delay z n = append (replicate n z)
+
+
+{-# INLINE take #-}
+take :: Int -> T a -> T a
+take = crochetL (\x n -> toMaybe (n>zero) (x, pred n))
+
+{-# INLINE takeWhile #-}
+takeWhile :: (a -> Bool) -> T a -> T a
+takeWhile p = crochetL (\x _ -> toMaybe (p x) (x, ())) ()
+
+{-# INLINE replicate #-}
+replicate :: Int -> a -> T a
+replicate n = take n . repeat
+
+{-# RULES
+  "FusionList.map/repeat" forall f x.
+     map f (repeat x) = repeat (f x) ;
+
+  "FusionList.map/replicate" forall f n x.
+     map f (replicate n x) = replicate n (f x) ;
+
+  "FusionList.map/cons" forall f x xs.
+      map f (cons x xs) = cons (f x) (map f xs) ;
+
+  "FusionList.map/append" forall f xs ys.
+      map f (append xs ys) = append (map f xs) (map f ys) ;
+
+  {- should be subsumed by the map/cons rule,
+       but it doesn't fire sometimes
+  "FusionList.map/cons/compose" forall f g x xs.
+      map f ((cons x . g) xs) = cons (f x) (map f (g xs)) ;
+  -}
+
+  {- this does not fire, since 'map' is inlined, crochetL/cons should fire instead -}
+  "FusionList.map/scanL" forall f g x0 xs.
+      map g (scanL f x0 xs) =
+         cons (g x0)
+            (crochetL (\x acc -> let y = f acc x in Just (g y, y)) x0 xs) ;
+
+  "FusionList.map/zipWith" forall f g x y.
+     map f (zipWith g x y) =
+        zipWith (\xi yi -> f (g xi yi)) x y ;
+
+  "FusionList.zipWith/map,*" forall f g x y.
+     zipWith g (map f x) y =
+        zipWith (\xi yi -> g (f xi) yi) x y ;
+
+  "FusionList.zipWith/*,map" forall f g x y.
+     zipWith g x (map f y) =
+        zipWith (\xi yi -> g xi (f yi)) x y ;
+  #-}
+
+{- * functions consuming multiple lists -}
+
+{-# NOINLINE [0] zipWith #-}
+zipWith :: (a -> b -> c) -> (T a -> T b -> T c)
+zipWith f s0 s1 =
+   Cons $ List.zipWith f (decons s0) (decons s1)
+
+{-# INLINE zipWith3 #-}
+zipWith3 :: (a -> b -> c -> d) -> (T a -> T b -> T c -> T d)
+zipWith3 f s0 s1 =
+   zipWith (uncurry f) (zip s0 s1)
+
+{-# INLINE zipWith4 #-}
+zipWith4 :: (a -> b -> c -> d -> e) -> (T a -> T b -> T c -> T d -> T e)
+zipWith4 f s0 s1 =
+   zipWith3 (uncurry f) (zip s0 s1)
+
+
+{-# INLINE zip #-}
+zip :: T a -> T b -> T (a,b)
+zip = zipWith (,)
+
+{-# INLINE zip3 #-}
+zip3 :: T a -> T b -> T c -> T (a,b,c)
+zip3 = zipWith3 (,,)
+
+{-# INLINE zip4 #-}
+zip4 :: T a -> T b -> T c -> T d -> T (a,b,c,d)
+zip4 = zipWith4 (,,,)
+
+
+{- * functions based on 'reduceL' -}
+
+reduceL :: (x -> acc -> Maybe acc) -> acc -> T x -> acc
+reduceL f x = Sig.reduceL f x . decons
+
+{-# INLINE foldL' #-}
+foldL' :: (x -> acc -> acc) -> acc -> T x -> acc
+foldL' f = reduceL (\x -> Just . f x)
+
+{-# INLINE foldL #-}
+foldL :: (acc -> x -> acc) -> acc -> T x -> acc
+foldL f = foldL' (flip f)
+
+{-# INLINE lengthSlow #-}
+{- | can be used to check against native length implementation -}
+lengthSlow :: T a -> Int
+lengthSlow = foldL' (const succ) zero
+
+
+{-
+Do we still need rules for fusion of
+  map f (repeat x)
+  zipWith f (repeat x) ys
+?
+-}
+
+{- * Fusion helpers -}
+
+{-# INLINE zipWithGenerate #-}
+zipWithGenerate ::
+      (a -> b -> c)
+   -> (acc -> Maybe (a, acc))
+   -> acc
+   -> T b -> T c
+zipWithGenerate h f a y =
+   crochetL (\y0 a0 ->
+       do (x0,a1) <- f a0
+          Just (h x0 y0, a1)) a y
+
+{-# INLINE zipWithCrochetL #-}
+zipWithCrochetL ::
+      (a -> b -> c)
+   -> (x -> acc -> Maybe (a, acc))
+   -> acc
+   -> T x -> T b -> T c
+zipWithCrochetL h f a x y =
+   crochetL (\(x0,y0) a0 ->
+       do (z0,a1) <- f x0 a0
+          Just (h z0 y0, a1))
+      a (zip x y)
+
+{-# INLINE mixGenerate #-}
+mixGenerate :: (Additive.C a) =>
+      (a -> a -> a)
+   -> (acc -> Maybe (a, acc))
+   -> acc
+   -> T a -> T a
+mixGenerate plus f a =
+   crochetL
+      (\y0 a0 ->
+         Just (maybe
+            (y0, Nothing)
+            (\(x0,a1) -> (plus x0 y0, Just a1))
+            (f =<< a0)))
+      (Just a)
+
+{-# INLINE crochetLCons #-}
+crochetLCons ::
+      (a -> acc -> Maybe (b, acc))
+   -> acc
+   -> a -> T a -> T b
+crochetLCons f a0 x xs =
+   maybe
+      empty
+      (\(y,a1) -> cons y (crochetL f a1 xs))
+      (f x a0)
+
+{-
+{-# INLINE crochetLAppend #
+crochetLAppend ::
+      (a -> acc -> Maybe (b, acc))
+   -> acc
+   -> a -> T a -> T a -> T b
+crochetLAppend f a0 x xs ys =
+   maybe
+      empty
+      (\(y,a1) -> cons y (crochetL f a1 xs))
+      (f x a0)
+-}
+
+{-# INLINE reduceLCons #-}
+reduceLCons ::
+      (a -> acc -> Maybe acc)
+   -> acc
+   -> a -> T a -> acc
+reduceLCons f a0 x xs =
+   maybe a0 (flip (reduceL f) xs) (f x a0)
+
+
+{-
+applyThroughCons ::
+   (a -> Maybe (b,acc)) -> (T a -> acc -> T b) -> T a -> T b
+applyThroughCons f g =
+   maybe empty
+      (\(x,xs) -> cons (f x) (g xs)) . viewL
+-}
+
+{-# INLINE zipWithCons #-}
+zipWithCons ::
+      (a -> b -> c)
+   -> a -> T a -> T b -> T c
+zipWithCons f x xs =
+   maybe
+      empty
+      (\(y,ys) -> cons (f x y) (zipWith f xs ys))
+    . viewL
+
+
+{-# RULES
+  "FusionList.crochetL/generate" forall f g a b.
+     crochetL g b (generate f a) =
+        generate (\(a0,b0) ->
+            do (y0,a1) <- f a0
+               (z0,b1) <- g y0 b0
+               Just (z0, (a1,b1))) (a,b) ;
+
+  "FusionList.crochetL/crochetL" forall f g a b x.
+     crochetL g b (crochetL f a x) =
+        crochetL (\x0 (a0,b0) ->
+            do (y0,a1) <- f x0 a0
+               (z0,b1) <- g y0 b0
+               Just (z0, (a1,b1))) (a,b) x ;
+
+  "FusionList.crochetL/cons" forall g b x xs.
+     crochetL g b (cons x xs) =
+        crochetLCons g b x xs ;
+
+
+  "FusionList.tail/generate" forall f a.
+     tail (generate f a) =
+        maybe (error "FusionList.tail: empty list")
+           (generate f . snd) (f a) ;
+
+  "FusionList.tail/cons" forall x xs.
+     tail (cons x xs) = xs ;
+
+  "FusionList.zipWith/generate,*" forall f h a y.
+     zipWith h (generate f a) y =
+        zipWithGenerate h f a y ;
+
+  "FusionList.zipWith/crochetL,*" forall f h a x y.
+     zipWith h (crochetL f a x) y =
+        zipWithCrochetL h f a x y ;
+
+  "FusionList.zipWith/*,generate" forall f h a y.
+     zipWith h y (generate f a) =
+        zipWithGenerate (flip h) f a y ;
+
+  "FusionList.zipWith/*,crochetL" forall f h a x y.
+     zipWith h y (crochetL f a x) =
+        zipWithCrochetL (flip h) f a x y ;
+
+  "FusionList.mix/generate,*" forall f a y.
+     mix (generate f a) y =
+        mixGenerate (Additive.+) f a y ;
+
+  "FusionList.mix/*,generate" forall f a y.
+     mix y (generate f a) =
+        mixGenerate (flip (Additive.+)) f a y ;
+
+
+{- this blocks further fusion and
+   is not necessary if the non-cons operand is a 'generate'
+  "FusionList.zipWith/cons,*" forall h x xs ys.
+     zipWith h (cons x xs) ys =
+        zipWithCons h x xs ys ;
+
+  "FusionList.zipWith/*,cons" forall h x xs ys.
+     zipWith h ys (cons x xs) =
+        zipWithCons (flip h) x xs ys ;
+-}
+
+  "FusionList.zipWith/cons,cons" forall h x xs y ys.
+     zipWith h (cons x xs) (cons y ys) =
+        cons (h x y) (zipWith h xs ys) ;
+
+  "FusionList.zipWith/share" forall (h :: a->a->b) (x :: T a).
+     zipWith h x x = map (\xi -> h xi xi) x ;
+
+
+
+  "FusionList.reduceL/generate" forall f g a b.
+     reduceL g b (generate f a) =
+        snd
+          (recourse (\(a0,b0) ->
+              do (y,a1) <- f a0
+                 b1 <- g y b0
+                 Just (a1, b1)) (a,b)) ;
+
+  "FusionList.reduceL/crochetL" forall f g a b x.
+     reduceL g b (crochetL f a x) =
+        snd
+          (reduceL (\x0 (a0,b0) ->
+              do (y,a1) <- f x0 a0
+                 b1 <- g y b0
+                 Just (a1, b1)) (a,b) x) ;
+
+  "FusionList.reduceL/cons" forall g b x xs.
+     reduceL g b (cons x xs) =
+        reduceLCons g b x xs ;
+
+
+  "FusionList.viewL/cons" forall x xs.
+     viewL (cons x xs) = Just (x,xs) ;
+
+  "FusionList.viewL/generateInfinite" forall f x.
+     viewL (generateInfinite f x) =
+        Just (mapSnd (generateInfinite f) (f x)) ;
+
+  "FusionList.viewL/generate" forall f x.
+     viewL (generate f x) =
+        fmap (mapSnd (generate f)) (f x) ;
+
+  "FusionList.viewL/crochetL" forall f a xt.
+     viewL (crochetL f a xt) =
+        do (x,xs) <- viewL xt
+           (y,a') <- f x a
+           return (y, crochetL f a' xs) ;
+  #-}
+
+
+{- * Other functions -}
+
+null :: T a -> Bool
+null = List.null . decons
+
+empty :: T a
+empty = Cons []
+
+singleton :: a -> T a
+singleton = Cons . (: [])
+
+{-# NOINLINE [0] cons #-}
+cons :: a -> T a -> T a
+cons x = Cons . (x :) . decons
+
+length :: T a -> Int
+length = List.length . decons
+
+viewL :: T a -> Maybe (a, T a)
+viewL =
+   fmap (mapSnd Cons) . ListHT.viewL . decons
+
+viewR :: T a -> Maybe (T a, a)
+viewR =
+   fmap (mapFst Cons) . ListHT.viewR . decons
+
+extendConstant :: T a -> T a
+extendConstant xt =
+   maybe empty (append xt . repeat . snd) $
+   viewR xt
+
+{-# NOINLINE [0] tail #-}
+tail :: T a -> T a
+tail = Cons . List.tail . decons
+
+head :: T a -> a
+head = List.head . decons
+
+drop :: Int -> T a -> T a
+drop n = Cons . List.drop n . decons
+
+dropMarginRem :: Int -> Int -> T a -> (Int, T a)
+dropMarginRem n m = mapSnd Cons . Sig.dropMarginRem n m . decons
+
+{-
+This implementation does only walk once through the dropped prefix.
+It is maximally lazy and minimally space consuming.
+-}
+dropMargin :: Int -> Int -> T a -> T a
+dropMargin n m = Cons . Sig.dropMargin n m . decons
+
+
+index :: Int -> T a -> a
+index n = (List.!! n) . decons
+
+
+splitAt :: Int -> T a -> (T a, T a)
+splitAt n = mapPair (Cons, Cons) . List.splitAt n . decons
+
+dropWhile :: (a -> Bool) -> T a -> T a
+dropWhile p = Cons . List.dropWhile p . decons
+
+span :: (a -> Bool) -> T a -> (T a, T a)
+span p = mapPair (Cons, Cons) . List.span p . decons
+
+mapAccumL :: (acc -> x -> (acc, y)) -> acc -> T x -> (acc, T y)
+mapAccumL f acc = mapSnd Cons . List.mapAccumL f acc . decons
+
+mapAccumR :: (acc -> x -> (acc, y)) -> acc -> T x -> (acc, T y)
+mapAccumR f acc = mapSnd Cons . List.mapAccumR f acc . decons
+
+
+cycle :: T a -> T a
+cycle = Cons . List.cycle . decons
+
+{-# NOINLINE [0] mix #-}
+mix :: Additive.C a => T a -> T a -> T a
+mix (Cons xs) (Cons ys)  =  Cons (xs Additive.+ ys)
+
+{-# NOINLINE [0] sub #-}
+sub :: Additive.C a => T a -> T a -> T a
+sub (Cons xs) (Cons ys)  =  Cons (xs Additive.- ys)
+
+{-# NOINLINE [0] neg #-}
+neg :: Additive.C a => T a -> T a
+neg (Cons xs)  =  Cons (Additive.negate xs)
+
+instance Additive.C y => Additive.C (T y) where
+   zero = empty
+   (+) = mix
+   (-) = sub
+   negate = neg
+
+instance Module.C y yv => Module.C y (T yv) where
+   (*>) x y = map (x*>) y
+
+
+infixr 5 `append`
+
+{-# NOINLINE [0] append #-}
+append :: T a -> T a -> T a
+append (Cons xs) (Cons ys)  =  Cons (xs List.++ ys)
+
+concat :: [T a] -> T a
+concat  =  Cons . List.concat . List.map decons
+
+reverse :: T a -> T a
+reverse = Cons . List.reverse . decons
+
+
+
+sum :: (Additive.C a) => T a -> a
+sum = foldL' (Additive.+) Additive.zero
+
+maximum :: (Ord a) => T a -> a
+maximum =
+   maybe
+      (error "FusionList.maximum: empty list")
+      (uncurry (foldL' max))
+    . viewL
+
+tails :: T y -> [T y]
+tails = List.map Cons . List.tails . decons
+
+init :: T y -> T y
+init = Cons . List.init . decons
+
+sliceVert :: Int -> T y -> [T y]
+sliceVert n =
+   List.map (take n) . List.takeWhile (not . null) . List.iterate (drop n)
+
+
+zapWith :: (a -> a -> b) -> T a -> T b
+zapWith f xs0 =
+   let xs1 = maybe empty snd (viewL xs0)
+   in  zipWith f xs0 xs1
+
+modifyStatic :: Modifier.Simple s ctrl a b -> ctrl -> T a -> T b
+modifyStatic modif control x =
+   crochetL
+      (\a acc ->
+         Just (runState (Modifier.step modif control a) acc))
+      (Modifier.init modif) x
+
+{-| Here the control may vary over the time. -}
+modifyModulated :: Modifier.Simple s ctrl a b -> T ctrl -> T a -> T b
+modifyModulated modif control x =
+   crochetL
+      (\ca acc ->
+         Just (runState (uncurry (Modifier.step modif) ca) acc))
+      (Modifier.init modif)
+      (zip control x)
+
+
+-- cf. Module.linearComb
+linearComb ::
+   (Module.C t y) =>
+   T t -> T y -> y
+linearComb ts ys =
+   sum $ zipWith (*>) ts ys
+
+
+-- comonadic 'bind'
+-- only non-empty suffixes are processed
+mapTails ::
+   (T y0 -> y1) -> T y0 -> T y1
+mapTails f =
+   generate (\xs ->
+      do (_,ys) <- viewL xs
+         return (f xs, ys))
+
+-- only non-empty suffixes are processed
+zipWithTails ::
+   (y0 -> T y1 -> y2) -> T y0 -> T y1 -> T y2
+zipWithTails f =
+   curry $ generate (\(xs0,ys0) ->
+      do (x,xs) <- viewL xs0
+         (_,ys) <- viewL ys0
+         return (f x ys0, (xs,ys)))
+
+zipWithRest ::
+   (y0 -> y0 -> y1) ->
+   T y0 -> T y0 ->
+   (T y1, (Bool, T y0))
+zipWithRest f xs ys =
+   mapPair (fromList, mapSnd fromList) $
+   Sig.zipWithRest f
+      (toList xs) (toList ys)
+
+zipWithAppend ::
+   (y -> y -> y) ->
+   T y -> T y -> T y
+zipWithAppend f xs ys =
+   uncurry append $ mapSnd snd $ zipWithRest f xs ys
+
+delayLoop ::
+      (T y -> T y)
+            -- ^ processor that shall be run in a feedback loop
+   -> T y   -- ^ prefix of the output, its length determines the delay
+   -> T y
+delayLoop proc prefix =
+   let ys = append prefix (proc ys)
+   in  ys
+
+delayLoopOverlap ::
+   (Additive.C y) =>
+      Int
+   -> (T y -> T y)
+            -- ^ processor that shall be run in a feedback loop
+   -> T y   -- ^ input
+   -> T y   -- ^ output has the same length as the input
+delayLoopOverlap time proc xs =
+   let ys = zipWith (Additive.+) xs (delay zero time (proc ys))
+   in  ys
+
+
+-- maybe candidate for Utility
+
+recourse :: (acc -> Maybe acc) -> acc -> acc
+recourse f =
+   let aux x = maybe x aux (f x)
+   in  aux
+
+
+</pre>

@@ -1,0 +1,318 @@
+<a href="Foreign.hs1777724115269220094.out.html">prev</a></br><a href="failures.html">home</a></br><a href="ForeignPtr.hs2020739063107554536.out.html">next</a></br></br><pre>116c116
+<            then print "Cleaning hinstaller-tmp directory..."
+---
+> 
+116a117
+> 
+116a118
+>          ; print "Cleaning hinstaller-tmp directory..."
+120d121
+<            then do { removeDirectoryRecursive hInstallerTmpDir
+121d121
+<                    ; if silencep
+122d121
+<                      then print "Successfully cleaned hinstaller-tmp directory."
+123c122
+<                      else return ()
+---
+> 
+123a123
+> 
+123a124
+> 
+123a125
+> 
+123a126
+> 
+123a127
+> 
+123a128
+> 
+123a129
+> 
+123a130
+>          ; do { removeDirectoryRecursive hInstallerTmpDir
+123a131
+>               ; if silencep
+123a132
+>                 then print "Successfully cleaned hinstaller-tmp directory."
+123a133
+>                 else return ()
+132a143
+> 
+</pre></br><h2>original</h2></br><pre>module System.Installer.Foreign
+    (convertFileToC,
+     writeFileData,
+     cabalCleanHInstallerDir
+    )
+where
+
+import Control.Concurrent
+import Foreign
+import Foreign.C
+import System.Directory
+import System.FilePath
+import System.IO
+import System.Process
+import System.Exit
+import Data.Word
+import Data.Maybe
+import qualified Data.ByteString as B
+import Distribution.Simple
+import Distribution.Simple.Setup
+import Distribution.PackageDescription
+import Distribution.Simple.LocalBuildInfo
+import Distribution.Verbosity
+
+writeCHeaderFile :: Handle -> String -> IO ()
+writeCHeaderFile outH name
+    = do { hPutStrLn outH lenDeclFuncSig
+         ; hPutStrLn outH arrayDeclFuncSig
+         }
+    where
+      lenDeclFuncSig = "const int " ++ name ++ "_length ();"
+      arrayDeclFuncSig = "const unsigned char* " ++ name ++ " ();"
+
+writeCFile :: Handle -> String -> B.ByteString -> FilePath -> IO ()
+writeCFile outH name content header
+    = do { hPutStrLn outH includeLine
+         ; hPutStrLn outH lenDecl
+         ; hPutStrLn outH arrayDecl
+         ; mapM_ writeWord (B.unpack content)
+         ; hPutStrLn outH tailDecl
+         ; hPutStrLn outH lenDeclFunc
+         ; hPutStrLn outH arrayDeclFunc
+         }
+    where
+      len = show . B.length $ content
+      includeLine = "#include \"" ++ header ++ "\""
+      lenDecl = "const int " ++ name ++ "_length_raw = " ++ len ++ ";"
+      arrayDecl = "const unsigned char " ++ name ++
+                  "_raw[" ++ len ++ "] = {"
+      tailDecl = "};"
+      lenDeclFunc = "const int " ++ name ++ "_length () { return " ++
+                    name ++ "_length_raw" ++ "; }"
+      arrayDeclFunc = "const unsigned char* " ++ name ++ " () { return " ++
+                      name ++ "_raw" ++ "; }"
+      writeWord :: Word8 -> IO ()
+      writeWord wrd = hPutStrLn outH numTxt
+          where
+            numTxt = (show wrd) ++ ","
+
+convertFileToC :: FilePath -> String -> IO (FilePath)
+convertFileToC file clauseName
+    = do { createDirectoryIfMissing False hInstallerTmpDir
+         ; hHdl <- openBinaryFile pathH WriteMode
+         ; writeCHeaderFile hHdl clauseName
+         ; hClose hHdl
+         ; contentsB <- B.readFile file
+         ; cHdl <- openBinaryFile pathC WriteMode
+         ; writeCFile cHdl clauseName contentsB leafNameH
+         ; hClose cHdl
+         ; runCCRelayingOut hInstallerTmpDir leafNameC
+         ; return leafNameH
+         }
+    where
+      leafName = takeFileName file
+      leafNameNoExts = dropExtensions leafName
+      leafNameH = addExtension leafNameNoExts "h"
+      leafNameC = addExtension leafNameNoExts "c"
+      pathH = combine hInstallerTmpDir leafNameH
+      pathC = combine hInstallerTmpDir leafNameC
+
+writeFromPtrToFile :: Ptr CUChar -> Int -> FilePath -> IO ()
+writeFromPtrToFile ptr len filePath
+    = do { outH <- openBinaryFile filePath WriteMode
+         ; hPutBuf outH ptr len
+         ; hClose outH
+         }
+
+writeFileData :: Ptr CUChar -> CInt -> String -> FilePath -> IO ()
+writeFileData ptr len origName path
+    = do { isDir <- doesDirectoryExist path
+         ; let path' = if isDir then combine path origName else path
+         ; writeFromPtrToFile ptr (fromIntegral len) path'
+         }
+
+runCCRelayingOut :: FilePath -> FilePath -> IO ExitCode
+runCCRelayingOut wd cPath
+    = do { (_,outH,errH,procH) <- runInteractiveProcess
+                                  "cc" ["-c", cPath] (Just wd) Nothing
+         ; forkRelayHandles outH stdout
+         ; forkRelayHandles errH stderr
+         ; waitForProcess procH
+         }
+
+forkRelayHandles :: Handle -> Handle -> IO ThreadId
+forkRelayHandles inH outH = forkIO func
+    where
+      func = hGetContents inH >>= hPutStr outH
+
+hInstallerTmpDir :: FilePath
+hInstallerTmpDir = "hinstaller-tmp"
+
+cabalCleanHInstallerDir :: Args -> BuildFlags -> PackageDescription ->
+                           LocalBuildInfo -> IO ExitCode
+cabalCleanHInstallerDir _ buildflags _ _
+    = do { if silencep
+           then print "Cleaning hinstaller-tmp directory..."
+           else return ()
+         ; dirExists <- doesDirectoryExist hInstallerTmpDir
+         ; if dirExists
+           then do { removeDirectoryRecursive hInstallerTmpDir
+                   ; if silencep
+                     then print "Successfully cleaned hinstaller-tmp directory."
+                     else return ()
+                   }
+           else if silencep
+                then print "hinstaller-tmp directory not found, nothing to clean."
+                else return ()
+         ; return ExitSuccess
+         }
+    where
+      verbosity = buildVerbose buildflags
+      silencep = verbosity > silent
+</pre></br><h2>printed</h2></br><pre>module System.Installer.Foreign
+    (convertFileToC,
+     writeFileData,
+     cabalCleanHInstallerDir
+    )
+where
+
+import Control.Concurrent
+import Foreign
+import Foreign.C
+import System.Directory
+import System.FilePath
+import System.IO
+import System.Process
+import System.Exit
+import Data.Word
+import Data.Maybe
+import qualified Data.ByteString as B
+import Distribution.Simple
+import Distribution.Simple.Setup
+import Distribution.PackageDescription
+import Distribution.Simple.LocalBuildInfo
+import Distribution.Verbosity
+
+writeCHeaderFile :: Handle -> String -> IO ()
+writeCHeaderFile outH name
+    = do { hPutStrLn outH lenDeclFuncSig
+         ; hPutStrLn outH arrayDeclFuncSig
+         }
+    where
+      lenDeclFuncSig = "const int " ++ name ++ "_length ();"
+      arrayDeclFuncSig = "const unsigned char* " ++ name ++ " ();"
+
+writeCFile :: Handle -> String -> B.ByteString -> FilePath -> IO ()
+writeCFile outH name content header
+    = do { hPutStrLn outH includeLine
+         ; hPutStrLn outH lenDecl
+         ; hPutStrLn outH arrayDecl
+         ; mapM_ writeWord (B.unpack content)
+         ; hPutStrLn outH tailDecl
+         ; hPutStrLn outH lenDeclFunc
+         ; hPutStrLn outH arrayDeclFunc
+         }
+    where
+      len = show . B.length $ content
+      includeLine = "#include \"" ++ header ++ "\""
+      lenDecl = "const int " ++ name ++ "_length_raw = " ++ len ++ ";"
+      arrayDecl = "const unsigned char " ++ name ++
+                  "_raw[" ++ len ++ "] = {"
+      tailDecl = "};"
+      lenDeclFunc = "const int " ++ name ++ "_length () { return " ++
+                    name ++ "_length_raw" ++ "; }"
+      arrayDeclFunc = "const unsigned char* " ++ name ++ " () { return " ++
+                      name ++ "_raw" ++ "; }"
+      writeWord :: Word8 -> IO ()
+      writeWord wrd = hPutStrLn outH numTxt
+          where
+            numTxt = (show wrd) ++ ","
+
+convertFileToC :: FilePath -> String -> IO (FilePath)
+convertFileToC file clauseName
+    = do { createDirectoryIfMissing False hInstallerTmpDir
+         ; hHdl <- openBinaryFile pathH WriteMode
+         ; writeCHeaderFile hHdl clauseName
+         ; hClose hHdl
+         ; contentsB <- B.readFile file
+         ; cHdl <- openBinaryFile pathC WriteMode
+         ; writeCFile cHdl clauseName contentsB leafNameH
+         ; hClose cHdl
+         ; runCCRelayingOut hInstallerTmpDir leafNameC
+         ; return leafNameH
+         }
+    where
+      leafName = takeFileName file
+      leafNameNoExts = dropExtensions leafName
+      leafNameH = addExtension leafNameNoExts "h"
+      leafNameC = addExtension leafNameNoExts "c"
+      pathH = combine hInstallerTmpDir leafNameH
+      pathC = combine hInstallerTmpDir leafNameC
+
+writeFromPtrToFile :: Ptr CUChar -> Int -> FilePath -> IO ()
+writeFromPtrToFile ptr len filePath
+    = do { outH <- openBinaryFile filePath WriteMode
+         ; hPutBuf outH ptr len
+         ; hClose outH
+         }
+
+writeFileData :: Ptr CUChar -> CInt -> String -> FilePath -> IO ()
+writeFileData ptr len origName path
+    = do { isDir <- doesDirectoryExist path
+         ; let path' = if isDir then combine path origName else path
+         ; writeFromPtrToFile ptr (fromIntegral len) path'
+         }
+
+runCCRelayingOut :: FilePath -> FilePath -> IO ExitCode
+runCCRelayingOut wd cPath
+    = do { (_,outH,errH,procH) <- runInteractiveProcess
+                                  "cc" ["-c", cPath] (Just wd) Nothing
+         ; forkRelayHandles outH stdout
+         ; forkRelayHandles errH stderr
+         ; waitForProcess procH
+         }
+
+forkRelayHandles :: Handle -> Handle -> IO ThreadId
+forkRelayHandles inH outH = forkIO func
+    where
+      func = hGetContents inH >>= hPutStr outH
+
+hInstallerTmpDir :: FilePath
+hInstallerTmpDir = "hinstaller-tmp"
+
+cabalCleanHInstallerDir :: Args -> BuildFlags -> PackageDescription ->
+                           LocalBuildInfo -> IO ExitCode
+cabalCleanHInstallerDir _ buildflags _ _
+    = do { if silencep
+
+
+         ; print "Cleaning hinstaller-tmp directory..."
+           else return ()
+         ; dirExists <- doesDirectoryExist hInstallerTmpDir
+         ; if dirExists
+
+
+
+
+
+
+
+
+         ; do { removeDirectoryRecursive hInstallerTmpDir
+              ; if silencep
+                then print "Successfully cleaned hinstaller-tmp directory."
+                else return ()
+                   }
+           else if silencep
+                then print "hinstaller-tmp directory not found, nothing to clean."
+                else return ()
+         ; return ExitSuccess
+         }
+    where
+      verbosity = buildVerbose buildflags
+      silencep = verbosity > silent
+
+</pre>

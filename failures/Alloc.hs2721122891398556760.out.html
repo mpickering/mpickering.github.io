@@ -1,0 +1,224 @@
+<a href="All.hs18171295601131570933.out.html">prev</a></br><a href="failures.html">home</a></br><a href="Alt.hs12648177091998097157.out.html">next</a></br></br><pre>27c27
+< {-# INLINE roundDown #-}
+---
+> {-# INLINE roundDown #
+108a109
+> 
+</pre></br><h2>original</h2></br><pre>{- |
+Provide allocation functions with correct alignment.
+GHC's functions are wrong until at least GHC-6.12.3.
+-}
+module Synthesizer.LLVM.Alloc (
+   malloc, free,
+   mallocArray, freeArray,
+   F.alloca, F.with,
+   ) where
+{- reexport alloca and with, since they work correctly in GHC-6.12.3 -}
+
+import qualified Foreign as F
+import Foreign.Storable (Storable, sizeOf, alignment, )
+import Foreign.Ptr (Ptr, minusPtr, plusPtr, nullPtr, )
+
+import qualified Synthesizer.LLVM.Debug.Storable as Debug
+
+
+{-
+Copied from storable-record:FixedArray
+-}
+{-# INLINE roundUp #-}
+roundUp :: Int -> Int -> Int
+roundUp m x = x + mod (-x) m
+
+{-
+{-# INLINE roundDown #-}
+roundDown :: Int -> Int -> Int
+roundDown m x = x - mod x m
+-}
+
+{-# INLINE sizeOfArray #-}
+sizeOfArray :: Storable a => Int -> a -> Int
+sizeOfArray n x =
+   n * roundUp (alignment x) (sizeOf x)
+
+{-
+diffClip :: Int -> Int -> Int
+-- this implementation also works for unsigned types
+diffClip x y = x - min x y
+-- diffClip x y = max 0 (x-y)
+-}
+
+defaultMallocAlign :: Int
+defaultMallocAlign = 8
+
+
+seekPointer :: Int -> Ptr a -> Ptr b
+seekPointer size ptr =
+   alignPointer (alignment nullPtr) (plusPtr ptr size)
+
+alignPointer :: Int -> Ptr a -> Ptr b
+alignPointer align ptr =
+   plusPtr nullPtr $
+   roundUp align $
+   minusPtr ptr nullPtr
+
+{- |
+> mallocBytes align size
+-}
+mallocBytes :: Storable a => a -> Int -> IO (Ptr a)
+mallocBytes a size =
+   Debug.traceMalloc a size =<<
+   if mod defaultMallocAlign (alignment a) == 0
+     then F.mallocBytes size
+     else do
+        let align = alignment a
+            {- pessimistic but safe -}
+            ptrOffset = size + alignment nullPtr
+            {- This should be optimal and I think it is also correct,
+               but better safe than sorry.
+            common = gcd align (alignment nullPtr)
+            ptrOffset = roundUp common size + alignment nullPtr - common
+            -}
+            padSize = align - gcd defaultMallocAlign align
+        allocPtr <- F.mallocBytes (padSize + ptrOffset + sizeOf nullPtr)
+        let alignedPtr = alignPointer align allocPtr
+        F.poke (seekPointer size alignedPtr) allocPtr
+        return alignedPtr
+
+peekMock :: Ptr a -> a
+peekMock _ = error "auxiliary object for free functions"
+
+freeBytes :: Storable a => a -> Int -> Ptr a -> IO ()
+freeBytes a size ptr =
+   F.free =<<
+   if mod defaultMallocAlign (alignment a) == 0
+     then return ptr
+     else F.peek $ seekPointer size ptr
+
+malloc :: (Storable a) => IO (Ptr a)
+malloc =
+   case error "auxiliary object for LLVM.Alloc.malloc" of
+      mock -> mallocBytes mock (sizeOf mock)
+
+free :: (Storable a) => Ptr a -> IO ()
+free ptr =
+   freeBytes (peekMock ptr) (sizeOf (peekMock ptr)) ptr
+
+
+mallocArray :: (Storable a) => Int -> IO (Ptr a)
+mallocArray n =
+   case error "auxiliary object for LLVM.Alloc.mallocArray" of
+      mock -> mallocBytes mock (sizeOfArray n mock)
+
+freeArray :: (Storable a) => Int -> Ptr a -> IO ()
+freeArray n ptr =
+   freeBytes (peekMock ptr) (sizeOfArray n (peekMock ptr)) ptr
+</pre></br><h2>printed</h2></br><pre>{- |
+Provide allocation functions with correct alignment.
+GHC's functions are wrong until at least GHC-6.12.3.
+-}
+module Synthesizer.LLVM.Alloc (
+   malloc, free,
+   mallocArray, freeArray,
+   F.alloca, F.with,
+   ) where
+{- reexport alloca and with, since they work correctly in GHC-6.12.3 -}
+
+import qualified Foreign as F
+import Foreign.Storable (Storable, sizeOf, alignment, )
+import Foreign.Ptr (Ptr, minusPtr, plusPtr, nullPtr, )
+
+import qualified Synthesizer.LLVM.Debug.Storable as Debug
+
+
+{-
+Copied from storable-record:FixedArray
+-}
+{-# INLINE roundUp #-}
+roundUp :: Int -> Int -> Int
+roundUp m x = x + mod (-x) m
+
+{-
+{-# INLINE roundDown #
+roundDown :: Int -> Int -> Int
+roundDown m x = x - mod x m
+-}
+
+{-# INLINE sizeOfArray #-}
+sizeOfArray :: Storable a => Int -> a -> Int
+sizeOfArray n x =
+   n * roundUp (alignment x) (sizeOf x)
+
+{-
+diffClip :: Int -> Int -> Int
+-- this implementation also works for unsigned types
+diffClip x y = x - min x y
+-- diffClip x y = max 0 (x-y)
+-}
+
+defaultMallocAlign :: Int
+defaultMallocAlign = 8
+
+
+seekPointer :: Int -> Ptr a -> Ptr b
+seekPointer size ptr =
+   alignPointer (alignment nullPtr) (plusPtr ptr size)
+
+alignPointer :: Int -> Ptr a -> Ptr b
+alignPointer align ptr =
+   plusPtr nullPtr $
+   roundUp align $
+   minusPtr ptr nullPtr
+
+{- |
+> mallocBytes align size
+-}
+mallocBytes :: Storable a => a -> Int -> IO (Ptr a)
+mallocBytes a size =
+   Debug.traceMalloc a size =<<
+   if mod defaultMallocAlign (alignment a) == 0
+     then F.mallocBytes size
+     else do
+        let align = alignment a
+            {- pessimistic but safe -}
+            ptrOffset = size + alignment nullPtr
+            {- This should be optimal and I think it is also correct,
+               but better safe than sorry.
+            common = gcd align (alignment nullPtr)
+            ptrOffset = roundUp common size + alignment nullPtr - common
+            -}
+            padSize = align - gcd defaultMallocAlign align
+        allocPtr <- F.mallocBytes (padSize + ptrOffset + sizeOf nullPtr)
+        let alignedPtr = alignPointer align allocPtr
+        F.poke (seekPointer size alignedPtr) allocPtr
+        return alignedPtr
+
+peekMock :: Ptr a -> a
+peekMock _ = error "auxiliary object for free functions"
+
+freeBytes :: Storable a => a -> Int -> Ptr a -> IO ()
+freeBytes a size ptr =
+   F.free =<<
+   if mod defaultMallocAlign (alignment a) == 0
+     then return ptr
+     else F.peek $ seekPointer size ptr
+
+malloc :: (Storable a) => IO (Ptr a)
+malloc =
+   case error "auxiliary object for LLVM.Alloc.malloc" of
+      mock -> mallocBytes mock (sizeOf mock)
+
+free :: (Storable a) => Ptr a -> IO ()
+free ptr =
+   freeBytes (peekMock ptr) (sizeOf (peekMock ptr)) ptr
+
+
+mallocArray :: (Storable a) => Int -> IO (Ptr a)
+mallocArray n =
+   case error "auxiliary object for LLVM.Alloc.mallocArray" of
+      mock -> mallocBytes mock (sizeOfArray n mock)
+
+freeArray :: (Storable a) => Int -> Ptr a -> IO ()
+freeArray n ptr =
+   freeBytes (peekMock ptr) (sizeOfArray n (peekMock ptr)) ptr
+
+</pre>

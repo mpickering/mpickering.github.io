@@ -1,0 +1,252 @@
+<a href="Parser.hs1075260298824938981.out.html">prev</a></br><a href="failures.html">home</a></br><a href="Parser.hs13418536351808266298.out.html">next</a></br></br><pre>13c13
+< parse ∷ String → Λ
+---
+> parse :: String -> Λ
+16c16
+< parseFile ∷ FilePath → IO Λ
+---
+> parseFile :: FilePath -> IO Λ
+19c19
+< parser ∷ IndentCharParser st Λ
+---
+> parser :: IndentCharParser st Λ
+29d28
+<         _ ← sym "λ" <|> sym "\\"
+30d28
+<         vars ← many1 ident
+31d28
+<         _ ← sym "." <|> sym "→" <|> sym "->"
+32c29
+<         body ← expression
+---
+>         _ <- sym "λ" <|> sym "\\"
+32a30
+>         vars <- many1 ident
+32a31
+>         _ <- sym "." <|> sym "→" <|> sym "->"
+32a32
+>         body <- expression
+41c41
+<             e ← optionMaybe $ keyword "in" >> expression
+---
+>             e <- optionMaybe $ keyword "in" >> expression
+43d42
+<                 Just je → return ([], Just je)
+44d42
+<                 Nothing → do
+45d42
+<                     (b,e) ← lineFold $ do
+46d42
+<                         b ← binding
+47c43
+<                         e ← optionMaybe $ keyword "in" >> expression
+---
+>                 Just je -> return ([], Just je)
+47a44
+>                 Nothing -> do
+47a45
+>                     (b,e) <- lineFold $ do
+47a46
+>                         b <- binding
+47a47
+>                         e <- optionMaybe $ keyword "in" >> expression
+50d49
+<                         Nothing → do
+51c50
+<                             rec ← optionMaybe parseBindings
+---
+>                         Nothing -> do
+51a51
+>                             rec <- optionMaybe parseBindings
+53d52
+<                                 Nothing → return ([b], Nothing)
+54d52
+<                                 Just (bs, me) → return (b:bs, me)
+55d52
+<                         Just je → return ([b], Just je)
+56c53
+<         (binds, e) ← block parseBindings
+---
+>                                 Nothing -> return ([b], Nothing)
+56a54
+>                                 Just (bs, me) -> return (b:bs, me)
+56a55
+>                         Just je -> return ([b], Just je)
+56a56
+>         (binds, e) <- block parseBindings
+58d57
+<             Nothing → liftM (L binds) (keyword "in" >> expression)
+59c58
+<             Just je → return $ L binds je
+---
+>             Nothing -> liftM (L binds) (keyword "in" >> expression)
+59a59
+>             Just je -> return $ L binds je
+61c61
+<     binding ∷ IndentCharParser st (String,Λ)
+---
+>     binding :: IndentCharParser st (String,Λ)
+63d62
+<         funct  ← ident
+64d62
+<         params ← many ident
+65c63
+<         body   ← sym "=" >> expression
+---
+>         funct  <- ident
+65a64
+>         params <- many ident
+65a65
+>         body   <- sym "=" >> expression
+70c70
+<         i ← identifier haskell
+---
+>         i <- identifier haskell
+72a73
+> 
+</pre></br><h2>original</h2></br><pre>{-# LANGUAGE UnicodeSyntax #-}
+module Parser where
+
+import Lambda
+import Prelude.Unicode
+import Text.ParserCombinators.Parsec as Parsec
+import Text.ParserCombinators.Parsec.IndentParser as Indent
+import Text.ParserCombinators.Parsec.Language
+import Text.ParserCombinators.Parsec.IndentParser.Token
+import Control.Monad (liftM)
+
+
+parse ∷ String → Λ
+parse str = either (error ∘ show) id (Indent.parse parser "(null)" str)
+
+parseFile ∷ FilePath → IO Λ
+parseFile = liftM (either (error ∘ show) id) ∘ Indent.parseFromFile parser
+
+parser ∷ IndentCharParser st Λ
+parser = expression where
+
+    expression = flip label "expression" $ application <|> letBinding
+
+    application = liftM (foldl1 A) $ many1 $ choice [parenthetic, abstraction, variable]
+
+    parenthetic = parens haskell expression
+
+    abstraction = flip label "abstraction" $ do
+        _ ← sym "λ" <|> sym "\\"
+        vars ← many1 ident
+        _ ← sym "." <|> sym "→" <|> sym "->"
+        body ← expression
+        return $ foldr Λ body vars
+
+    variable = liftM V $ ident <|> liftM (either show show) (naturalOrFloat haskell)
+
+    -- Ugly, but works. Keyword "in" terminates binding blocks and bindings. Allows empty lets
+    letBinding = flip label "let binding" $ do
+        keyword "let"
+        let parseBindings = do
+            e ← optionMaybe $ keyword "in" >> expression
+            case e of
+                Just je → return ([], Just je)
+                Nothing → do
+                    (b,e) ← lineFold $ do
+                        b ← binding
+                        e ← optionMaybe $ keyword "in" >> expression
+                        return (b,e)
+                    case e of
+                        Nothing → do
+                            rec ← optionMaybe parseBindings
+                            case rec of
+                                Nothing → return ([b], Nothing)
+                                Just (bs, me) → return (b:bs, me)
+                        Just je → return ([b], Just je)
+        (binds, e) ← block parseBindings
+        case e of
+            Nothing → liftM (L binds) (keyword "in" >> expression)
+            Just je → return $ L binds je
+
+    binding ∷ IndentCharParser st (String,Λ)
+    binding = flip label "binding" $ do
+        funct  ← ident
+        params ← many ident
+        body   ← sym "=" >> expression
+        return (funct, foldr Λ body params)
+
+    keyword = reserved haskell
+    ident = do
+        i ← identifier haskell
+        if head i ≡ 'λ' then fail "'λ' is reserved for abstractions" else return i
+    sym = symbol haskell
+</pre></br><h2>printed</h2></br><pre>{-# LANGUAGE UnicodeSyntax #-}
+module Parser where
+
+import Lambda
+import Prelude.Unicode
+import Text.ParserCombinators.Parsec as Parsec
+import Text.ParserCombinators.Parsec.IndentParser as Indent
+import Text.ParserCombinators.Parsec.Language
+import Text.ParserCombinators.Parsec.IndentParser.Token
+import Control.Monad (liftM)
+
+
+parse :: String -> Λ
+parse str = either (error ∘ show) id (Indent.parse parser "(null)" str)
+
+parseFile :: FilePath -> IO Λ
+parseFile = liftM (either (error ∘ show) id) ∘ Indent.parseFromFile parser
+
+parser :: IndentCharParser st Λ
+parser = expression where
+
+    expression = flip label "expression" $ application <|> letBinding
+
+    application = liftM (foldl1 A) $ many1 $ choice [parenthetic, abstraction, variable]
+
+    parenthetic = parens haskell expression
+
+    abstraction = flip label "abstraction" $ do
+        _ <- sym "λ" <|> sym "\\"
+        vars <- many1 ident
+        _ <- sym "." <|> sym "→" <|> sym "->"
+        body <- expression
+        return $ foldr Λ body vars
+
+    variable = liftM V $ ident <|> liftM (either show show) (naturalOrFloat haskell)
+
+    -- Ugly, but works. Keyword "in" terminates binding blocks and bindings. Allows empty lets
+    letBinding = flip label "let binding" $ do
+        keyword "let"
+        let parseBindings = do
+            e <- optionMaybe $ keyword "in" >> expression
+            case e of
+                Just je -> return ([], Just je)
+                Nothing -> do
+                    (b,e) <- lineFold $ do
+                        b <- binding
+                        e <- optionMaybe $ keyword "in" >> expression
+                        return (b,e)
+                    case e of
+                        Nothing -> do
+                            rec <- optionMaybe parseBindings
+                            case rec of
+                                Nothing -> return ([b], Nothing)
+                                Just (bs, me) -> return (b:bs, me)
+                        Just je -> return ([b], Just je)
+        (binds, e) <- block parseBindings
+        case e of
+            Nothing -> liftM (L binds) (keyword "in" >> expression)
+            Just je -> return $ L binds je
+
+    binding :: IndentCharParser st (String,Λ)
+    binding = flip label "binding" $ do
+        funct  <- ident
+        params <- many ident
+        body   <- sym "=" >> expression
+        return (funct, foldr Λ body params)
+
+    keyword = reserved haskell
+    ident = do
+        i <- identifier haskell
+        if head i ≡ 'λ' then fail "'λ' is reserved for abstractions" else return i
+    sym = symbol haskell
+
+</pre>

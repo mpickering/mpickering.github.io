@@ -1,0 +1,346 @@
+<a href="test.hs10736458981609005592.out.html">prev</a></br><a href="failures.html">home</a></br><a href="Test.hs1148079871137522503.out.html">next</a></br></br><pre>25c25
+<                 \(x :: Int) (y :: Int) → (== x+y) . runAbort . fmap (+y) . return $ x
+---
+>                 \(x :: Int) (y :: Int) -> (== x+y) . runAbort . fmap (+y) . return $ x
+27c27
+<                 \(x :: Int) (y :: Int) → (== x) . runAbort . fmap (+y) . abort $ x
+---
+>                 \(x :: Int) (y :: Int) -> (== x) . runAbort . fmap (+y) . abort $ x
+31c31
+<                 \(x :: Int) (y :: Int) → (== Just (x+y)) . runAbortT . fmap (+y) . lift . Just $ x
+---
+>                 \(x :: Int) (y :: Int) -> (== Just (x+y)) . runAbortT . fmap (+y) . lift . Just $ x
+33c33
+<                 \(x :: Int) (y :: Int) → (== Just x) . runAbortT . fmap (+y) . (>>= abort) . lift . Just $ x
+---
+>                 \(x :: Int) (y :: Int) -> (== Just x) . runAbortT . fmap (+y) . (>>= abort) . lift . Just $ x
+39c39
+<                 \(x :: Int) (y :: Int) → runAbort (return (+y) <*> return x) == x+y
+---
+>                 \(x :: Int) (y :: Int) -> runAbort (return (+y) <*> return x) == x+y
+41c41
+<                 \(x :: Int) (y :: Int) → runAbort (return (+y) <*> abort x) == x
+---
+>                 \(x :: Int) (y :: Int) -> runAbort (return (+y) <*> abort x) == x
+48d47
+<                     \(x :: Int) (y :: Int) → (== Just (x+y)) . runAbortT $ do
+49d47
+<                         a ← lift (Just x)
+50c48
+<                         b ← lift (Just y)
+---
+>                     \(x :: Int) (y :: Int) -> (== Just (x+y)) . runAbortT $ do
+50a49
+>                         a <- lift (Just x)
+50a50
+>                         b <- lift (Just y)
+53d52
+<                     \(x :: Int) (y :: Int) → (== Just x) . runAbortT $ do
+54c53
+<                         a ← lift (Just x)
+---
+>                     \(x :: Int) (y :: Int) -> (== Just x) . runAbortT $ do
+54a54
+>                         a <- lift (Just x)
+56c56
+<                         b ← lift (Just y)
+---
+>                         b <- lift (Just y)
+61d60
+<                     \(x :: Int) (y :: Int) → (== Nothing) . runAbortT $ do
+62d60
+<                         a ← lift (Just x)
+63c61
+<                         b ← lift (Just y)
+---
+>                     \(x :: Int) (y :: Int) -> (== Nothing) . runAbortT $ do
+63a62
+>                         a <- lift (Just x)
+63a63
+>                         b <- lift (Just y)
+67d66
+<                     \(x :: Int) (y :: Int) → (== Just x) . runAbortT $ do
+68c67
+<                         a ← lift (Just x)
+---
+>                     \(x :: Int) (y :: Int) -> (== Just x) . runAbortT $ do
+68a68
+>                         a <- lift (Just x)
+70c70
+<                         b ← lift (Just y)
+---
+>                         b <- lift (Just y)
+77c77
+<                 \(x :: Int) (y :: Int) → (== x+y) . flip execState x . runAbortT $ do
+---
+>                 \(x :: Int) (y :: Int) -> (== x+y) . flip execState x . runAbortT $ do
+80c80
+<                 \(x :: Int) (y :: Int) → (== x) . flip execState x . runAbortT $ do
+---
+>                 \(x :: Int) (y :: Int) -> (== x) . flip execState x . runAbortT $ do
+88c88
+<                 True @=? (flip runCont id . runAbortT . liftCallCC callCC $ \c → (c True >> abort False))
+---
+>                 True @=? (flip runCont id . runAbortT . liftCallCC callCC $ \c -> (c True >> abort False))
+90c90
+<                 True @=? (flip runCont id . runAbortT . liftCallCC callCC $ \c → (abort True >> c False))
+---
+>                 True @=? (flip runCont id . runAbortT . liftCallCC callCC $ \c -> (abort True >> c False))
+97c97
+<                         (\_ → return True)
+---
+>                         (\_ -> return True)
+103c103
+<                         (\_ → return False)
+---
+>                         (\_ -> return False)
+123a124
+> 
+</pre></br><h2>original</h2></br><pre>{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE UnicodeSyntax #-}
+
+import Control.Applicative
+import Control.Monad.Trans.Class
+import Control.Monad.Trans.Cont
+import Control.Monad.Trans.Error (ErrorT(..),catchError,throwError)
+import Control.Monad.Trans.State (StateT(..),execState,modify)
+import Control.Monad.Trans.Writer (WriterT(..),tell,listen,pass,runWriter)
+
+import Data.Functor.Identity
+
+import Test.Framework
+import Test.Framework.Providers.HUnit
+import Test.Framework.Providers.QuickCheck2
+import Test.HUnit
+import Test.QuickCheck
+
+import Control.Monad.Trans.Abort
+
+main = defaultMain
+    [testGroup "Functor"
+        [testGroup "Identity"
+            [testProperty "without Abort" $
+                \(x :: Int) (y :: Int) → (== x+y) . runAbort . fmap (+y) . return $ x
+            ,testProperty "with goto" $
+                \(x :: Int) (y :: Int) → (== x) . runAbort . fmap (+y) . abort $ x
+            ]
+        ,testGroup "Maybe"
+            [testProperty "without Abort" $
+                \(x :: Int) (y :: Int) → (== Just (x+y)) . runAbortT . fmap (+y) . lift . Just $ x
+            ,testProperty "with Abort" $
+                \(x :: Int) (y :: Int) → (== Just x) . runAbortT . fmap (+y) . (>>= abort) . lift . Just $ x
+            ]
+        ]
+    ,testGroup "Applicative"
+        [testGroup "Identity"
+            [testProperty "without Abort" $
+                \(x :: Int) (y :: Int) → runAbort (return (+y) <*> return x) == x+y
+            ,testProperty "with Abort" $
+                \(x :: Int) (y :: Int) → runAbort (return (+y) <*> abort x) == x
+            ]
+        ]
+    ,testGroup "Monad"
+        [testGroup "Maybe"
+            [testGroup "Just"
+                [testProperty "without Abort" $
+                    \(x :: Int) (y :: Int) → (== Just (x+y)) . runAbortT $ do
+                        a ← lift (Just x)
+                        b ← lift (Just y)
+                        return (a+b)
+                ,testProperty "with Abort" $
+                    \(x :: Int) (y :: Int) → (== Just x) . runAbortT $ do
+                        a ← lift (Just x)
+                        abort a
+                        b ← lift (Just y)
+                        return (a+b)
+                ]
+            ,testGroup "Nothing"
+                [testProperty "without Abort" $
+                    \(x :: Int) (y :: Int) → (== Nothing) . runAbortT $ do
+                        a ← lift (Just x)
+                        b ← lift (Just y)
+                        lift Nothing
+                        return (a+b)
+                ,testProperty "with Abort" $
+                    \(x :: Int) (y :: Int) → (== Just x) . runAbortT $ do
+                        a ← lift (Just x)
+                        abort a
+                        b ← lift (Just y)
+                        lift Nothing
+                        return (a+b)
+                ]
+            ]
+        ,testGroup "State"
+            [testProperty "without Abort" $
+                \(x :: Int) (y :: Int) → (== x+y) . flip execState x . runAbortT $ do
+                    lift (modify (+y))
+            ,testProperty "with Abort" $
+                \(x :: Int) (y :: Int) → (== x) . flip execState x . runAbortT $ do
+                    abort ()
+                    lift (modify (+y))
+            ]
+        ]
+    ,testGroup "lifters"
+        [testGroup "liftCallCC"
+            [testCase "callCC bypasses abort" $
+                True @=? (flip runCont id . runAbortT . liftCallCC callCC $ \c → (c True >> abort False))
+            ,testCase "abort bypasses callCC" $
+                True @=? (flip runCont id . runAbortT . liftCallCC callCC $ \c → (abort True >> c False))
+            ]
+        ,testGroup "liftCatch"
+            [testCase "throwError bypasses abort" $
+                Right True @=? (runIdentity . runErrorT . runAbortT $
+                    liftCatch catchError
+                        (lift (throwError "") >> abort False)
+                        (\_ → return True)
+                )
+            ,testCase "abort bypasses throwError" $
+                Right True @=? (runIdentity . runErrorT . runAbortT $
+                    liftCatch catchError
+                        (abort True >> lift (throwError ""))
+                        (\_ → return False)
+                )
+            ]
+        ,testGroup "liftListen"
+            [testCase "abort before tell" $
+                ((True,"right"),"") @=? (runWriter . runAbortT $ do
+                    liftListen listen (abort (True,"right") >> lift (tell "wrong") >> return False)
+                )
+            ,testCase "abort after tell" $
+                ((True,"A"),"B") @=? (runWriter . runAbortT $ do
+                    liftListen listen (lift (tell "B") >> abort (True,"A") >> return False)
+                )
+            ]
+        ,testGroup "liftPass"
+            [testCase "abort bypasses function" $
+                (True,"") @=? (runWriter . runAbortT $ do
+                    liftPass pass (abort True >> return (False,const "wrong"))
+                )
+            ]
+        ]
+    ]
+</pre></br><h2>printed</h2></br><pre>{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE UnicodeSyntax #-}
+
+import Control.Applicative
+import Control.Monad.Trans.Class
+import Control.Monad.Trans.Cont
+import Control.Monad.Trans.Error (ErrorT(..),catchError,throwError)
+import Control.Monad.Trans.State (StateT(..),execState,modify)
+import Control.Monad.Trans.Writer (WriterT(..),tell,listen,pass,runWriter)
+
+import Data.Functor.Identity
+
+import Test.Framework
+import Test.Framework.Providers.HUnit
+import Test.Framework.Providers.QuickCheck2
+import Test.HUnit
+import Test.QuickCheck
+
+import Control.Monad.Trans.Abort
+
+main = defaultMain
+    [testGroup "Functor"
+        [testGroup "Identity"
+            [testProperty "without Abort" $
+                \(x :: Int) (y :: Int) -> (== x+y) . runAbort . fmap (+y) . return $ x
+            ,testProperty "with goto" $
+                \(x :: Int) (y :: Int) -> (== x) . runAbort . fmap (+y) . abort $ x
+            ]
+        ,testGroup "Maybe"
+            [testProperty "without Abort" $
+                \(x :: Int) (y :: Int) -> (== Just (x+y)) . runAbortT . fmap (+y) . lift . Just $ x
+            ,testProperty "with Abort" $
+                \(x :: Int) (y :: Int) -> (== Just x) . runAbortT . fmap (+y) . (>>= abort) . lift . Just $ x
+            ]
+        ]
+    ,testGroup "Applicative"
+        [testGroup "Identity"
+            [testProperty "without Abort" $
+                \(x :: Int) (y :: Int) -> runAbort (return (+y) <*> return x) == x+y
+            ,testProperty "with Abort" $
+                \(x :: Int) (y :: Int) -> runAbort (return (+y) <*> abort x) == x
+            ]
+        ]
+    ,testGroup "Monad"
+        [testGroup "Maybe"
+            [testGroup "Just"
+                [testProperty "without Abort" $
+                    \(x :: Int) (y :: Int) -> (== Just (x+y)) . runAbortT $ do
+                        a <- lift (Just x)
+                        b <- lift (Just y)
+                        return (a+b)
+                ,testProperty "with Abort" $
+                    \(x :: Int) (y :: Int) -> (== Just x) . runAbortT $ do
+                        a <- lift (Just x)
+                        abort a
+                        b <- lift (Just y)
+                        return (a+b)
+                ]
+            ,testGroup "Nothing"
+                [testProperty "without Abort" $
+                    \(x :: Int) (y :: Int) -> (== Nothing) . runAbortT $ do
+                        a <- lift (Just x)
+                        b <- lift (Just y)
+                        lift Nothing
+                        return (a+b)
+                ,testProperty "with Abort" $
+                    \(x :: Int) (y :: Int) -> (== Just x) . runAbortT $ do
+                        a <- lift (Just x)
+                        abort a
+                        b <- lift (Just y)
+                        lift Nothing
+                        return (a+b)
+                ]
+            ]
+        ,testGroup "State"
+            [testProperty "without Abort" $
+                \(x :: Int) (y :: Int) -> (== x+y) . flip execState x . runAbortT $ do
+                    lift (modify (+y))
+            ,testProperty "with Abort" $
+                \(x :: Int) (y :: Int) -> (== x) . flip execState x . runAbortT $ do
+                    abort ()
+                    lift (modify (+y))
+            ]
+        ]
+    ,testGroup "lifters"
+        [testGroup "liftCallCC"
+            [testCase "callCC bypasses abort" $
+                True @=? (flip runCont id . runAbortT . liftCallCC callCC $ \c -> (c True >> abort False))
+            ,testCase "abort bypasses callCC" $
+                True @=? (flip runCont id . runAbortT . liftCallCC callCC $ \c -> (abort True >> c False))
+            ]
+        ,testGroup "liftCatch"
+            [testCase "throwError bypasses abort" $
+                Right True @=? (runIdentity . runErrorT . runAbortT $
+                    liftCatch catchError
+                        (lift (throwError "") >> abort False)
+                        (\_ -> return True)
+                )
+            ,testCase "abort bypasses throwError" $
+                Right True @=? (runIdentity . runErrorT . runAbortT $
+                    liftCatch catchError
+                        (abort True >> lift (throwError ""))
+                        (\_ -> return False)
+                )
+            ]
+        ,testGroup "liftListen"
+            [testCase "abort before tell" $
+                ((True,"right"),"") @=? (runWriter . runAbortT $ do
+                    liftListen listen (abort (True,"right") >> lift (tell "wrong") >> return False)
+                )
+            ,testCase "abort after tell" $
+                ((True,"A"),"B") @=? (runWriter . runAbortT $ do
+                    liftListen listen (lift (tell "B") >> abort (True,"A") >> return False)
+                )
+            ]
+        ,testGroup "liftPass"
+            [testCase "abort bypasses function" $
+                (True,"") @=? (runWriter . runAbortT $ do
+                    liftPass pass (abort True >> return (False,const "wrong"))
+                )
+            ]
+        ]
+    ]
+
+</pre>

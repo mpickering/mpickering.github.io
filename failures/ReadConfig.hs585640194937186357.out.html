@@ -1,0 +1,334 @@
+<a href="Read.hs2020739063107554536.out.html">prev</a></br><a href="failures.html">home</a></br><a href="Reader.hs12648177091998097157.out.html">next</a></br></br><pre>17c17
+< word ∷ Parser String
+---
+> word :: Parser String
+20c20
+< simpleWord ∷ Parser String
+---
+> simpleWord :: Parser String
+23c23
+< quotedOption ∷ Parser String
+---
+> quotedOption :: Parser String
+26c26
+< quotedLongOption ∷ Parser String
+---
+> quotedLongOption :: Parser String
+29c29
+<   o ← simpleWord
+---
+>   o <- simpleWord
+31c31
+<   v ← quoted
+---
+>   v <- quoted
+34c34
+< quotedShortOption ∷ Parser String
+---
+> quotedShortOption :: Parser String
+37d36
+<   o ← simpleWord
+38c37
+<   v ← quoted
+---
+>   o <- simpleWord
+38a38
+>   v <- quoted
+41c41
+< simpleOption ∷ Parser String
+---
+> simpleOption :: Parser String
+43c43
+<   o ← simpleWord
+---
+>   o <- simpleWord
+45c45
+<   v ← simpleWord
+---
+>   v <- simpleWord
+48c48
+< quoted ∷ Parser String
+---
+> quoted :: Parser String
+53c53
+<       s ← many1 $ noneOf "'"
+---
+>       s <- many1 $ noneOf "'"
+59c59
+<       s ← many1 $ noneOf "\""
+---
+>       s <- many1 $ noneOf "\""
+63c63
+< pConfig ∷ Parser [String]
+---
+> pConfig :: Parser [String]
+66c66
+< parseConfig ∷ String → [String]
+---
+> parseConfig :: String -> [String]
+69d68
+<     Right lst → lst
+70c69
+<     Left err → error $ show err
+---
+>     Right lst -> lst
+70a70
+>     Left err -> error $ show err
+73c73
+< readConfigFile ∷ FilePath → IO [String]
+---
+> readConfigFile :: FilePath -> IO [String]
+75c75
+<   do b ← doesFileExist path
+---
+>   do b <- doesFileExist path
+79c79
+<               str ← readFile path
+---
+>               str <- readFile path
+82c82
+< readFiles ∷ [FilePath] → IO [String]
+---
+> readFiles :: [FilePath] -> IO [String]
+85c85
+<   content ← readConfigFile path
+---
+>   content <- readConfigFile path
+87d86
+<     "%":options → do otherOptions ← readFiles other
+88d86
+<                      return $ otherOptions ⧺ options
+89d86
+<     []          → readFiles other
+90c87
+<     _           → return content
+---
+>     "%":options -> do otherOptions <- readFiles other
+90a88
+>                       return $ otherOptions ⧺ options
+90a89
+>     []          -> readFiles other
+90a90
+>     _           -> return content
+93c93
+< readAllConfigs ∷ IO [String]
+---
+> readAllConfigs :: IO [String]
+95c95
+<   home ← getEnv "HOME"
+---
+>   home <- getEnv "HOME"
+97c97
+<   homecfg ← readConfigFile homepath
+---
+>   homecfg <- readConfigFile homepath
+99c99
+<   localcfg ← readFiles $ map (</> ".todos.conf") $ scanl1 (</>) $ splitPath pwd
+---
+>   localcfg <- readFiles $ map (</> ".todos.conf") $ scanl1 (</>) $ splitPath pwd
+101a102
+> 
+</pre></br><h2>original</h2></br><pre>{-# LANGUAGE UnicodeSyntax #-}
+
+-- | Module for parsing config files
+module Todos.ReadConfig
+  (readAllConfigs, readConfigFile)
+  where
+
+import Prelude hiding (putStrLn,readFile,getContents,print)
+import Prelude.Unicode
+import System.Environment
+import System.FilePath
+import System.Directory (doesFileExist, getCurrentDirectory)
+import Text.ParserCombinators.Parsec
+
+import Todos.IO
+
+word ∷ Parser String
+word = choice $ map try [quotedOption, simpleOption, quoted, simpleWord]
+
+simpleWord ∷ Parser String
+simpleWord = many1 $ noneOf " \t\r\n=\"'"
+
+quotedOption ∷ Parser String
+quotedOption = (try quotedLongOption) <|> quotedShortOption
+
+quotedLongOption ∷ Parser String
+quotedLongOption = do
+  string "--"
+  o ← simpleWord
+  char '='
+  v ← quoted
+  return ("--" ⧺ o ⧺ "=" ⧺ v)
+
+quotedShortOption ∷ Parser String
+quotedShortOption = do
+  string "-"
+  o ← simpleWord
+  v ← quoted
+  return ("-" ⧺ o ⧺ v)
+
+simpleOption ∷ Parser String
+simpleOption = do
+  o ← simpleWord
+  optional $ char '='
+  v ← simpleWord
+  return (o ⧺ "=" ⧺ v)
+
+quoted ∷ Parser String
+quoted = quoted1 <|> quoted2
+  where
+    quoted1 = do
+      char '\''
+      s ← many1 $ noneOf "'"
+      char '\''
+      return s
+
+    quoted2 = do
+      char '"'
+      s ← many1 $ noneOf "\""
+      char '"'
+      return s
+
+pConfig ∷ Parser [String]
+pConfig = word `sepBy` space
+
+parseConfig ∷ String → [String]
+parseConfig str =
+  case parse pConfig "config file" str of
+    Right lst → lst
+    Left err → error $ show err
+
+-- | Read list of options from given config file
+readConfigFile ∷ FilePath → IO [String]
+readConfigFile path =
+  do b ← doesFileExist path
+     if not b
+       then return []
+       else do
+              str ← readFile path
+              return $ parseConfig (unwords $ lines str)
+
+readFiles ∷ [FilePath] → IO [String]
+readFiles [] = return []
+readFiles (path:other) = do
+  content ← readConfigFile path
+  case content of
+    "%":options → do otherOptions ← readFiles other
+                     return $ otherOptions ⧺ options
+    []          → readFiles other
+    _           → return content
+
+-- | Read list of options from config files
+readAllConfigs ∷ IO [String]
+readAllConfigs = do
+  home ← getEnv "HOME"
+  let homepath = home </> ".config" </> "todos" </> "todos.conf"
+  homecfg ← readConfigFile homepath
+  pwd <- getCurrentDirectory
+  localcfg ← readFiles $ map (</> ".todos.conf") $ scanl1 (</>) $ splitPath pwd
+  return $ homecfg ⧺ localcfg
+
+</pre></br><h2>printed</h2></br><pre>{-# LANGUAGE UnicodeSyntax #-}
+
+-- | Module for parsing config files
+module Todos.ReadConfig
+  (readAllConfigs, readConfigFile)
+  where
+
+import Prelude hiding (putStrLn,readFile,getContents,print)
+import Prelude.Unicode
+import System.Environment
+import System.FilePath
+import System.Directory (doesFileExist, getCurrentDirectory)
+import Text.ParserCombinators.Parsec
+
+import Todos.IO
+
+word :: Parser String
+word = choice $ map try [quotedOption, simpleOption, quoted, simpleWord]
+
+simpleWord :: Parser String
+simpleWord = many1 $ noneOf " \t\r\n=\"'"
+
+quotedOption :: Parser String
+quotedOption = (try quotedLongOption) <|> quotedShortOption
+
+quotedLongOption :: Parser String
+quotedLongOption = do
+  string "--"
+  o <- simpleWord
+  char '='
+  v <- quoted
+  return ("--" ⧺ o ⧺ "=" ⧺ v)
+
+quotedShortOption :: Parser String
+quotedShortOption = do
+  string "-"
+  o <- simpleWord
+  v <- quoted
+  return ("-" ⧺ o ⧺ v)
+
+simpleOption :: Parser String
+simpleOption = do
+  o <- simpleWord
+  optional $ char '='
+  v <- simpleWord
+  return (o ⧺ "=" ⧺ v)
+
+quoted :: Parser String
+quoted = quoted1 <|> quoted2
+  where
+    quoted1 = do
+      char '\''
+      s <- many1 $ noneOf "'"
+      char '\''
+      return s
+
+    quoted2 = do
+      char '"'
+      s <- many1 $ noneOf "\""
+      char '"'
+      return s
+
+pConfig :: Parser [String]
+pConfig = word `sepBy` space
+
+parseConfig :: String -> [String]
+parseConfig str =
+  case parse pConfig "config file" str of
+    Right lst -> lst
+    Left err -> error $ show err
+
+-- | Read list of options from given config file
+readConfigFile :: FilePath -> IO [String]
+readConfigFile path =
+  do b <- doesFileExist path
+     if not b
+       then return []
+       else do
+              str <- readFile path
+              return $ parseConfig (unwords $ lines str)
+
+readFiles :: [FilePath] -> IO [String]
+readFiles [] = return []
+readFiles (path:other) = do
+  content <- readConfigFile path
+  case content of
+    "%":options -> do otherOptions <- readFiles other
+                      return $ otherOptions ⧺ options
+    []          -> readFiles other
+    _           -> return content
+
+-- | Read list of options from config files
+readAllConfigs :: IO [String]
+readAllConfigs = do
+  home <- getEnv "HOME"
+  let homepath = home </> ".config" </> "todos" </> "todos.conf"
+  homecfg <- readConfigFile homepath
+  pwd <- getCurrentDirectory
+  localcfg <- readFiles $ map (</> ".todos.conf") $ scanl1 (</>) $ splitPath pwd
+  return $ homecfg ⧺ localcfg
+
+
+</pre>

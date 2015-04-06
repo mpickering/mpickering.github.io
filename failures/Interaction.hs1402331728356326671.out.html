@@ -1,0 +1,534 @@
+<a href="Integration.hs1075260298824938981.out.html">prev</a></br><a href="failures.html">home</a></br><a href="InteractionNet.hs18645465171351934195.out.html">next</a></br></br><pre>221c221
+<            then logStr logger $ mtn ++ " in " ++ (show wd) ++
+---
+> 
+221a222
+> 
+221a223
+> 
+221a224
+> 
+221a225
+>          ; logStr logger $ mtn ++ " in " ++ (show wd) ++
+231d234
+<                                 then do { logWithPrefix logger "stdout" out
+232c235
+<                                         ; logWithPrefix logger "stderr" err
+---
+> 
+232a236
+> 
+232a237
+> 
+232a238
+> 
+232a239
+>                               ; do { logWithPrefix logger "stdout" out
+232a240
+>                                    ; logWithPrefix logger "stderr" err
+247a256
+> 
+</pre></br><h2>original</h2></br><pre> {- DisTract ------------------------------------------------------\
+ |                                                                 |
+ | Copyright (c) 2007, Matthew Sackman (matthew@wellquite.org)     |
+ |                                                                 |
+ | DisTract is freely distributable under the terms of a 3-Clause  |
+ | BSD-style license. For details, see the DisTract web site:      |
+ |   http://distract.wellquite.org/                                |
+ |                                                                 |
+ \-----------------------------------------------------------------}
+
+module DisTract.Monotone.Interaction
+    (mtnLsKeys,
+     mtnGetRevision,
+     mtnHeads,
+     mtnFindCurrentBranch,
+     mtnSetupBranch,
+     mtnLogBrief,
+     mtnAddUnknownFiles,
+     mtnAdd,
+     mtnCommit,
+     mtnDoesBranchExist,
+     mtnGetBranches,
+     mtnCheckOutBranch,
+     mtnUpdate,
+     mtnInitDB,
+     mtnFindVersion
+    )
+    where
+
+import DisTract.Types
+import DisTract.Monotone.Types
+import DisTract.Monotone.Parser
+import System.Process
+import System.IO
+import System.IO.Error
+import System.FilePath
+import System.Directory
+import Data.Maybe
+import Data.List
+import Data.Either
+
+mtnFindVersion :: Config -> IO SupportedVersion
+mtnFindVersion config
+    = mtnRunRaw config ["--version"] Nothing Nothing >>=
+      return . dieOnErrString (read . show . findVersionHash)
+
+mtnLsKeys :: Config -> IO ([Key],[Key])
+mtnLsKeys config
+    | MTN_0_34 == mtnVersion config = func
+    | MTN_0_35 == mtnVersion config = func
+    | MTN_0_36 == mtnVersion config = func
+    | otherwise = error "Unsupported version of monotone"
+    where
+      func = mtnRun config (baseDir config) ["ls", "keys"] >>=
+             return . dieOnErrString findKeys
+
+mtnGetRevision :: Config -> Hash -> IO Revision
+mtnGetRevision config hash
+    | MTN_0_34 == mtnVersion config = func
+    | MTN_0_35 == mtnVersion config = func
+    | MTN_0_36 == mtnVersion config = func
+    | otherwise = error "Unsupported version of monotone"
+    where
+      func = mtnRun config (baseDir config) ["automate", "certs", show hash] >>=
+             return . dieOnErrString (Revision hash . findCerts)
+
+mtnHeads :: Config -> FilePath -> IO [Hash]
+mtnHeads config dir
+    | MTN_0_34 == mtnVersion config = func
+    | MTN_0_35 == mtnVersion config = func
+    | MTN_0_36 == mtnVersion config = func
+    | otherwise = error "Unsupported version of monotone"
+    where
+      func = mtnRun config dir ["automate", "heads"] >>=
+             return . dieOnErrString findHashes
+
+mtnFindCurrentBranch :: Config -> FilePath -> IO String
+mtnFindCurrentBranch config dir
+    | MTN_0_34 == mtnVersion config = func
+    | MTN_0_35 == mtnVersion config = func
+    | MTN_0_36 == mtnVersion config = func
+    | otherwise = error "Unsupported version of monotone"
+    where
+      func = mtnRun config dir ["automate", "get_option", "branch"] >>=
+             return . dieOnErrString (head . lines)
+
+mtnSetupBranch :: Config -> String -> FilePath -> IO ()
+mtnSetupBranch config@Config{ logger = logger }
+               newBranch dir
+    | MTN_0_34 == mtnVersion config = func
+    | MTN_0_35 == mtnVersion config = func
+    | MTN_0_36 == mtnVersion config = func
+    | otherwise = error "Unsupported version of monotone"
+    where
+      func = mtnRun config (baseDir config) ["setup", dir, "-b", newBranch] >>=
+             logStr logger . dieOnErrString id
+
+mtnLogBrief :: Config -> FilePath -> [String] -> FilePath -> IO [LogBrief]
+mtnLogBrief config dir extras path
+    | MTN_0_34 == mtnVersion config = func
+    | MTN_0_35 == mtnVersion config = func
+    | MTN_0_36 == mtnVersion config = func
+    | otherwise = error "Unsupported version of monotone"
+    where
+      func = mtnRun config dir (["log", "--brief", "--no-graph"] ++ extras ++ [path]) >>=
+             return . dieOnErrString findLogBriefs
+
+mtnAddUnknownFiles :: Config -> FilePath -> IO ()
+mtnAddUnknownFiles config@Config{ logger = logger }
+                   dir
+    | MTN_0_34 == mtnVersion config = func
+    | MTN_0_35 == mtnVersion config = func
+    | MTN_0_36 == mtnVersion config = func
+    | otherwise = error "Unsupported version of monotone"
+    where
+      func = mtnRun config dir ["add", "--recursive", "--unknown"] >>=
+             logStr logger . ignoreErrString id
+
+mtnAdd :: Config -> FilePath -> [FilePath] -> IO ()
+mtnAdd _ _ [] = return ()
+mtnAdd config@Config{ logger = logger } dir files
+    | MTN_0_34 == mtnVersion config = func
+    | MTN_0_35 == mtnVersion config = func
+    | MTN_0_36 == mtnVersion config = func
+    | otherwise = error "Unsupported version of monotone"
+    where
+      func = mtnRun config dir ("add":files) >>=
+             logStr logger . ignoreErrString id
+
+mtnCommit :: Config -> FilePath -> String -> [FilePath] -> IO (Maybe Hash)
+mtnCommit config dir message files
+    | MTN_0_34 == mtnVersion config = func
+    | MTN_0_35 == mtnVersion config = func
+    | MTN_0_36 == mtnVersion config = func
+    | otherwise = error "Unsupported version of monotone"
+    where
+      func = do { (tmpFile, tmpH) <- makeTemporaryFile
+                ; hPutStr tmpH message
+                ; hClose tmpH
+                ; ("",err) <- mtnRun config dir
+                              ("commit":"--message-file":tmpFile:files)
+                ; removeFile tmpFile
+                ; return $ findHashInCommitMessage err
+                }
+
+mtnGetBranches :: Config -> IO [String]
+mtnGetBranches config
+    | MTN_0_34 == mtnVersion config = func
+    | MTN_0_35 == mtnVersion config = func
+    | MTN_0_36 == mtnVersion config = func
+    | otherwise = error "Unsupported version of monotone"
+    where
+      func = mtnRun config (baseDir config) ["automate", "branches"] >>=
+             return . dieOnErrString lines
+
+mtnDoesBranchExist :: Config -> String -> IO Bool
+mtnDoesBranchExist config branch
+    | MTN_0_34 == mtnVersion config = func
+    | MTN_0_35 == mtnVersion config = func
+    | MTN_0_36 == mtnVersion config = func
+    | otherwise = error "Unsupported version of monotone"
+    where
+      func = mtnGetBranches config >>=
+             return . elem branch
+
+mtnCheckOutBranch :: Config -> FilePath -> String -> FilePath -> IO ()
+mtnCheckOutBranch config@Config{ logger = logger }
+                  dir branch coDir
+    | MTN_0_34 == mtnVersion config = func
+    | MTN_0_35 == mtnVersion config = func
+    | MTN_0_36 == mtnVersion config = func
+    | otherwise = error "Unsupported version of monotone"
+    where
+      func = mtnRun config dir ["checkout", "-b", branch, coDir] >>=
+             logStr logger . dieOnErrString id
+
+mtnUpdate :: Config -> FilePath -> Maybe Hash -> IO ()
+mtnUpdate config@Config{ logger = logger } dir hashM
+    | MTN_0_34 == mtnVersion config = func
+    | MTN_0_35 == mtnVersion config = func
+    | MTN_0_36 == mtnVersion config = func
+    | otherwise = error "Unsupported version of monotone"
+    where
+      func = mtnRun config dir (("update":) . maybe [] (("-r":) . (:[]) . show) $ hashM) >>=
+             \(out, err) -> logWithPrefix logger "stdout" out >>
+                            logWithPrefix logger "stderr" err
+
+mtnInitDB :: Config -> IO ()
+mtnInitDB config@Config{ logger = logger }
+    | MTN_0_34 == mtnVersion config = func
+    | MTN_0_35 == mtnVersion config = func
+    | MTN_0_36 == mtnVersion config = func
+    | otherwise = error "Unsupported version of monotone"
+    where
+      func = mtnRun config (baseDir config) ["db", "init"] >>=
+             logStr logger . ignoreErrString id
+
+ignoreErrString :: (String -> a) -> (String, String) -> a
+ignoreErrString func (out, _) = func out
+
+dieOnErrString :: (String -> a) -> (String, String) -> a
+dieOnErrString func (out, []) = func out
+dieOnErrString _ (_, err) = error err
+
+-- we know that the base is absolute now
+-- so combining with the dir is safe even if the dir is relative
+mtnRun :: Config -> FilePath -> [String] -> IO (String, String)
+mtnRun config@Config{mtnDb = db, baseDir = base}
+       dir extraArgs
+    = mtnRunRaw config args (Just wd) env
+    where
+      args = ["-d", db] ++ extraArgs
+      env = Nothing -- allow our environment to pass through
+      wd = combine base dir
+
+mtnRunRaw :: Config -> [String] -> Maybe FilePath ->
+             Maybe [(String, String)] -> IO (String, String)
+mtnRunRaw Config{mtnExecutable = mtn, verbose = verbose, logger = logger}
+          args wd env
+    = do { if verbose
+           then logStr logger $ mtn ++ " in " ++ (show wd) ++
+                              "; env: " ++ (show env) ++
+                              "; args: " ++ (show args)
+           else return ()
+         ; results <- try (do { (_,outH,errH,procH) <- runInteractiveProcess
+                                                       mtn args wd env
+                              ; out <- hGetContents outH
+                              ; err <- hGetContents errH
+                              ; waitForProcess procH
+                              ; if verbose
+                                then do { logWithPrefix logger "stdout" out
+                                        ; logWithPrefix logger "stderr" err
+                                        }
+                                else return ()
+                              ; return (out, err)
+                              }
+                          )
+          ; either ioError return results
+         }
+
+makeTemporaryFile :: IO (FilePath, Handle)
+makeTemporaryFile
+    = do { tmpDir <- getTemporaryDirectory
+         ; (path, hdl) <- openTempFile tmpDir "DisTract.tmp"
+         ; hSetBinaryMode hdl False
+         ; return (path, hdl)
+         }
+</pre></br><h2>printed</h2></br><pre> {- DisTract ------------------------------------------------------\
+ |                                                                 |
+ | Copyright (c) 2007, Matthew Sackman (matthew@wellquite.org)     |
+ |                                                                 |
+ | DisTract is freely distributable under the terms of a 3-Clause  |
+ | BSD-style license. For details, see the DisTract web site:      |
+ |   http://distract.wellquite.org/                                |
+ |                                                                 |
+ \-----------------------------------------------------------------}
+
+module DisTract.Monotone.Interaction
+    (mtnLsKeys,
+     mtnGetRevision,
+     mtnHeads,
+     mtnFindCurrentBranch,
+     mtnSetupBranch,
+     mtnLogBrief,
+     mtnAddUnknownFiles,
+     mtnAdd,
+     mtnCommit,
+     mtnDoesBranchExist,
+     mtnGetBranches,
+     mtnCheckOutBranch,
+     mtnUpdate,
+     mtnInitDB,
+     mtnFindVersion
+    )
+    where
+
+import DisTract.Types
+import DisTract.Monotone.Types
+import DisTract.Monotone.Parser
+import System.Process
+import System.IO
+import System.IO.Error
+import System.FilePath
+import System.Directory
+import Data.Maybe
+import Data.List
+import Data.Either
+
+mtnFindVersion :: Config -> IO SupportedVersion
+mtnFindVersion config
+    = mtnRunRaw config ["--version"] Nothing Nothing >>=
+      return . dieOnErrString (read . show . findVersionHash)
+
+mtnLsKeys :: Config -> IO ([Key],[Key])
+mtnLsKeys config
+    | MTN_0_34 == mtnVersion config = func
+    | MTN_0_35 == mtnVersion config = func
+    | MTN_0_36 == mtnVersion config = func
+    | otherwise = error "Unsupported version of monotone"
+    where
+      func = mtnRun config (baseDir config) ["ls", "keys"] >>=
+             return . dieOnErrString findKeys
+
+mtnGetRevision :: Config -> Hash -> IO Revision
+mtnGetRevision config hash
+    | MTN_0_34 == mtnVersion config = func
+    | MTN_0_35 == mtnVersion config = func
+    | MTN_0_36 == mtnVersion config = func
+    | otherwise = error "Unsupported version of monotone"
+    where
+      func = mtnRun config (baseDir config) ["automate", "certs", show hash] >>=
+             return . dieOnErrString (Revision hash . findCerts)
+
+mtnHeads :: Config -> FilePath -> IO [Hash]
+mtnHeads config dir
+    | MTN_0_34 == mtnVersion config = func
+    | MTN_0_35 == mtnVersion config = func
+    | MTN_0_36 == mtnVersion config = func
+    | otherwise = error "Unsupported version of monotone"
+    where
+      func = mtnRun config dir ["automate", "heads"] >>=
+             return . dieOnErrString findHashes
+
+mtnFindCurrentBranch :: Config -> FilePath -> IO String
+mtnFindCurrentBranch config dir
+    | MTN_0_34 == mtnVersion config = func
+    | MTN_0_35 == mtnVersion config = func
+    | MTN_0_36 == mtnVersion config = func
+    | otherwise = error "Unsupported version of monotone"
+    where
+      func = mtnRun config dir ["automate", "get_option", "branch"] >>=
+             return . dieOnErrString (head . lines)
+
+mtnSetupBranch :: Config -> String -> FilePath -> IO ()
+mtnSetupBranch config@Config{ logger = logger }
+               newBranch dir
+    | MTN_0_34 == mtnVersion config = func
+    | MTN_0_35 == mtnVersion config = func
+    | MTN_0_36 == mtnVersion config = func
+    | otherwise = error "Unsupported version of monotone"
+    where
+      func = mtnRun config (baseDir config) ["setup", dir, "-b", newBranch] >>=
+             logStr logger . dieOnErrString id
+
+mtnLogBrief :: Config -> FilePath -> [String] -> FilePath -> IO [LogBrief]
+mtnLogBrief config dir extras path
+    | MTN_0_34 == mtnVersion config = func
+    | MTN_0_35 == mtnVersion config = func
+    | MTN_0_36 == mtnVersion config = func
+    | otherwise = error "Unsupported version of monotone"
+    where
+      func = mtnRun config dir (["log", "--brief", "--no-graph"] ++ extras ++ [path]) >>=
+             return . dieOnErrString findLogBriefs
+
+mtnAddUnknownFiles :: Config -> FilePath -> IO ()
+mtnAddUnknownFiles config@Config{ logger = logger }
+                   dir
+    | MTN_0_34 == mtnVersion config = func
+    | MTN_0_35 == mtnVersion config = func
+    | MTN_0_36 == mtnVersion config = func
+    | otherwise = error "Unsupported version of monotone"
+    where
+      func = mtnRun config dir ["add", "--recursive", "--unknown"] >>=
+             logStr logger . ignoreErrString id
+
+mtnAdd :: Config -> FilePath -> [FilePath] -> IO ()
+mtnAdd _ _ [] = return ()
+mtnAdd config@Config{ logger = logger } dir files
+    | MTN_0_34 == mtnVersion config = func
+    | MTN_0_35 == mtnVersion config = func
+    | MTN_0_36 == mtnVersion config = func
+    | otherwise = error "Unsupported version of monotone"
+    where
+      func = mtnRun config dir ("add":files) >>=
+             logStr logger . ignoreErrString id
+
+mtnCommit :: Config -> FilePath -> String -> [FilePath] -> IO (Maybe Hash)
+mtnCommit config dir message files
+    | MTN_0_34 == mtnVersion config = func
+    | MTN_0_35 == mtnVersion config = func
+    | MTN_0_36 == mtnVersion config = func
+    | otherwise = error "Unsupported version of monotone"
+    where
+      func = do { (tmpFile, tmpH) <- makeTemporaryFile
+                ; hPutStr tmpH message
+                ; hClose tmpH
+                ; ("",err) <- mtnRun config dir
+                              ("commit":"--message-file":tmpFile:files)
+                ; removeFile tmpFile
+                ; return $ findHashInCommitMessage err
+                }
+
+mtnGetBranches :: Config -> IO [String]
+mtnGetBranches config
+    | MTN_0_34 == mtnVersion config = func
+    | MTN_0_35 == mtnVersion config = func
+    | MTN_0_36 == mtnVersion config = func
+    | otherwise = error "Unsupported version of monotone"
+    where
+      func = mtnRun config (baseDir config) ["automate", "branches"] >>=
+             return . dieOnErrString lines
+
+mtnDoesBranchExist :: Config -> String -> IO Bool
+mtnDoesBranchExist config branch
+    | MTN_0_34 == mtnVersion config = func
+    | MTN_0_35 == mtnVersion config = func
+    | MTN_0_36 == mtnVersion config = func
+    | otherwise = error "Unsupported version of monotone"
+    where
+      func = mtnGetBranches config >>=
+             return . elem branch
+
+mtnCheckOutBranch :: Config -> FilePath -> String -> FilePath -> IO ()
+mtnCheckOutBranch config@Config{ logger = logger }
+                  dir branch coDir
+    | MTN_0_34 == mtnVersion config = func
+    | MTN_0_35 == mtnVersion config = func
+    | MTN_0_36 == mtnVersion config = func
+    | otherwise = error "Unsupported version of monotone"
+    where
+      func = mtnRun config dir ["checkout", "-b", branch, coDir] >>=
+             logStr logger . dieOnErrString id
+
+mtnUpdate :: Config -> FilePath -> Maybe Hash -> IO ()
+mtnUpdate config@Config{ logger = logger } dir hashM
+    | MTN_0_34 == mtnVersion config = func
+    | MTN_0_35 == mtnVersion config = func
+    | MTN_0_36 == mtnVersion config = func
+    | otherwise = error "Unsupported version of monotone"
+    where
+      func = mtnRun config dir (("update":) . maybe [] (("-r":) . (:[]) . show) $ hashM) >>=
+             \(out, err) -> logWithPrefix logger "stdout" out >>
+                            logWithPrefix logger "stderr" err
+
+mtnInitDB :: Config -> IO ()
+mtnInitDB config@Config{ logger = logger }
+    | MTN_0_34 == mtnVersion config = func
+    | MTN_0_35 == mtnVersion config = func
+    | MTN_0_36 == mtnVersion config = func
+    | otherwise = error "Unsupported version of monotone"
+    where
+      func = mtnRun config (baseDir config) ["db", "init"] >>=
+             logStr logger . ignoreErrString id
+
+ignoreErrString :: (String -> a) -> (String, String) -> a
+ignoreErrString func (out, _) = func out
+
+dieOnErrString :: (String -> a) -> (String, String) -> a
+dieOnErrString func (out, []) = func out
+dieOnErrString _ (_, err) = error err
+
+-- we know that the base is absolute now
+-- so combining with the dir is safe even if the dir is relative
+mtnRun :: Config -> FilePath -> [String] -> IO (String, String)
+mtnRun config@Config{mtnDb = db, baseDir = base}
+       dir extraArgs
+    = mtnRunRaw config args (Just wd) env
+    where
+      args = ["-d", db] ++ extraArgs
+      env = Nothing -- allow our environment to pass through
+      wd = combine base dir
+
+mtnRunRaw :: Config -> [String] -> Maybe FilePath ->
+             Maybe [(String, String)] -> IO (String, String)
+mtnRunRaw Config{mtnExecutable = mtn, verbose = verbose, logger = logger}
+          args wd env
+    = do { if verbose
+
+
+
+
+         ; logStr logger $ mtn ++ " in " ++ (show wd) ++
+                              "; env: " ++ (show env) ++
+                              "; args: " ++ (show args)
+           else return ()
+         ; results <- try (do { (_,outH,errH,procH) <- runInteractiveProcess
+                                                       mtn args wd env
+                              ; out <- hGetContents outH
+                              ; err <- hGetContents errH
+                              ; waitForProcess procH
+                              ; if verbose
+
+
+
+
+                              ; do { logWithPrefix logger "stdout" out
+                                   ; logWithPrefix logger "stderr" err
+                                        }
+                                else return ()
+                              ; return (out, err)
+                              }
+                          )
+          ; either ioError return results
+         }
+
+makeTemporaryFile :: IO (FilePath, Handle)
+makeTemporaryFile
+    = do { tmpDir <- getTemporaryDirectory
+         ; (path, hdl) <- openTempFile tmpDir "DisTract.tmp"
+         ; hSetBinaryMode hdl False
+         ; return (path, hdl)
+         }
+
+</pre>

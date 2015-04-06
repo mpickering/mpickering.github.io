@@ -1,0 +1,742 @@
+<a href="Derive.hs8059722201795739911.out.html">prev</a></br><a href="failures.html">home</a></br><a href="Derived.hs15519013931617819336.out.html">next</a></br></br><pre>344c344
+<     [|  $argl .#. dTerm term .#. $argr .#.
+---
+>     [|  argl .#. dTerm term .#. argr .#.
+367a368
+> 
+</pre></br><h2>original</h2></br><pre>{-# LANGUAGE TemplateHaskell #-}
+
+{-|
+    Automatically derive 'Text.GRead.Gram' instances for data types.
+
+    /Note!/ This is not a complete implementation and will not work for all datatypes.
+
+    Unsupported are
+
+      * Multiple type arguments
+
+      * Tuple, Function, List types
+
+      * All primitive types (also when used in user defined types!)
+
+    Use with care.
+ -}
+module Text.GRead.Derive (deriveGrammar, deriveSimpleGrammar) where
+
+import Text.GRead.Grammar
+import Language.AbstractSyntax.TTTAS
+
+import Text.GRead.Derive.BindingGroup
+
+import Data.List (nub, foldl', foldl1')
+import Data.Foldable (foldr')
+import Data.Map (Map)
+import qualified Data.Map as Map (insertWith, empty, toList)
+import Control.Monad (foldM)
+
+import Language.Haskell.TH
+import Language.Haskell.TH.Syntax
+
+{-|
+    Derive a 'Text.GRead.Gram' instance.  This is a Template Haskell function.  Usage example:
+
+@
+data T1 = C1 | C2 | C3
+
+$(deriveGrammar ''T1)
+@
+-}
+deriveGrammar :: Name -> Q [Dec]
+deriveGrammar name = do
+    bindingGroup <- getBindingGroup name
+    deriveGrammar' name bindingGroup
+
+
+{-|
+    Simpler version of 'deriveGrammar' that doesn't do binding group
+    calculations.  Use this for large types without cyclic references to other
+    types.
+
+    For example, if you want to derive the 'HDYRM.Gram' for 'T3' and 'T4'
+    below, you will need the normal 'deriveGrammar'.
+
+@
+data T3 = T3 T4 | C3
+data T4 = T4 T3 | C4
+@
+-}
+deriveSimpleGrammar :: Name -> Q [Dec]
+deriveSimpleGrammar name = deriveGrammar' name []
+
+deriveGrammar' :: Name -> BindingGroup -> Q [Dec]
+deriveGrammar' name bindingGroup = do
+    (UserD _ args cs) <- getUserType name
+    body              <- mkBody name cs bindingGroup
+    return [InstanceD (mkContext cs) (mkInstanceType name args) body]
+
+mkContext :: [Con] -> Cxt
+mkContext = map (ClassP ''Gram) . map (: []) . uniqueVars . consArgsTypes
+
+mkInstanceType :: Name -> [Name] -> Type
+mkInstanceType name = AppT (ConT ''Gram) . foldl1' AppT . (:) (ConT name) . map VarT
+
+consArgsTypes :: [Con] -> [Type]
+consArgsTypes = concatMap consArgs
+    where
+        consArgs :: Con -> [Type]
+        consArgs (NormalC _ args)      = map snd args
+        consArgs (InfixC  argl _ argr) = [snd argl, snd argr]
+        consArgs _                     = error "Error, unsupported type."
+
+uniqueVars :: [Type] -> [Type]
+uniqueVars =  nub . filter isVarT . unrollApps
+    where
+        unrollApps :: [Type] -> [Type]
+        unrollApps [] = []
+        unrollApps (a@(AppT _ _):ts) = unrollApp a ++ unrollApps ts
+        unrollApps (other:ts)        = other : unrollApps ts
+
+isVarT :: Type -> Bool
+isVarT (VarT _) = True
+isVarT _        = False
+
+
+mkBody :: Name -> [Con] -> BindingGroup -> Q [Dec]
+mkBody top cs bindingGroup = do
+    let bindingGroup' | bindingGroup == [] = [(top, [])]
+                      | otherwise          = bindingGroup
+        neededInstances = concatMap snd bindingGroup'
+    strongEdges      <- mapM (calculateStrongEdges neededInstances) bindingGroup'
+    instances        <- mapM (createInstances neededInstances strongEdges) bindingGroup'
+    let instances'      = concat instances
+        nontsInstance   = mkNontsInstance strongEdges bindingGroup' (instanceExps instances')
+        topPat          = map varP (instanceNames instances')
+        env             = appsE $ (lamE topPat nontsInstance) : (linkRefs (length instances'))
+    [d|  {-grammar :: DGrammar a;-} grammar = DGrammar Zero $(sigE env (envSignature cs (instanceTypes instances'))) |]
+    where
+        instanceNames = map (fst . fst)
+        instanceTypes = map (snd . fst)
+        instanceExps  = map snd
+
+
+-- Only edges that are not in the binding group
+calculateStrongEdges :: [(Name, [[Type]])] -> (Name, [(Name, [[Type]])]) -> Q (Name, [Type])
+calculateStrongEdges needed (typeName, _) = do
+    (UserD _ _ cs) <- getUserType typeName
+    return $ (typeName, mkNonBGEdges typeName (map fst needed) (bindingGroupEdges typeName needed) cs)
+    where
+        bindingGroupEdges tName nd = maybe [] concat $ Prelude.lookup tName nd
+
+        mkNonBGEdges self done before = filter (not . already done before self) . consArgsTypes
+
+        already :: [Name] -> [Type] -> Name -> Type -> Bool
+        already _    _      _    (VarT _)      = True
+        already done before self c@(ConT name) =  elem c before
+                                               || elem name done
+                                               || name == self
+        already done before self a@(AppT _ _)  = elem a before
+                                               || elem (conName a) done
+                                               || (conName a) == self
+            where conName = (\(ConT name) -> name) . head . unrollApp
+        already _ _ _ _ = error "Error, unsupported type."
+        -- TODO Incomplete: TupleT, ListT, etc...
+
+getEdges :: Name -> [(Name, [Type])] -> [Type]
+getEdges name = maybe [] id . Prelude.lookup name
+
+
+-- The non-terminal rules, wrapped in lambda expression to select the grammars from this closed group
+mkNontsInstance :: [(Name, [Type])] -> BindingGroup -> [ExpQ] -> Q Exp
+mkNontsInstance strongEdges bindingGroup instances = do
+        nontsTypes <- mapM (mkNontsType strongEdges) bindingGroup
+        appsE $ (lamE (mkNontsPat nontsTypes bindingGroup) (foldr' appE [|Empty|] instances))
+              : (mkNonts strongEdges bindingGroup)
+        where
+            mkNonts edges    = map (mkGrammarPart edges)
+            mkNontsPat types = map (\(t, v) -> sigP v (do return t)) . zip types . nontsPatVars
+            nontsPatVars     = map (varP . type2Nonts . fst)
+
+envSignature :: [Con] -> [Type] -> Q Type
+envSignature cs types = if null (consVars cs)
+                            then envSignature'
+                            else forallT (consVars cs) (return $ mkContext cs) envSignature'
+    where
+        consVars      :: [Con] -> [TyVarBndr]
+        consVars      = map (\(VarT n) -> (PlainTV n)) . uniqueVars . consArgsTypes
+
+        envSignature' :: Q Type
+        envSignature' = foldl1' appT [conT ''Env, conT ''DGram, tupleTypes types, tupleTypes types]
+
+        -- Make a nested tuple of the types
+        tupleTypes    :: [Type] -> Q Type
+        tupleTypes    = foldr' ((\x xs -> appT (appT (tupleT 2) xs) x)) (conT ''()) . map return
+
+
+--  If there are args, see if we need instances (from needed)
+--  Create all needed instances
+--  Also, if there's still a var, create a consG for that
+--  Return a list of tuples of the name of an instance and the instance itself
+createInstances :: [(Name, [[Type]])] -> [(Name, [Type])] -> (Name, [(Name, [[Type]])]) -> Q [((Name, Type), ExpQ)]
+createInstances needed strongEdges (typeName, edges) = do
+    (UserD _ args _) <- getUserType typeName
+    let instancesNeeded   = maybe [map VarT args] id $ Prelude.lookup typeName needed
+    return $  mkInstances      instancesNeeded
+           ++ mkArgInstances   instancesNeeded
+           ++ mkNonBGInstances typeName strongEdges
+    where
+        mkConsG :: Type -> ((Name, Type), ExpQ)
+        mkConsG typ = ((instName typeName typ, typ), [|consG grammar|])
+
+        mkInstances    = map (createInstance (typeName, edges) (getEdges typeName strongEdges))
+        mkArgInstances = map mkConsG . filter isVarT . concat
+
+        mkNonBGInstances tName = map mkConsG . getEdges tName
+
+
+createInstance :: (Name, [(Name, [[Type]])]) -> [Type] -> [Type] -> ((Name, Type), ExpQ)
+createInstance (typeName, edges) strongEdges inst = ((iName, iType), [|consD $(appsE $ (varE $ type2Nonts typeName) : (selfArgs ++ strongEdgeArgs ++ nonBGStrongEdges)) |])
+    where iName            = nameArgs (type2TopRef typeName) inst
+          iType            = foldl1' AppT (ConT typeName : inst)
+          selfArgs         = (varE iName) : (map (varE . instName typeName) inst)
+          strongEdgeArgs   = concatMap refEdge edges
+          nonBGStrongEdges = map (varE . instName typeName) strongEdges
+
+instName :: Name -> Type -> Name
+instName top (VarT n)     = var2TopRef top n
+instName _ (ConT n)       = type2TopRef n
+instName _ app@(AppT _ _) = app2TopRef $ unrollApp app
+instName _ _              = error "Error, unsupported type."
+
+mkNontsType :: [(Name, [Type])] -> (Name, [(Name, [[Type]])]) -> Q Type
+mkNontsType strongEdges (typeName, edges) = do
+    (UserD _ args _) <- getUserType typeName
+    let envName    = mkName "env"
+        env        = VarT envName
+        ref        = ConT ''Ref
+        argsType   = map VarT args
+        topType    = foldl' AppT (ConT typeName) argsType
+        resultType = AppT (AppT (ConT ''DLNontDefs) topType) env
+        refTo      = (topType : argsType) ++ concatMap edgeType edges ++ getEdges typeName strongEdges
+        refs       = map (\r -> AppT (AppT ref r) env) refTo
+        nontsType  = foldr' (\r rs -> AppT (AppT ArrowT r) rs) resultType refs
+    return $ ForallT ((PlainTV envName):(map PlainTV args)) [] nontsType
+
+edgeType :: (Name, [[Type]]) -> [Type]
+edgeType (con, argss) = map (foldl' AppT (ConT con)) argss
+
+mkGrammarPart :: [(Name, [Type])] -> (Name, [(Name, [[Type]])]) -> Q Exp
+mkGrammarPart strongEdges (typeName, edges) = do
+    (UserD _ args cons) <- getUserType typeName
+    let selfArgsNames         = (type2Ref typeName) : (map (var2Ref typeName) args)
+        strongEdgeNames       = concatMap nameEdge edges
+        -- Strong edges that are not part of the binding group
+        nonBGStrongEdgeNames  = map getTypeName $ getEdges typeName strongEdges
+    lamE (map varP (selfArgsNames ++ strongEdgeNames ++ nonBGStrongEdgeNames)) (conProds cons typeName)
+    where
+        getTypeName (ConT name)  = type2Ref name
+        getTypeName a@(AppT _ _) = app2Ref (unrollApp a)
+        getTypeName _            = error "Error, unsupported type."
+        -- TODO Incomplete: TupleT, ListT, etc...
+
+
+refEdge :: (Name, [[Type]]) -> [ExpQ]
+refEdge (con, argss) = map (varE . nameArgs baseName) argss
+    where baseName = type2TopRef con
+
+nameEdge :: (Name, [[Type]]) -> [Name]
+nameEdge (con, argss) = map (nameArgs baseName) argss
+    where baseName = type2Ref con
+
+--  TODO: Extend this for 'AppT' and clean up
+nameArgs :: Name -> [Type] -> Name
+nameArgs baseName []                  = baseName
+nameArgs baseName ((ConT name):types) = nameArgs (mkName $ nameBase baseName ++ "'" ++ nameBase name) types
+nameArgs baseName ((VarT name):types) = nameArgs (mkName $ nameBase baseName ++ "'" ++ nameBase name) types
+nameArgs _        _                   = error "Error, unsupported type."
+--  TODO: Simplification, not finished, doesn't support AppT at the moment
+getNeededInstances :: (Name, [[Type]]) -> [(Name, [Type])]
+getNeededInstances (top, argss) = concatMap (\args -> (top,args): map (\arg -> (typeName arg, [])) args) argss
+    where typeName (ConT n)     = n --  Break with a pattern match failure
+          typeName _            = error "Error, unsupported type."
+
+linkRefs :: Int -> [ExpQ]
+linkRefs x = linkRefs' (x-1) [[|Zero|]] --  Minus one is for the top type, works always
+    where linkRefs' 0  done       = reverse done
+          linkRefs' x' l@(lst:_)  = linkRefs' (x' - 1) ((appE [|Suc|] lst):l)
+          linkRefs' _  _          = error "Impossible Error!"
+
+type PrecProd = Map Int [ExpQ]
+
+conProds :: [Con] -> Name -> Q Exp
+conProds cs top = do
+    prods    <- foldM (insertCon top) Map.empty cs
+    --  Add the parenthesis production
+    prods'   <- insertCon' 10 (parensProd top) prods
+    let prodList = map (\(prec, nonts) ->
+                        tupE [ [|DRef ($(varE $ type2Ref top), prec)|]
+                             , appE [|DPS|] (listE nonts)
+                             ]
+                       )
+                   (Map.toList prods')
+    appE [|DLNontDefs|] $ listE prodList
+
+parensProd :: Name -> Q Exp
+parensProd top = [| dTerm "(" .#. (dNont ($(varE $ type2Ref top), 0)) .#. dTerm ")" .#. dEnd parenT |]
+
+getTypeRef :: Name -> Int -> StrictType -> Q Exp
+getTypeRef top p (_,t) = [| dNont ($(varE (refTo top t)), p) |]
+    where  refTo top' (VarT n)           = var2Ref top' n
+           refTo _    (ConT n)           = type2Ref n
+           refTo top' app@(AppT _ _)     = appOrType2Ref top' $ unrollApp app
+           refTo _    _                  = error "Error, unsupported type."
+           appOrType2Ref cur app@((ConT con):_) | cur == con   = type2Ref cur --  TODO: Is this always true?
+                                                | otherwise    = app2Ref app
+           appOrType2Ref _   _   = error "Error, unsupported type."
+           --  TODO Incomplete?
+
+--  TODO: first argument doesn't have to be a con!
+app2Ref :: [Type] -> Name
+app2Ref ((ConT con):args) = nameArgs (type2Ref con) args
+app2Ref _                 = error "Error, unsupported type."
+
+app2TopRef :: [Type] -> Name
+app2TopRef ((ConT con):args) = nameArgs (type2TopRef con) args
+app2TopRef _                 = error "Error, unsupported type."
+
+--  TODO: Nice for readability, but should be cleaned up
+type2Ref :: Name -> Name
+type2Ref = type2Ref' "_r_"
+
+type2Ref' :: String -> Name -> Name
+type2Ref' prefix t = mkName $ prefix ++ nameBase t
+
+var2Ref :: Name -> Name -> Name
+var2Ref = var2Ref' "_r_"
+
+var2Ref' :: String -> Name -> Name -> Name
+var2Ref' prefix t v = mkName $ prefix ++ nameBase t ++ "_" ++ nameBase v
+
+type2Nonts :: Name -> Name
+type2Nonts = type2Ref' "_nonts_"
+
+var2TopRef :: Name -> Name -> Name
+var2TopRef = var2Ref' "_t_"
+
+type2TopRef :: Name -> Name
+type2TopRef = type2Ref' "_t_"
+
+nameStringE :: Name -> Q Exp
+nameStringE = stringE . nameBase
+
+insertCon :: Name -> PrecProd -> Con -> Q PrecProd
+insertCon top pp (NormalC name args) = do
+    insertCon' 10 (foldr1 appE (
+        [ [| (.#.) $ dTerm $(nameStringE name) |] ]     ++
+        ( map (appE [|(.#.)|] . (getTypeRef top 0)) args )  ++
+        [ [| dEnd $(consExp name (length args)) |] ]
+        )) pp
+
+insertCon top pp (InfixC argl name argr)  = do
+    (prec, precl, precr) <- getPrec name
+    let  refl  = getTypeRef top precl argl
+         refr  = getTypeRef top precr argr
+    insertCon' prec (infixProd refl (nameBase name) refr (conE name)) pp
+
+insertCon _ _ _ = undefined --  TODO
+
+
+infixProd :: ExpQ -> String -> ExpQ -> ExpQ -> Q Exp
+infixProd argl term argr op =
+    [|  $argl .#. dTerm term .#. $argr .#.
+        dEnd (\e1 _ e2 -> $(appsE [op, [|e2|], [|e1|]]))
+    |]
+
+getPrec :: Name -> Q (Int, Int, Int)
+getPrec name = do
+    (DataConI _ _ _ (Fixity f fd)) <- reify name
+    return (f, (f + fLeft fd), (f + fRight fd))
+    where
+        fLeft   InfixL  = 0
+        fLeft   InfixR  = 1
+        fLeft   _       = error "Error, unsupported fixity."
+        fRight  InfixR  = 0
+        fRight  InfixL  = 1
+        fRight  _       = error "Error, unsupported fixity."
+
+
+insertCon' :: Int -> ExpQ -> PrecProd -> Q PrecProd
+insertCon' i e pp = return $ Map.insertWith (flip (++)) i [e] pp
+
+consExp :: Name -> Int -> Q Exp
+consExp name times = do
+    let names = map (\x -> mkName $ "arg" ++ show x) [1..times]
+    lamE (map varP names ++ [wildP]) (appsE $ (conE name):(map varE (reverse names)))
+</pre></br><h2>printed</h2></br><pre>{-# LANGUAGE TemplateHaskell #-}
+
+{-|
+    Automatically derive 'Text.GRead.Gram' instances for data types.
+
+    /Note!/ This is not a complete implementation and will not work for all datatypes.
+
+    Unsupported are
+
+      * Multiple type arguments
+
+      * Tuple, Function, List types
+
+      * All primitive types (also when used in user defined types!)
+
+    Use with care.
+ -}
+module Text.GRead.Derive (deriveGrammar, deriveSimpleGrammar) where
+
+import Text.GRead.Grammar
+import Language.AbstractSyntax.TTTAS
+
+import Text.GRead.Derive.BindingGroup
+
+import Data.List (nub, foldl', foldl1')
+import Data.Foldable (foldr')
+import Data.Map (Map)
+import qualified Data.Map as Map (insertWith, empty, toList)
+import Control.Monad (foldM)
+
+import Language.Haskell.TH
+import Language.Haskell.TH.Syntax
+
+{-|
+    Derive a 'Text.GRead.Gram' instance.  This is a Template Haskell function.  Usage example:
+
+@
+data T1 = C1 | C2 | C3
+
+$(deriveGrammar ''T1)
+@
+-}
+deriveGrammar :: Name -> Q [Dec]
+deriveGrammar name = do
+    bindingGroup <- getBindingGroup name
+    deriveGrammar' name bindingGroup
+
+
+{-|
+    Simpler version of 'deriveGrammar' that doesn't do binding group
+    calculations.  Use this for large types without cyclic references to other
+    types.
+
+    For example, if you want to derive the 'HDYRM.Gram' for 'T3' and 'T4'
+    below, you will need the normal 'deriveGrammar'.
+
+@
+data T3 = T3 T4 | C3
+data T4 = T4 T3 | C4
+@
+-}
+deriveSimpleGrammar :: Name -> Q [Dec]
+deriveSimpleGrammar name = deriveGrammar' name []
+
+deriveGrammar' :: Name -> BindingGroup -> Q [Dec]
+deriveGrammar' name bindingGroup = do
+    (UserD _ args cs) <- getUserType name
+    body              <- mkBody name cs bindingGroup
+    return [InstanceD (mkContext cs) (mkInstanceType name args) body]
+
+mkContext :: [Con] -> Cxt
+mkContext = map (ClassP ''Gram) . map (: []) . uniqueVars . consArgsTypes
+
+mkInstanceType :: Name -> [Name] -> Type
+mkInstanceType name = AppT (ConT ''Gram) . foldl1' AppT . (:) (ConT name) . map VarT
+
+consArgsTypes :: [Con] -> [Type]
+consArgsTypes = concatMap consArgs
+    where
+        consArgs :: Con -> [Type]
+        consArgs (NormalC _ args)      = map snd args
+        consArgs (InfixC  argl _ argr) = [snd argl, snd argr]
+        consArgs _                     = error "Error, unsupported type."
+
+uniqueVars :: [Type] -> [Type]
+uniqueVars =  nub . filter isVarT . unrollApps
+    where
+        unrollApps :: [Type] -> [Type]
+        unrollApps [] = []
+        unrollApps (a@(AppT _ _):ts) = unrollApp a ++ unrollApps ts
+        unrollApps (other:ts)        = other : unrollApps ts
+
+isVarT :: Type -> Bool
+isVarT (VarT _) = True
+isVarT _        = False
+
+
+mkBody :: Name -> [Con] -> BindingGroup -> Q [Dec]
+mkBody top cs bindingGroup = do
+    let bindingGroup' | bindingGroup == [] = [(top, [])]
+                      | otherwise          = bindingGroup
+        neededInstances = concatMap snd bindingGroup'
+    strongEdges      <- mapM (calculateStrongEdges neededInstances) bindingGroup'
+    instances        <- mapM (createInstances neededInstances strongEdges) bindingGroup'
+    let instances'      = concat instances
+        nontsInstance   = mkNontsInstance strongEdges bindingGroup' (instanceExps instances')
+        topPat          = map varP (instanceNames instances')
+        env             = appsE $ (lamE topPat nontsInstance) : (linkRefs (length instances'))
+    [d|  {-grammar :: DGrammar a;-} grammar = DGrammar Zero $(sigE env (envSignature cs (instanceTypes instances'))) |]
+    where
+        instanceNames = map (fst . fst)
+        instanceTypes = map (snd . fst)
+        instanceExps  = map snd
+
+
+-- Only edges that are not in the binding group
+calculateStrongEdges :: [(Name, [[Type]])] -> (Name, [(Name, [[Type]])]) -> Q (Name, [Type])
+calculateStrongEdges needed (typeName, _) = do
+    (UserD _ _ cs) <- getUserType typeName
+    return $ (typeName, mkNonBGEdges typeName (map fst needed) (bindingGroupEdges typeName needed) cs)
+    where
+        bindingGroupEdges tName nd = maybe [] concat $ Prelude.lookup tName nd
+
+        mkNonBGEdges self done before = filter (not . already done before self) . consArgsTypes
+
+        already :: [Name] -> [Type] -> Name -> Type -> Bool
+        already _    _      _    (VarT _)      = True
+        already done before self c@(ConT name) =  elem c before
+                                               || elem name done
+                                               || name == self
+        already done before self a@(AppT _ _)  = elem a before
+                                               || elem (conName a) done
+                                               || (conName a) == self
+            where conName = (\(ConT name) -> name) . head . unrollApp
+        already _ _ _ _ = error "Error, unsupported type."
+        -- TODO Incomplete: TupleT, ListT, etc...
+
+getEdges :: Name -> [(Name, [Type])] -> [Type]
+getEdges name = maybe [] id . Prelude.lookup name
+
+
+-- The non-terminal rules, wrapped in lambda expression to select the grammars from this closed group
+mkNontsInstance :: [(Name, [Type])] -> BindingGroup -> [ExpQ] -> Q Exp
+mkNontsInstance strongEdges bindingGroup instances = do
+        nontsTypes <- mapM (mkNontsType strongEdges) bindingGroup
+        appsE $ (lamE (mkNontsPat nontsTypes bindingGroup) (foldr' appE [|Empty|] instances))
+              : (mkNonts strongEdges bindingGroup)
+        where
+            mkNonts edges    = map (mkGrammarPart edges)
+            mkNontsPat types = map (\(t, v) -> sigP v (do return t)) . zip types . nontsPatVars
+            nontsPatVars     = map (varP . type2Nonts . fst)
+
+envSignature :: [Con] -> [Type] -> Q Type
+envSignature cs types = if null (consVars cs)
+                            then envSignature'
+                            else forallT (consVars cs) (return $ mkContext cs) envSignature'
+    where
+        consVars      :: [Con] -> [TyVarBndr]
+        consVars      = map (\(VarT n) -> (PlainTV n)) . uniqueVars . consArgsTypes
+
+        envSignature' :: Q Type
+        envSignature' = foldl1' appT [conT ''Env, conT ''DGram, tupleTypes types, tupleTypes types]
+
+        -- Make a nested tuple of the types
+        tupleTypes    :: [Type] -> Q Type
+        tupleTypes    = foldr' ((\x xs -> appT (appT (tupleT 2) xs) x)) (conT ''()) . map return
+
+
+--  If there are args, see if we need instances (from needed)
+--  Create all needed instances
+--  Also, if there's still a var, create a consG for that
+--  Return a list of tuples of the name of an instance and the instance itself
+createInstances :: [(Name, [[Type]])] -> [(Name, [Type])] -> (Name, [(Name, [[Type]])]) -> Q [((Name, Type), ExpQ)]
+createInstances needed strongEdges (typeName, edges) = do
+    (UserD _ args _) <- getUserType typeName
+    let instancesNeeded   = maybe [map VarT args] id $ Prelude.lookup typeName needed
+    return $  mkInstances      instancesNeeded
+           ++ mkArgInstances   instancesNeeded
+           ++ mkNonBGInstances typeName strongEdges
+    where
+        mkConsG :: Type -> ((Name, Type), ExpQ)
+        mkConsG typ = ((instName typeName typ, typ), [|consG grammar|])
+
+        mkInstances    = map (createInstance (typeName, edges) (getEdges typeName strongEdges))
+        mkArgInstances = map mkConsG . filter isVarT . concat
+
+        mkNonBGInstances tName = map mkConsG . getEdges tName
+
+
+createInstance :: (Name, [(Name, [[Type]])]) -> [Type] -> [Type] -> ((Name, Type), ExpQ)
+createInstance (typeName, edges) strongEdges inst = ((iName, iType), [|consD $(appsE $ (varE $ type2Nonts typeName) : (selfArgs ++ strongEdgeArgs ++ nonBGStrongEdges)) |])
+    where iName            = nameArgs (type2TopRef typeName) inst
+          iType            = foldl1' AppT (ConT typeName : inst)
+          selfArgs         = (varE iName) : (map (varE . instName typeName) inst)
+          strongEdgeArgs   = concatMap refEdge edges
+          nonBGStrongEdges = map (varE . instName typeName) strongEdges
+
+instName :: Name -> Type -> Name
+instName top (VarT n)     = var2TopRef top n
+instName _ (ConT n)       = type2TopRef n
+instName _ app@(AppT _ _) = app2TopRef $ unrollApp app
+instName _ _              = error "Error, unsupported type."
+
+mkNontsType :: [(Name, [Type])] -> (Name, [(Name, [[Type]])]) -> Q Type
+mkNontsType strongEdges (typeName, edges) = do
+    (UserD _ args _) <- getUserType typeName
+    let envName    = mkName "env"
+        env        = VarT envName
+        ref        = ConT ''Ref
+        argsType   = map VarT args
+        topType    = foldl' AppT (ConT typeName) argsType
+        resultType = AppT (AppT (ConT ''DLNontDefs) topType) env
+        refTo      = (topType : argsType) ++ concatMap edgeType edges ++ getEdges typeName strongEdges
+        refs       = map (\r -> AppT (AppT ref r) env) refTo
+        nontsType  = foldr' (\r rs -> AppT (AppT ArrowT r) rs) resultType refs
+    return $ ForallT ((PlainTV envName):(map PlainTV args)) [] nontsType
+
+edgeType :: (Name, [[Type]]) -> [Type]
+edgeType (con, argss) = map (foldl' AppT (ConT con)) argss
+
+mkGrammarPart :: [(Name, [Type])] -> (Name, [(Name, [[Type]])]) -> Q Exp
+mkGrammarPart strongEdges (typeName, edges) = do
+    (UserD _ args cons) <- getUserType typeName
+    let selfArgsNames         = (type2Ref typeName) : (map (var2Ref typeName) args)
+        strongEdgeNames       = concatMap nameEdge edges
+        -- Strong edges that are not part of the binding group
+        nonBGStrongEdgeNames  = map getTypeName $ getEdges typeName strongEdges
+    lamE (map varP (selfArgsNames ++ strongEdgeNames ++ nonBGStrongEdgeNames)) (conProds cons typeName)
+    where
+        getTypeName (ConT name)  = type2Ref name
+        getTypeName a@(AppT _ _) = app2Ref (unrollApp a)
+        getTypeName _            = error "Error, unsupported type."
+        -- TODO Incomplete: TupleT, ListT, etc...
+
+
+refEdge :: (Name, [[Type]]) -> [ExpQ]
+refEdge (con, argss) = map (varE . nameArgs baseName) argss
+    where baseName = type2TopRef con
+
+nameEdge :: (Name, [[Type]]) -> [Name]
+nameEdge (con, argss) = map (nameArgs baseName) argss
+    where baseName = type2Ref con
+
+--  TODO: Extend this for 'AppT' and clean up
+nameArgs :: Name -> [Type] -> Name
+nameArgs baseName []                  = baseName
+nameArgs baseName ((ConT name):types) = nameArgs (mkName $ nameBase baseName ++ "'" ++ nameBase name) types
+nameArgs baseName ((VarT name):types) = nameArgs (mkName $ nameBase baseName ++ "'" ++ nameBase name) types
+nameArgs _        _                   = error "Error, unsupported type."
+--  TODO: Simplification, not finished, doesn't support AppT at the moment
+getNeededInstances :: (Name, [[Type]]) -> [(Name, [Type])]
+getNeededInstances (top, argss) = concatMap (\args -> (top,args): map (\arg -> (typeName arg, [])) args) argss
+    where typeName (ConT n)     = n --  Break with a pattern match failure
+          typeName _            = error "Error, unsupported type."
+
+linkRefs :: Int -> [ExpQ]
+linkRefs x = linkRefs' (x-1) [[|Zero|]] --  Minus one is for the top type, works always
+    where linkRefs' 0  done       = reverse done
+          linkRefs' x' l@(lst:_)  = linkRefs' (x' - 1) ((appE [|Suc|] lst):l)
+          linkRefs' _  _          = error "Impossible Error!"
+
+type PrecProd = Map Int [ExpQ]
+
+conProds :: [Con] -> Name -> Q Exp
+conProds cs top = do
+    prods    <- foldM (insertCon top) Map.empty cs
+    --  Add the parenthesis production
+    prods'   <- insertCon' 10 (parensProd top) prods
+    let prodList = map (\(prec, nonts) ->
+                        tupE [ [|DRef ($(varE $ type2Ref top), prec)|]
+                             , appE [|DPS|] (listE nonts)
+                             ]
+                       )
+                   (Map.toList prods')
+    appE [|DLNontDefs|] $ listE prodList
+
+parensProd :: Name -> Q Exp
+parensProd top = [| dTerm "(" .#. (dNont ($(varE $ type2Ref top), 0)) .#. dTerm ")" .#. dEnd parenT |]
+
+getTypeRef :: Name -> Int -> StrictType -> Q Exp
+getTypeRef top p (_,t) = [| dNont ($(varE (refTo top t)), p) |]
+    where  refTo top' (VarT n)           = var2Ref top' n
+           refTo _    (ConT n)           = type2Ref n
+           refTo top' app@(AppT _ _)     = appOrType2Ref top' $ unrollApp app
+           refTo _    _                  = error "Error, unsupported type."
+           appOrType2Ref cur app@((ConT con):_) | cur == con   = type2Ref cur --  TODO: Is this always true?
+                                                | otherwise    = app2Ref app
+           appOrType2Ref _   _   = error "Error, unsupported type."
+           --  TODO Incomplete?
+
+--  TODO: first argument doesn't have to be a con!
+app2Ref :: [Type] -> Name
+app2Ref ((ConT con):args) = nameArgs (type2Ref con) args
+app2Ref _                 = error "Error, unsupported type."
+
+app2TopRef :: [Type] -> Name
+app2TopRef ((ConT con):args) = nameArgs (type2TopRef con) args
+app2TopRef _                 = error "Error, unsupported type."
+
+--  TODO: Nice for readability, but should be cleaned up
+type2Ref :: Name -> Name
+type2Ref = type2Ref' "_r_"
+
+type2Ref' :: String -> Name -> Name
+type2Ref' prefix t = mkName $ prefix ++ nameBase t
+
+var2Ref :: Name -> Name -> Name
+var2Ref = var2Ref' "_r_"
+
+var2Ref' :: String -> Name -> Name -> Name
+var2Ref' prefix t v = mkName $ prefix ++ nameBase t ++ "_" ++ nameBase v
+
+type2Nonts :: Name -> Name
+type2Nonts = type2Ref' "_nonts_"
+
+var2TopRef :: Name -> Name -> Name
+var2TopRef = var2Ref' "_t_"
+
+type2TopRef :: Name -> Name
+type2TopRef = type2Ref' "_t_"
+
+nameStringE :: Name -> Q Exp
+nameStringE = stringE . nameBase
+
+insertCon :: Name -> PrecProd -> Con -> Q PrecProd
+insertCon top pp (NormalC name args) = do
+    insertCon' 10 (foldr1 appE (
+        [ [| (.#.) $ dTerm $(nameStringE name) |] ]     ++
+        ( map (appE [|(.#.)|] . (getTypeRef top 0)) args )  ++
+        [ [| dEnd $(consExp name (length args)) |] ]
+        )) pp
+
+insertCon top pp (InfixC argl name argr)  = do
+    (prec, precl, precr) <- getPrec name
+    let  refl  = getTypeRef top precl argl
+         refr  = getTypeRef top precr argr
+    insertCon' prec (infixProd refl (nameBase name) refr (conE name)) pp
+
+insertCon _ _ _ = undefined --  TODO
+
+
+infixProd :: ExpQ -> String -> ExpQ -> ExpQ -> Q Exp
+infixProd argl term argr op =
+    [|  argl .#. dTerm term .#. argr .#.
+        dEnd (\e1 _ e2 -> $(appsE [op, [|e2|], [|e1|]]))
+    |]
+
+getPrec :: Name -> Q (Int, Int, Int)
+getPrec name = do
+    (DataConI _ _ _ (Fixity f fd)) <- reify name
+    return (f, (f + fLeft fd), (f + fRight fd))
+    where
+        fLeft   InfixL  = 0
+        fLeft   InfixR  = 1
+        fLeft   _       = error "Error, unsupported fixity."
+        fRight  InfixR  = 0
+        fRight  InfixL  = 1
+        fRight  _       = error "Error, unsupported fixity."
+
+
+insertCon' :: Int -> ExpQ -> PrecProd -> Q PrecProd
+insertCon' i e pp = return $ Map.insertWith (flip (++)) i [e] pp
+
+consExp :: Name -> Int -> Q Exp
+consExp name times = do
+    let names = map (\x -> mkName $ "arg" ++ show x) [1..times]
+    lamE (map varP names ++ [wildP]) (appsE $ (conE name):(map varE (reverse names)))
+
+</pre>

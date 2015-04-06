@@ -1,0 +1,100 @@
+<a href="Commands.hs794014915545293947.out.html">prev</a></br><a href="failures.html">home</a></br><a href="Common.hs120005621977466363.out.html">next</a></br></br><pre>4d3
+< {- MISSING HASH #-} -- {-# MISSING HASH #-}
+5d3
+< <COMMENT> {- INLINE X -}
+6d3
+< {- INLINE Y -} -- {-# INLINE Y #-}
+7d3
+< {- INLINE[~k] f -} -- {-# INLINE[~k] f #-}
+8d3
+< {- NOINLINE Y -} -- {-# NOINLINE Y #-}
+9c4
+< {- UNKNOWN Y -}
+---
+> {- MISSING HASH # -- {-# MISSING HASH #
+9a5
+> <COMMENT> {- INLINE X 
+9a6
+> {- INLINE Y  -- {-# INLINE Y #
+9a7
+> {- INLINE[~k] f  -- {-# INLINE[~k] f #
+9a8
+> {- NOINLINE Y  -- {-# NOINLINE Y #
+9a9
+> {- UNKNOWN Y 
+36a37
+> 
+</pre></br><h2>original</h2></br><pre>
+{-
+<TEST>
+{- MISSING HASH #-} -- {-# MISSING HASH #-}
+<COMMENT> {- INLINE X -}
+{- INLINE Y -} -- {-# INLINE Y #-}
+{- INLINE[~k] f -} -- {-# INLINE[~k] f #-}
+{- NOINLINE Y -} -- {-# NOINLINE Y #-}
+{- UNKNOWN Y -}
+<COMMENT> INLINE X
+</TEST>
+-}
+
+
+module Hint.Comment(commentHint) where
+
+import Hint.Type
+import Data.Char
+import Data.List.Extra
+
+
+pragmas = words $
+    "LANGUAGE OPTIONS_GHC INCLUDE WARNING DEPRECATED MINIMAL INLINE NOINLINE INLINABLE " ++
+    "CONLIKE LINE SPECIALIZE SPECIALISE UNPACK NOUNPACK SOURCE"
+
+
+commentHint :: Comment -> [Idea]
+commentHint c@(Comment True span s)
+    | "#" `isSuffixOf` s && not ("#" `isPrefixOf` s) = [suggest "Fix pragma markup" c $ '#':s]
+    | name `elem` pragmas = [suggest "Use pragma syntax" c $ "# " ++ trim s ++ " #"]
+        where name = takeWhile (\x -> isAlphaNum x || x == '_') $ dropWhile isSpace s
+commentHint _ = []
+
+suggest :: String -> Comment -> String -> Idea
+suggest msg (Comment typ pos s1) s2 = rawIdea Warning msg pos (f s1) (Just $ f s2) []
+    where f s = if typ then "{-" ++ s ++ "-}" else "--" ++ s
+</pre></br><h2>printed</h2></br><pre>
+{-
+<TEST>
+{- MISSING HASH # -- {-# MISSING HASH #
+<COMMENT> {- INLINE X 
+{- INLINE Y  -- {-# INLINE Y #
+{- INLINE[~k] f  -- {-# INLINE[~k] f #
+{- NOINLINE Y  -- {-# NOINLINE Y #
+{- UNKNOWN Y 
+<COMMENT> INLINE X
+</TEST>
+-}
+
+
+module Hint.Comment(commentHint) where
+
+import Hint.Type
+import Data.Char
+import Data.List.Extra
+
+
+pragmas = words $
+    "LANGUAGE OPTIONS_GHC INCLUDE WARNING DEPRECATED MINIMAL INLINE NOINLINE INLINABLE " ++
+    "CONLIKE LINE SPECIALIZE SPECIALISE UNPACK NOUNPACK SOURCE"
+
+
+commentHint :: Comment -> [Idea]
+commentHint c@(Comment True span s)
+    | "#" `isSuffixOf` s && not ("#" `isPrefixOf` s) = [suggest "Fix pragma markup" c $ '#':s]
+    | name `elem` pragmas = [suggest "Use pragma syntax" c $ "# " ++ trim s ++ " #"]
+        where name = takeWhile (\x -> isAlphaNum x || x == '_') $ dropWhile isSpace s
+commentHint _ = []
+
+suggest :: String -> Comment -> String -> Idea
+suggest msg (Comment typ pos s1) s2 = rawIdea Warning msg pos (f s1) (Just $ f s2) []
+    where f s = if typ then "{-" ++ s ++ "-}" else "--" ++ s
+
+</pre>

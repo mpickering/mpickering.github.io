@@ -1,0 +1,294 @@
+<a href="derive-list.hs563613512101929267.out.html">prev</a></br><a href="failures.html">home</a></br><a href="derive-pair.hs13585809791624379149.out.html">next</a></br></br><pre>20c20
+<   data Pair Int Int = PIntInt {-# UNPACK #-}!Int {-# UNPACK #-}!Int
+---
+>   data Pair Int Int = PIntInt {-# UNPACK #!Int {-# UNPACK #!Int
+60c60
+<     data List Int = EmptyInt | ConsInt {-# UNPACK #-}!Int (List Int)
+---
+>     data List Int = EmptyInt | ConsInt {-# UNPACK #!Int (List Int)
+141a142
+> 
+</pre></br><h2>original</h2></br><pre>
+{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE ExistentialQuantification #-}
+{-# OPTIONS -fglasgow-exts #-}
+
+module AdaptiveDerive where
+
+import Data.Generics
+import Data.List
+import Text.PrettyPrint
+import Control.Monad
+
+import Data.Int
+import Data.Word
+
+{-
+
+instance Adapt Int Int where
+
+  data Pair Int Int = PIntInt {-# UNPACK #-}!Int {-# UNPACK #-}!Int
+
+  fst (PIntInt a _) = a
+  snd (PIntInt _ b) = b
+  curry f x y    =  f (PIntInt x y)
+  uncurry f p    =  f (fst p) (snd p)
+
+ -}
+
+------------------------------------------------------------------------
+
+main = sequence_  . intersperse (putStrLn "") $
+    [ deriveM t | Box t <- types ]
+
+data Box = forall a. (Typeable a, Data a) => Box a
+
+types :: [Box]
+types = [ Box (undefined :: Int)
+        , Box (undefined :: Integer)
+        , Box (undefined :: Int8)
+        , Box (undefined :: Int16)
+        , Box (undefined :: Int32)
+        , Box (undefined :: Int64)
+        , Box (undefined :: Word)
+        , Box (undefined :: Word8)
+        , Box (undefined :: Word16)
+        , Box (undefined :: Word32)
+        , Box (undefined :: Word64)
+        , Box (undefined :: Double)
+        , Box (undefined :: Float)
+        , Box (undefined :: Char)
+        ]
+
+------------------------------------------------------------------------
+
+deriveM :: forall a . (Typeable a, Data a) => a -> IO ()
+deriveM (a :: a) = putStrLn $ derive (undefined :: a)
+
+{-
+instance AdaptList Int where
+    data List Int = EmptyInt | ConsInt {-# UNPACK #-}!Int (List Int)
+
+    empty               = EmptyInt
+    cons x xs           = ConsInt x xs
+    null EmptyInt       = True
+    null _              = False
+    head EmptyInt       = errorEmptyList "head"
+    head (ConsInt x _)  = x
+    tail EmptyInt       = errorEmptyList "tail"
+    tail (ConsInt _ xs) = xs
+-}
+
+derive :: (Typeable a, Data a) => a  -> String
+derive x = render $
+
+   hang
+    (hsep [text "instance", text "AdaptMaybe", text type_x, text "where"])
+    4
+    (vcat [
+        hsep [ text "data"
+             ,      text "Maybe"
+             ,      text type_x
+             , char '='
+             ,      text myNothingConstr
+             , char '|'
+             ,      text myJustConstr
+             ,      text "{-# UNPACK #-}!" <> text type_x
+             ]
+
+{-
+maybe n _ NothingInt  = n
+maybe _ f (JustInt x) = f x
+-}
+
+       ,hsep [  text "just"
+             ,char '='
+             ,  text myJustConstr]
+
+       ,hsep [  text "nothing"
+             ,char '='
+             ,  text myNothingConstr]
+
+       ,hsep [  text "isJust"
+             ,  parens (text myJustConstr <+> char '_' )
+             ,char '='
+             ,  text "True"]
+       ,hsep [  text "isJust"
+             ,  char '_'
+             ,char '='
+             ,  text "False"]
+
+       ,hsep [  text "maybe"
+             ,  char 'n'
+             ,  char '_'
+             ,  text myNothingConstr
+             ,char '='
+             ,  char 'n'
+             ]
+       ,hsep [  text "maybe"
+             ,  char '_'
+             ,  char 'f'
+             ,  parens (text myJustConstr <+> char 'x')
+             ,char '='
+             ,  char 'f'
+             ,  char 'x']
+
+        ])
+
+
+ where
+    type_x = inst_a
+
+    myNothingConstr = "Nothing" ++ type_x
+    myJustConstr = "Just" ++ type_x
+
+    inst_a = wrap $ tyConString typeName ++ concatMap (" "++) typeLetters
+        where (typeName,typeChildren) = splitTyConApp (typeOf x)
+              typeLetters = take nTypeChildren manyLetters
+              nTypeChildren = length typeChildren
+              wrap x = if nTypeChildren > 0 then "("++x++")" else x
+
+    manyLetters = map (:[]) ['a'..'z']
+</pre></br><h2>printed</h2></br><pre>
+{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE ExistentialQuantification #-}
+{-# OPTIONS -fglasgow-exts #-}
+
+module AdaptiveDerive where
+
+import Data.Generics
+import Data.List
+import Text.PrettyPrint
+import Control.Monad
+
+import Data.Int
+import Data.Word
+
+{-
+
+instance Adapt Int Int where
+
+  data Pair Int Int = PIntInt {-# UNPACK #!Int {-# UNPACK #!Int
+
+  fst (PIntInt a _) = a
+  snd (PIntInt _ b) = b
+  curry f x y    =  f (PIntInt x y)
+  uncurry f p    =  f (fst p) (snd p)
+
+ -}
+
+------------------------------------------------------------------------
+
+main = sequence_  . intersperse (putStrLn "") $
+    [ deriveM t | Box t <- types ]
+
+data Box = forall a. (Typeable a, Data a) => Box a
+
+types :: [Box]
+types = [ Box (undefined :: Int)
+        , Box (undefined :: Integer)
+        , Box (undefined :: Int8)
+        , Box (undefined :: Int16)
+        , Box (undefined :: Int32)
+        , Box (undefined :: Int64)
+        , Box (undefined :: Word)
+        , Box (undefined :: Word8)
+        , Box (undefined :: Word16)
+        , Box (undefined :: Word32)
+        , Box (undefined :: Word64)
+        , Box (undefined :: Double)
+        , Box (undefined :: Float)
+        , Box (undefined :: Char)
+        ]
+
+------------------------------------------------------------------------
+
+deriveM :: forall a . (Typeable a, Data a) => a -> IO ()
+deriveM (a :: a) = putStrLn $ derive (undefined :: a)
+
+{-
+instance AdaptList Int where
+    data List Int = EmptyInt | ConsInt {-# UNPACK #!Int (List Int)
+
+    empty               = EmptyInt
+    cons x xs           = ConsInt x xs
+    null EmptyInt       = True
+    null _              = False
+    head EmptyInt       = errorEmptyList "head"
+    head (ConsInt x _)  = x
+    tail EmptyInt       = errorEmptyList "tail"
+    tail (ConsInt _ xs) = xs
+-}
+
+derive :: (Typeable a, Data a) => a  -> String
+derive x = render $
+
+   hang
+    (hsep [text "instance", text "AdaptMaybe", text type_x, text "where"])
+    4
+    (vcat [
+        hsep [ text "data"
+             ,      text "Maybe"
+             ,      text type_x
+             , char '='
+             ,      text myNothingConstr
+             , char '|'
+             ,      text myJustConstr
+             ,      text "{-# UNPACK #-}!" <> text type_x
+             ]
+
+{-
+maybe n _ NothingInt  = n
+maybe _ f (JustInt x) = f x
+-}
+
+       ,hsep [  text "just"
+             ,char '='
+             ,  text myJustConstr]
+
+       ,hsep [  text "nothing"
+             ,char '='
+             ,  text myNothingConstr]
+
+       ,hsep [  text "isJust"
+             ,  parens (text myJustConstr <+> char '_' )
+             ,char '='
+             ,  text "True"]
+       ,hsep [  text "isJust"
+             ,  char '_'
+             ,char '='
+             ,  text "False"]
+
+       ,hsep [  text "maybe"
+             ,  char 'n'
+             ,  char '_'
+             ,  text myNothingConstr
+             ,char '='
+             ,  char 'n'
+             ]
+       ,hsep [  text "maybe"
+             ,  char '_'
+             ,  char 'f'
+             ,  parens (text myJustConstr <+> char 'x')
+             ,char '='
+             ,  char 'f'
+             ,  char 'x']
+
+        ])
+
+
+ where
+    type_x = inst_a
+
+    myNothingConstr = "Nothing" ++ type_x
+    myJustConstr = "Just" ++ type_x
+
+    inst_a = wrap $ tyConString typeName ++ concatMap (" "++) typeLetters
+        where (typeName,typeChildren) = splitTyConApp (typeOf x)
+              typeLetters = take nTypeChildren manyLetters
+              nTypeChildren = length typeChildren
+              wrap x = if nTypeChildren > 0 then "("++x++")" else x
+
+    manyLetters = map (:[]) ['a'..'z']
+
+</pre>

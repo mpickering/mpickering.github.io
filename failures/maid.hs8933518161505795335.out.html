@@ -1,0 +1,470 @@
+<a href="Magnet.hs16460350011025921153.out.html">prev</a></br><a href="failures.html">home</a></br><a href="Mailbox.hs16814847111976226904.out.html">next</a></br></br><pre>141c141
+<     expand_line (mime, extensions) = extensions.map (,mime)
+---
+>     expand_line (mime, extensions) = extensions.map ( mime)
+231a232
+> 
+</pre></br><h2>original</h2></br><pre>{-# LANGUAGE QuasiQuotes #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TupleSections #-}
+
+
+import System.Environment (getArgs)
+import Air.Env hiding (div, log, head, def)
+
+import Prelude ()
+import Data.Default (def)
+import Hack2.Contrib.Middleware.Config
+import Hack2.Contrib.Middleware.ContentLength
+import Hack2.Contrib.Middleware.Static
+import Hack2.Contrib.Middleware.SimpleAccessLogger
+import Hack2.Contrib.Middleware.UserMime
+import Hack2.Contrib.Middleware.Cascade
+import Hack2.Contrib.Middleware.XForwardedForToRemoteHost
+import Hack2.Contrib.Utils (use, unescape_uri)
+import Hack2.Contrib.Response (set_content_type, set_body_bytestring)
+import Hack2.Contrib.Request (path)
+import Hack2 hiding (body)
+import Data.List (isInfixOf, sort, (\\))
+import Text.HTML.Moe2 hiding ((/), select, br)
+import System.Directory (doesFileExist, getDirectoryContents, doesDirectoryExist)
+import qualified Data.ByteString.Char8 as B
+import Data.Maybe (fromMaybe, catMaybes)
+import System.FilePath (takeExtension)
+import System.Process (readProcess)
+import Control.Arrow ((***))
+
+
+import Hack2.Handler.SnapServer
+import qualified Data.Text as T
+import qualified Data.Text.Encoding as E
+import qualified Data.Text.IO as TextIO
+import Web.Maid.ApacheMimeTypes (apache_mime_types)
+import Web.Maid.DefaultCSSStyle (default_css_style)
+
+
+
+b2u :: String -> String
+b2u = B.pack > E.decodeUtf8 > T.unpack
+
+strip :: String -> String
+strip = T.pack > T.strip > T.unpack
+
+main :: IO ()
+main = do
+  args <- getArgs
+  let { _port =
+    if length args == (0 :: Int)
+      then 3000
+      else read - first args .fromMaybe ""
+    }
+
+  maid_mime_exist <- doesFileExist "mime.types"
+  mime_types <- if maid_mime_exist then TextIO.readFile "mime.types" else return default_mime_types
+
+  let { app =
+    dir_serve - \env -> do
+      let static_app = static (Just ".") [""] (const - return not_found)
+
+      r <- static_app env
+
+      -- let 'file' guess the file type
+      if env.pathInfo.B.unpack.unescape_uri.takeExtension.T.pack.belongs_to (parse_user_mimes mime_types.map fst)
+        then
+          return r
+        else
+          if r.status == 200
+           then do
+             _content_type <- readProcess "file" ["-b", "--mime", "." + env.pathInfo.B.unpack.unescape_uri] ""
+             -- putStrLn _content_type
+             return - r.set_content_type (_content_type.strip.B.pack)
+           else
+             return r
+    }
+
+
+
+
+  let version = "2014.8.31"
+      br = puts ""
+
+  br
+
+  puts - " ❂ Maid Version:    " + version
+  br
+
+  puts - "   Usage:           maid port"
+  puts - "   Example:         maid 3000"
+  br
+
+  puts - "   Serving on port: " ++ show _port
+  br
+
+  let maid_app = use (middleware_stack mime_types) app
+  runWithConfig def {port = _port} - maid_app
+
+  where
+    dir_serve app = cascade
+      [
+        app
+      , config (\env -> env {pathInfo = B.pack - pathInfo env.B.unpack / "index.htm"}) app
+      , config (\env -> env {pathInfo = B.pack - pathInfo env.B.unpack / "index.html"}) app
+      , list_dir
+      ]
+
+
+middleware_stack :: T.Text -> [Middleware]
+middleware_stack mime_types =
+  [
+    no_favicon
+  , content_length
+  , x_forwarded_for_to_remote_host
+  , simple_access_logger - Nothing
+  , user_mime - map (E.encodeUtf8 *** E.encodeUtf8) - parse_user_mimes mime_types
+  ]
+
+parse_user_mimes :: T.Text -> [(T.Text, T.Text)]
+parse_user_mimes =
+    T.unpack
+  > lines
+  > map strip
+  > reject null
+  > reject (starts_with "#")
+  > map parse_line
+  > catMaybes
+  > map expand_line
+  > concat
+  > map (T.pack *** T.pack)
+
+  where
+    parse_line :: String -> Maybe (String, [String])
+    parse_line line =
+      case line.words of
+        (x:y:ys) -> Just (x, y:ys)
+        _ -> Nothing
+
+    expand_line :: (String, [String]) -> [(String, String)]
+    expand_line (mime, extensions) = extensions.map (,mime)
+
+no_favicon :: Middleware
+no_favicon app = \env -> do
+  -- putStrLn - "pathInfo is: " + env.pathInfo
+  if env.pathInfo.is "/favicon.ico"
+    then
+      return not_found
+    else
+      app env
+
+not_found :: Response
+not_found = def { status = 404 }
+
+list_dir :: Application
+list_dir env = do
+  let _path = "." + env.pathInfo .B.unpack.unescape_uri.b2u
+
+  if ".." `isInfixOf` _path
+    then
+      return not_found
+    else do
+      directory_exist <- doesDirectoryExist _path
+      if not directory_exist
+        then return not_found
+        else do
+          is_dir <- doesDirectoryExist _path
+
+          if not is_dir
+            then
+              return not_found
+            else do
+              let ls :: String -> IO [String]
+                  ls s = getDirectoryContents s ^ (\\ [".", ".."])
+
+              _paths <- ls _path
+
+              -- print _paths
+
+              let _full_paths = _paths.map (_path.drop (2 :: Int) /)
+
+              is_path_dir_flag <- _full_paths.mapM doesDirectoryExist
+
+              let flagged = zip _paths is_path_dir_flag
+
+                  dirs = flagged.select snd.sort .map_fst (+ "/")
+                  files =  flagged.reject snd.sort
+
+                  sorted = dirs + files
+
+              maid_css_exist <- doesFileExist "maid.css"
+
+              _css <- if maid_css_exist then B.readFile "maid.css" else return (E.encodeUtf8 default_css_style)
+
+
+              let _html = B.pack - dir_template sorted (B.unpack _css) (env.path.B.unpack.unescape_uri)
+
+              return - def
+                {
+                  status = 200
+                }
+                .set_body_bytestring _html
+                .set_content_type "text/html; charset=utf-8"
+
+
+dir_template :: [(String, Bool)] -> String -> String -> String
+dir_template xs _css current_path = render -
+  html - do
+    head - do
+      meta ! [http_equiv "Content-Type", content "text/html; charset=utf-8"] - return ()
+      style - str _css
+
+    body - do
+      div ! [_class "container"] - do
+        ul - do
+          xs.mapM_ (\(_path, dir_tag) ->
+            li - do
+
+              let path_dom = a ! [href - "/" / current_path.b2u / _path] - str - _path
+
+              if dir_tag
+                then
+                  div ! [_class "directory"] -
+                    path_dom
+                else
+                  path_dom
+            )
+
+
+default_mime_types :: T.Text
+default_mime_types = apache_mime_types
+</pre></br><h2>printed</h2></br><pre>{-# LANGUAGE QuasiQuotes #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TupleSections #-}
+
+
+import System.Environment (getArgs)
+import Air.Env hiding (div, log, head, def)
+
+import Prelude ()
+import Data.Default (def)
+import Hack2.Contrib.Middleware.Config
+import Hack2.Contrib.Middleware.ContentLength
+import Hack2.Contrib.Middleware.Static
+import Hack2.Contrib.Middleware.SimpleAccessLogger
+import Hack2.Contrib.Middleware.UserMime
+import Hack2.Contrib.Middleware.Cascade
+import Hack2.Contrib.Middleware.XForwardedForToRemoteHost
+import Hack2.Contrib.Utils (use, unescape_uri)
+import Hack2.Contrib.Response (set_content_type, set_body_bytestring)
+import Hack2.Contrib.Request (path)
+import Hack2 hiding (body)
+import Data.List (isInfixOf, sort, (\\))
+import Text.HTML.Moe2 hiding ((/), select, br)
+import System.Directory (doesFileExist, getDirectoryContents, doesDirectoryExist)
+import qualified Data.ByteString.Char8 as B
+import Data.Maybe (fromMaybe, catMaybes)
+import System.FilePath (takeExtension)
+import System.Process (readProcess)
+import Control.Arrow ((***))
+
+
+import Hack2.Handler.SnapServer
+import qualified Data.Text as T
+import qualified Data.Text.Encoding as E
+import qualified Data.Text.IO as TextIO
+import Web.Maid.ApacheMimeTypes (apache_mime_types)
+import Web.Maid.DefaultCSSStyle (default_css_style)
+
+
+
+b2u :: String -> String
+b2u = B.pack > E.decodeUtf8 > T.unpack
+
+strip :: String -> String
+strip = T.pack > T.strip > T.unpack
+
+main :: IO ()
+main = do
+  args <- getArgs
+  let { _port =
+    if length args == (0 :: Int)
+      then 3000
+      else read - first args .fromMaybe ""
+    }
+
+  maid_mime_exist <- doesFileExist "mime.types"
+  mime_types <- if maid_mime_exist then TextIO.readFile "mime.types" else return default_mime_types
+
+  let { app =
+    dir_serve - \env -> do
+      let static_app = static (Just ".") [""] (const - return not_found)
+
+      r <- static_app env
+
+      -- let 'file' guess the file type
+      if env.pathInfo.B.unpack.unescape_uri.takeExtension.T.pack.belongs_to (parse_user_mimes mime_types.map fst)
+        then
+          return r
+        else
+          if r.status == 200
+           then do
+             _content_type <- readProcess "file" ["-b", "--mime", "." + env.pathInfo.B.unpack.unescape_uri] ""
+             -- putStrLn _content_type
+             return - r.set_content_type (_content_type.strip.B.pack)
+           else
+             return r
+    }
+
+
+
+
+  let version = "2014.8.31"
+      br = puts ""
+
+  br
+
+  puts - " ❂ Maid Version:    " + version
+  br
+
+  puts - "   Usage:           maid port"
+  puts - "   Example:         maid 3000"
+  br
+
+  puts - "   Serving on port: " ++ show _port
+  br
+
+  let maid_app = use (middleware_stack mime_types) app
+  runWithConfig def {port = _port} - maid_app
+
+  where
+    dir_serve app = cascade
+      [
+        app
+      , config (\env -> env {pathInfo = B.pack - pathInfo env.B.unpack / "index.htm"}) app
+      , config (\env -> env {pathInfo = B.pack - pathInfo env.B.unpack / "index.html"}) app
+      , list_dir
+      ]
+
+
+middleware_stack :: T.Text -> [Middleware]
+middleware_stack mime_types =
+  [
+    no_favicon
+  , content_length
+  , x_forwarded_for_to_remote_host
+  , simple_access_logger - Nothing
+  , user_mime - map (E.encodeUtf8 *** E.encodeUtf8) - parse_user_mimes mime_types
+  ]
+
+parse_user_mimes :: T.Text -> [(T.Text, T.Text)]
+parse_user_mimes =
+    T.unpack
+  > lines
+  > map strip
+  > reject null
+  > reject (starts_with "#")
+  > map parse_line
+  > catMaybes
+  > map expand_line
+  > concat
+  > map (T.pack *** T.pack)
+
+  where
+    parse_line :: String -> Maybe (String, [String])
+    parse_line line =
+      case line.words of
+        (x:y:ys) -> Just (x, y:ys)
+        _ -> Nothing
+
+    expand_line :: (String, [String]) -> [(String, String)]
+    expand_line (mime, extensions) = extensions.map ( mime)
+
+no_favicon :: Middleware
+no_favicon app = \env -> do
+  -- putStrLn - "pathInfo is: " + env.pathInfo
+  if env.pathInfo.is "/favicon.ico"
+    then
+      return not_found
+    else
+      app env
+
+not_found :: Response
+not_found = def { status = 404 }
+
+list_dir :: Application
+list_dir env = do
+  let _path = "." + env.pathInfo .B.unpack.unescape_uri.b2u
+
+  if ".." `isInfixOf` _path
+    then
+      return not_found
+    else do
+      directory_exist <- doesDirectoryExist _path
+      if not directory_exist
+        then return not_found
+        else do
+          is_dir <- doesDirectoryExist _path
+
+          if not is_dir
+            then
+              return not_found
+            else do
+              let ls :: String -> IO [String]
+                  ls s = getDirectoryContents s ^ (\\ [".", ".."])
+
+              _paths <- ls _path
+
+              -- print _paths
+
+              let _full_paths = _paths.map (_path.drop (2 :: Int) /)
+
+              is_path_dir_flag <- _full_paths.mapM doesDirectoryExist
+
+              let flagged = zip _paths is_path_dir_flag
+
+                  dirs = flagged.select snd.sort .map_fst (+ "/")
+                  files =  flagged.reject snd.sort
+
+                  sorted = dirs + files
+
+              maid_css_exist <- doesFileExist "maid.css"
+
+              _css <- if maid_css_exist then B.readFile "maid.css" else return (E.encodeUtf8 default_css_style)
+
+
+              let _html = B.pack - dir_template sorted (B.unpack _css) (env.path.B.unpack.unescape_uri)
+
+              return - def
+                {
+                  status = 200
+                }
+                .set_body_bytestring _html
+                .set_content_type "text/html; charset=utf-8"
+
+
+dir_template :: [(String, Bool)] -> String -> String -> String
+dir_template xs _css current_path = render -
+  html - do
+    head - do
+      meta ! [http_equiv "Content-Type", content "text/html; charset=utf-8"] - return ()
+      style - str _css
+
+    body - do
+      div ! [_class "container"] - do
+        ul - do
+          xs.mapM_ (\(_path, dir_tag) ->
+            li - do
+
+              let path_dom = a ! [href - "/" / current_path.b2u / _path] - str - _path
+
+              if dir_tag
+                then
+                  div ! [_class "directory"] -
+                    path_dom
+                else
+                  path_dom
+            )
+
+
+default_mime_types :: T.Text
+default_mime_types = apache_mime_types
+
+</pre>

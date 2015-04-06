@@ -1,0 +1,148 @@
+<a href="Response.hs13418536351808266298.out.html">prev</a></br><a href="failures.html">home</a></br><a href="ResponseType.hs1010275441457850878.out.html">next</a></br></br><pre>31d30
+<   { _data ∷ ByteString -- ^ Recieved data
+32c31
+<   , _error ∷ String -- ^ Parser/libstackexchange errors
+---
+>   { _data :: ByteString -- ^ Recieved data
+32a32
+>   , _error :: String -- ^ Parser/libstackexchange errors
+40c40
+< askSE ∷ Request Ready n r → IO r
+---
+> askSE :: Request Ready n r -> IO r
+43d42
+<   r ← C.withManager $ \m → C.parseUrl (render q) >>= \url →
+44c43
+<     C.responseBody <$> C.httpLbs (url {C.method = toStrict $ encodeUtf8 _method}) m
+---
+>   r <- C.withManager $ \m -> C.parseUrl (render q) >>= \url ->
+44a44
+>       C.responseBody <$> C.httpLbs (url {C.method = toStrict $ encodeUtf8 _method}) m
+46d45
+<     Just f → return $ f r
+47c46
+<     Nothing → throwIO $
+---
+>     Just f -> return $ f r
+47a47
+>     Nothing -> throwIO $
+58a59
+> 
+</pre></br><h2>original</h2></br><pre>{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DeriveDataTypeable #-}
+{-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE UnicodeSyntax #-}
+-- | Get response from Request and retrieve data from it
+module Network.StackExchange.Response
+  ( -- * Schedule request
+    SEException(..), askSE
+    -- * Iso lens
+  , se
+  ) where
+
+import Control.Applicative ((<$>))
+import Control.Exception (Exception, throwIO)
+import Data.Maybe (fromMaybe)
+import Data.Typeable (Typeable)
+
+import           Data.Profunctor
+import           Data.Aeson (Value(..))
+import           Data.ByteString.Lazy (ByteString, toStrict)
+import           Data.Default (Default(..))
+import           Data.Text.Lazy.Encoding (encodeUtf8)
+import qualified Network.HTTP.Conduit as C
+
+import Network.StackExchange.Request
+
+
+-- | StackExchange invalid response exception
+data SEException = SEException
+  { _data ∷ ByteString -- ^ Recieved data
+  , _error ∷ String -- ^ Parser/libstackexchange errors
+  } deriving (Show, Typeable)
+
+
+instance Exception SEException
+
+
+-- | Send Request and parse response
+askSE ∷ Request Ready n r → IO r
+askSE q = do
+  let R {_method, _parse} = unwrap q def
+  r ← C.withManager $ \m → C.parseUrl (render q) >>= \url →
+    C.responseBody <$> C.httpLbs (url {C.method = toStrict $ encodeUtf8 _method}) m
+  case _parse of
+    Just f → return $ f r
+    Nothing → throwIO $
+      SEException r "libstackexchange.askSE: no parsing function registered"
+
+
+-- | Isomorphism for the ease of interaction with aeson-lens
+se :: (Functor f, Profunctor p) => p (SE a) (f (SE t)) -> p (Maybe Value) (f (Maybe Value))
+se = dimap sa (fmap bt)
+ where
+  sa = SE . fromMaybe Null
+
+  bt (SE Null) = Nothing
+  bt (SE x) = Just x
+</pre></br><h2>printed</h2></br><pre>{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DeriveDataTypeable #-}
+{-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE UnicodeSyntax #-}
+-- | Get response from Request and retrieve data from it
+module Network.StackExchange.Response
+  ( -- * Schedule request
+    SEException(..), askSE
+    -- * Iso lens
+  , se
+  ) where
+
+import Control.Applicative ((<$>))
+import Control.Exception (Exception, throwIO)
+import Data.Maybe (fromMaybe)
+import Data.Typeable (Typeable)
+
+import           Data.Profunctor
+import           Data.Aeson (Value(..))
+import           Data.ByteString.Lazy (ByteString, toStrict)
+import           Data.Default (Default(..))
+import           Data.Text.Lazy.Encoding (encodeUtf8)
+import qualified Network.HTTP.Conduit as C
+
+import Network.StackExchange.Request
+
+
+-- | StackExchange invalid response exception
+data SEException = SEException
+  { _data :: ByteString -- ^ Recieved data
+  , _error :: String -- ^ Parser/libstackexchange errors
+  } deriving (Show, Typeable)
+
+
+instance Exception SEException
+
+
+-- | Send Request and parse response
+askSE :: Request Ready n r -> IO r
+askSE q = do
+  let R {_method, _parse} = unwrap q def
+  r <- C.withManager $ \m -> C.parseUrl (render q) >>= \url ->
+      C.responseBody <$> C.httpLbs (url {C.method = toStrict $ encodeUtf8 _method}) m
+  case _parse of
+    Just f -> return $ f r
+    Nothing -> throwIO $
+      SEException r "libstackexchange.askSE: no parsing function registered"
+
+
+-- | Isomorphism for the ease of interaction with aeson-lens
+se :: (Functor f, Profunctor p) => p (SE a) (f (SE t)) -> p (Maybe Value) (f (Maybe Value))
+se = dimap sa (fmap bt)
+ where
+  sa = SE . fromMaybe Null
+
+  bt (SE Null) = Nothing
+  bt (SE x) = Just x
+
+</pre>

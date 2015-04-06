@@ -1,0 +1,224 @@
+<a href="Questioner.hs18171295601131570933.out.html">prev</a></br><a href="failures.html">home</a></br><a href="QuickCheck.hs1490404473978719103.out.html">next</a></br></br><pre>53c53
+< type a :$ b = a b
+---
+> type   :$    b = a b
+108a109
+> 
+</pre></br><h2>original</h2></br><pre>{-# LANGUAGE GeneralizedNewtypeDeriving, TypeOperators #-}
+
+-- Module      :  Data.PVar.Queue
+-- Copyright   :  (c) Jake McArthur 2009
+-- License     :  ISC
+--
+-- Maintainer  :  Jake.McArthur@gmail.com
+-- Stability   :  experimental
+-- Portability :  portable
+
+{-|
+
+  A procrastinating queue. You can populate the back of the queue in
+  IO and read the front of the queue in pure code. The front of an
+  empty, un'close'd queue is @_|_@. I think it fits the definition of
+  referentially transparent, but it's possible to do some really
+  stupid things with one of these 'Queue's. If you read the source,
+  this serves as an example of using "Data.PVar.Structure". Here's a
+  simple example of using a 'Queue':
+
+  > import Prelude hiding (sum)
+  > import Data.Foldable (sum)
+  >
+  > main :: IO ()
+  > main = do
+  >   (back, front) <- newQueue  -- Create a new queue.
+  >   mapM_ (push back) [0..9]   -- Push some values to the back of the queue.
+  >   print $ peek front         -- Safe to do since we know something has been written
+  >   close back                 -- Close the queue.
+  >   print $ sum front          -- Safe to do since the queue is finalized
+
+  The output of the above program is:
+
+  > Just 0
+  > 45
+
+  Is this useful? Who knows? It was a fun exercise.
+
+-}
+module Data.PVar.Queue (Queue (), QueueBack (), newQueue, push, close, pop, peek) where
+
+import Control.Applicative
+import Control.Monad
+import Control.Concurrent.MVar
+import Data.Foldable
+import Data.Maybe
+import Data.Monoid
+import Data.Traversable
+
+import Data.PVar.Structure
+
+infixr 9 :$
+type a :$ b = a b
+
+-- | A pure queue.
+newtype Queue a = QF [a]
+    deriving ( Functor
+             , Applicative
+             , Monad
+             , MonadPlus
+             , Alternative
+             , Foldable
+             , Traversable
+             , Eq
+             , Ord
+             , Monoid)
+
+-- | The impure back of a pure queue.
+newtype QueueBack a = QB (MVar :$ Maybe :$ PStructure [Value a])
+    deriving Eq
+
+-- | Create both ends of a procrastinating queue.
+newQueue :: IO (QueueBack a, Queue a)
+newQueue = do
+  (pvs, vs) <- newStruc
+  qb        <- newMVar $ Just pvs
+  return (QB qb, QF $ map getValue vs)
+
+-- | Push to the back of an open 'QueueBack'. If the 'QueueBack' has
+--   been closed, returns 'False'.
+push :: QueueBack a -> a -> IO Bool
+push (QB mpvsRef) x = modifyMVar mpvsRef writeVal
+    where writeVal Nothing    = return (Nothing, False)
+          writeVal (Just pvs) = do
+            Just (ph, pt) <- writeStruc pvs ConsC
+            writeStruc ph x
+            return (Just pt, True)
+
+-- | Close a 'QueueBack'. This finalizes the 'Queue' and means that it
+--   is safe to evaluate all the way to the end.
+close :: QueueBack a -> IO ()
+close (QB mpvsRef) = modifyMVar_ mpvsRef writeVal
+    where writeVal Nothing    = return Nothing
+          writeVal (Just pvs) = do
+            writeStruc pvs NilC
+            return Nothing
+
+-- | Get the value at the front of a 'Queue'. Returns 'False' if we
+--   are at the end of a 'close'd 'Queue'.
+peek :: Queue a -> Maybe a
+peek = listToMaybe . toList
+
+-- | Get the value at the front of a 'Queue' and return the remainder
+--   of the 'Queue'. Returns 'False' if we are at the end of a
+--   'close'd 'Queue'.
+pop :: Queue a -> Maybe (Queue a, a)
+pop (QF [])     = Nothing
+pop (QF (x:xs)) = Just (QF xs, x)
+</pre></br><h2>printed</h2></br><pre>{-# LANGUAGE GeneralizedNewtypeDeriving, TypeOperators #-}
+
+-- Module      :  Data.PVar.Queue
+-- Copyright   :  (c) Jake McArthur 2009
+-- License     :  ISC
+--
+-- Maintainer  :  Jake.McArthur@gmail.com
+-- Stability   :  experimental
+-- Portability :  portable
+
+{-|
+
+  A procrastinating queue. You can populate the back of the queue in
+  IO and read the front of the queue in pure code. The front of an
+  empty, un'close'd queue is @_|_@. I think it fits the definition of
+  referentially transparent, but it's possible to do some really
+  stupid things with one of these 'Queue's. If you read the source,
+  this serves as an example of using "Data.PVar.Structure". Here's a
+  simple example of using a 'Queue':
+
+  > import Prelude hiding (sum)
+  > import Data.Foldable (sum)
+  >
+  > main :: IO ()
+  > main = do
+  >   (back, front) <- newQueue  -- Create a new queue.
+  >   mapM_ (push back) [0..9]   -- Push some values to the back of the queue.
+  >   print $ peek front         -- Safe to do since we know something has been written
+  >   close back                 -- Close the queue.
+  >   print $ sum front          -- Safe to do since the queue is finalized
+
+  The output of the above program is:
+
+  > Just 0
+  > 45
+
+  Is this useful? Who knows? It was a fun exercise.
+
+-}
+module Data.PVar.Queue (Queue (), QueueBack (), newQueue, push, close, pop, peek) where
+
+import Control.Applicative
+import Control.Monad
+import Control.Concurrent.MVar
+import Data.Foldable
+import Data.Maybe
+import Data.Monoid
+import Data.Traversable
+
+import Data.PVar.Structure
+
+infixr 9 :$
+type   :$    b = a b
+
+-- | A pure queue.
+newtype Queue a = QF [a]
+    deriving ( Functor
+             , Applicative
+             , Monad
+             , MonadPlus
+             , Alternative
+             , Foldable
+             , Traversable
+             , Eq
+             , Ord
+             , Monoid)
+
+-- | The impure back of a pure queue.
+newtype QueueBack a = QB (MVar :$ Maybe :$ PStructure [Value a])
+    deriving Eq
+
+-- | Create both ends of a procrastinating queue.
+newQueue :: IO (QueueBack a, Queue a)
+newQueue = do
+  (pvs, vs) <- newStruc
+  qb        <- newMVar $ Just pvs
+  return (QB qb, QF $ map getValue vs)
+
+-- | Push to the back of an open 'QueueBack'. If the 'QueueBack' has
+--   been closed, returns 'False'.
+push :: QueueBack a -> a -> IO Bool
+push (QB mpvsRef) x = modifyMVar mpvsRef writeVal
+    where writeVal Nothing    = return (Nothing, False)
+          writeVal (Just pvs) = do
+            Just (ph, pt) <- writeStruc pvs ConsC
+            writeStruc ph x
+            return (Just pt, True)
+
+-- | Close a 'QueueBack'. This finalizes the 'Queue' and means that it
+--   is safe to evaluate all the way to the end.
+close :: QueueBack a -> IO ()
+close (QB mpvsRef) = modifyMVar_ mpvsRef writeVal
+    where writeVal Nothing    = return Nothing
+          writeVal (Just pvs) = do
+            writeStruc pvs NilC
+            return Nothing
+
+-- | Get the value at the front of a 'Queue'. Returns 'False' if we
+--   are at the end of a 'close'd 'Queue'.
+peek :: Queue a -> Maybe a
+peek = listToMaybe . toList
+
+-- | Get the value at the front of a 'Queue' and return the remainder
+--   of the 'Queue'. Returns 'False' if we are at the end of a
+--   'close'd 'Queue'.
+pop :: Queue a -> Maybe (Queue a, a)
+pop (QF [])     = Nothing
+pop (QF (x:xs)) = Just (QF xs, x)
+
+</pre>

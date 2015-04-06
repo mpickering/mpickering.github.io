@@ -1,0 +1,436 @@
+<a href="Engine.hs771515668357571490.out.html">prev</a></br><a href="failures.html">home</a></br><a href="EntityFactories.hs14587779232007237709.out.html">next</a></br></br><pre>176c176
+< {-# INLINE matchHere' #-}
+---
+> {-# INLINE matchHere' #
+186c186
+<   {-# INLINE applyHere #-}
+---
+>   {-# INLINE applyHere #
+212a213
+> 
+</pre></br><h2>original</h2></br><pre>{-
+-}
+
+module Text.Regex.DFA.EngineSeq(findRegex,matchesRegex,countRegex,accept,toList,findRegexS) where
+
+import Text.Regex.DFA.Engine hiding (testHere,findRegex,matchesRegex,countRegex,findRegexS)
+import Data.Sequence as S
+
+-- import qualified Debug.Trace
+
+-- trace :: String -> a -> a
+-- trace _ = id
+
+{-# INLINE toList #-}
+toList :: S.Seq Char -> [Char]
+toList s = expand (S.viewl s) where
+  expand EmptyL = []
+  expand (c :< cs) = c : expand (S.viewl cs)
+
+--------------------------------------------------------------------------------
+-- * Matching engine
+--------------------------------------------------------------------------------
+
+-- | This is the ultra-lazy matching engine.  It returns the longest match.
+--
+-- This will not examine any more of the input than needed, checking
+-- and returning a character at a time. Once a character is read that
+-- leads to no possibility of future match it does not evaluate any
+-- deeper.
+--
+-- When a match is found, the input past match is not examined at all.
+--
+-- In the extreme case of the input string being (error _) this will
+-- still succeed if the Regexp matches only an empty string since the
+-- input will not be demanded at all.  The "input before matching" in
+-- this case will be [] and its length is 0, and the length of the
+-- match is 0, which the input at start of match and the input past
+-- the match will both be (error _).
+--
+-- This loops over 'matchHere' to find the first match
+findRegex :: Lexer            -- ^ The regular expression to match
+          -> Seq Char         -- ^ The input SEq Char to scan along, looking for a match
+          -> (Seq Char,Int,Maybe (Seq Char,Int,Seq Char))  -- ^ The input string before the match, length of the string before the match, Nothing if there was no match or Just input string at the start of the match, length of the match, input string starting just past the match
+findRegex lexer input =
+  let loop :: Char -> Seq Char -> Int -> (Seq Char,Int,Maybe(Seq Char,Int,Seq Char))
+      loop p s i = case matchHere lexer i p s of
+                     ((-1),_) -> case S.viewl s of
+                                   EmptyL -> (S.empty,i,Nothing)
+                                   (h :< t) -> let ~(rest,len,result) = loop h t $! (succ i)
+                                               in (h <| rest,len,result)
+                     (n,~leftover) -> (S.empty,i,Just (s,n,leftover))
+  in loop '\n' input 0
+
+-- | This returns (-1,[]) if there was no match
+matchHere :: Lexer      -- ^ (accept regexp) to match
+          -> Int        -- ^ Offset into original string
+          -> Char       -- ^ previous character
+          -> Seq Char     -- ^ The input string
+          -> (Int, Seq Char)  -- ^ The length 'n' of the prefix of input that matched (take n input), The input starting past the match (drop n input)
+{-# INLINE matchHere #-}
+matchHere lexerIn offsetIn prevIn inputIn = applyHere lexerIn prevIn inputIn ((-1),S.empty) 0
+ where
+  -- internal.  All the matching logic and boundary logic and group logic are here.
+  applyHere :: Lexer        -- ^ The current lexeme
+            -> Char         -- ^ previous character
+            -> Seq Char       -- ^ Current input
+            -> (Int,Seq Char) -- ^ Longest match so far
+            -> Int          -- ^ Number of characters in the match so far
+            -> (Int,Seq Char) -- ^ Length of match and input past match
+  {-# INLINE applyHere #-}
+  applyHere (Lexer _ action cont) _ input lastItem here | here `seq` False = undefined
+                                                        | otherwise =
+    let lastItem' = if action == lexAccept then (here,input) else lastItem
+    in case seq lastItem' cont of -- seq ensures we evaluate the if predicate
+         Done -> lastItem'
+         _ -> case S.viewl input of
+                EmptyL -> lastItem'
+                (h:<t) -> case peek cont h of
+                           Lexer _ action' _ | action' == lexFailure -> lastItem'
+                           lexer' -> applyHere lexer' h t lastItem' (succ here)
+
+  applyHere (Predicate _ p yes no) prev input lastItem here | here `seq` False = undefined
+                                                            | otherwise =
+    let t = case p of
+              BeginLine -> (prev == '\n') || (offsetIn==0 && here==0)
+              EndLine -> case viewl input of
+                           EmptyL -> True
+                           (h :< _) -> '\n' == h
+              BeginInput -> offsetIn==0 && here==0
+              EndInput -> S.null input
+        lexer = if t then yes else no
+    in applyHere lexer prev input lastItem here
+
+-- | This counts the number of matches to regex in the string, (it
+-- checks each possible starting position).  This should be the same
+-- as ((length (splitRegex re input))-1) but more efficient
+-- ^^^ fix
+countRegex :: Lexer -> Seq Char -> Int
+countRegex lexer input =
+  let loop p s i | seq i False = undefined
+                 | otherwise =
+        if testHere lexer i p s
+          then case S.viewl s of
+                 EmptyL -> succ i
+                 h :< t -> loop h t $! succ i
+          else case S.viewl s of
+                 EmptyL -> i
+                 h :< t -> loop h t $! i
+  in loop '\n' input 0
+
+-- | This searches the input string for a match to the regex
+-- There is no need to wait for the longest match, so stop at first lexAccept
+matchesRegex :: Lexer -> Seq Char -> Bool
+matchesRegex lexer input =
+  let loop p s i | i `seq` False = undefined
+                 | otherwise =
+        if testHere lexer i p s
+          then True
+          else case S.viewl s of
+                 EmptyL -> False
+                 h :< t -> loop h t $! succ i
+  in loop '\n' input 0
+
+-- | This checks for a match to the regex starting at the beginning of the input
+-- There is no need to wait for the longest match, so stop at first lexAccept
+testHere :: Lexer          -- ^ current lexeme
+         -> Int            -- ^ Origin offset
+         -> Char           -- ^ previous input character
+         -> Seq Char         -- ^ current input
+         -> Bool
+testHere lexerIn offsetIn prevIn inputIn = test lexerIn (offsetIn==0) prevIn inputIn
+ where
+  test (Lexer _ action cont) _ _ input | action == lexAccept = True
+                                              | otherwise =
+    case cont of
+      Done -> False
+      _ -> case S.viewl input of
+             EmptyL -> False
+             h :< t -> case peek cont h of
+                         Lexer _ action' _ | action' == lexFailure -> False
+                         lexer' -> test lexer' False h t
+
+  test (Predicate _ p yes no) atFront prev input =
+    let t = case p of
+              BeginLine -> atFront || (prev == '\n')
+              EndLine -> case S.viewl input of
+                           EmptyL -> True
+                           h :< _ -> '\n' == h
+              BeginInput -> atFront
+              EndInput -> S.null input
+        lexer = if t then yes else no
+    in test lexer atFront prev input
+
+-- | This is a version of findRegex that does not compute the length of the prefix
+findRegexS :: Lexer -> Seq Char -> (Seq Char, Maybe (Seq Char, Int, Seq Char))
+findRegexS lexer input =
+  let loop :: Char -> Seq Char -> Int -> (Seq Char,Maybe(Seq Char,Int,Seq Char))
+      loop p s i | i `seq` False = undefined
+                 | otherwise =
+        case matchHere lexer i p s of
+          ((-1),_) -> case S.viewl s of
+                        EmptyL -> (S.empty,Nothing)
+                        h :< t -> let ~(rest,result) = loop h t $! (succ i)
+                                  in (h <| rest,result)
+          (n,~leftover) -> (S.empty,Just (s,n,leftover))
+  in loop '\n' input $! 0
+
+{-
+
+-- | This returns (-1,[]) if there was no match
+matchHere' :: Lexer      -- ^ (accept regexp) to match
+          -> Int        -- ^ Offset into original string
+          -> Char       -- ^ previous character
+          -> Seq Char     -- ^ The input string
+          -> (Int, Seq Char)  -- ^ The length 'n' of the prefix of input that matched (take n input), The input starting past the match (drop n input)
+{-# INLINE matchHere' #-}
+matchHere' lexerIn offsetIn prevIn inputIn = applyHere lexerIn prevIn inputIn ((-1),[]) 0
+ where
+  -- internal.  All the matching logic and boundary logic and group logic are here.
+  applyHere :: Lexer        -- ^ The current lexeme
+            -> Char         -- ^ previous character
+            -> Seq Char       -- ^ Current input
+            -> (Int,Seq Char) -- ^ Longest match so far
+            -> Int          -- ^ Number of characters in the match so far
+            -> (Int,Seq Char) -- ^ Length of match and input past match
+  {-# INLINE applyHere #-}
+  applyHere (Lexer _ action cont) _ input lastItem here | here `seq` False = undefined
+                                                      | otherwise =
+    let lastItem' = if action == lexAccept then (here,input) else lastItem
+    in case seq lastItem' cont of -- seq ensures we evaluate the if predicate
+         Done -> lastItem'
+         _ -> case input of
+                [] -> lastItem'
+                (h:t) -> case peek cont h of
+                           Lexer _ action' _ | action' == lexFailure -> lastItem'
+                           lexer' -> applyHere lexer' h t lastItem' (succ here)
+
+  applyHere (Predicate _ p yes no) prev input lastItem here | here `seq` False = undefined
+                                                          | otherwise =
+    let t = case p of
+              BeginLine -> (prev == '\n') || (offsetIn==0 && here==0)
+              EndLine -> null input || ('\n' == head input)
+              BeginInput -> offsetIn==0 && here==0
+              EndInput -> null input
+        lexer = if t then yes else no
+    in applyHere lexer prev input lastItem here
+
+-- Sensible tracking of open and closed information
+data Opened = Opened [Closed] Int (Seq Char,Int) Opened | EndOpened [Closed] deriving (Show)
+data Closed = Closed [Closed] Int (Seq Char,(Int,Int)) deriving (Show)
+
+-}
+</pre></br><h2>printed</h2></br><pre>{-
+-}
+
+module Text.Regex.DFA.EngineSeq(findRegex,matchesRegex,countRegex,accept,toList,findRegexS) where
+
+import Text.Regex.DFA.Engine hiding (testHere,findRegex,matchesRegex,countRegex,findRegexS)
+import Data.Sequence as S
+
+-- import qualified Debug.Trace
+
+-- trace :: String -> a -> a
+-- trace _ = id
+
+{-# INLINE toList #-}
+toList :: S.Seq Char -> [Char]
+toList s = expand (S.viewl s) where
+  expand EmptyL = []
+  expand (c :< cs) = c : expand (S.viewl cs)
+
+--------------------------------------------------------------------------------
+-- * Matching engine
+--------------------------------------------------------------------------------
+
+-- | This is the ultra-lazy matching engine.  It returns the longest match.
+--
+-- This will not examine any more of the input than needed, checking
+-- and returning a character at a time. Once a character is read that
+-- leads to no possibility of future match it does not evaluate any
+-- deeper.
+--
+-- When a match is found, the input past match is not examined at all.
+--
+-- In the extreme case of the input string being (error _) this will
+-- still succeed if the Regexp matches only an empty string since the
+-- input will not be demanded at all.  The "input before matching" in
+-- this case will be [] and its length is 0, and the length of the
+-- match is 0, which the input at start of match and the input past
+-- the match will both be (error _).
+--
+-- This loops over 'matchHere' to find the first match
+findRegex :: Lexer            -- ^ The regular expression to match
+          -> Seq Char         -- ^ The input SEq Char to scan along, looking for a match
+          -> (Seq Char,Int,Maybe (Seq Char,Int,Seq Char))  -- ^ The input string before the match, length of the string before the match, Nothing if there was no match or Just input string at the start of the match, length of the match, input string starting just past the match
+findRegex lexer input =
+  let loop :: Char -> Seq Char -> Int -> (Seq Char,Int,Maybe(Seq Char,Int,Seq Char))
+      loop p s i = case matchHere lexer i p s of
+                     ((-1),_) -> case S.viewl s of
+                                   EmptyL -> (S.empty,i,Nothing)
+                                   (h :< t) -> let ~(rest,len,result) = loop h t $! (succ i)
+                                               in (h <| rest,len,result)
+                     (n,~leftover) -> (S.empty,i,Just (s,n,leftover))
+  in loop '\n' input 0
+
+-- | This returns (-1,[]) if there was no match
+matchHere :: Lexer      -- ^ (accept regexp) to match
+          -> Int        -- ^ Offset into original string
+          -> Char       -- ^ previous character
+          -> Seq Char     -- ^ The input string
+          -> (Int, Seq Char)  -- ^ The length 'n' of the prefix of input that matched (take n input), The input starting past the match (drop n input)
+{-# INLINE matchHere #-}
+matchHere lexerIn offsetIn prevIn inputIn = applyHere lexerIn prevIn inputIn ((-1),S.empty) 0
+ where
+  -- internal.  All the matching logic and boundary logic and group logic are here.
+  applyHere :: Lexer        -- ^ The current lexeme
+            -> Char         -- ^ previous character
+            -> Seq Char       -- ^ Current input
+            -> (Int,Seq Char) -- ^ Longest match so far
+            -> Int          -- ^ Number of characters in the match so far
+            -> (Int,Seq Char) -- ^ Length of match and input past match
+  {-# INLINE applyHere #-}
+  applyHere (Lexer _ action cont) _ input lastItem here | here `seq` False = undefined
+                                                        | otherwise =
+    let lastItem' = if action == lexAccept then (here,input) else lastItem
+    in case seq lastItem' cont of -- seq ensures we evaluate the if predicate
+         Done -> lastItem'
+         _ -> case S.viewl input of
+                EmptyL -> lastItem'
+                (h:<t) -> case peek cont h of
+                           Lexer _ action' _ | action' == lexFailure -> lastItem'
+                           lexer' -> applyHere lexer' h t lastItem' (succ here)
+
+  applyHere (Predicate _ p yes no) prev input lastItem here | here `seq` False = undefined
+                                                            | otherwise =
+    let t = case p of
+              BeginLine -> (prev == '\n') || (offsetIn==0 && here==0)
+              EndLine -> case viewl input of
+                           EmptyL -> True
+                           (h :< _) -> '\n' == h
+              BeginInput -> offsetIn==0 && here==0
+              EndInput -> S.null input
+        lexer = if t then yes else no
+    in applyHere lexer prev input lastItem here
+
+-- | This counts the number of matches to regex in the string, (it
+-- checks each possible starting position).  This should be the same
+-- as ((length (splitRegex re input))-1) but more efficient
+-- ^^^ fix
+countRegex :: Lexer -> Seq Char -> Int
+countRegex lexer input =
+  let loop p s i | seq i False = undefined
+                 | otherwise =
+        if testHere lexer i p s
+          then case S.viewl s of
+                 EmptyL -> succ i
+                 h :< t -> loop h t $! succ i
+          else case S.viewl s of
+                 EmptyL -> i
+                 h :< t -> loop h t $! i
+  in loop '\n' input 0
+
+-- | This searches the input string for a match to the regex
+-- There is no need to wait for the longest match, so stop at first lexAccept
+matchesRegex :: Lexer -> Seq Char -> Bool
+matchesRegex lexer input =
+  let loop p s i | i `seq` False = undefined
+                 | otherwise =
+        if testHere lexer i p s
+          then True
+          else case S.viewl s of
+                 EmptyL -> False
+                 h :< t -> loop h t $! succ i
+  in loop '\n' input 0
+
+-- | This checks for a match to the regex starting at the beginning of the input
+-- There is no need to wait for the longest match, so stop at first lexAccept
+testHere :: Lexer          -- ^ current lexeme
+         -> Int            -- ^ Origin offset
+         -> Char           -- ^ previous input character
+         -> Seq Char         -- ^ current input
+         -> Bool
+testHere lexerIn offsetIn prevIn inputIn = test lexerIn (offsetIn==0) prevIn inputIn
+ where
+  test (Lexer _ action cont) _ _ input | action == lexAccept = True
+                                              | otherwise =
+    case cont of
+      Done -> False
+      _ -> case S.viewl input of
+             EmptyL -> False
+             h :< t -> case peek cont h of
+                         Lexer _ action' _ | action' == lexFailure -> False
+                         lexer' -> test lexer' False h t
+
+  test (Predicate _ p yes no) atFront prev input =
+    let t = case p of
+              BeginLine -> atFront || (prev == '\n')
+              EndLine -> case S.viewl input of
+                           EmptyL -> True
+                           h :< _ -> '\n' == h
+              BeginInput -> atFront
+              EndInput -> S.null input
+        lexer = if t then yes else no
+    in test lexer atFront prev input
+
+-- | This is a version of findRegex that does not compute the length of the prefix
+findRegexS :: Lexer -> Seq Char -> (Seq Char, Maybe (Seq Char, Int, Seq Char))
+findRegexS lexer input =
+  let loop :: Char -> Seq Char -> Int -> (Seq Char,Maybe(Seq Char,Int,Seq Char))
+      loop p s i | i `seq` False = undefined
+                 | otherwise =
+        case matchHere lexer i p s of
+          ((-1),_) -> case S.viewl s of
+                        EmptyL -> (S.empty,Nothing)
+                        h :< t -> let ~(rest,result) = loop h t $! (succ i)
+                                  in (h <| rest,result)
+          (n,~leftover) -> (S.empty,Just (s,n,leftover))
+  in loop '\n' input $! 0
+
+{-
+
+-- | This returns (-1,[]) if there was no match
+matchHere' :: Lexer      -- ^ (accept regexp) to match
+          -> Int        -- ^ Offset into original string
+          -> Char       -- ^ previous character
+          -> Seq Char     -- ^ The input string
+          -> (Int, Seq Char)  -- ^ The length 'n' of the prefix of input that matched (take n input), The input starting past the match (drop n input)
+{-# INLINE matchHere' #
+matchHere' lexerIn offsetIn prevIn inputIn = applyHere lexerIn prevIn inputIn ((-1),[]) 0
+ where
+  -- internal.  All the matching logic and boundary logic and group logic are here.
+  applyHere :: Lexer        -- ^ The current lexeme
+            -> Char         -- ^ previous character
+            -> Seq Char       -- ^ Current input
+            -> (Int,Seq Char) -- ^ Longest match so far
+            -> Int          -- ^ Number of characters in the match so far
+            -> (Int,Seq Char) -- ^ Length of match and input past match
+  {-# INLINE applyHere #
+  applyHere (Lexer _ action cont) _ input lastItem here | here `seq` False = undefined
+                                                      | otherwise =
+    let lastItem' = if action == lexAccept then (here,input) else lastItem
+    in case seq lastItem' cont of -- seq ensures we evaluate the if predicate
+         Done -> lastItem'
+         _ -> case input of
+                [] -> lastItem'
+                (h:t) -> case peek cont h of
+                           Lexer _ action' _ | action' == lexFailure -> lastItem'
+                           lexer' -> applyHere lexer' h t lastItem' (succ here)
+
+  applyHere (Predicate _ p yes no) prev input lastItem here | here `seq` False = undefined
+                                                          | otherwise =
+    let t = case p of
+              BeginLine -> (prev == '\n') || (offsetIn==0 && here==0)
+              EndLine -> null input || ('\n' == head input)
+              BeginInput -> offsetIn==0 && here==0
+              EndInput -> null input
+        lexer = if t then yes else no
+    in applyHere lexer prev input lastItem here
+
+-- Sensible tracking of open and closed information
+data Opened = Opened [Closed] Int (Seq Char,Int) Opened | EndOpened [Closed] deriving (Show)
+data Closed = Closed [Closed] Int (Seq Char,(Int,Int)) deriving (Show)
+
+-}
+
+</pre>

@@ -1,0 +1,486 @@
+<a href="Process.hs12648177091998097157.out.html">prev</a></br><a href="failures.html">home</a></br><a href="Process.hs1777724115269220094.out.html">next</a></br></br><pre>61d60
+<     ∀ exploration_mode m n.
+62d60
+<     ExplorationMode exploration_mode {-^ the mode in to explore the tree -} →
+63d60
+<     Purity m n {-^ the purity of the tree -} →
+64d60
+<     TreeT m (ResultFor exploration_mode) {-^ the tree -} →
+65d60
+<     IO MessageForWorker {-^ the action used to fetch the next message -} →
+66c61
+<     (MessageForSupervisorFor exploration_mode → IO ()) {-^ the action to send a message to the supervisor;  note that this might occur in a different thread from the worker loop -} →
+---
+>     forall exploration_mode m n.
+66a62
+>     ExplorationMode exploration_mode {-^ the mode in to explore the tree -} ->
+66a63
+>     Purity m n {-^ the purity of the tree -} ->
+66a64
+>     TreeT m (ResultFor exploration_mode) {-^ the tree -} ->
+66a65
+>     IO MessageForWorker {-^ the action used to fetch the next message -} ->
+66a66
+>     (MessageForSupervisorFor exploration_mode -> IO ()) {-^ the action to send a message to the supervisor;  note that this might occur in a different thread from the worker loop -} ->
+74c74
+<     newEmptyMVar >>= \worker_environment_mvar →
+---
+>     newEmptyMVar >>= \worker_environment_mvar ->
+76d75
+<             (WorkerRequestQueue (ProgressFor exploration_mode) → (α → IO ()) → IO ()) →
+77c76
+<             (α → MessageForSupervisorFor exploration_mode) →
+---
+>             (WorkerRequestQueue (ProgressFor exploration_mode) -> (α -> IO ()) -> IO ()) ->
+77a77
+>             (α -> MessageForSupervisorFor exploration_mode) ->
+82d81
+<             maybe (return ()) (\worker_environment@WorkerEnvironment{workerPendingRequests} → do
+83c82
+<                 _ ← sendRequest workerPendingRequests (sendMessage . constructResponse)
+---
+>             maybe (return ()) (\worker_environment@WorkerEnvironment{workerPendingRequests} -> do
+83a83
+>                 _ <- sendRequest workerPendingRequests (sendMessage . constructResponse)
+86c86
+<         processNextMessage = receiveMessage >>= \message →
+---
+>         processNextMessage = receiveMessage >>= \message ->
+88c88
+<                 RequestProgressUpdate → do
+---
+>                 RequestProgressUpdate -> do
+91c91
+<                 RequestWorkloadSteal → do
+---
+>                 RequestWorkloadSteal -> do
+94c94
+<                 StartWorkload workload → do
+---
+>                 StartWorkload workload -> do
+97c97
+<                     worker_is_running ← not <$> isEmptyMVar worker_environment_mvar
+---
+>                     worker_is_running <- not <$> isEmptyMVar worker_environment_mvar
+103d102
+<                                 (\termination_reason → do
+104c103
+<                                     _ ← takeMVar worker_environment_mvar
+---
+>                                 (\termination_reason -> do
+104a104
+>                                     _ <- takeMVar worker_environment_mvar
+106c106
+<                                         WorkerFinished final_progress →
+---
+>                                         WorkerFinished final_progress ->
+108c108
+<                                         WorkerFailed exception →
+---
+>                                         WorkerFailed exception ->
+110c110
+<                                         WorkerAborted →
+---
+>                                         WorkerAborted ->
+116d115
+<                                     AllMode → absurd
+117d115
+<                                     FirstMode → absurd
+118d115
+<                                     FoundModeUsingPull _ → absurd
+119c116
+<                                     FoundModeUsingPush _ → sendMessage . ProgressUpdate
+---
+>                                     AllMode -> absurd
+119a117
+>                                     FirstMode -> absurd
+119a118
+>                                     FoundModeUsingPull _ -> absurd
+119a119
+>                                     FoundModeUsingPush _ -> sendMessage . ProgressUpdate
+124c124
+<                 QuitWorker → do
+---
+>                 QuitWorker -> do
+132d131
+<         [Handler $ \e → case e of
+133d131
+<             ThreadKilled → return ()
+134d131
+<             UserInterrupt → return ()
+135d131
+<             _ → throwIO e
+136d131
+<         ,Handler $ \e → case e of
+137c132
+<             ConnectionLost → debugM "Connection to supervisor was lost before this process had finished."
+---
+>         [Handler $ \e -> case e of
+137a133
+>             ThreadKilled -> return ()
+137a134
+>             UserInterrupt -> return ()
+137a135
+>             _ -> throwIO e
+137a136
+>         ,Handler $ \e -> case e of
+137a137
+>             ConnectionLost -> debugM "Connection to supervisor was lost before this process had finished."
+148d147
+<     ) ⇒
+149d147
+<     ExplorationMode exploration_mode {-^ the mode in to explore the tree -} →
+150d147
+<     Purity m n {-^ the purity of the tree -} →
+151d147
+<     TreeT m (ResultFor exploration_mode) {-^ the tree -} →
+152d147
+<     Handle {-^ handle from which messages from the supervisor are read -} →
+153c148
+<     Handle {-^ handle to which messages to the supervisor are written -} →
+---
+>     ) =>
+153a149
+>     ExplorationMode exploration_mode {-^ the mode in to explore the tree -} ->
+153a150
+>     Purity m n {-^ the purity of the tree -} ->
+153a151
+>     TreeT m (ResultFor exploration_mode) {-^ the tree -} ->
+153a152
+>     Handle {-^ handle from which messages from the supervisor are read -} ->
+153a153
+>     Handle {-^ handle to which messages to the supervisor are written -} ->
+156c156
+<     newMVar () >>= \send_lock →
+---
+>     newMVar () >>= \send_lock ->
+163a164
+> 
+</pre></br><h2>original</h2></br><pre>{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE GADTs #-}
+{-# LANGUAGE NoMonomorphismRestriction #-}
+{-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE UnicodeSyntax #-}
+
+{-| This module contains functions that let one easily implement the worker side
+    of an adapter under the assumption that the worker uses a two-way
+    communication channel with the supervisor for sending and receiving
+    messages.  (Examples of when this is NOT the case is the threads adapter,
+    where you can communicate with the worker threads directly, and the MPI
+    adapter, which has communication primitives that don't quite align with
+    this setup.)
+ -}
+module LogicGrowsOnTrees.Parallel.Common.Process
+    (
+    -- * Exceptions
+      ConnectionLost(..)
+    -- * Functions
+    , runWorker
+    , runWorkerUsingHandles
+    ) where
+
+import Control.Concurrent (killThread)
+import Control.Concurrent.MVar (isEmptyMVar,newEmptyMVar,newMVar,putMVar,takeMVar,tryTakeMVar,withMVar)
+import Control.Exception (AsyncException(ThreadKilled,UserInterrupt),Handler(..),catches,throwIO)
+import Control.Monad.IO.Class
+
+import Data.Functor ((<$>))
+import Data.Serialize
+import Data.Void (absurd)
+
+import System.IO (Handle)
+import qualified System.Log.Logger as Logger
+import System.Log.Logger (Priority(DEBUG,INFO))
+import System.Log.Logger.TH
+
+import LogicGrowsOnTrees (TreeT)
+import LogicGrowsOnTrees.Parallel.Common.Message (MessageForSupervisor(..),MessageForSupervisorFor,MessageForWorker(..))
+import LogicGrowsOnTrees.Parallel.Common.Worker hiding (ProgressUpdate,StolenWorkload)
+import LogicGrowsOnTrees.Parallel.ExplorationMode (ProgressFor,ResultFor,ExplorationMode(..),WorkerFinishedProgressFor)
+import LogicGrowsOnTrees.Parallel.Purity
+import LogicGrowsOnTrees.Utils.Handle
+
+--------------------------------------------------------------------------------
+----------------------------------- Loggers ------------------------------------
+--------------------------------------------------------------------------------
+
+deriveLoggers "Logger" [DEBUG,INFO]
+
+--------------------------------------------------------------------------------
+----------------------------------- Functions ----------------------------------
+--------------------------------------------------------------------------------
+
+{-| Runs a loop that continually fetches and reacts to messages from the
+    supervisor until the worker quits.
+ -}
+runWorker ::
+    ∀ exploration_mode m n.
+    ExplorationMode exploration_mode {-^ the mode in to explore the tree -} →
+    Purity m n {-^ the purity of the tree -} →
+    TreeT m (ResultFor exploration_mode) {-^ the tree -} →
+    IO MessageForWorker {-^ the action used to fetch the next message -} →
+    (MessageForSupervisorFor exploration_mode → IO ()) {-^ the action to send a message to the supervisor;  note that this might occur in a different thread from the worker loop -} →
+    IO ()
+runWorker exploration_mode purity tree receiveMessage sendMessage =
+    -- Note:  This an MVar rather than an IORef because it is used by two
+    --        threads --- this one and the worker thread --- and I wanted to use
+    --        a mechanism that ensured that the new value would be observed by
+    --        the other thread immediately rather than when the cache lines
+    --        are flushed to the other processors.
+    newEmptyMVar >>= \worker_environment_mvar →
+    let processRequest ::
+            (WorkerRequestQueue (ProgressFor exploration_mode) → (α → IO ()) → IO ()) →
+            (α → MessageForSupervisorFor exploration_mode) →
+            IO ()
+        processRequest sendRequest constructResponse =
+            tryTakeMVar worker_environment_mvar
+            >>=
+            maybe (return ()) (\worker_environment@WorkerEnvironment{workerPendingRequests} → do
+                _ ← sendRequest workerPendingRequests (sendMessage . constructResponse)
+                putMVar worker_environment_mvar worker_environment
+            )
+        processNextMessage = receiveMessage >>= \message →
+            case message of
+                RequestProgressUpdate → do
+                    processRequest sendProgressUpdateRequest ProgressUpdate
+                    processNextMessage
+                RequestWorkloadSteal → do
+                    processRequest sendWorkloadStealRequest StolenWorkload
+                    processNextMessage
+                StartWorkload workload → do
+                    infoM "Received workload."
+                    debugM $ "Workload is: " ++ show workload
+                    worker_is_running ← not <$> isEmptyMVar worker_environment_mvar
+                    if worker_is_running
+                        then sendMessage $ Failed "received a workload when the worker was already running"
+                        else forkWorkerThread
+                                exploration_mode
+                                purity
+                                (\termination_reason → do
+                                    _ ← takeMVar worker_environment_mvar
+                                    case termination_reason of
+                                        WorkerFinished final_progress →
+                                            sendMessage $ Finished final_progress
+                                        WorkerFailed exception →
+                                            sendMessage $ Failed (show exception)
+                                        WorkerAborted →
+                                            return ()
+                                )
+                                tree
+                                workload
+                                (case exploration_mode of
+                                    AllMode → absurd
+                                    FirstMode → absurd
+                                    FoundModeUsingPull _ → absurd
+                                    FoundModeUsingPush _ → sendMessage . ProgressUpdate
+                                )
+                             >>=
+                             putMVar worker_environment_mvar
+                    processNextMessage
+                QuitWorker → do
+                    sendMessage WorkerQuit
+                    liftIO $
+                        tryTakeMVar worker_environment_mvar
+                        >>=
+                        maybe (return ()) (killThread . workerThreadId)
+    in processNextMessage
+        `catches`
+        [Handler $ \e → case e of
+            ThreadKilled → return ()
+            UserInterrupt → return ()
+            _ → throwIO e
+        ,Handler $ \e → case e of
+            ConnectionLost → debugM "Connection to supervisor was lost before this process had finished."
+        ]
+{-# INLINE runWorker #-}
+
+{-| The same as 'runWorker', but it lets you provide handles through which the
+    messages will be sent and received. (Note that the reading and writing
+    handles might be the same.)
+ -}
+runWorkerUsingHandles ::
+    ( Serialize (ProgressFor exploration_mode)
+    , Serialize (WorkerFinishedProgressFor exploration_mode)
+    ) ⇒
+    ExplorationMode exploration_mode {-^ the mode in to explore the tree -} →
+    Purity m n {-^ the purity of the tree -} →
+    TreeT m (ResultFor exploration_mode) {-^ the tree -} →
+    Handle {-^ handle from which messages from the supervisor are read -} →
+    Handle {-^ handle to which messages to the supervisor are written -} →
+    IO ()
+runWorkerUsingHandles exploration_mode purity tree receive_handle send_handle =
+    newMVar () >>= \send_lock →
+    runWorker
+        exploration_mode
+        purity
+        tree
+        (receive receive_handle)
+        (withMVar send_lock . const . send send_handle)
+{-# INLINE runWorkerUsingHandles #-}
+</pre></br><h2>printed</h2></br><pre>{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE GADTs #-}
+{-# LANGUAGE NoMonomorphismRestriction #-}
+{-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE UnicodeSyntax #-}
+
+{-| This module contains functions that let one easily implement the worker side
+    of an adapter under the assumption that the worker uses a two-way
+    communication channel with the supervisor for sending and receiving
+    messages.  (Examples of when this is NOT the case is the threads adapter,
+    where you can communicate with the worker threads directly, and the MPI
+    adapter, which has communication primitives that don't quite align with
+    this setup.)
+ -}
+module LogicGrowsOnTrees.Parallel.Common.Process
+    (
+    -- * Exceptions
+      ConnectionLost(..)
+    -- * Functions
+    , runWorker
+    , runWorkerUsingHandles
+    ) where
+
+import Control.Concurrent (killThread)
+import Control.Concurrent.MVar (isEmptyMVar,newEmptyMVar,newMVar,putMVar,takeMVar,tryTakeMVar,withMVar)
+import Control.Exception (AsyncException(ThreadKilled,UserInterrupt),Handler(..),catches,throwIO)
+import Control.Monad.IO.Class
+
+import Data.Functor ((<$>))
+import Data.Serialize
+import Data.Void (absurd)
+
+import System.IO (Handle)
+import qualified System.Log.Logger as Logger
+import System.Log.Logger (Priority(DEBUG,INFO))
+import System.Log.Logger.TH
+
+import LogicGrowsOnTrees (TreeT)
+import LogicGrowsOnTrees.Parallel.Common.Message (MessageForSupervisor(..),MessageForSupervisorFor,MessageForWorker(..))
+import LogicGrowsOnTrees.Parallel.Common.Worker hiding (ProgressUpdate,StolenWorkload)
+import LogicGrowsOnTrees.Parallel.ExplorationMode (ProgressFor,ResultFor,ExplorationMode(..),WorkerFinishedProgressFor)
+import LogicGrowsOnTrees.Parallel.Purity
+import LogicGrowsOnTrees.Utils.Handle
+
+--------------------------------------------------------------------------------
+----------------------------------- Loggers ------------------------------------
+--------------------------------------------------------------------------------
+
+deriveLoggers "Logger" [DEBUG,INFO]
+
+--------------------------------------------------------------------------------
+----------------------------------- Functions ----------------------------------
+--------------------------------------------------------------------------------
+
+{-| Runs a loop that continually fetches and reacts to messages from the
+    supervisor until the worker quits.
+ -}
+runWorker ::
+    forall exploration_mode m n.
+    ExplorationMode exploration_mode {-^ the mode in to explore the tree -} ->
+    Purity m n {-^ the purity of the tree -} ->
+    TreeT m (ResultFor exploration_mode) {-^ the tree -} ->
+    IO MessageForWorker {-^ the action used to fetch the next message -} ->
+    (MessageForSupervisorFor exploration_mode -> IO ()) {-^ the action to send a message to the supervisor;  note that this might occur in a different thread from the worker loop -} ->
+    IO ()
+runWorker exploration_mode purity tree receiveMessage sendMessage =
+    -- Note:  This an MVar rather than an IORef because it is used by two
+    --        threads --- this one and the worker thread --- and I wanted to use
+    --        a mechanism that ensured that the new value would be observed by
+    --        the other thread immediately rather than when the cache lines
+    --        are flushed to the other processors.
+    newEmptyMVar >>= \worker_environment_mvar ->
+    let processRequest ::
+            (WorkerRequestQueue (ProgressFor exploration_mode) -> (α -> IO ()) -> IO ()) ->
+            (α -> MessageForSupervisorFor exploration_mode) ->
+            IO ()
+        processRequest sendRequest constructResponse =
+            tryTakeMVar worker_environment_mvar
+            >>=
+            maybe (return ()) (\worker_environment@WorkerEnvironment{workerPendingRequests} -> do
+                _ <- sendRequest workerPendingRequests (sendMessage . constructResponse)
+                putMVar worker_environment_mvar worker_environment
+            )
+        processNextMessage = receiveMessage >>= \message ->
+            case message of
+                RequestProgressUpdate -> do
+                    processRequest sendProgressUpdateRequest ProgressUpdate
+                    processNextMessage
+                RequestWorkloadSteal -> do
+                    processRequest sendWorkloadStealRequest StolenWorkload
+                    processNextMessage
+                StartWorkload workload -> do
+                    infoM "Received workload."
+                    debugM $ "Workload is: " ++ show workload
+                    worker_is_running <- not <$> isEmptyMVar worker_environment_mvar
+                    if worker_is_running
+                        then sendMessage $ Failed "received a workload when the worker was already running"
+                        else forkWorkerThread
+                                exploration_mode
+                                purity
+                                (\termination_reason -> do
+                                    _ <- takeMVar worker_environment_mvar
+                                    case termination_reason of
+                                        WorkerFinished final_progress ->
+                                            sendMessage $ Finished final_progress
+                                        WorkerFailed exception ->
+                                            sendMessage $ Failed (show exception)
+                                        WorkerAborted ->
+                                            return ()
+                                )
+                                tree
+                                workload
+                                (case exploration_mode of
+                                    AllMode -> absurd
+                                    FirstMode -> absurd
+                                    FoundModeUsingPull _ -> absurd
+                                    FoundModeUsingPush _ -> sendMessage . ProgressUpdate
+                                )
+                             >>=
+                             putMVar worker_environment_mvar
+                    processNextMessage
+                QuitWorker -> do
+                    sendMessage WorkerQuit
+                    liftIO $
+                        tryTakeMVar worker_environment_mvar
+                        >>=
+                        maybe (return ()) (killThread . workerThreadId)
+    in processNextMessage
+        `catches`
+        [Handler $ \e -> case e of
+            ThreadKilled -> return ()
+            UserInterrupt -> return ()
+            _ -> throwIO e
+        ,Handler $ \e -> case e of
+            ConnectionLost -> debugM "Connection to supervisor was lost before this process had finished."
+        ]
+{-# INLINE runWorker #-}
+
+{-| The same as 'runWorker', but it lets you provide handles through which the
+    messages will be sent and received. (Note that the reading and writing
+    handles might be the same.)
+ -}
+runWorkerUsingHandles ::
+    ( Serialize (ProgressFor exploration_mode)
+    , Serialize (WorkerFinishedProgressFor exploration_mode)
+    ) =>
+    ExplorationMode exploration_mode {-^ the mode in to explore the tree -} ->
+    Purity m n {-^ the purity of the tree -} ->
+    TreeT m (ResultFor exploration_mode) {-^ the tree -} ->
+    Handle {-^ handle from which messages from the supervisor are read -} ->
+    Handle {-^ handle to which messages to the supervisor are written -} ->
+    IO ()
+runWorkerUsingHandles exploration_mode purity tree receive_handle send_handle =
+    newMVar () >>= \send_lock ->
+    runWorker
+        exploration_mode
+        purity
+        tree
+        (receive receive_handle)
+        (withMVar send_lock . const . send send_handle)
+{-# INLINE runWorkerUsingHandles #-}
+
+</pre>

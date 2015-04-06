@@ -1,0 +1,198 @@
+<a href="Internal.hs13585809791624379149.out.html">prev</a></br><a href="failures.html">home</a></br><a href="Internal.hs1492192799970343127.out.html">next</a></br></br><pre>16c16
+< tryReadInt ∷ (Stream s m Char, Num a) ⇒ String → ParsecT s st m a
+---
+> tryReadInt :: (Stream s m Char, Num a) => String -> ParsecT s st m a
+19c19
+<     then return $ fromIntegral $ foldl (\a b → 10*a+b) 0 $ map digitToInt str
+---
+>     then return $ fromIntegral $ foldl (\a b -> 10*a+b) 0 $ map digitToInt str
+23d22
+< times ∷ (Stream s m Char)
+24d22
+<      ⇒ Int
+25d22
+<      → ParsecT s st m t
+26c23
+<      → ParsecT s st m [t]
+---
+> times :: (Stream s m Char)
+26a24
+>      => Int
+26a25
+>      -> ParsecT s st m t
+26a26
+>      -> ParsecT s st m [t]
+29d28
+<   ts ← times (n-1) p
+30c29
+<   t ← optionMaybe p
+---
+>   ts <- times (n-1) p
+30a30
+>   t <- optionMaybe p
+32d31
+<     Just t' → return (ts ++ [t'])
+33c32
+<     Nothing → return ts
+---
+>     Just t' -> return (ts ++ [t'])
+33a33
+>     Nothing -> return ts
+37d36
+< number ∷ Stream s m Char
+38d36
+<        ⇒ Int   -- ^ Number of digits
+39d36
+<        → Int   -- ^ Maximum value
+40c37
+<        → ParsecT s st m Int
+---
+> number :: Stream s m Char
+40a38
+>        => Int   -- ^ Number of digits
+40a39
+>        -> Int   -- ^ Maximum value
+40a40
+>        -> ParsecT s st m Int
+42c42
+<   t ← tryReadInt =<< (n `times` digit)
+---
+>   t <- tryReadInt =<< (n `times` digit)
+47c47
+< pYear ∷ Stream s m Char => ParsecT s st m Int
+---
+> pYear :: Stream s m Char => ParsecT s st m Int
+49c49
+<   y ← number 4 10000
+---
+>   y <- number 4 10000
+54c54
+< pMonth ∷ Stream s m Char => ParsecT s st m Int
+---
+> pMonth :: Stream s m Char => ParsecT s st m Int
+57c57
+< pDay ∷ Stream s m Char => ParsecT s st m Int
+---
+> pDay :: Stream s m Char => ParsecT s st m Int
+59a60
+> 
+</pre></br><h2>original</h2></br><pre>{-# LANGUAGE UnicodeSyntax, DeriveDataTypeable, FlexibleContexts #-}
+
+module Data.Dates.Internal where
+
+import Data.Char
+
+import Text.Parsec
+
+-- | Parser version of Prelude.read
+tryRead :: (Read a, Stream s m Char) => String -> ParsecT s st m a
+tryRead str =
+  case reads str of
+    [(res, "")] -> return res
+    _ -> fail $ "Cannot read: " ++ str
+
+tryReadInt ∷ (Stream s m Char, Num a) ⇒ String → ParsecT s st m a
+tryReadInt str =
+  if all isDigit str
+    then return $ fromIntegral $ foldl (\a b → 10*a+b) 0 $ map digitToInt str
+    else fail $ "Cannot read: " ++ str
+
+-- | Apply parser N times
+times ∷ (Stream s m Char)
+     ⇒ Int
+     → ParsecT s st m t
+     → ParsecT s st m [t]
+times 0 _ = return []
+times n p = do
+  ts ← times (n-1) p
+  t ← optionMaybe p
+  case t of
+    Just t' → return (ts ++ [t'])
+    Nothing → return ts
+
+-- | Parse natural number of N digits
+-- which is not greater than M
+number ∷ Stream s m Char
+       ⇒ Int   -- ^ Number of digits
+       → Int   -- ^ Maximum value
+       → ParsecT s st m Int
+number n m = do
+  t ← tryReadInt =<< (n `times` digit)
+  if t > m
+    then fail "number too large"
+    else return t
+
+pYear ∷ Stream s m Char => ParsecT s st m Int
+pYear = do
+  y ← number 4 10000
+  if y < 2000
+    then return (y+2000)
+    else return y
+
+pMonth ∷ Stream s m Char => ParsecT s st m Int
+pMonth = number 2 12
+
+pDay ∷ Stream s m Char => ParsecT s st m Int
+pDay = number 2 31
+
+</pre></br><h2>printed</h2></br><pre>{-# LANGUAGE UnicodeSyntax, DeriveDataTypeable, FlexibleContexts #-}
+
+module Data.Dates.Internal where
+
+import Data.Char
+
+import Text.Parsec
+
+-- | Parser version of Prelude.read
+tryRead :: (Read a, Stream s m Char) => String -> ParsecT s st m a
+tryRead str =
+  case reads str of
+    [(res, "")] -> return res
+    _ -> fail $ "Cannot read: " ++ str
+
+tryReadInt :: (Stream s m Char, Num a) => String -> ParsecT s st m a
+tryReadInt str =
+  if all isDigit str
+    then return $ fromIntegral $ foldl (\a b -> 10*a+b) 0 $ map digitToInt str
+    else fail $ "Cannot read: " ++ str
+
+-- | Apply parser N times
+times :: (Stream s m Char)
+     => Int
+     -> ParsecT s st m t
+     -> ParsecT s st m [t]
+times 0 _ = return []
+times n p = do
+  ts <- times (n-1) p
+  t <- optionMaybe p
+  case t of
+    Just t' -> return (ts ++ [t'])
+    Nothing -> return ts
+
+-- | Parse natural number of N digits
+-- which is not greater than M
+number :: Stream s m Char
+       => Int   -- ^ Number of digits
+       -> Int   -- ^ Maximum value
+       -> ParsecT s st m Int
+number n m = do
+  t <- tryReadInt =<< (n `times` digit)
+  if t > m
+    then fail "number too large"
+    else return t
+
+pYear :: Stream s m Char => ParsecT s st m Int
+pYear = do
+  y <- number 4 10000
+  if y < 2000
+    then return (y+2000)
+    else return y
+
+pMonth :: Stream s m Char => ParsecT s st m Int
+pMonth = number 2 12
+
+pDay :: Stream s m Char => ParsecT s st m Int
+pDay = number 2 31
+
+
+</pre>

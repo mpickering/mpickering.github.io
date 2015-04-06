@@ -1,0 +1,374 @@
+<a href="Signal.hs1952509530130060903.out.html">prev</a></br><a href="failures.html">home</a></br><a href="Signal.hs21187978011060806853.out.html">next</a></br></br><pre>120c120
+< {-# INLINE (&*^) #-}
+---
+> {-# INLINE (&*^) #
+183a184
+> 
+</pre></br><h2>original</h2></br><pre>{- |
+Copyright   :  (c) Henning Thielemann 2008
+License     :  GPL
+
+Maintainer  :  synthesizer@henning-thielemann.de
+Stability   :  provisional
+Portability :  requires multi-parameter type classes
+
+For a description see "Synthesizer.Dimensional.Process".
+-}
+module Synthesizer.Dimensional.RateAmplitude.Signal (
+   D, R,
+   Proc.toTimeScalar,
+   Proc.toFrequencyScalar,
+   toAmplitudeScalar,
+   toGradientScalar,
+   DimensionGradient,
+   amplitude, samples,
+   fromSignal, fromSamples,
+   scalarSamples, fromScalarSamples, scalarSamplesGeneric,
+   vectorSamples, fromVectorSamples,
+   replaceAmplitude,
+   replaceSamples,
+   processSamples,
+   asTypeOfAmplitude,
+   ($-),  ($&),
+   (&*^), (&*>^),
+   cache, bindCached, share,
+
+   toStorableInt16Mono,
+   toStorableInt16Stereo,
+   ) where
+
+import Synthesizer.Dimensional.Process (($:), ($^), ($#), )
+import qualified Synthesizer.Dimensional.Process as Proc
+
+import qualified Synthesizer.Dimensional.Abstraction.Flat as Flat
+import qualified Synthesizer.Dimensional.Abstraction.RateIndependent as Ind
+import qualified Synthesizer.Dimensional.RatePhantom as RP
+
+import Synthesizer.Dimensional.Amplitude.Signal as SigA
+import qualified Synthesizer.Dimensional.Amplitude.Control as CtrlV
+import qualified Synthesizer.Dimensional.Straight.Signal   as SigS
+import qualified Synthesizer.State.Signal as Sig
+import qualified Synthesizer.Storable.Signal as SigSt
+
+import qualified Synthesizer.Frame.Stereo as Stereo
+import qualified Synthesizer.Basic.Binary as BinSmp
+import Data.Int (Int16)
+import Foreign.Storable (Storable, )
+
+import qualified Number.DimensionTerm        as DN
+import qualified Algebra.DimensionTerm       as Dim
+import Number.DimensionTerm ((&/&))
+
+import qualified Algebra.Module         as Module
+import qualified Algebra.RealField      as RealField
+import qualified Algebra.Field          as Field
+import qualified Algebra.Real           as Real
+import qualified Algebra.Ring           as Ring
+
+-- import qualified Data.List as List
+
+-- import NumericPrelude (zero, one, )
+-- import PreludeBase
+import Prelude (($), (.), Bool, fmap, return, (=<<), )
+
+
+
+type DimensionGradient u v = Dim.Mul (Dim.Recip u) v
+
+{-# INLINE toGradientScalar #-}
+toGradientScalar :: (Field.C q, Dim.C u, Dim.C v) =>
+   DN.T v q -> DN.T (DimensionGradient u v) q -> Proc.T s u q q
+toGradientScalar amp steepness =
+   Proc.toFrequencyScalar
+   (DN.rewriteDimension (Dim.identityRight . Dim.applyRightMul Dim.cancelRight . Dim.associateRight) $
+    steepness &/& amp)
+
+
+infixl 0 $-, $&
+
+{- |
+Take a scalar argument where a process expects a signal.
+Only possible for non-negative values so far.
+-}
+{-# INLINE ($-) #-}
+($-) :: (Field.C y, Real.C y, Dim.C u, Dim.C v) =>
+    Proc.T s u t (R s v y y -> a) -> DN.T v y -> Proc.T s u t a
+($-) f x = f $: Proc.pure (CtrlV.constant x)
+
+{- |
+Take a signal with 'DN.Scalar' unit in amplitude
+where the process expects a plain 'Sig.T'.
+This is no longer important
+since the processes which expects those inputs
+can use the Flat type class.
+-}
+{-# INLINE ($&) #-}
+($&) :: (Ring.C y) =>
+   Proc.T s u t (SigS.R s y -> a) ->
+   Proc.T s u t (R s Dim.Scalar y y) ->
+   Proc.T s u t a
+($&) f arg =
+   do x <- arg
+      f $# SigS.fromSamples (scalarSamples DN.toNumber x)
+--      f $# toScalarSignal one x
+
+
+infix 7 &*^, &*>^
+
+{-# INLINE (&*^) #-}
+(&*^) :: (Flat.C flat y) =>
+   DN.T v y ->
+   Proc.T s u t (RP.T s flat y) ->
+   Proc.T s u t (R s v y y)
+(&*^) v x = fromSamples v . Flat.toSamples $^ x
+
+{-
+{-# INLINE (&*^) #-}
+(&*^) :: (Flat.C flat y) =>
+   DN.T v y ->
+   Proc.T s u t (SigS.R s y) ->
+   Proc.T s u t (R s v y y)
+(&*^) v x = fromSignal v $^ x
+-}
+
+{-# INLINE (&*>^) #-}
+(&*>^) ::
+   DN.T v y ->
+   Proc.T s u t (SigS.R s yv) ->
+   Proc.T s u t (R s v y yv)
+(&*>^) v x = fromSignal v $^ x
+
+{-# INLINE cache #-}
+cache ::
+   (Dim.C v, Ind.C w, Storable yv0) =>
+   Proc.T s u t (w (D v y SigS.S) yv0) ->
+   Proc.T s u t (w (D v y SigS.S) yv0)
+cache =
+   fmap (processSamples
+      (Sig.fromStorableSignal . Sig.toStorableSignal SigSt.defaultChunkSize))
+
+{-# INLINE bindCached #-}
+bindCached ::
+   (Dim.C v, Ind.C w, Storable yv0) =>
+   Proc.T s u t (w (D v y SigS.S) yv0) ->
+   (w (D v y SigS.S) yv0 -> Proc.T s u t b) ->
+   Proc.T s u t b
+bindCached x y =
+   y =<< cache x
+
+{-# INLINE share #-}
+share ::
+   (Dim.C v, Ind.C w, Storable yv0) =>
+   Proc.T s u t (w (D v y SigS.S) yv0) ->
+   (Proc.T s u t (w (D v y SigS.S) yv0) -> Proc.T s u t b) ->
+   Proc.T s u t b
+share x y = bindCached x (y . return)
+
+
+
+{-# INLINE toStorableInt16Mono #-}
+toStorableInt16Mono ::
+   (Ind.C w, RealField.C a) =>
+   w (SigA.S Dim.Voltage a) a ->
+   w SigSt.T Int16
+toStorableInt16Mono =
+   Ind.processSignal
+      (Sig.toStorableSignal SigSt.defaultChunkSize .
+       Sig.map BinSmp.int16FromCanonical .
+       SigA.scalarSamplesPrivate (DN.toNumberWithDimension Dim.voltage))
+
+{-# INLINE toStorableInt16Stereo #-}
+toStorableInt16Stereo ::
+   (Ind.C w, Module.C a a, RealField.C a) =>
+   w (SigA.S Dim.Voltage a) (Stereo.T a) ->
+   w SigSt.T (Stereo.T Int16)
+toStorableInt16Stereo =
+   Ind.processSignal
+      (Sig.toStorableSignal SigSt.defaultChunkSize .
+       Sig.map (Stereo.map BinSmp.int16FromCanonical) .
+       SigA.vectorSamplesPrivate (DN.toNumberWithDimension Dim.voltage))
+</pre></br><h2>printed</h2></br><pre>{- |
+Copyright   :  (c) Henning Thielemann 2008
+License     :  GPL
+
+Maintainer  :  synthesizer@henning-thielemann.de
+Stability   :  provisional
+Portability :  requires multi-parameter type classes
+
+For a description see "Synthesizer.Dimensional.Process".
+-}
+module Synthesizer.Dimensional.RateAmplitude.Signal (
+   D, R,
+   Proc.toTimeScalar,
+   Proc.toFrequencyScalar,
+   toAmplitudeScalar,
+   toGradientScalar,
+   DimensionGradient,
+   amplitude, samples,
+   fromSignal, fromSamples,
+   scalarSamples, fromScalarSamples, scalarSamplesGeneric,
+   vectorSamples, fromVectorSamples,
+   replaceAmplitude,
+   replaceSamples,
+   processSamples,
+   asTypeOfAmplitude,
+   ($-),  ($&),
+   (&*^), (&*>^),
+   cache, bindCached, share,
+
+   toStorableInt16Mono,
+   toStorableInt16Stereo,
+   ) where
+
+import Synthesizer.Dimensional.Process (($:), ($^), ($#), )
+import qualified Synthesizer.Dimensional.Process as Proc
+
+import qualified Synthesizer.Dimensional.Abstraction.Flat as Flat
+import qualified Synthesizer.Dimensional.Abstraction.RateIndependent as Ind
+import qualified Synthesizer.Dimensional.RatePhantom as RP
+
+import Synthesizer.Dimensional.Amplitude.Signal as SigA
+import qualified Synthesizer.Dimensional.Amplitude.Control as CtrlV
+import qualified Synthesizer.Dimensional.Straight.Signal   as SigS
+import qualified Synthesizer.State.Signal as Sig
+import qualified Synthesizer.Storable.Signal as SigSt
+
+import qualified Synthesizer.Frame.Stereo as Stereo
+import qualified Synthesizer.Basic.Binary as BinSmp
+import Data.Int (Int16)
+import Foreign.Storable (Storable, )
+
+import qualified Number.DimensionTerm        as DN
+import qualified Algebra.DimensionTerm       as Dim
+import Number.DimensionTerm ((&/&))
+
+import qualified Algebra.Module         as Module
+import qualified Algebra.RealField      as RealField
+import qualified Algebra.Field          as Field
+import qualified Algebra.Real           as Real
+import qualified Algebra.Ring           as Ring
+
+-- import qualified Data.List as List
+
+-- import NumericPrelude (zero, one, )
+-- import PreludeBase
+import Prelude (($), (.), Bool, fmap, return, (=<<), )
+
+
+
+type DimensionGradient u v = Dim.Mul (Dim.Recip u) v
+
+{-# INLINE toGradientScalar #-}
+toGradientScalar :: (Field.C q, Dim.C u, Dim.C v) =>
+   DN.T v q -> DN.T (DimensionGradient u v) q -> Proc.T s u q q
+toGradientScalar amp steepness =
+   Proc.toFrequencyScalar
+   (DN.rewriteDimension (Dim.identityRight . Dim.applyRightMul Dim.cancelRight . Dim.associateRight) $
+    steepness &/& amp)
+
+
+infixl 0 $-, $&
+
+{- |
+Take a scalar argument where a process expects a signal.
+Only possible for non-negative values so far.
+-}
+{-# INLINE ($-) #-}
+($-) :: (Field.C y, Real.C y, Dim.C u, Dim.C v) =>
+    Proc.T s u t (R s v y y -> a) -> DN.T v y -> Proc.T s u t a
+($-) f x = f $: Proc.pure (CtrlV.constant x)
+
+{- |
+Take a signal with 'DN.Scalar' unit in amplitude
+where the process expects a plain 'Sig.T'.
+This is no longer important
+since the processes which expects those inputs
+can use the Flat type class.
+-}
+{-# INLINE ($&) #-}
+($&) :: (Ring.C y) =>
+   Proc.T s u t (SigS.R s y -> a) ->
+   Proc.T s u t (R s Dim.Scalar y y) ->
+   Proc.T s u t a
+($&) f arg =
+   do x <- arg
+      f $# SigS.fromSamples (scalarSamples DN.toNumber x)
+--      f $# toScalarSignal one x
+
+
+infix 7 &*^, &*>^
+
+{-# INLINE (&*^) #-}
+(&*^) :: (Flat.C flat y) =>
+   DN.T v y ->
+   Proc.T s u t (RP.T s flat y) ->
+   Proc.T s u t (R s v y y)
+(&*^) v x = fromSamples v . Flat.toSamples $^ x
+
+{-
+{-# INLINE (&*^) #
+(&*^) :: (Flat.C flat y) =>
+   DN.T v y ->
+   Proc.T s u t (SigS.R s y) ->
+   Proc.T s u t (R s v y y)
+(&*^) v x = fromSignal v $^ x
+-}
+
+{-# INLINE (&*>^) #-}
+(&*>^) ::
+   DN.T v y ->
+   Proc.T s u t (SigS.R s yv) ->
+   Proc.T s u t (R s v y yv)
+(&*>^) v x = fromSignal v $^ x
+
+{-# INLINE cache #-}
+cache ::
+   (Dim.C v, Ind.C w, Storable yv0) =>
+   Proc.T s u t (w (D v y SigS.S) yv0) ->
+   Proc.T s u t (w (D v y SigS.S) yv0)
+cache =
+   fmap (processSamples
+      (Sig.fromStorableSignal . Sig.toStorableSignal SigSt.defaultChunkSize))
+
+{-# INLINE bindCached #-}
+bindCached ::
+   (Dim.C v, Ind.C w, Storable yv0) =>
+   Proc.T s u t (w (D v y SigS.S) yv0) ->
+   (w (D v y SigS.S) yv0 -> Proc.T s u t b) ->
+   Proc.T s u t b
+bindCached x y =
+   y =<< cache x
+
+{-# INLINE share #-}
+share ::
+   (Dim.C v, Ind.C w, Storable yv0) =>
+   Proc.T s u t (w (D v y SigS.S) yv0) ->
+   (Proc.T s u t (w (D v y SigS.S) yv0) -> Proc.T s u t b) ->
+   Proc.T s u t b
+share x y = bindCached x (y . return)
+
+
+
+{-# INLINE toStorableInt16Mono #-}
+toStorableInt16Mono ::
+   (Ind.C w, RealField.C a) =>
+   w (SigA.S Dim.Voltage a) a ->
+   w SigSt.T Int16
+toStorableInt16Mono =
+   Ind.processSignal
+      (Sig.toStorableSignal SigSt.defaultChunkSize .
+       Sig.map BinSmp.int16FromCanonical .
+       SigA.scalarSamplesPrivate (DN.toNumberWithDimension Dim.voltage))
+
+{-# INLINE toStorableInt16Stereo #-}
+toStorableInt16Stereo ::
+   (Ind.C w, Module.C a a, RealField.C a) =>
+   w (SigA.S Dim.Voltage a) (Stereo.T a) ->
+   w SigSt.T (Stereo.T Int16)
+toStorableInt16Stereo =
+   Ind.processSignal
+      (Sig.toStorableSignal SigSt.defaultChunkSize .
+       Sig.map (Stereo.map BinSmp.int16FromCanonical) .
+       SigA.vectorSamplesPrivate (DN.toNumberWithDimension Dim.voltage))
+
+</pre>

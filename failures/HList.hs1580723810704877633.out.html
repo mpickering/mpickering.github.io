@@ -1,0 +1,164 @@
+<a href="hledger-vty.hs8933518161505795335.out.html">prev</a></br><a href="failures.html">home</a></br><a href="HList.hs2128236579784558821.out.html">next</a></br></br><pre>24d23
+<   HNil :: HList '[]
+25c24
+<   (:+:) :: x -> HList xs -> HList (x ': xs)
+---
+>   HNil :: HList 
+25a25
+>   (:+:) :: x -> HList xs -> HList (x  : xs)
+31c31
+< instance Show (HList '[]) where
+---
+> instance Show (HList    ) where
+34c34
+< instance (Show a, Show (HList b)) => Show (HList (a ': b)) where
+---
+> instance (Show a, Show (HList b)) => Show (HList (a  : b)) where
+37c37
+< instance Monoid (HList '[]) where
+---
+> instance Monoid (HList    ) where
+42c42
+<       => Monoid (HList (x ': xs))
+---
+>       => Monoid (HList (x  : xs))
+48c48
+< instance Eq (HList '[]) where
+---
+> instance Eq (HList    ) where
+53c53
+<       => Eq (HList (x ': xs))
+---
+>       => Eq (HList (x  : xs))
+59d58
+< type instance Append '[] l2 = l2
+60c59
+< type instance Append (car1 ': cdr2) l2 = car1 ': Append cdr2 l2
+---
+> type instance Append     l2 = l2
+60a60
+> type instance Append (car1  : cdr2) l2 = car1  : Append cdr2 l2
+60a61
+> 
+</pre></br><h2>original</h2></br><pre>{-# LANGUAGE GADTs #-}
+{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE TypeOperators #-}
+
+-- | A GADT HList implementation
+--
+-- Probably exists somewhere else already, but why add a dependency
+-- for something so simple.
+module Data.HList.HList
+  ( HList(..)
+  , Append
+) where
+
+
+
+import Prelude hiding (reverse)
+
+import Data.Monoid
+
+
+
+data HList :: [*] -> * where
+  HNil :: HList '[]
+  (:+:) :: x -> HList xs -> HList (x ': xs)
+  -- TCons :: x -> HList xs -> HList (Cons x xs)
+  -- TNull :: HList Null
+
+infixr 5 :+:
+
+instance Show (HList '[]) where
+  show _ = "()"
+
+instance (Show a, Show (HList b)) => Show (HList (a ': b)) where
+  show (x :+: y) = "(" ++ show x ++ "," ++ show y ++ ")"
+
+instance Monoid (HList '[]) where
+  mempty = HNil
+  mappend _ _ = HNil
+
+instance (Monoid x, Monoid (HList xs))
+      => Monoid (HList (x ': xs))
+  where
+    mempty = mempty :+: mempty
+    mappend (x1 :+: xs1) (x2 :+: xs2) = (x1 `mappend` x2)
+                                    :+: (xs1 `mappend` xs2)
+
+instance Eq (HList '[]) where
+  HNil == HNil = True
+  HNil /= HNil = False
+
+instance (Eq x, Eq (HList xs))
+      => Eq (HList (x ': xs))
+  where
+    x1 :+: xr1 == x2 :+: xr2 = x1==x2 && xr1==xr2
+    x1 :+: xr1 /= x2 :+: xr2 = x1/=x2 || xr1/=xr2
+
+type family Append (l1::[*]) (l2::[*]) :: [*]
+type instance Append '[] l2 = l2
+type instance Append (car1 ': cdr2) l2 = car1 ': Append cdr2 l2
+</pre></br><h2>printed</h2></br><pre>{-# LANGUAGE GADTs #-}
+{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE TypeOperators #-}
+
+-- | A GADT HList implementation
+--
+-- Probably exists somewhere else already, but why add a dependency
+-- for something so simple.
+module Data.HList.HList
+  ( HList(..)
+  , Append
+) where
+
+
+
+import Prelude hiding (reverse)
+
+import Data.Monoid
+
+
+
+data HList :: [*] -> * where
+  HNil :: HList 
+  (:+:) :: x -> HList xs -> HList (x  : xs)
+  -- TCons :: x -> HList xs -> HList (Cons x xs)
+  -- TNull :: HList Null
+
+infixr 5 :+:
+
+instance Show (HList    ) where
+  show _ = "()"
+
+instance (Show a, Show (HList b)) => Show (HList (a  : b)) where
+  show (x :+: y) = "(" ++ show x ++ "," ++ show y ++ ")"
+
+instance Monoid (HList    ) where
+  mempty = HNil
+  mappend _ _ = HNil
+
+instance (Monoid x, Monoid (HList xs))
+      => Monoid (HList (x  : xs))
+  where
+    mempty = mempty :+: mempty
+    mappend (x1 :+: xs1) (x2 :+: xs2) = (x1 `mappend` x2)
+                                    :+: (xs1 `mappend` xs2)
+
+instance Eq (HList    ) where
+  HNil == HNil = True
+  HNil /= HNil = False
+
+instance (Eq x, Eq (HList xs))
+      => Eq (HList (x  : xs))
+  where
+    x1 :+: xr1 == x2 :+: xr2 = x1==x2 && xr1==xr2
+    x1 :+: xr1 /= x2 :+: xr2 = x1/=x2 || xr1/=xr2
+
+type family Append (l1::[*]) (l2::[*]) :: [*]
+type instance Append     l2 = l2
+type instance Append (car1  : cdr2) l2 = car1  : Append cdr2 l2
+
+</pre>

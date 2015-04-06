@@ -1,0 +1,464 @@
+<a href="Main.hs1399125485156091745.out.html">prev</a></br><a href="failures.html">home</a></br><a href="Main.hs15519013931617819336.out.html">next</a></br></br><pre>29d28
+<  where start :: Int = head $ dropWhile (cutoff $ fst $ head notecents) [1..]
+30c29
+<        end :: Int = head $ dropWhile (cutoff $ fst $ last notecents) [1..]
+---
+>  where start    Int = head $ dropWhile (cutoff $ fst $ head notecents) [1..]
+30a30
+>        end    Int = head $ dropWhile (cutoff $ fst $ last notecents) [1..]
+194c194
+<         bufSPD :: CArray Int Double = liftArray (\(a :+ b) -> spl $ spd a b) $ bufFFT
+---
+>         bufSPD    CArray Int Double = liftArray (\(a :+ b) -> spl $ spd a b) $ bufFFT
+224a225
+> 
+</pre></br><h2>original</h2></br><pre>{-# LANGUAGE ScopedTypeVariables, ParallelListComp #-}
+import Graphics.Gloss
+import Graphics.Gloss.Interface.IO.Animate
+import Data.Complex
+import Data.IORef
+import Math.FFT
+import Data.Array.CArray
+import GHC.Float ( double2Float )
+import Foreign.ForeignPtr
+import Data.Char ( toUpper, toLower )
+import Data.List ( sortBy, findIndex )
+
+import Sound.ALSA.PCM
+         ( SoundFmt(SoundFmt), sampleFreq, soundSourceRead,
+           SoundSource, alsaSoundSource, withSoundSource )
+import Foreign ( allocaArray, peekArray,
+                 Storable, Ptr, castPtr )
+import Data.Int ( Int16 )
+
+-- analyzer parameters
+fftSize, bufSize, rate :: Int
+fftSize = 16 * 1024
+winSize = 2 * fftSize
+bufSize = 2048
+rate = 44100
+fftDuration = fromIntegral winSize / fromIntegral rate -- seconds
+fftBin = fromIntegral rate / fromIntegral winSize -- hz
+fftLimits = (start, end)
+ where start :: Int = head $ dropWhile (cutoff $ fst $ head notecents) [1..]
+       end :: Int = head $ dropWhile (cutoff $ fst $ last notecents) [1..]
+       cutoff n = (<n) . cents . hz . fromIntegral
+
+-- frequency to tuning and back
+cents :: Double -> Double
+cents x = 100 * logBase (2**(1/12)) x
+uncent x = 2**(x/1200.0)
+shift :: (RealFrac a) => a -> Float
+shift x = (realToFrac x - realToFrac a55) / 2
+hz :: Double -> Double
+hz x = fftBin * x
+centscale :: Double -> Float
+centscale = shift . cents . hz
+a55, a3520 :: Double
+a55 = cents 55.25
+a3520 = cents 3520
+
+-- array twiddling
+mapArray f a = array (bounds a) $ map (\(i, v) -> (i, f i v)) $ assocs a
+
+shiftArray size old new = array (0, size' - 1) $ (zip [0..] $ drop remove $ elems old) ++ zip [retain..] (elems new)
+  where remove = dim old - retain
+        retain = minimum [ size - dim new, dim old ]
+        size' = retain + dim new
+        dim x = 1 + snd (bounds x) - fst (bounds x)
+
+quadEst :: Complex Double -> Complex Double -> Complex Double -> Double
+quadEst a x c = (y3 - y1) / ( 2 * ( 2 * y2 - y1 - y3 ) )
+  where y1 = magnitude a
+        y2 = magnitude x
+        y3 = magnitude c
+
+quinnEst :: Complex Double -> Complex Double -> Complex Double -> Double
+quinnEst a x c = 0.5 * (dp + dm) + tau (dp * dp) - tau (dm * dm)
+  where ap = (r c * r x + i c * i x) / (magnitude x ^ 2)
+        dp = (-ap) / (1 - ap)
+        am = (r a * r x + i a * i x) / (magnitude x ^ 2)
+        dm = am / (1 - am)
+        tau t = 0.25 * log (3 * t * t + 6 * t + 1) - sqrt 6 / 24 * log ((t + 1 - bit) / (t + 1 + bit))
+         where bit = sqrt (2/3)
+        i = imagPart
+        r = realPart
+
+peaks spd fft = map quinn $ sortBy (\x y -> compare (snd y) (snd x)) $ peaks' padded
+  where peaks' l
+           | (length $ take window l) < window = []
+           | maximum (map snd $ take window l) == snd (l !! center) = (l !! center) : (peaks' $ drop 1 l)
+           | otherwise = peaks' $ drop 1 l
+        padded = assocs spd
+        window = 15
+        center = 1 + window `div` 2
+        quinn (x, y) = (fromIntegral x + quinnEst (fft ! (x - 1)) (fft ! x) (fft ! (x + 1)), y) -- y is somewhat wrong
+
+maxPeak p [] = p
+maxPeak (mx, my) ((x, y):l)
+    | y > my = maxPeak (x, y) l
+    | otherwise = maxPeak (mx, my) l
+
+-- friendly names
+octave = [ "c", "cis", "d", "es", "e", "f", "fis", "g", "gis", "a", "b", "h" ]
+bass = let m (x:r) = toUpper x : r in map m octave
+decorate y = map (\x -> x ++ y)
+treble y = decorate y octave
+notenames = drop 9 $ decorate "," bass ++ bass ++ octave ++ treble "'" ++
+                     treble "''" ++ treble "'''" ++ treble "''''" ++ treble "'''''"
+notecents :: [(Double, String)]
+notecents = [ (x, y) | x <- [ a55, (a55+100) .. ] | y <- notenames ]
+showsign n = (if n >= 0 then "+" else "") ++ show n
+fancy :: Int -> ((Double, String), Int)
+fancy x = (notecents !! n, off)
+  where (n', off) | x' `mod` 100 > 50 = (x' `div` 100 + 1, x' `mod` 100 - 100)
+                  | otherwise = (x' `div` 100, x' `mod` 100)
+        n = maximum [0, n']
+        x' = x - round a55
+
+-- FFT twiddling
+hamming n i v = v * (0.53836 - 0.46164 * cos((2.0 * pi * fromIntegral i) / (fromIntegral n - 1)));
+spd x y = (1 / (fromIntegral fftSize ** 2)) * (x * x + y * y)
+spl x = case 100 * logBase 10 x of y | y < 100 -> 0
+                                     | otherwise -> y - 100
+normalize = id
+
+notebg ('a':_) = background 100
+notebg ('A':_) = background 100
+notebg _ = background 50
+
+-- UI bits
+draw = return . Translate (-640) (-280)
+background l = Color $ makeColor8 l l l 256
+
+guides = Pictures [ notebg y $ mark x y | (x, y) <- notecents ]
+  where mark x y = Pictures [ Line [ (shift x, 0), (shift x, 500) ]
+                            , Translate (shift x - 4) (-5) $ Rotate 90 $ Scale 0.25 0.25 $ Text y ]
+
+dbguides = background 100 $ Pictures $ concat markers
+  where markers = [ [ Line [ (0, y), (shift $ fst $ last notecents, y) ]
+                    , Translate (-30) y $ Scale 0.1 0.1 $ Text $ show (floor y) ]
+                  | y <- [50, 100 .. 450] ]
+
+drawfft bits = Line $ [ (centscale $ fromIntegral x, double2Float $ y) | (x, y) <- assocs bits ]
+
+centcolor c = case snd $ fancy c of
+    x | x <= -20 -> makeColor 1 0 1
+      | x <= -10 -> makeColor 0 1 1
+      | x > -10 && x < 10 -> makeColor 0 1 0
+      | x >= 10 -> makeColor 1 1 0
+      | x >= 20 -> makeColor 1 0 0
+
+drawpeaks peaks = Pictures $
+    [ draw (centscale x) (round . cents $ hz x) i | ((x, _), i) <- zip peaks [10,9..] ]
+  where draw x c i = color c [ color' c (1 - fromIntegral (abs $ offset c) / 50) $
+                                 [ Polygon [ (x, 0), (x, 500), (snap c, 500), (snap c, 0) ] ]
+                             , color' c 0.9 $ [ Line [ (snap c, 0), (snap c, 500) ] ]
+                             , Translate (maximum [snap c + 5, x + 5]) (200 + 25 * i) $
+                                  Scale 0.3 0.3 $ Text $ name c ++ showsign (offset c)
+                             ]
+        snap = shift . fst . fst . fancy
+        name = snd . fst . fancy
+        offset = snd . fancy
+        color c = color' c 1
+        color' c t = Color (centcolor c t) . Pictures
+
+drawpiano peaks = Pictures $ [ whitekey (c, unoctave n) white | (c, n) <- notecents, unoctave n `elem` whitekeys ] ++
+                             [ whitekey (snap p, name p) (color p) | p <- peaks', name p `elem` whitekeys ] ++
+                             [ blackkey (c, unoctave n) black | (c, n) <- notecents, unoctave n `elem` blackkeys ] ++
+                             [ blackkey (snap p, name p) (color p) | p <- peaks', name p `elem` blackkeys ]
+  where key c | snd c `elem` ["cis", "es", "fis", "gis", "b" ] = blackkey c
+              | otherwise = whitekey c
+        unoctave = map toLower . takeWhile (`notElem` ",'+")
+        color = uncurry centcolor
+        name = unoctave . snd . fst . fancy . fst
+        snap = fromIntegral . round . fst . fst . fancy . fst
+        peaks' = map (\(x, y) -> (round . cents $ hz x, double2Float y / 500)) peaks
+        poly c1 c2 p = Pictures [ Color c1 $ Polygon p, Color c2 $ Line p ]
+
+        octave = 600
+        width = octave / 7
+        whitekeys = ["a", "h", "c", "d", "e", "f", "g"]
+        blackkeys = ["b", "cis", "es", "fis", "gis", "b"]
+
+        keyat (top, bottom, w, fill, outline) c =
+            poly fill outline $ [(c - w, top), (c + w, top), (c + w, bottom), (c - w, bottom), (c - w, top)]
+
+        whitecenter (pos, x) = case findIndex (==x) whitekeys of
+            Just idx -> octave * fromIntegral ((round $ pos - a55) `div` 1200) + width * (fromIntegral idx)
+        whitekey (pos, x) c = keyat (-50, -350, width / 2, c, black) $ whitecenter (pos, x)
+
+        blackkey (pos, x) c = case x of
+            "b"   -> key ( 7) "a"
+            "cis" -> key (-7) "c"
+            "es"  -> key ( 7) "d"
+            "fis" -> key (-7) "f"
+            "gis" -> key ( 0) "g"
+          where key off rightof = keyat (-50, -250, width / 4, c, black) $ whitecenter (pos, rightof) + width / 2 + off
+
+analyze bits = draw $ Pictures
+    [ guides
+    , dbguides
+    , Color white $ drawfft bufSPD
+    , drawpeaks peakl
+    , drawpiano peakl
+    ]
+  where bufFloat = mapArray (\i v -> hamming winSize i $ normalize $ fromIntegral v) bits
+        bufFFT = array (start, end) $ drop start $ take end $ assocs $ dft bufFloat
+        bufSPD :: CArray Int Double = liftArray (\(a :+ b) -> spl $ spd a b) $ bufFFT
+        start = fst fftLimits
+        end = snd fftLimits
+        peakl = take 10 $ takeWhile ((> 150) . snd) $ peaks bufSPD bufFFT
+
+-- ALSA
+inputFormat :: SoundFmt Int16
+inputFormat = SoundFmt { sampleFreq = rate }
+
+main :: IO ()
+main = let source = alsaSoundSource "default" inputFormat
+        in allocaArray     bufSize $ \buf  ->
+           withSoundSource source  $ \from -> do
+               win <- newIORef $ array (0, 0) []
+               animateIO (InWindow "DFT" (1280,960) (0,0)) black (loop source from buf win)
+
+soundToArray src h buf size = do
+    n' <- soundSourceRead src h (castPtr buf) size
+    buf' <- newForeignPtr_ buf
+    unsafeForeignPtrToCArray buf' (0, n' - 1)
+
+loop :: SoundSource h Int16 -> h Int16 -> Ptr Int16 -> IORef (CArray Int Int16) -> Float -> IO Picture
+loop src h buf win time =
+    do new <- soundToArray src h buf bufSize
+       old <- readIORef win
+       let combined = shiftArray winSize old new
+       writeIORef win combined
+       case bounds combined of
+         (_, cwin) | cwin < winSize - 1 -> draw $ Pictures [ guides, dbguides ]
+                   | otherwise -> analyze combined
+
+</pre></br><h2>printed</h2></br><pre>{-# LANGUAGE ScopedTypeVariables, ParallelListComp #-}
+import Graphics.Gloss
+import Graphics.Gloss.Interface.IO.Animate
+import Data.Complex
+import Data.IORef
+import Math.FFT
+import Data.Array.CArray
+import GHC.Float ( double2Float )
+import Foreign.ForeignPtr
+import Data.Char ( toUpper, toLower )
+import Data.List ( sortBy, findIndex )
+
+import Sound.ALSA.PCM
+         ( SoundFmt(SoundFmt), sampleFreq, soundSourceRead,
+           SoundSource, alsaSoundSource, withSoundSource )
+import Foreign ( allocaArray, peekArray,
+                 Storable, Ptr, castPtr )
+import Data.Int ( Int16 )
+
+-- analyzer parameters
+fftSize, bufSize, rate :: Int
+fftSize = 16 * 1024
+winSize = 2 * fftSize
+bufSize = 2048
+rate = 44100
+fftDuration = fromIntegral winSize / fromIntegral rate -- seconds
+fftBin = fromIntegral rate / fromIntegral winSize -- hz
+fftLimits = (start, end)
+ where start    Int = head $ dropWhile (cutoff $ fst $ head notecents) [1..]
+       end    Int = head $ dropWhile (cutoff $ fst $ last notecents) [1..]
+       cutoff n = (<n) . cents . hz . fromIntegral
+
+-- frequency to tuning and back
+cents :: Double -> Double
+cents x = 100 * logBase (2**(1/12)) x
+uncent x = 2**(x/1200.0)
+shift :: (RealFrac a) => a -> Float
+shift x = (realToFrac x - realToFrac a55) / 2
+hz :: Double -> Double
+hz x = fftBin * x
+centscale :: Double -> Float
+centscale = shift . cents . hz
+a55, a3520 :: Double
+a55 = cents 55.25
+a3520 = cents 3520
+
+-- array twiddling
+mapArray f a = array (bounds a) $ map (\(i, v) -> (i, f i v)) $ assocs a
+
+shiftArray size old new = array (0, size' - 1) $ (zip [0..] $ drop remove $ elems old) ++ zip [retain..] (elems new)
+  where remove = dim old - retain
+        retain = minimum [ size - dim new, dim old ]
+        size' = retain + dim new
+        dim x = 1 + snd (bounds x) - fst (bounds x)
+
+quadEst :: Complex Double -> Complex Double -> Complex Double -> Double
+quadEst a x c = (y3 - y1) / ( 2 * ( 2 * y2 - y1 - y3 ) )
+  where y1 = magnitude a
+        y2 = magnitude x
+        y3 = magnitude c
+
+quinnEst :: Complex Double -> Complex Double -> Complex Double -> Double
+quinnEst a x c = 0.5 * (dp + dm) + tau (dp * dp) - tau (dm * dm)
+  where ap = (r c * r x + i c * i x) / (magnitude x ^ 2)
+        dp = (-ap) / (1 - ap)
+        am = (r a * r x + i a * i x) / (magnitude x ^ 2)
+        dm = am / (1 - am)
+        tau t = 0.25 * log (3 * t * t + 6 * t + 1) - sqrt 6 / 24 * log ((t + 1 - bit) / (t + 1 + bit))
+         where bit = sqrt (2/3)
+        i = imagPart
+        r = realPart
+
+peaks spd fft = map quinn $ sortBy (\x y -> compare (snd y) (snd x)) $ peaks' padded
+  where peaks' l
+           | (length $ take window l) < window = []
+           | maximum (map snd $ take window l) == snd (l !! center) = (l !! center) : (peaks' $ drop 1 l)
+           | otherwise = peaks' $ drop 1 l
+        padded = assocs spd
+        window = 15
+        center = 1 + window `div` 2
+        quinn (x, y) = (fromIntegral x + quinnEst (fft ! (x - 1)) (fft ! x) (fft ! (x + 1)), y) -- y is somewhat wrong
+
+maxPeak p [] = p
+maxPeak (mx, my) ((x, y):l)
+    | y > my = maxPeak (x, y) l
+    | otherwise = maxPeak (mx, my) l
+
+-- friendly names
+octave = [ "c", "cis", "d", "es", "e", "f", "fis", "g", "gis", "a", "b", "h" ]
+bass = let m (x:r) = toUpper x : r in map m octave
+decorate y = map (\x -> x ++ y)
+treble y = decorate y octave
+notenames = drop 9 $ decorate "," bass ++ bass ++ octave ++ treble "'" ++
+                     treble "''" ++ treble "'''" ++ treble "''''" ++ treble "'''''"
+notecents :: [(Double, String)]
+notecents = [ (x, y) | x <- [ a55, (a55+100) .. ] | y <- notenames ]
+showsign n = (if n >= 0 then "+" else "") ++ show n
+fancy :: Int -> ((Double, String), Int)
+fancy x = (notecents !! n, off)
+  where (n', off) | x' `mod` 100 > 50 = (x' `div` 100 + 1, x' `mod` 100 - 100)
+                  | otherwise = (x' `div` 100, x' `mod` 100)
+        n = maximum [0, n']
+        x' = x - round a55
+
+-- FFT twiddling
+hamming n i v = v * (0.53836 - 0.46164 * cos((2.0 * pi * fromIntegral i) / (fromIntegral n - 1)));
+spd x y = (1 / (fromIntegral fftSize ** 2)) * (x * x + y * y)
+spl x = case 100 * logBase 10 x of y | y < 100 -> 0
+                                     | otherwise -> y - 100
+normalize = id
+
+notebg ('a':_) = background 100
+notebg ('A':_) = background 100
+notebg _ = background 50
+
+-- UI bits
+draw = return . Translate (-640) (-280)
+background l = Color $ makeColor8 l l l 256
+
+guides = Pictures [ notebg y $ mark x y | (x, y) <- notecents ]
+  where mark x y = Pictures [ Line [ (shift x, 0), (shift x, 500) ]
+                            , Translate (shift x - 4) (-5) $ Rotate 90 $ Scale 0.25 0.25 $ Text y ]
+
+dbguides = background 100 $ Pictures $ concat markers
+  where markers = [ [ Line [ (0, y), (shift $ fst $ last notecents, y) ]
+                    , Translate (-30) y $ Scale 0.1 0.1 $ Text $ show (floor y) ]
+                  | y <- [50, 100 .. 450] ]
+
+drawfft bits = Line $ [ (centscale $ fromIntegral x, double2Float $ y) | (x, y) <- assocs bits ]
+
+centcolor c = case snd $ fancy c of
+    x | x <= -20 -> makeColor 1 0 1
+      | x <= -10 -> makeColor 0 1 1
+      | x > -10 && x < 10 -> makeColor 0 1 0
+      | x >= 10 -> makeColor 1 1 0
+      | x >= 20 -> makeColor 1 0 0
+
+drawpeaks peaks = Pictures $
+    [ draw (centscale x) (round . cents $ hz x) i | ((x, _), i) <- zip peaks [10,9..] ]
+  where draw x c i = color c [ color' c (1 - fromIntegral (abs $ offset c) / 50) $
+                                 [ Polygon [ (x, 0), (x, 500), (snap c, 500), (snap c, 0) ] ]
+                             , color' c 0.9 $ [ Line [ (snap c, 0), (snap c, 500) ] ]
+                             , Translate (maximum [snap c + 5, x + 5]) (200 + 25 * i) $
+                                  Scale 0.3 0.3 $ Text $ name c ++ showsign (offset c)
+                             ]
+        snap = shift . fst . fst . fancy
+        name = snd . fst . fancy
+        offset = snd . fancy
+        color c = color' c 1
+        color' c t = Color (centcolor c t) . Pictures
+
+drawpiano peaks = Pictures $ [ whitekey (c, unoctave n) white | (c, n) <- notecents, unoctave n `elem` whitekeys ] ++
+                             [ whitekey (snap p, name p) (color p) | p <- peaks', name p `elem` whitekeys ] ++
+                             [ blackkey (c, unoctave n) black | (c, n) <- notecents, unoctave n `elem` blackkeys ] ++
+                             [ blackkey (snap p, name p) (color p) | p <- peaks', name p `elem` blackkeys ]
+  where key c | snd c `elem` ["cis", "es", "fis", "gis", "b" ] = blackkey c
+              | otherwise = whitekey c
+        unoctave = map toLower . takeWhile (`notElem` ",'+")
+        color = uncurry centcolor
+        name = unoctave . snd . fst . fancy . fst
+        snap = fromIntegral . round . fst . fst . fancy . fst
+        peaks' = map (\(x, y) -> (round . cents $ hz x, double2Float y / 500)) peaks
+        poly c1 c2 p = Pictures [ Color c1 $ Polygon p, Color c2 $ Line p ]
+
+        octave = 600
+        width = octave / 7
+        whitekeys = ["a", "h", "c", "d", "e", "f", "g"]
+        blackkeys = ["b", "cis", "es", "fis", "gis", "b"]
+
+        keyat (top, bottom, w, fill, outline) c =
+            poly fill outline $ [(c - w, top), (c + w, top), (c + w, bottom), (c - w, bottom), (c - w, top)]
+
+        whitecenter (pos, x) = case findIndex (==x) whitekeys of
+            Just idx -> octave * fromIntegral ((round $ pos - a55) `div` 1200) + width * (fromIntegral idx)
+        whitekey (pos, x) c = keyat (-50, -350, width / 2, c, black) $ whitecenter (pos, x)
+
+        blackkey (pos, x) c = case x of
+            "b"   -> key ( 7) "a"
+            "cis" -> key (-7) "c"
+            "es"  -> key ( 7) "d"
+            "fis" -> key (-7) "f"
+            "gis" -> key ( 0) "g"
+          where key off rightof = keyat (-50, -250, width / 4, c, black) $ whitecenter (pos, rightof) + width / 2 + off
+
+analyze bits = draw $ Pictures
+    [ guides
+    , dbguides
+    , Color white $ drawfft bufSPD
+    , drawpeaks peakl
+    , drawpiano peakl
+    ]
+  where bufFloat = mapArray (\i v -> hamming winSize i $ normalize $ fromIntegral v) bits
+        bufFFT = array (start, end) $ drop start $ take end $ assocs $ dft bufFloat
+        bufSPD    CArray Int Double = liftArray (\(a :+ b) -> spl $ spd a b) $ bufFFT
+        start = fst fftLimits
+        end = snd fftLimits
+        peakl = take 10 $ takeWhile ((> 150) . snd) $ peaks bufSPD bufFFT
+
+-- ALSA
+inputFormat :: SoundFmt Int16
+inputFormat = SoundFmt { sampleFreq = rate }
+
+main :: IO ()
+main = let source = alsaSoundSource "default" inputFormat
+        in allocaArray     bufSize $ \buf  ->
+           withSoundSource source  $ \from -> do
+               win <- newIORef $ array (0, 0) []
+               animateIO (InWindow "DFT" (1280,960) (0,0)) black (loop source from buf win)
+
+soundToArray src h buf size = do
+    n' <- soundSourceRead src h (castPtr buf) size
+    buf' <- newForeignPtr_ buf
+    unsafeForeignPtrToCArray buf' (0, n' - 1)
+
+loop :: SoundSource h Int16 -> h Int16 -> Ptr Int16 -> IORef (CArray Int Int16) -> Float -> IO Picture
+loop src h buf win time =
+    do new <- soundToArray src h buf bufSize
+       old <- readIORef win
+       let combined = shiftArray winSize old new
+       writeIORef win combined
+       case bounds combined of
+         (_, cwin) | cwin < winSize - 1 -> draw $ Pictures [ guides, dbguides ]
+                   | otherwise -> analyze combined
+
+
+</pre>

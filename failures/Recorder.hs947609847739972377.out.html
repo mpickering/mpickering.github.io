@@ -1,0 +1,290 @@
+<a href="RecordAdv.hs1108728549685118024.out.html">prev</a></br><a href="failures.html">home</a></br><a href="RecordP.hs21187978011060806853.out.html">next</a></br></br><pre>34c34
+< data Recorder fr ch (r ∷ ★ → ★)
+---
+> data Recorder fr ch (r :: * -> *)
+36d35
+<         reRate   ∷ !Int
+37d35
+<       , reHandle ∷ !Handle
+38c36
+<       , reCloseH ∷ !(FinalizerHandle r)
+---
+>         reRate   :: !Int
+38a37
+>       , reHandle :: !Handle
+38a38
+>       , reCloseH :: !(FinalizerHandle r)
+42c42
+<     dup re = do ch' ← dup (reCloseH re)
+---
+>     dup re = do ch' <- dup (reCloseH re)
+48c48
+< instance Frame fr ⇒ ReadableStream (Recorder fr Mono) (L.Vector fr) where
+---
+> instance Frame fr => ReadableStream (Recorder fr Mono) (L.Vector fr) where
+55c55
+< instance Frame fr ⇒ ReadableStream (Recorder fr Stereo) (L.Vector fr, L.Vector fr) where
+---
+> instance Frame fr => ReadableStream (Recorder fr Stereo) (L.Vector fr, L.Vector fr) where
+63c63
+< openRecorder ∷ ∀fr ch s pr.
+---
+> openRecorder :: forallfr ch s pr.
+68d67
+<              ⇒ Int            -- ^ sample rate for the stream.
+69d67
+<              → Maybe HostName -- ^ host to connect to.
+70c68
+<              → Maybe String   -- ^ name used to identify this stream
+---
+>              => Int            -- ^ sample rate for the stream.
+70a69
+>              -> Maybe HostName -- ^ host to connect to.
+70a70
+>              -> Maybe String   -- ^ name used to identify this stream
+72c72
+<              → RegionT s pr (Recorder fr ch (RegionT s pr))
+---
+>              -> RegionT s pr (Recorder fr ch (RegionT s pr))
+75d74
+<       do h  ← liftIO openSocket
+76c75
+<          ch ← onExit $ sanitizeIOError $ closeSocket h
+---
+>       do h  <- liftIO openSocket
+76a76
+>          ch <- onExit $ sanitizeIOError $ closeSocket h
+83d82
+<       fmt ∷ C'esd_format_t
+84d82
+<       fmt = frameFmt   ((⊥) ∷ fr) .|.
+85c83
+<             channelFmt ((⊥) ∷ ch) .|.
+---
+>       fmt :: C'esd_format_t
+85a84
+>       fmt = frameFmt   ((⊥) :: fr) .|.
+85a85
+>             channelFmt ((⊥) :: ch) .|.
+89d88
+<       openSocket ∷ IO Handle
+90d88
+<       openSocket = withCStrOrNull host $ \hostPtr →
+91c89
+<                    withCStrOrNull name $ \namePtr →
+---
+>       openSocket :: IO Handle
+91a90
+>       openSocket = withCStrOrNull host $ \hostPtr ->
+91a91
+>                    withCStrOrNull name $ \namePtr ->
+103a104
+> 
+</pre></br><h2>original</h2></br><pre>{-# LANGUAGE
+    FlexibleContexts
+  , FlexibleInstances
+  , KindSignatures
+  , MultiParamTypeClasses
+  , UnicodeSyntax
+  , ScopedTypeVariables
+  #-}
+-- | EsounD recording streams.
+module Sound.EsounD.Recorder
+    ( Recorder
+    , openRecorder
+    )
+    where
+import Bindings.EsounD
+import Control.Exception.Control
+import Control.Monad.IO.Class
+import Control.Monad.IO.Control
+import Control.Monad.Trans.Region
+import Control.Monad.Trans.Region.OnExit
+import Control.Monad.Unicode
+import Data.Bits
+import Data.StorableVector      as S
+import Data.StorableVector.Lazy as L
+import Network
+import Prelude.Unicode
+import Sound.EsounD.Streams
+import Sound.EsounD.Internals
+import System.IO
+import System.IO.SaferFileHandles.Unsafe
+import Text.Printf
+
+-- ^ An opaque ESD handle for recording data from the soundcard via ESD.
+data Recorder fr ch (r ∷ ★ → ★)
+    = Recorder {
+        reRate   ∷ !Int
+      , reHandle ∷ !Handle
+      , reCloseH ∷ !(FinalizerHandle r)
+      }
+
+instance Dup (Recorder fr ch) where
+    dup re = do ch' ← dup (reCloseH re)
+                return re { reCloseH = ch' }
+
+instance Stream (Recorder fr ch) where
+    streamSampleRate = reRate
+
+instance Frame fr ⇒ ReadableStream (Recorder fr Mono) (L.Vector fr) where
+    readFrames re nFrames
+        = liftIO $
+          sanitizeIOError $
+          fmap toLSV $
+          S.hGet (reHandle re) nFrames
+
+instance Frame fr ⇒ ReadableStream (Recorder fr Stereo) (L.Vector fr, L.Vector fr) where
+    readFrames re nFrames
+        = liftIO $
+          sanitizeIOError $
+          fmap (deinterleave ∘ toLSV) $
+          S.hGet (reHandle re) nFrames
+
+-- | Open an ESD handle for recording data from the soundcard via ESD.
+openRecorder ∷ ∀fr ch s pr.
+                ( Frame fr
+                , Channels ch
+                , MonadControlIO pr
+                )
+             ⇒ Int            -- ^ sample rate for the stream.
+             → Maybe HostName -- ^ host to connect to.
+             → Maybe String   -- ^ name used to identify this stream
+                               --   to ESD (if any).
+             → RegionT s pr (Recorder fr ch (RegionT s pr))
+openRecorder rate host name
+    = mask_ $
+      do h  ← liftIO openSocket
+         ch ← onExit $ sanitizeIOError $ closeSocket h
+         return Recorder {
+                      reRate   = rate
+                    , reHandle = h
+                    , reCloseH = ch
+                    }
+    where
+      fmt ∷ C'esd_format_t
+      fmt = frameFmt   ((⊥) ∷ fr) .|.
+            channelFmt ((⊥) ∷ ch) .|.
+            c'ESD_STREAM          .|.
+            c'ESD_RECORD
+
+      openSocket ∷ IO Handle
+      openSocket = withCStrOrNull host $ \hostPtr →
+                   withCStrOrNull name $ \namePtr →
+                       c'esd_record_stream
+                       fmt
+                       (fromIntegral rate)
+                       hostPtr
+                       namePtr
+                       ≫= wrapSocket
+                               ( printf "esd_record_stream(%s, %s, %s, %s) returned an error"
+                                        (show fmt )
+                                        (show rate)
+                                        (show host)
+                                        (show name)
+                               )
+</pre></br><h2>printed</h2></br><pre>{-# LANGUAGE
+    FlexibleContexts
+  , FlexibleInstances
+  , KindSignatures
+  , MultiParamTypeClasses
+  , UnicodeSyntax
+  , ScopedTypeVariables
+  #-}
+-- | EsounD recording streams.
+module Sound.EsounD.Recorder
+    ( Recorder
+    , openRecorder
+    )
+    where
+import Bindings.EsounD
+import Control.Exception.Control
+import Control.Monad.IO.Class
+import Control.Monad.IO.Control
+import Control.Monad.Trans.Region
+import Control.Monad.Trans.Region.OnExit
+import Control.Monad.Unicode
+import Data.Bits
+import Data.StorableVector      as S
+import Data.StorableVector.Lazy as L
+import Network
+import Prelude.Unicode
+import Sound.EsounD.Streams
+import Sound.EsounD.Internals
+import System.IO
+import System.IO.SaferFileHandles.Unsafe
+import Text.Printf
+
+-- ^ An opaque ESD handle for recording data from the soundcard via ESD.
+data Recorder fr ch (r :: * -> *)
+    = Recorder {
+        reRate   :: !Int
+      , reHandle :: !Handle
+      , reCloseH :: !(FinalizerHandle r)
+      }
+
+instance Dup (Recorder fr ch) where
+    dup re = do ch' <- dup (reCloseH re)
+                return re { reCloseH = ch' }
+
+instance Stream (Recorder fr ch) where
+    streamSampleRate = reRate
+
+instance Frame fr => ReadableStream (Recorder fr Mono) (L.Vector fr) where
+    readFrames re nFrames
+        = liftIO $
+          sanitizeIOError $
+          fmap toLSV $
+          S.hGet (reHandle re) nFrames
+
+instance Frame fr => ReadableStream (Recorder fr Stereo) (L.Vector fr, L.Vector fr) where
+    readFrames re nFrames
+        = liftIO $
+          sanitizeIOError $
+          fmap (deinterleave ∘ toLSV) $
+          S.hGet (reHandle re) nFrames
+
+-- | Open an ESD handle for recording data from the soundcard via ESD.
+openRecorder :: forallfr ch s pr.
+                ( Frame fr
+                , Channels ch
+                , MonadControlIO pr
+                )
+             => Int            -- ^ sample rate for the stream.
+             -> Maybe HostName -- ^ host to connect to.
+             -> Maybe String   -- ^ name used to identify this stream
+                               --   to ESD (if any).
+             -> RegionT s pr (Recorder fr ch (RegionT s pr))
+openRecorder rate host name
+    = mask_ $
+      do h  <- liftIO openSocket
+         ch <- onExit $ sanitizeIOError $ closeSocket h
+         return Recorder {
+                      reRate   = rate
+                    , reHandle = h
+                    , reCloseH = ch
+                    }
+    where
+      fmt :: C'esd_format_t
+      fmt = frameFmt   ((⊥) :: fr) .|.
+            channelFmt ((⊥) :: ch) .|.
+            c'ESD_STREAM          .|.
+            c'ESD_RECORD
+
+      openSocket :: IO Handle
+      openSocket = withCStrOrNull host $ \hostPtr ->
+                   withCStrOrNull name $ \namePtr ->
+                       c'esd_record_stream
+                       fmt
+                       (fromIntegral rate)
+                       hostPtr
+                       namePtr
+                       ≫= wrapSocket
+                               ( printf "esd_record_stream(%s, %s, %s, %s) returned an error"
+                                        (show fmt )
+                                        (show rate)
+                                        (show host)
+                                        (show name)
+                               )
+
+</pre>

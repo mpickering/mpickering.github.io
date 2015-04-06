@@ -1,0 +1,974 @@
+<a href="Macro.hs16807282475249.out.html">prev</a></br><a href="failures.html">home</a></br><a href="Magnet.hs16460350011025921153.out.html">next</a></br></br><pre>389c389
+<     usersDie m $ map (,"Executed") mv
+---
+>     usersDie m $ map ( "Executed") mv
+483a484
+> 
+</pre></br><h2>original</h2></br><pre>{-# LANGUAGE ConstraintKinds, RankNTypes, FlexibleContexts, TupleSections #-}
+module Network.Anticiv.Modules.Mafia (initMafia,listMafia) where
+
+import Prelude hiding (log)
+import Control.Monad
+import Data.Char
+import Data.Dynamic
+import Data.List
+import Data.Chatty.Atoms
+import Data.Chatty.AVL
+import Data.Chatty.Hetero
+import Data.Chatty.None
+import Network.Anticiv.Convenience
+import Network.Anticiv.Masks
+import Network.Anticiv.Modules.Mafia.Core
+import Network.Anticiv.Modules.Mafia.Data
+import Network.Anticiv.Monad
+import Text.Chatty.Printer
+import Text.Chatty.Channel.Printer
+import Text.Printf
+
+type Lister = Packciv [String]
+type ListerA = Atom Lister
+
+initMafia :: Packciv Lister
+initMafia = do
+  let ilist = return ["peng","mafia"] :: Lister
+  la <- newAtom
+  regPriorityChanmsg $ chanmsg la
+  regPriorityChanmsg $ idlemsg la
+  ilist #> la
+  return $ listMafia la
+
+listMafia :: ListerA -> Lister
+listMafia a = join $ getAtom a
+
+chanmsg :: ListerA -> HandlerA -> UserA -> String -> Anticiv Bool
+chanmsg l _ u s = do
+  pref <- bprefix
+  s & pref :-: CIToken "peng" :-: Remaining #->> address u "Peng!"
+   .|| pref :-: LocalT u "theme" :-: Remaining #-> bsetStereo . dropWhile isSpace
+
+idlemsg :: ListerA -> HandlerA -> UserA -> String -> Anticiv Bool
+idlemsg l h u s = do
+  pref <- bprefix
+  s & pref :-: LocalT u "mafia" :-: Remaining #->> do
+    -- Tell the channel about it
+    getAtom u >>= globalfl "StartCollection" . userNick :: Anticiv ()
+    -- Create the party state and add the initiator to its user list
+    ma <- newAtom
+    MafiaState u none none none False False 0 none none none True none #> ma
+    joinParty ma u
+    -- Readjust chanmsg handlers
+    unregPriorityChanmsg h
+    regPriorityChanmsg $ collmsg ma l
+    return ["peng","join","go"] #> l
+    return ()
+
+collmsg :: MafiaStateA -> ListerA -> HandlerA -> UserA -> String -> Anticiv Bool
+collmsg m l h u s = do
+  pref <- bprefix
+  s & "ME" :-: LocalT u "join" :-: Remaining #->> do
+    getAtom u >>= globalfl "JoinsAnnounce" . userNick :: Anticiv ()
+    joinParty m u
+    return ()
+   .|| LocalT u "go" :-: Token "!" :-: Remaining #->> (withInitiator m u $ \pid -> do
+    ps <- mafiaPlayers #< m
+    -- Check player count
+    let pc = avlSize ps
+    unless (pc >= 6) $ addressfl u "NotEnoughPlayers" pc (6 :: Int)
+    when (pc >= 6) $ do
+      -- Tell the channel about it
+      globalfl "StartingParty" $ avlSize ps :: Anticiv ()
+      -- Assign roles
+      assignRoles m
+      -- Set modes
+      ch <- bchan
+      cbracket Raw $ do
+        mprint ("MODE "++ch++" +m\r\n")
+        forAllPlayers_ m $ \pid -> do
+          u <- userNick #< fromPID pid
+          mprint ("MODE "++ch++" +v "++u++"\r\n")
+      forAllPlayers_ m $ \pid -> do
+        -- Tell roles
+        (r:_) <- playerRoles &< (m, pid)
+        cs <- playerCards &< (m, pid)
+        forM cs $ \(Card s v) -> privatefl (fromPID pid) "TellCard" (Lookup "Cards/Pattern") (Lookup ("Cards/"++show s)) (Lookup ("Cards/"++show v)) :: Anticiv ()
+        privatefl (fromPID pid) ("Explain/"++show r) :: Anticiv ()
+        u <- userNick #< fromPID pid
+        log $ printf "%s: %s" u $ show r
+        -- Tell Mafia partners
+        case r of
+          MafiaK _ ->
+            forAllMafiosi_ m $ \pid' -> unless (pid == pid') $ do
+              u <- userNick #< fromPID pid'
+              r:_ <- playerRoles &< (m,pid')
+              privatefl (fromPID pid) "CoMafioso" u $ Lookup ("RoleNames/"++show r)
+          TriadK _ ->
+            forAllTriadists_ m $ \pid' -> unless (pid == pid') $ do
+              u <- userNick #< fromPID pid'
+              r:_ <- playerRoles &< (m,pid')
+              privatefl (fromPID pid) "CoMafioso" u $ Lookup ("RoleNames/"++show r)
+          _ -> return ()
+      unregPriorityChanmsg h
+      h' <- regPriorityQuerymsg $ maffmsg m l
+      h'' <- regPriorityChanmsg $ nightchanmsg m l
+      m <># \m -> m{lostHandlers=h':h'':lostHandlers m}
+      -- Reauth Hints
+      basepref <- switchTo "Base" $ bkStr "Prefix"
+      forAllPlayers m $ \pid -> do
+        let Atom a = fromPID pid
+        tkn <- reauthId #< fromPID pid
+        privatefl (fromPID pid) "ReauthHint" basepref a tkn :: Anticiv ()
+      night m l)
+
+night :: MafiaStateA -> ListerA -> Anticiv ()
+night m l = do
+  globalfl "Sunset" :: Anticiv ()
+  regPriorityQuerymsg $ nightmsg m l
+  m <># \m -> m{voteScore=none,
+                votedAlready=none,
+                mafiaDone=False,
+                triadDone=False,
+                partyDay=partyDay m+1,
+                actionsDone=none,
+                safeTonight=none,
+                isNight=True}
+  nday <- partyDay #< m
+  when (nday==1) $ forAllPred_ m (==CivicK Cupid) $ \pid -> privatefl (fromPID pid) "CupidHint" :: Anticiv ()
+  forAllMafiosi_ m $ \pid -> privatefl (fromPID pid) "MafiaHint" :: Anticiv ()
+  forAllTriadists_ m $ \pid -> privatefl (fromPID pid) "MafiaHint" :: Anticiv ()
+  forAllPred_ m (==CivicK Inspector) $ \pid -> privatefl (fromPID pid) "InspHint" :: Anticiv ()
+  forAllPred_ m (==MafiaK Spy) $ \pid -> privatefl (fromPID pid) "InspHint" :: Anticiv ()
+  forAllPred_ m (==TriadK TriSpy) $ \pid -> privatefl (fromPID pid) "InspHint" :: Anticiv ()
+  forAllPred_ m (==CivicK Detective) $ \pid -> privatefl (fromPID pid) "DeteHint" :: Anticiv ()
+  forAllPred_ m (==CivicK SoulSaver) $ \pid -> privatefl (fromPID pid) "SoulSaverHint" :: Anticiv ()
+  return ()
+
+nightmsg :: MafiaStateA -> ListerA -> HandlerA -> UserA -> String -> Anticiv Bool
+nightmsg m l h u s = do
+  pref <- bprefix
+  s & "ME" :-: LocalT u "vote" :-: ChannelUser #-> (\t -> do
+    u' <- userNick #< u
+    t' <- userNick #< t
+    withAlivePID m u $ \pid -> do
+      maff <- isMafioso m pid
+      when maff $ do
+        withAlivePID m t $ \pit -> do
+          b <- playerVote m pid pit MafiaKill privatefl
+          when b $
+            forAllMafiosi_ m $ \pid' ->
+            unless (pid == pid') $
+            privatefl (fromPID pid') "VotesFor" u' t'
+      tri <- isTriadist m pid
+      when tri $ do
+        withAlivePID m t $ \pit -> do
+          b <- playerVote m pid pit TriadKill privatefl
+          when b $
+            forAllTriadists_ m $ \pid' ->
+            unless (pid == pid') $
+            privatefl (fromPID pid') "VotesFor" u' t'
+      unless (maff || tri) $ privatefl u "NotPermitted"
+      vs <- forAllMafiosi m $ \p -> hasVoted m p MafiaKill
+      when (and vs) $ do
+        m <># \m -> m{mafiaDone=True}
+      vt <- forAllTriadists m $ \p -> hasVoted m p TriadKill
+      when (and vt) $ do
+        m <># \m -> m{triadDone=True}
+      tryevalnight m l h)
+   .|| "ME" :-: LocalT u "observe" :-: ChannelUser #-> (\t -> do
+    t' <- userNick #< t
+    withAlivePID m u $ \pid -> do
+      detes <- seekUnusedRole m Detective
+      unless (pid `elem` detes) $ privatefl u "NotPermitted" :: Anticiv ()
+      when (pid `elem` detes) $ do
+        withAlivePID m t $ \pit -> do
+          o <- (m,pit) %|& observation
+          privatefl u ("Is"++show o) t' :: Anticiv ()
+          actionDone m pid Detective
+    tryevalnight m l h)
+   .|| "ME" :-: LocalT u "inspect" :-: ChannelUser #-> (\t -> do
+    t' <- userNick #< t
+    withAlivePID m u $ \pid -> do
+      insps <- seekUnusedRole m Inspector
+      spies <- seekUnusedRole m Spy
+      trsps <- seekUnusedRole m TriSpy
+      let ainsp = insps ++ spies ++ trsps
+      unless (pid `elem` ainsp) $ privatefl u "NotPermitted" :: Anticiv ()
+      when (pid `elem` ainsp) $ do
+        withAlivePID m t $ \pit -> do
+          o <- (m,pit) %|& show
+          privatefl u "Inspection" t' $ Lookup ("RoleNames/"++o) :: Anticiv ()
+          actionDone m pid $
+            if pid `elem` insps
+              then CivicK Inspector
+              else if pid `elem` spies
+                      then MafiaK Spy
+                      else TriadK TriSpy
+    tryevalnight m l h)
+   .|| "ME" :-: LocalT u "save" :-: ChannelUser #-> (\t -> do
+    t' <- userNick #< t
+    withAlivePID m u $ \pid -> do
+      savers <- seekUnusedRole m SoulSaver
+      unless (pid `elem` savers) $ privatefl u "NotPermitted" :: Anticiv ()
+      when (pid `elem` savers) $ do
+        withAlivePID m t $ \pit -> do
+          o <- playerSaved &< (m,pit)
+          when o $ privatefl u "NotPermitted" :: Anticiv ()
+          unless o $ do
+            m <># \m -> m{safeTonight=pit:safeTonight m}
+            (m,pit) <>& \t -> t{playerSaved=True}
+            privatefl u "Safe" t' :: Anticiv ()
+            actionDone m pid SoulSaver
+    tryevalnight m l h)
+   .|| "ME" :-: LocalT u "couple" :-: ChannelUser :-: LocalT u "and" :-: ChannelUser #-> (\(a,b) -> do
+    a' <- userNick #< a
+    b' <- userNick #< b
+    withAlivePID m u $ \pid -> do
+      nday <- partyDay #< m
+      unless (nday == 1) $ privatefl u "NotPermitted" :: Anticiv ()
+      when (nday == 1) $ withAlivePID m a $ \pa -> withAlivePID m b $ \pb -> do
+        cupids <- seekUnusedRole m Cupid
+        unless (pid `elem` cupids) $ privatefl u "NotPermitted" :: Anticiv ()
+        when (pid `elem` cupids) $ do
+          m <># \m -> m{coupledPlayers=Just (pa,pb)}
+          ar <- (m,pa) %|& id
+          br <- (m,pb) %|& id
+          privatefl a "InLoveWith" b' :: Anticiv ()
+          privatefl a "Inspection" b' $ Lookup ("RoleNames/"++show br) :: Anticiv ()
+          privatefl b "InLoveWith" a' :: Anticiv ()
+          privatefl b "Inspection" a' $ Lookup ("RoleNames/"++show ar) :: Anticiv ()
+          actionDone m pid Cupid
+          unless (ar `winsWith` br) $ do
+            (m,pa) <>& \p -> p{playerRoles=CoupleK InLove : playerRoles p}
+            (m,pb) <>& \p -> p{playerRoles=CoupleK InLove : playerRoles p}
+            privatefl a "CoupleFaction" :: Anticiv ()
+            privatefl b "CoupleFaction" :: Anticiv ()
+    tryevalnight m l h)
+
+tryevalnight :: MafiaStateA -> ListerA -> HandlerA -> Anticiv ()
+tryevalnight m l h = do
+  maffsdone <- mafiaDone #< m
+  when maffsdone $ log "Mafia is done."
+  triaddone <- triadDone #< m
+  when triaddone $ log "Triad is done."
+  detesdone <- liftM null $ seekUnusedRole m Detective
+  when detesdone $ log "Detes are done."
+  spiesdone <- liftM null $ seekUnusedRole m Spy
+  when spiesdone $ log "Spies are done."
+  trspsdone <- liftM null $ seekUnusedRole m TriSpy
+  when trspsdone $ log "TriSpies are done."
+  inspsdone <- liftM null $ seekUnusedRole m Inspector
+  when inspsdone $ log "Inspis are done."
+  saversdone <- liftM null $ seekUnusedRole m SoulSaver
+  when saversdone $ log "Savers are done."
+  cupiddone <- (||) `liftM` (liftM (/=1) $ partyDay #< m) `ap` (liftM null $ seekUnusedRole m Cupid)
+  when cupiddone $ log "Cupid is done."
+  let alldone = and [maffsdone, detesdone, spiesdone, inspsdone
+                    ,saversdone, triaddone, trspsdone, cupiddone]
+  when alldone $ evalnight m l h
+
+evalnight :: MafiaStateA -> ListerA -> HandlerA -> Anticiv ()
+evalnight m l h = do
+  vr <- voteScore #< m
+  let vs = sortBy (\(p,a) (q,b) -> b `compare` a) $ avlInorder vr
+      vm = map (\((_,p),a) -> (p,a)) $ filter (\((s,_),_) -> s == MafiaKill) vs
+      vt = map (\((_,p),a) -> (p,a)) $ filter (\((s,_),_) -> s == TriadKill) vs
+  mv <- liftM join $ forM [vm,vt] $ \vs -> case vs of
+    (p,a):(q,b):_ | a == b -> return []
+    (p,_):_ -> return [(p,"Killed")]
+    [] -> return []
+  dimi <- liftM join $ forAllPlayers m $ \p -> do
+    b <- (m,p) %| (==CivicK Dimitri)
+    if b then return [p] else return []
+  nday <- partyDay #< m
+  safe <- liftM nub $ safeTonight #< m
+  let allVictims = filter (not . flip elem safe . fst) $ nub mv
+      allVictims'
+        | null allVictims
+          && not (null dimi)
+          && (nday == 1) = [(head dimi,"DimitriKilled")]
+        | otherwise = allVictims
+  usersDie m allVictims'
+  when (null allVictims') $ do
+    globalfl "NooneKilled" :: Anticiv ()
+  unregPriorityQuerymsg h
+  fin <- partyFinished m
+  if fin then evalparty m l h Deathmatch else day m l
+
+day :: MafiaStateA -> ListerA -> Anticiv ()
+day m l = do
+  globalfl "Sunrise" :: Anticiv ()
+  us <- forAllPlayers m $ \pid -> userNick #< fromPID pid
+  globalfl "StillAlive" (concat $ intersperse ", " us) :: Anticiv ()
+  globalfl "ExecHint" :: Anticiv ()
+  regPriorityChanmsg $ daymsg m l
+  m <># \m -> m{voteScore=none, votedAlready=none, isNight=False}
+  return ()
+
+maffmsg :: MafiaStateA -> ListerA -> HandlerA -> UserA -> String -> Anticiv Bool
+maffmsg m l h u s = do
+  mpid <- toPID m u
+  case mpid of
+    Nothing -> return False
+    Just up -> do
+      maff <- isMafioso m up
+      tri <- isTriadist m up
+      if not (maff || tri)
+         then return False
+         else
+           s & LocalT u "mafftalk" :-: Remaining #-> \t -> do
+             privatefl u "Mafftalking" :: Anticiv ()
+             un <- userNick #< u
+             unless (all isSpace t) $ do
+               when maff $ forAllMafiosi_ m $ \pid' -> void $ do
+                 privatefl (fromPID pid') "IncomingMafftalk" un t :: Anticiv ()
+               when tri $ forAllTriadists_ m $ \pid' -> void $ do
+                 privatefl (fromPID pid') "IncomingTritalk" un t :: Anticiv ()
+             regPriorityQuerymsg $ mafftalkmsg m l u
+             return ()
+
+mafftalkmsg :: MafiaStateA -> ListerA -> UserA -> HandlerA -> UserA -> String -> Anticiv Bool
+mafftalkmsg m l ur h u s
+  | ur /= u = return False
+  | otherwise = do
+    s & LocalT u "donemafftalk" #->> do
+      unregPriorityQuerymsg h
+      privatefl u "DoneMafftalking" :: Anticiv ()
+     .|| Remaining #-> \t -> do
+      un <- userNick #< u
+      withAlivePID m u $ \pid -> do
+        maff <- isMafioso m pid
+        tri <- isTriadist m pid
+        when maff $ forAllMafiosi_ m $ \pid' ->
+          privatefl (fromPID pid') "IncomingMafftalk" un t :: Anticiv ()
+        when tri $ forAllTriadists_ m $ \pid' ->
+          privatefl (fromPID pid') "IncomingTritalk" un t :: Anticiv ()
+
+nightchanmsg :: MafiaStateA -> ListerA -> HandlerA -> UserA -> String -> Anticiv Bool
+nightchanmsg m l h u s = do
+  n <- isNight #< m
+  when n $ do
+    withAlivePID m u $ \pid -> usersDie m [(pid,"TalkedAtNight")] :: Anticiv ()
+    tryevalnight m l h
+    fin <- partyFinished m
+    when fin $ evalparty m l h Deathmatch
+  return True
+
+daymsg :: MafiaStateA -> ListerA -> HandlerA -> UserA -> String -> Anticiv Bool
+daymsg m l h u s = do
+  pref <- bprefix
+  s & "ME" :-: LocalT u "vote" :-: ChannelUser #-> \t -> do
+    u' <- userNick #< u
+    t' <- userNick #< t
+    withAlivePID m u $ \pid -> do
+      withAlivePID m t $ \pit -> do
+        b <- playerVote m pid pit Execution privatefl
+        when b $
+          globalfl "VotesFor" u' t'
+      tryevalday m l h
+
+tryevalday :: MafiaStateA -> ListerA -> HandlerA -> Anticiv ()
+tryevalday m l h = do
+  vs <- liftM and $ forAllPlayers m $ \p -> hasVoted m p Execution
+  when vs $ evalday m l h
+
+evalday :: MafiaStateA -> ListerA -> HandlerA -> Anticiv ()
+evalday m l h = do
+  vr <- voteScore #< m
+  let vs = map (\((_,p),a) -> (p,a)) $ sortBy (\(p,a) (q,b) -> b `compare` a) $ avlInorder vr
+  mv <- case vs of
+    (p,a):(q,b):_ | a == b -> return []
+    (p,_):_ -> return [p]
+  ps <- forAllPred m (`elem` [CivicK CitJudge, MafiaK MaffJudge, TriadK TriJudge]) return
+  when (null mv && length ps == 1) $ do
+    let j = head ps
+    globalfl "WaitingForJudge" :: Anticiv ()
+    regPriorityQuerymsg $ judgemsg m l h j
+    privatefl (fromPID j) "JudgeHint"
+  when (null mv && length ps /= 1) $ do
+    globalfl "NooneExecuted" :: Anticiv ()
+  unless (null mv && length ps == 1) $ do
+    if (any ((==1000).snd) vs)
+      then globalfl "JudgeHasSpoken" :: Anticiv ()
+      else forM_ vs $ \(v,c) -> do
+             vn <- userNick #< fromPID v
+             globalfl "VotesGivenFor" vn c :: Anticiv ()
+    js <- liftM or $ forM mv $ \v -> (m,v) %| shareFaction (bogus JustinK)
+    usersDie m $ map (,"Executed") mv
+    unregPriorityChanmsg h
+    fin <- partyFinished m
+    nday <- partyDay #< m
+    if fin
+      then evalparty m l h Deathmatch
+      else if js && nday == 1
+              then evalparty m l h JustinWon
+              else night m l
+
+-- There are no implications yet
+deathImplications :: MafiaStateA -> PlayerId -> Anticiv [(PlayerId,String)]
+deathImplications m pid = do
+  mcou <- coupledPlayers #< m
+  case mcou of
+    Nothing -> return []
+    Just (a,b)
+      | a == pid -> return [(b,"Suicide")]
+      | b == pid -> return [(a,"Suicide")]
+      | otherwise -> return []
+
+inferDeaths :: MafiaStateA -> [(PlayerId,String)] -> Anticiv [(PlayerId,String)]
+inferDeaths m inc = do
+  log ("inferDeath in: "++concatMap (\(UnsafePlayerId (Atom a),re) -> show a++":"++re++"; ") inc)
+  outg' <- forM (map fst inc) $ deathImplications m
+  let outg = inc `dunion` nubBy deq (concat outg')
+      dunion = unionBy deq
+      deq a b = fst a == fst b
+      sort = sortBy cmp
+      cmp a b | a == b = EQ
+      cmp (a,"Suicide") (b,"Suicide") = a `compare` b
+      cmp (_,"Suicide") _ = GT
+      cmp _ (_,"Suicide") = LT
+      cmp a b = fst a `compare` fst b
+  log ("inferDeath out: "++concatMap (\(UnsafePlayerId (Atom a),re) -> show a++":"++re++"; ") outg)
+  if sort inc /= sort outg
+     then inferDeaths m outg
+     else return outg
+
+usersDie :: MafiaStateA -> [(PlayerId,String)] -> Anticiv ()
+usersDie m ps = do
+  ps' <- inferDeaths m ps
+  forM_ ps' $ \(pid,reason) -> do
+    pn <- userNick #< fromPID pid
+    (m,pid) <>& \p -> p{playerAlive=False}
+    globalfl reason pn :: Anticiv ()
+    obduct m pid
+    ch <- bchan
+    cprint Raw ("MODE "++ch++" -v "++pn++"\r\n")
+
+obduct :: MafiaStateA -> PlayerId -> Anticiv ()
+obduct m pid = do
+  rs <- liftM (sortBy (\b a -> rolePriority a `compare` rolePriority b)) $ playerRoles &< (m,pid)
+  -- TODO: Mind lingua overrides!
+  li <- bgets botLingua
+  rns <- mapM (bvStr li . ("RoleNames/"++) . show) rs
+  u <- userNick #< fromPID pid
+  globalfl "Obduction" u $ concat $ intersperse ", " rns
+
+evalparty :: MafiaStateA -> ListerA -> HandlerA -> FinishReason -> Anticiv ()
+evalparty m l h f = do
+  unregPriorityChanmsg h
+  unregPriorityQuerymsg h
+  case f of
+    Deathmatch -> globalfl "PartyOver" :: Anticiv ()
+    JustinWon -> globalfl "JustinWon" :: Anticiv ()
+  forAllPlayers_ m $ obduct m
+  ch <- bchan
+  cbracket Raw $ do
+    forAllPlayers_ m $ \pid -> do
+      u <- userNick #< fromPID pid
+      mprint ("MODE "++ch++" -v "++u++"\r\n")
+    mprint ("MODE "++ch++" -m\r\n")
+  lh <- lostHandlers #< m
+  forM_ lh $ \h' -> do
+    unregPriorityChanmsg h'
+    unregPriorityQuerymsg h'
+  dispAtom m
+  regPriorityChanmsg $ idlemsg l
+  return ()
+
+judgemsg :: MafiaStateA -> ListerA -> HandlerA -> PlayerId -> HandlerA -> UserA -> String -> Anticiv Bool
+judgemsg m l hd j hj u
+  | fromPID j /= u = const $ return False
+  | otherwise =
+    "ME" :-: LocalT u "sentence" :-: ChannelUser #-> \t -> do
+      vr <- voteScore #< m
+      let vs = avlInorder vr
+          vm = snd $ maximumBy (\(p,a) (q,b) -> a `compare` b) vs
+          vms = map (snd.fst) $ filter ((==vm) . snd) vs
+      unless (t `elem` map fromPID vms) $ privatefl u "NotPermitted" :: Anticiv ()
+      when (t `elem` map fromPID vms) $ withPID m t $ \pid -> do
+        unregPriorityQuerymsg hj
+        m <># \m -> m{voteScore=avlInsert ((Execution,pid),1000) $ voteScore m}
+        evalday m l hd
+</pre></br><h2>printed</h2></br><pre>{-# LANGUAGE ConstraintKinds, RankNTypes, FlexibleContexts, TupleSections #-}
+module Network.Anticiv.Modules.Mafia (initMafia,listMafia) where
+
+import Prelude hiding (log)
+import Control.Monad
+import Data.Char
+import Data.Dynamic
+import Data.List
+import Data.Chatty.Atoms
+import Data.Chatty.AVL
+import Data.Chatty.Hetero
+import Data.Chatty.None
+import Network.Anticiv.Convenience
+import Network.Anticiv.Masks
+import Network.Anticiv.Modules.Mafia.Core
+import Network.Anticiv.Modules.Mafia.Data
+import Network.Anticiv.Monad
+import Text.Chatty.Printer
+import Text.Chatty.Channel.Printer
+import Text.Printf
+
+type Lister = Packciv [String]
+type ListerA = Atom Lister
+
+initMafia :: Packciv Lister
+initMafia = do
+  let ilist = return ["peng","mafia"] :: Lister
+  la <- newAtom
+  regPriorityChanmsg $ chanmsg la
+  regPriorityChanmsg $ idlemsg la
+  ilist #> la
+  return $ listMafia la
+
+listMafia :: ListerA -> Lister
+listMafia a = join $ getAtom a
+
+chanmsg :: ListerA -> HandlerA -> UserA -> String -> Anticiv Bool
+chanmsg l _ u s = do
+  pref <- bprefix
+  s & pref :-: CIToken "peng" :-: Remaining #->> address u "Peng!"
+   .|| pref :-: LocalT u "theme" :-: Remaining #-> bsetStereo . dropWhile isSpace
+
+idlemsg :: ListerA -> HandlerA -> UserA -> String -> Anticiv Bool
+idlemsg l h u s = do
+  pref <- bprefix
+  s & pref :-: LocalT u "mafia" :-: Remaining #->> do
+    -- Tell the channel about it
+    getAtom u >>= globalfl "StartCollection" . userNick :: Anticiv ()
+    -- Create the party state and add the initiator to its user list
+    ma <- newAtom
+    MafiaState u none none none False False 0 none none none True none #> ma
+    joinParty ma u
+    -- Readjust chanmsg handlers
+    unregPriorityChanmsg h
+    regPriorityChanmsg $ collmsg ma l
+    return ["peng","join","go"] #> l
+    return ()
+
+collmsg :: MafiaStateA -> ListerA -> HandlerA -> UserA -> String -> Anticiv Bool
+collmsg m l h u s = do
+  pref <- bprefix
+  s & "ME" :-: LocalT u "join" :-: Remaining #->> do
+    getAtom u >>= globalfl "JoinsAnnounce" . userNick :: Anticiv ()
+    joinParty m u
+    return ()
+   .|| LocalT u "go" :-: Token "!" :-: Remaining #->> (withInitiator m u $ \pid -> do
+    ps <- mafiaPlayers #< m
+    -- Check player count
+    let pc = avlSize ps
+    unless (pc >= 6) $ addressfl u "NotEnoughPlayers" pc (6 :: Int)
+    when (pc >= 6) $ do
+      -- Tell the channel about it
+      globalfl "StartingParty" $ avlSize ps :: Anticiv ()
+      -- Assign roles
+      assignRoles m
+      -- Set modes
+      ch <- bchan
+      cbracket Raw $ do
+        mprint ("MODE "++ch++" +m\r\n")
+        forAllPlayers_ m $ \pid -> do
+          u <- userNick #< fromPID pid
+          mprint ("MODE "++ch++" +v "++u++"\r\n")
+      forAllPlayers_ m $ \pid -> do
+        -- Tell roles
+        (r:_) <- playerRoles &< (m, pid)
+        cs <- playerCards &< (m, pid)
+        forM cs $ \(Card s v) -> privatefl (fromPID pid) "TellCard" (Lookup "Cards/Pattern") (Lookup ("Cards/"++show s)) (Lookup ("Cards/"++show v)) :: Anticiv ()
+        privatefl (fromPID pid) ("Explain/"++show r) :: Anticiv ()
+        u <- userNick #< fromPID pid
+        log $ printf "%s: %s" u $ show r
+        -- Tell Mafia partners
+        case r of
+          MafiaK _ ->
+            forAllMafiosi_ m $ \pid' -> unless (pid == pid') $ do
+              u <- userNick #< fromPID pid'
+              r:_ <- playerRoles &< (m,pid')
+              privatefl (fromPID pid) "CoMafioso" u $ Lookup ("RoleNames/"++show r)
+          TriadK _ ->
+            forAllTriadists_ m $ \pid' -> unless (pid == pid') $ do
+              u <- userNick #< fromPID pid'
+              r:_ <- playerRoles &< (m,pid')
+              privatefl (fromPID pid) "CoMafioso" u $ Lookup ("RoleNames/"++show r)
+          _ -> return ()
+      unregPriorityChanmsg h
+      h' <- regPriorityQuerymsg $ maffmsg m l
+      h'' <- regPriorityChanmsg $ nightchanmsg m l
+      m <># \m -> m{lostHandlers=h':h'':lostHandlers m}
+      -- Reauth Hints
+      basepref <- switchTo "Base" $ bkStr "Prefix"
+      forAllPlayers m $ \pid -> do
+        let Atom a = fromPID pid
+        tkn <- reauthId #< fromPID pid
+        privatefl (fromPID pid) "ReauthHint" basepref a tkn :: Anticiv ()
+      night m l)
+
+night :: MafiaStateA -> ListerA -> Anticiv ()
+night m l = do
+  globalfl "Sunset" :: Anticiv ()
+  regPriorityQuerymsg $ nightmsg m l
+  m <># \m -> m{voteScore=none,
+                votedAlready=none,
+                mafiaDone=False,
+                triadDone=False,
+                partyDay=partyDay m+1,
+                actionsDone=none,
+                safeTonight=none,
+                isNight=True}
+  nday <- partyDay #< m
+  when (nday==1) $ forAllPred_ m (==CivicK Cupid) $ \pid -> privatefl (fromPID pid) "CupidHint" :: Anticiv ()
+  forAllMafiosi_ m $ \pid -> privatefl (fromPID pid) "MafiaHint" :: Anticiv ()
+  forAllTriadists_ m $ \pid -> privatefl (fromPID pid) "MafiaHint" :: Anticiv ()
+  forAllPred_ m (==CivicK Inspector) $ \pid -> privatefl (fromPID pid) "InspHint" :: Anticiv ()
+  forAllPred_ m (==MafiaK Spy) $ \pid -> privatefl (fromPID pid) "InspHint" :: Anticiv ()
+  forAllPred_ m (==TriadK TriSpy) $ \pid -> privatefl (fromPID pid) "InspHint" :: Anticiv ()
+  forAllPred_ m (==CivicK Detective) $ \pid -> privatefl (fromPID pid) "DeteHint" :: Anticiv ()
+  forAllPred_ m (==CivicK SoulSaver) $ \pid -> privatefl (fromPID pid) "SoulSaverHint" :: Anticiv ()
+  return ()
+
+nightmsg :: MafiaStateA -> ListerA -> HandlerA -> UserA -> String -> Anticiv Bool
+nightmsg m l h u s = do
+  pref <- bprefix
+  s & "ME" :-: LocalT u "vote" :-: ChannelUser #-> (\t -> do
+    u' <- userNick #< u
+    t' <- userNick #< t
+    withAlivePID m u $ \pid -> do
+      maff <- isMafioso m pid
+      when maff $ do
+        withAlivePID m t $ \pit -> do
+          b <- playerVote m pid pit MafiaKill privatefl
+          when b $
+            forAllMafiosi_ m $ \pid' ->
+            unless (pid == pid') $
+            privatefl (fromPID pid') "VotesFor" u' t'
+      tri <- isTriadist m pid
+      when tri $ do
+        withAlivePID m t $ \pit -> do
+          b <- playerVote m pid pit TriadKill privatefl
+          when b $
+            forAllTriadists_ m $ \pid' ->
+            unless (pid == pid') $
+            privatefl (fromPID pid') "VotesFor" u' t'
+      unless (maff || tri) $ privatefl u "NotPermitted"
+      vs <- forAllMafiosi m $ \p -> hasVoted m p MafiaKill
+      when (and vs) $ do
+        m <># \m -> m{mafiaDone=True}
+      vt <- forAllTriadists m $ \p -> hasVoted m p TriadKill
+      when (and vt) $ do
+        m <># \m -> m{triadDone=True}
+      tryevalnight m l h)
+   .|| "ME" :-: LocalT u "observe" :-: ChannelUser #-> (\t -> do
+    t' <- userNick #< t
+    withAlivePID m u $ \pid -> do
+      detes <- seekUnusedRole m Detective
+      unless (pid `elem` detes) $ privatefl u "NotPermitted" :: Anticiv ()
+      when (pid `elem` detes) $ do
+        withAlivePID m t $ \pit -> do
+          o <- (m,pit) %|& observation
+          privatefl u ("Is"++show o) t' :: Anticiv ()
+          actionDone m pid Detective
+    tryevalnight m l h)
+   .|| "ME" :-: LocalT u "inspect" :-: ChannelUser #-> (\t -> do
+    t' <- userNick #< t
+    withAlivePID m u $ \pid -> do
+      insps <- seekUnusedRole m Inspector
+      spies <- seekUnusedRole m Spy
+      trsps <- seekUnusedRole m TriSpy
+      let ainsp = insps ++ spies ++ trsps
+      unless (pid `elem` ainsp) $ privatefl u "NotPermitted" :: Anticiv ()
+      when (pid `elem` ainsp) $ do
+        withAlivePID m t $ \pit -> do
+          o <- (m,pit) %|& show
+          privatefl u "Inspection" t' $ Lookup ("RoleNames/"++o) :: Anticiv ()
+          actionDone m pid $
+            if pid `elem` insps
+              then CivicK Inspector
+              else if pid `elem` spies
+                      then MafiaK Spy
+                      else TriadK TriSpy
+    tryevalnight m l h)
+   .|| "ME" :-: LocalT u "save" :-: ChannelUser #-> (\t -> do
+    t' <- userNick #< t
+    withAlivePID m u $ \pid -> do
+      savers <- seekUnusedRole m SoulSaver
+      unless (pid `elem` savers) $ privatefl u "NotPermitted" :: Anticiv ()
+      when (pid `elem` savers) $ do
+        withAlivePID m t $ \pit -> do
+          o <- playerSaved &< (m,pit)
+          when o $ privatefl u "NotPermitted" :: Anticiv ()
+          unless o $ do
+            m <># \m -> m{safeTonight=pit:safeTonight m}
+            (m,pit) <>& \t -> t{playerSaved=True}
+            privatefl u "Safe" t' :: Anticiv ()
+            actionDone m pid SoulSaver
+    tryevalnight m l h)
+   .|| "ME" :-: LocalT u "couple" :-: ChannelUser :-: LocalT u "and" :-: ChannelUser #-> (\(a,b) -> do
+    a' <- userNick #< a
+    b' <- userNick #< b
+    withAlivePID m u $ \pid -> do
+      nday <- partyDay #< m
+      unless (nday == 1) $ privatefl u "NotPermitted" :: Anticiv ()
+      when (nday == 1) $ withAlivePID m a $ \pa -> withAlivePID m b $ \pb -> do
+        cupids <- seekUnusedRole m Cupid
+        unless (pid `elem` cupids) $ privatefl u "NotPermitted" :: Anticiv ()
+        when (pid `elem` cupids) $ do
+          m <># \m -> m{coupledPlayers=Just (pa,pb)}
+          ar <- (m,pa) %|& id
+          br <- (m,pb) %|& id
+          privatefl a "InLoveWith" b' :: Anticiv ()
+          privatefl a "Inspection" b' $ Lookup ("RoleNames/"++show br) :: Anticiv ()
+          privatefl b "InLoveWith" a' :: Anticiv ()
+          privatefl b "Inspection" a' $ Lookup ("RoleNames/"++show ar) :: Anticiv ()
+          actionDone m pid Cupid
+          unless (ar `winsWith` br) $ do
+            (m,pa) <>& \p -> p{playerRoles=CoupleK InLove : playerRoles p}
+            (m,pb) <>& \p -> p{playerRoles=CoupleK InLove : playerRoles p}
+            privatefl a "CoupleFaction" :: Anticiv ()
+            privatefl b "CoupleFaction" :: Anticiv ()
+    tryevalnight m l h)
+
+tryevalnight :: MafiaStateA -> ListerA -> HandlerA -> Anticiv ()
+tryevalnight m l h = do
+  maffsdone <- mafiaDone #< m
+  when maffsdone $ log "Mafia is done."
+  triaddone <- triadDone #< m
+  when triaddone $ log "Triad is done."
+  detesdone <- liftM null $ seekUnusedRole m Detective
+  when detesdone $ log "Detes are done."
+  spiesdone <- liftM null $ seekUnusedRole m Spy
+  when spiesdone $ log "Spies are done."
+  trspsdone <- liftM null $ seekUnusedRole m TriSpy
+  when trspsdone $ log "TriSpies are done."
+  inspsdone <- liftM null $ seekUnusedRole m Inspector
+  when inspsdone $ log "Inspis are done."
+  saversdone <- liftM null $ seekUnusedRole m SoulSaver
+  when saversdone $ log "Savers are done."
+  cupiddone <- (||) `liftM` (liftM (/=1) $ partyDay #< m) `ap` (liftM null $ seekUnusedRole m Cupid)
+  when cupiddone $ log "Cupid is done."
+  let alldone = and [maffsdone, detesdone, spiesdone, inspsdone
+                    ,saversdone, triaddone, trspsdone, cupiddone]
+  when alldone $ evalnight m l h
+
+evalnight :: MafiaStateA -> ListerA -> HandlerA -> Anticiv ()
+evalnight m l h = do
+  vr <- voteScore #< m
+  let vs = sortBy (\(p,a) (q,b) -> b `compare` a) $ avlInorder vr
+      vm = map (\((_,p),a) -> (p,a)) $ filter (\((s,_),_) -> s == MafiaKill) vs
+      vt = map (\((_,p),a) -> (p,a)) $ filter (\((s,_),_) -> s == TriadKill) vs
+  mv <- liftM join $ forM [vm,vt] $ \vs -> case vs of
+    (p,a):(q,b):_ | a == b -> return []
+    (p,_):_ -> return [(p,"Killed")]
+    [] -> return []
+  dimi <- liftM join $ forAllPlayers m $ \p -> do
+    b <- (m,p) %| (==CivicK Dimitri)
+    if b then return [p] else return []
+  nday <- partyDay #< m
+  safe <- liftM nub $ safeTonight #< m
+  let allVictims = filter (not . flip elem safe . fst) $ nub mv
+      allVictims'
+        | null allVictims
+          && not (null dimi)
+          && (nday == 1) = [(head dimi,"DimitriKilled")]
+        | otherwise = allVictims
+  usersDie m allVictims'
+  when (null allVictims') $ do
+    globalfl "NooneKilled" :: Anticiv ()
+  unregPriorityQuerymsg h
+  fin <- partyFinished m
+  if fin then evalparty m l h Deathmatch else day m l
+
+day :: MafiaStateA -> ListerA -> Anticiv ()
+day m l = do
+  globalfl "Sunrise" :: Anticiv ()
+  us <- forAllPlayers m $ \pid -> userNick #< fromPID pid
+  globalfl "StillAlive" (concat $ intersperse ", " us) :: Anticiv ()
+  globalfl "ExecHint" :: Anticiv ()
+  regPriorityChanmsg $ daymsg m l
+  m <># \m -> m{voteScore=none, votedAlready=none, isNight=False}
+  return ()
+
+maffmsg :: MafiaStateA -> ListerA -> HandlerA -> UserA -> String -> Anticiv Bool
+maffmsg m l h u s = do
+  mpid <- toPID m u
+  case mpid of
+    Nothing -> return False
+    Just up -> do
+      maff <- isMafioso m up
+      tri <- isTriadist m up
+      if not (maff || tri)
+         then return False
+         else
+           s & LocalT u "mafftalk" :-: Remaining #-> \t -> do
+             privatefl u "Mafftalking" :: Anticiv ()
+             un <- userNick #< u
+             unless (all isSpace t) $ do
+               when maff $ forAllMafiosi_ m $ \pid' -> void $ do
+                 privatefl (fromPID pid') "IncomingMafftalk" un t :: Anticiv ()
+               when tri $ forAllTriadists_ m $ \pid' -> void $ do
+                 privatefl (fromPID pid') "IncomingTritalk" un t :: Anticiv ()
+             regPriorityQuerymsg $ mafftalkmsg m l u
+             return ()
+
+mafftalkmsg :: MafiaStateA -> ListerA -> UserA -> HandlerA -> UserA -> String -> Anticiv Bool
+mafftalkmsg m l ur h u s
+  | ur /= u = return False
+  | otherwise = do
+    s & LocalT u "donemafftalk" #->> do
+      unregPriorityQuerymsg h
+      privatefl u "DoneMafftalking" :: Anticiv ()
+     .|| Remaining #-> \t -> do
+      un <- userNick #< u
+      withAlivePID m u $ \pid -> do
+        maff <- isMafioso m pid
+        tri <- isTriadist m pid
+        when maff $ forAllMafiosi_ m $ \pid' ->
+          privatefl (fromPID pid') "IncomingMafftalk" un t :: Anticiv ()
+        when tri $ forAllTriadists_ m $ \pid' ->
+          privatefl (fromPID pid') "IncomingTritalk" un t :: Anticiv ()
+
+nightchanmsg :: MafiaStateA -> ListerA -> HandlerA -> UserA -> String -> Anticiv Bool
+nightchanmsg m l h u s = do
+  n <- isNight #< m
+  when n $ do
+    withAlivePID m u $ \pid -> usersDie m [(pid,"TalkedAtNight")] :: Anticiv ()
+    tryevalnight m l h
+    fin <- partyFinished m
+    when fin $ evalparty m l h Deathmatch
+  return True
+
+daymsg :: MafiaStateA -> ListerA -> HandlerA -> UserA -> String -> Anticiv Bool
+daymsg m l h u s = do
+  pref <- bprefix
+  s & "ME" :-: LocalT u "vote" :-: ChannelUser #-> \t -> do
+    u' <- userNick #< u
+    t' <- userNick #< t
+    withAlivePID m u $ \pid -> do
+      withAlivePID m t $ \pit -> do
+        b <- playerVote m pid pit Execution privatefl
+        when b $
+          globalfl "VotesFor" u' t'
+      tryevalday m l h
+
+tryevalday :: MafiaStateA -> ListerA -> HandlerA -> Anticiv ()
+tryevalday m l h = do
+  vs <- liftM and $ forAllPlayers m $ \p -> hasVoted m p Execution
+  when vs $ evalday m l h
+
+evalday :: MafiaStateA -> ListerA -> HandlerA -> Anticiv ()
+evalday m l h = do
+  vr <- voteScore #< m
+  let vs = map (\((_,p),a) -> (p,a)) $ sortBy (\(p,a) (q,b) -> b `compare` a) $ avlInorder vr
+  mv <- case vs of
+    (p,a):(q,b):_ | a == b -> return []
+    (p,_):_ -> return [p]
+  ps <- forAllPred m (`elem` [CivicK CitJudge, MafiaK MaffJudge, TriadK TriJudge]) return
+  when (null mv && length ps == 1) $ do
+    let j = head ps
+    globalfl "WaitingForJudge" :: Anticiv ()
+    regPriorityQuerymsg $ judgemsg m l h j
+    privatefl (fromPID j) "JudgeHint"
+  when (null mv && length ps /= 1) $ do
+    globalfl "NooneExecuted" :: Anticiv ()
+  unless (null mv && length ps == 1) $ do
+    if (any ((==1000).snd) vs)
+      then globalfl "JudgeHasSpoken" :: Anticiv ()
+      else forM_ vs $ \(v,c) -> do
+             vn <- userNick #< fromPID v
+             globalfl "VotesGivenFor" vn c :: Anticiv ()
+    js <- liftM or $ forM mv $ \v -> (m,v) %| shareFaction (bogus JustinK)
+    usersDie m $ map ( "Executed") mv
+    unregPriorityChanmsg h
+    fin <- partyFinished m
+    nday <- partyDay #< m
+    if fin
+      then evalparty m l h Deathmatch
+      else if js && nday == 1
+              then evalparty m l h JustinWon
+              else night m l
+
+-- There are no implications yet
+deathImplications :: MafiaStateA -> PlayerId -> Anticiv [(PlayerId,String)]
+deathImplications m pid = do
+  mcou <- coupledPlayers #< m
+  case mcou of
+    Nothing -> return []
+    Just (a,b)
+      | a == pid -> return [(b,"Suicide")]
+      | b == pid -> return [(a,"Suicide")]
+      | otherwise -> return []
+
+inferDeaths :: MafiaStateA -> [(PlayerId,String)] -> Anticiv [(PlayerId,String)]
+inferDeaths m inc = do
+  log ("inferDeath in: "++concatMap (\(UnsafePlayerId (Atom a),re) -> show a++":"++re++"; ") inc)
+  outg' <- forM (map fst inc) $ deathImplications m
+  let outg = inc `dunion` nubBy deq (concat outg')
+      dunion = unionBy deq
+      deq a b = fst a == fst b
+      sort = sortBy cmp
+      cmp a b | a == b = EQ
+      cmp (a,"Suicide") (b,"Suicide") = a `compare` b
+      cmp (_,"Suicide") _ = GT
+      cmp _ (_,"Suicide") = LT
+      cmp a b = fst a `compare` fst b
+  log ("inferDeath out: "++concatMap (\(UnsafePlayerId (Atom a),re) -> show a++":"++re++"; ") outg)
+  if sort inc /= sort outg
+     then inferDeaths m outg
+     else return outg
+
+usersDie :: MafiaStateA -> [(PlayerId,String)] -> Anticiv ()
+usersDie m ps = do
+  ps' <- inferDeaths m ps
+  forM_ ps' $ \(pid,reason) -> do
+    pn <- userNick #< fromPID pid
+    (m,pid) <>& \p -> p{playerAlive=False}
+    globalfl reason pn :: Anticiv ()
+    obduct m pid
+    ch <- bchan
+    cprint Raw ("MODE "++ch++" -v "++pn++"\r\n")
+
+obduct :: MafiaStateA -> PlayerId -> Anticiv ()
+obduct m pid = do
+  rs <- liftM (sortBy (\b a -> rolePriority a `compare` rolePriority b)) $ playerRoles &< (m,pid)
+  -- TODO: Mind lingua overrides!
+  li <- bgets botLingua
+  rns <- mapM (bvStr li . ("RoleNames/"++) . show) rs
+  u <- userNick #< fromPID pid
+  globalfl "Obduction" u $ concat $ intersperse ", " rns
+
+evalparty :: MafiaStateA -> ListerA -> HandlerA -> FinishReason -> Anticiv ()
+evalparty m l h f = do
+  unregPriorityChanmsg h
+  unregPriorityQuerymsg h
+  case f of
+    Deathmatch -> globalfl "PartyOver" :: Anticiv ()
+    JustinWon -> globalfl "JustinWon" :: Anticiv ()
+  forAllPlayers_ m $ obduct m
+  ch <- bchan
+  cbracket Raw $ do
+    forAllPlayers_ m $ \pid -> do
+      u <- userNick #< fromPID pid
+      mprint ("MODE "++ch++" -v "++u++"\r\n")
+    mprint ("MODE "++ch++" -m\r\n")
+  lh <- lostHandlers #< m
+  forM_ lh $ \h' -> do
+    unregPriorityChanmsg h'
+    unregPriorityQuerymsg h'
+  dispAtom m
+  regPriorityChanmsg $ idlemsg l
+  return ()
+
+judgemsg :: MafiaStateA -> ListerA -> HandlerA -> PlayerId -> HandlerA -> UserA -> String -> Anticiv Bool
+judgemsg m l hd j hj u
+  | fromPID j /= u = const $ return False
+  | otherwise =
+    "ME" :-: LocalT u "sentence" :-: ChannelUser #-> \t -> do
+      vr <- voteScore #< m
+      let vs = avlInorder vr
+          vm = snd $ maximumBy (\(p,a) (q,b) -> a `compare` b) vs
+          vms = map (snd.fst) $ filter ((==vm) . snd) vs
+      unless (t `elem` map fromPID vms) $ privatefl u "NotPermitted" :: Anticiv ()
+      when (t `elem` map fromPID vms) $ withPID m t $ \pid -> do
+        unregPriorityQuerymsg hj
+        m <># \m -> m{voteScore=avlInsert ((Execution,pid),1000) $ voteScore m}
+        evalday m l hd
+
+</pre>

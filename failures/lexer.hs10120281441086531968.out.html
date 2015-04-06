@@ -1,0 +1,114 @@
+<a href="LetFloat.hs172315317770982397.out.html">prev</a></br><a href="failures.html">home</a></br><a href="Lexer.hs12680001101797619589.out.html">next</a></br></br><pre>28c28
+<     fmap (runPParser puppetParser fp) (T.readFile fp) >>= \case
+---
+>     fmap (runPParser puppetParser fp) (T.readFile fp) >>= 
+53a54
+> 
+</pre></br><h2>original</h2></br><pre>{-# LANGUAGE LambdaCase #-}
+module Main where
+
+import Control.Monad
+import System.FilePath.Glob
+import Puppet.Parser
+import System.Environment
+import Puppet.Parser.PrettyPrinter
+import Text.PrettyPrint.ANSI.Leijen
+import System.Posix.Terminal
+import System.Posix.Types
+import System.IO
+import qualified Data.Text.IO as T
+
+allchecks :: IO ()
+allchecks = do
+    filelist <- fmap (head . fst) (globDir [compile "*.pp"] "tests/lexer")
+    testres <- mapM testparser filelist
+    let testsrs = map fst testres
+        isgood = all snd testres
+        outlist = zip [1..(length testres)] testsrs
+    mapM_ (\(n,t) -> putStrLn $ show n ++ " " ++ t) outlist
+    unless isgood (error "fail")
+
+-- returns errors
+testparser :: FilePath -> IO (String, Bool)
+testparser fp = do
+    fmap (runPParser puppetParser fp) (T.readFile fp) >>= \case
+        Right _ -> return ("PASS", True)
+        Left rr -> return (show rr, False)
+
+check :: String -> IO ()
+check fname = do
+    putStr fname
+    putStr ": "
+    res <- fmap (runPParser puppetParser fname) (T.readFile fname)
+    is <- queryTerminal (Fd 1)
+    let rfunc = if is
+                    then renderPretty 0.2 200
+                    else renderCompact
+    case res of
+        Left rr -> print rr
+        Right x -> do
+            putStrLn ""
+            displayIO stdout (rfunc (pretty (ppStatements x)))
+            putStrLn ""
+
+main :: IO ()
+main = do
+    args <- getArgs
+    if null args
+        then allchecks
+        else mapM_ check args
+</pre></br><h2>printed</h2></br><pre>{-# LANGUAGE LambdaCase #-}
+module Main where
+
+import Control.Monad
+import System.FilePath.Glob
+import Puppet.Parser
+import System.Environment
+import Puppet.Parser.PrettyPrinter
+import Text.PrettyPrint.ANSI.Leijen
+import System.Posix.Terminal
+import System.Posix.Types
+import System.IO
+import qualified Data.Text.IO as T
+
+allchecks :: IO ()
+allchecks = do
+    filelist <- fmap (head . fst) (globDir [compile "*.pp"] "tests/lexer")
+    testres <- mapM testparser filelist
+    let testsrs = map fst testres
+        isgood = all snd testres
+        outlist = zip [1..(length testres)] testsrs
+    mapM_ (\(n,t) -> putStrLn $ show n ++ " " ++ t) outlist
+    unless isgood (error "fail")
+
+-- returns errors
+testparser :: FilePath -> IO (String, Bool)
+testparser fp = do
+    fmap (runPParser puppetParser fp) (T.readFile fp) >>= 
+        Right _ -> return ("PASS", True)
+        Left rr -> return (show rr, False)
+
+check :: String -> IO ()
+check fname = do
+    putStr fname
+    putStr ": "
+    res <- fmap (runPParser puppetParser fname) (T.readFile fname)
+    is <- queryTerminal (Fd 1)
+    let rfunc = if is
+                    then renderPretty 0.2 200
+                    else renderCompact
+    case res of
+        Left rr -> print rr
+        Right x -> do
+            putStrLn ""
+            displayIO stdout (rfunc (pretty (ppStatements x)))
+            putStrLn ""
+
+main :: IO ()
+main = do
+    args <- getArgs
+    if null args
+        then allchecks
+        else mapM_ check args
+
+</pre>

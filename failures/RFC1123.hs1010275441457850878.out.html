@@ -1,0 +1,308 @@
+<a href="RewriteStage.hs929596849790709218.out.html">prev</a></br><a href="failures.html">home</a></br><a href="RFC733.hs14587779232007237709.out.html">next</a></br></br><pre>60d59
+<     def = do weekDay ← optionMaybe $
+61c60
+<                        do w ← shortWeekDayNameP
+---
+>     def = do weekDay <- optionMaybe $
+61a61
+>                        do w <- shortWeekDayNameP
+63c63
+<              gregDay ← date
+---
+>              gregDay <- date
+66c66
+<                    → return ()
+---
+>                    -> return ()
+68d67
+<                    → assertWeekDayIsGood givenWD gregDay
+69d67
+<              tod ← def
+70c68
+<              tz  ← char ' ' *> def
+---
+>                    -> assertWeekDayIsGood givenWD gregDay
+70a69
+>              tod <- def
+70a70
+>              tz  <- char ' ' *> def
+75c75
+<           retag' ∷ Tagged RFC822 α → Tagged τ α
+---
+>           retag' :: Tagged RFC822 α -> Tagged τ α
+78d77
+< date ∷ Parser Day
+79d77
+< date = do day   ← read2
+80d77
+<           _     ← char ' '
+81d77
+<           month ← shortMonthNameP
+82d77
+<           _     ← char ' '
+83d77
+<           year  ← read4
+84c78
+<           _     ← char ' '
+---
+> date :: Parser Day
+84a79
+> date = do day   <- read2
+84a80
+>           _     <- char ' '
+84a81
+>           month <- shortMonthNameP
+84a82
+>           _     <- char ' '
+84a83
+>           year  <- read4
+84a84
+>           _     <- char ' '
+87c87
+< toAsciiBuilder ∷ Tagged RFC1123 ZonedTime → AsciiBuilder
+---
+> toAsciiBuilder :: Tagged RFC1123 ZonedTime -> AsciiBuilder
+107c107
+<         ⊕ show2 (floor (todSec timeOfDay) ∷ Int)
+---
+>         ⊕ show2 (floor (todSec timeOfDay) :: Int)
+111c111
+<       retag' ∷ Tagged τ α → Tagged RFC822 α
+---
+>       retag' :: Tagged τ α -> Tagged RFC822 α
+116a117
+> 
+</pre></br><h2>original</h2></br><pre>{-# LANGUAGE
+    FlexibleInstances
+  , MultiParamTypeClasses
+  , OverloadedStrings
+  , TemplateHaskell
+  , TypeSynonymInstances
+  , UnicodeSyntax
+  #-}
+-- |This module provides functions to parse and format RFC 1123 date
+-- and time strings (<http://tools.ietf.org/html/rfc1123#page-55>).
+--
+-- The format is basically the same as RFC 822, but the syntax for
+-- @date@ is changed from:
+--
+-- > year ::= 2DIGIT
+--
+-- to:
+--
+-- > year ::= 4DIGIT
+module Data.Time.Format.RFC1123
+    ( RFC1123
+    )
+    where
+import Control.Applicative
+import Control.Applicative.Unicode
+import Data.Ascii (Ascii, AsciiBuilder)
+import qualified Data.Ascii as A
+import Data.Attoparsec.Char8
+import Data.Convertible.Base
+import Data.Default
+import Data.Monoid.Unicode
+import Data.Tagged
+import Data.Time
+import Data.Time.Calendar.WeekDate
+import Data.Time.Format.HTTP.Common
+import Data.Time.Format.RFC822
+import Prelude.Unicode
+
+-- |The phantom type for conversions between RFC 1123 date and time
+-- strings and 'ZonedTime'.
+--
+-- >>> convertSuccess (Tagged (ZonedTime (LocalTime (ModifiedJulianDay 49662) (TimeOfDay 8 49 37)) utc) :: Tagged RFC1123 ZonedTime)
+-- "Sun, 06 Nov 1994 08:49:37 GMT"
+data RFC1123
+
+instance ConvertSuccess (Tagged RFC1123 ZonedTime) Ascii where
+    {-# INLINE convertSuccess #-}
+    convertSuccess = A.fromAsciiBuilder ∘ cs
+
+instance ConvertSuccess (Tagged RFC1123 ZonedTime) AsciiBuilder where
+    {-# INLINE convertSuccess #-}
+    convertSuccess = toAsciiBuilder
+
+instance ConvertAttempt Ascii (Tagged RFC1123 ZonedTime) where
+    {-# INLINE convertAttempt #-}
+    convertAttempt = parseAttempt' def
+
+-- |Parse an RFC 1123 date and time string.
+instance Default (Parser (Tagged RFC1123 ZonedTime)) where
+    def = do weekDay ← optionMaybe $
+                       do w ← shortWeekDayNameP
+                          string ", " *> pure w
+             gregDay ← date
+             case weekDay of
+               Nothing
+                   → return ()
+               Just givenWD
+                   → assertWeekDayIsGood givenWD gregDay
+             tod ← def
+             tz  ← char ' ' *> def
+             let lt = LocalTime gregDay <$> tod
+                 zt = ZonedTime <$> lt ⊛ tz
+             pure $ retag' zt
+        where
+          retag' ∷ Tagged RFC822 α → Tagged τ α
+          retag' = retag
+
+date ∷ Parser Day
+date = do day   ← read2
+          _     ← char ' '
+          month ← shortMonthNameP
+          _     ← char ' '
+          year  ← read4
+          _     ← char ' '
+          assertGregorianDateIsGood year month day
+
+toAsciiBuilder ∷ Tagged RFC1123 ZonedTime → AsciiBuilder
+toAsciiBuilder zonedTime
+    = let localTime          = zonedTimeToLocalTime $ untag zonedTime
+          timeZone           = zonedTimeZone <$> retag' zonedTime
+          (year, month, day) = toGregorian (localDay localTime)
+          (_, _, week)       = toWeekDate  (localDay localTime)
+          timeOfDay          = localTimeOfDay localTime
+      in
+        shortWeekDayName week
+        ⊕ A.toAsciiBuilder ", "
+        ⊕ show2 day
+        ⊕ A.toAsciiBuilder " "
+        ⊕ shortMonthName month
+        ⊕ A.toAsciiBuilder " "
+        ⊕ show4 year
+        ⊕ A.toAsciiBuilder " "
+        ⊕ show2 (todHour timeOfDay)
+        ⊕ A.toAsciiBuilder ":"
+        ⊕ show2 (todMin timeOfDay)
+        ⊕ A.toAsciiBuilder ":"
+        ⊕ show2 (floor (todSec timeOfDay) ∷ Int)
+        ⊕ A.toAsciiBuilder " "
+        ⊕ cs timeZone
+    where
+      retag' ∷ Tagged τ α → Tagged RFC822 α
+      retag' = retag
+
+deriveAttempts [ ([t| Tagged RFC1123 ZonedTime |], [t| Ascii        |])
+               , ([t| Tagged RFC1123 ZonedTime |], [t| AsciiBuilder |])
+               ]
+</pre></br><h2>printed</h2></br><pre>{-# LANGUAGE
+    FlexibleInstances
+  , MultiParamTypeClasses
+  , OverloadedStrings
+  , TemplateHaskell
+  , TypeSynonymInstances
+  , UnicodeSyntax
+  #-}
+-- |This module provides functions to parse and format RFC 1123 date
+-- and time strings (<http://tools.ietf.org/html/rfc1123#page-55>).
+--
+-- The format is basically the same as RFC 822, but the syntax for
+-- @date@ is changed from:
+--
+-- > year ::= 2DIGIT
+--
+-- to:
+--
+-- > year ::= 4DIGIT
+module Data.Time.Format.RFC1123
+    ( RFC1123
+    )
+    where
+import Control.Applicative
+import Control.Applicative.Unicode
+import Data.Ascii (Ascii, AsciiBuilder)
+import qualified Data.Ascii as A
+import Data.Attoparsec.Char8
+import Data.Convertible.Base
+import Data.Default
+import Data.Monoid.Unicode
+import Data.Tagged
+import Data.Time
+import Data.Time.Calendar.WeekDate
+import Data.Time.Format.HTTP.Common
+import Data.Time.Format.RFC822
+import Prelude.Unicode
+
+-- |The phantom type for conversions between RFC 1123 date and time
+-- strings and 'ZonedTime'.
+--
+-- >>> convertSuccess (Tagged (ZonedTime (LocalTime (ModifiedJulianDay 49662) (TimeOfDay 8 49 37)) utc) :: Tagged RFC1123 ZonedTime)
+-- "Sun, 06 Nov 1994 08:49:37 GMT"
+data RFC1123
+
+instance ConvertSuccess (Tagged RFC1123 ZonedTime) Ascii where
+    {-# INLINE convertSuccess #-}
+    convertSuccess = A.fromAsciiBuilder ∘ cs
+
+instance ConvertSuccess (Tagged RFC1123 ZonedTime) AsciiBuilder where
+    {-# INLINE convertSuccess #-}
+    convertSuccess = toAsciiBuilder
+
+instance ConvertAttempt Ascii (Tagged RFC1123 ZonedTime) where
+    {-# INLINE convertAttempt #-}
+    convertAttempt = parseAttempt' def
+
+-- |Parse an RFC 1123 date and time string.
+instance Default (Parser (Tagged RFC1123 ZonedTime)) where
+    def = do weekDay <- optionMaybe $
+                       do w <- shortWeekDayNameP
+                          string ", " *> pure w
+             gregDay <- date
+             case weekDay of
+               Nothing
+                   -> return ()
+               Just givenWD
+                   -> assertWeekDayIsGood givenWD gregDay
+             tod <- def
+             tz  <- char ' ' *> def
+             let lt = LocalTime gregDay <$> tod
+                 zt = ZonedTime <$> lt ⊛ tz
+             pure $ retag' zt
+        where
+          retag' :: Tagged RFC822 α -> Tagged τ α
+          retag' = retag
+
+date :: Parser Day
+date = do day   <- read2
+          _     <- char ' '
+          month <- shortMonthNameP
+          _     <- char ' '
+          year  <- read4
+          _     <- char ' '
+          assertGregorianDateIsGood year month day
+
+toAsciiBuilder :: Tagged RFC1123 ZonedTime -> AsciiBuilder
+toAsciiBuilder zonedTime
+    = let localTime          = zonedTimeToLocalTime $ untag zonedTime
+          timeZone           = zonedTimeZone <$> retag' zonedTime
+          (year, month, day) = toGregorian (localDay localTime)
+          (_, _, week)       = toWeekDate  (localDay localTime)
+          timeOfDay          = localTimeOfDay localTime
+      in
+        shortWeekDayName week
+        ⊕ A.toAsciiBuilder ", "
+        ⊕ show2 day
+        ⊕ A.toAsciiBuilder " "
+        ⊕ shortMonthName month
+        ⊕ A.toAsciiBuilder " "
+        ⊕ show4 year
+        ⊕ A.toAsciiBuilder " "
+        ⊕ show2 (todHour timeOfDay)
+        ⊕ A.toAsciiBuilder ":"
+        ⊕ show2 (todMin timeOfDay)
+        ⊕ A.toAsciiBuilder ":"
+        ⊕ show2 (floor (todSec timeOfDay) :: Int)
+        ⊕ A.toAsciiBuilder " "
+        ⊕ cs timeZone
+    where
+      retag' :: Tagged τ α -> Tagged RFC822 α
+      retag' = retag
+
+deriveAttempts [ ([t| Tagged RFC1123 ZonedTime |], [t| Ascii        |])
+               , ([t| Tagged RFC1123 ZonedTime |], [t| AsciiBuilder |])
+               ]
+
+</pre>

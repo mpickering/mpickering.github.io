@@ -1,0 +1,708 @@
+<a href="LDA.hs16607608081561939997.out.html">prev</a></br><a href="failures.html">home</a></br><a href="LeftmostOutermost.hs9964979722063936098.out.html">next</a></br></br><pre>170c170
+<     first f >>> arr (\ (bs,c) -> [(b,c) | b <- bs])
+---
+>     first f >>> arr (\ (bs,c) ->        |(b,c) | b <- bs])
+350a351
+> 
+</pre></br><h2>original</h2></br><pre>{-# LANGUAGE TypeOperators, GeneralizedNewtypeDeriving, ScopedTypeVariables #-}
+----------------------------------------------------------------------
+-- |
+-- Module      :  Data.Bot.LeadFollow
+-- Copyright   :  (c) Conal Elliott 2008
+-- License     :  BSD3
+--
+-- Maintainer  :  conal@conal.net
+-- Stability   :  experimental
+--
+-- Functional reactive programming as an interactive dance of alternating
+-- lead and follow.  See <http://conal.net/blog/tag/dance/> for
+-- explanation and @Examples.LeadFollow@ for examples.
+----------------------------------------------------------------------
+
+module Data.Bot.LeadFollow
+  ( -- * Lead and follow -- single-output
+    Lead(..), Follow(..), lead, follow
+  , scanlF1, scanlL1, accumF1, accumL1
+    -- * Lead and follow -- multi-output
+  , (:>-)(..), (:->)(..)
+  , follow1, lead1, leads, follows
+  , splitL, followL, initL
+    -- * Filtering
+  , justF, filterF
+    -- * Accumulation
+  , scanlF, scanlL, accumF, accumL
+    -- * Pair editing
+  , editPairL, editPairF
+  ) where
+
+import Prelude hiding (id,(.))
+import Control.Applicative
+import Control.Category
+
+import Control.Arrow
+import Data.Maybe (maybeToList)
+import Data.Monoid
+
+
+-- Experimental: nice but adds TypeCompose dependency
+-- See pairL below.
+-- import Data.Pair
+
+
+{--------------------------------------------------------------------
+    Lead and follow -- single-output
+--------------------------------------------------------------------}
+
+-- | Respond to inputs, leading to start.
+--
+-- Isomorphic to @a -> (b, a -> (b, a -> (b, ...)))@
+newtype a  `Lead`  b = Lead   { unLead   :: (b ,  a `Follow` b) }
+
+-- | Respond to inputs, following to start.
+--
+-- Isomorphic to @(b, a -> (b, a -> (b, a -> ...)))@
+newtype a `Follow` b = Follow { unFollow ::  a -> a  `Lead`  b  }
+
+-- | Start out leading
+lead :: b -> a `Follow` b -> a `Lead` b
+lead = curry Lead
+
+-- | Start out following
+follow :: (a -> a `Lead` b) -> a `Follow` b
+follow = Follow
+
+-- instance Functor ((`Follow`) a) where
+--   fmap f (Follow h) = Follow (fmap f . h)
+
+-- instance Applicative ((`Follow`) a) where
+--   pure b = Follow (const (pure b))
+--   Follow h <*> Follow k = Follow $ \ a -> h a <*> k a
+
+-- -- We could also write
+
+instance Functor (Follow a) where
+  fmap f (Follow h) = Follow ((fmap.fmap) f h)
+
+instance Applicative (Follow a) where
+  pure b = Follow ((pure.pure) b)
+  Follow h <*> Follow k = Follow $ liftA2 (<*>) h k
+
+instance Functor (Lead a) where
+  fmap f (Lead (b, g)) = Lead (f b, fmap f g)
+
+instance Applicative (Lead a) where
+  pure b = Lead (b, pure b)
+  Lead (f,pf) <*> Lead (x,px) = Lead (f x, pf <*> px)
+
+-- The four instances above can almost be automatically generated:
+
+-- type Follow a = (->) a :.  Lead a
+-- type Lead a =   Id   :*: Follow a
+
+-- Then the Functor and Applicative instances for free.  But we'd still
+-- need a loop-breaker.  I don't know how to get GHC to derive instances
+-- through newtypes in this case.
+
+-- Adapted from the Automaton Arrow instance
+
+instance Category Follow where
+  id = arr id
+  Follow g . Follow f = Follow $
+    f >>>
+    arr unLead >>>
+    first g >>>
+    arr (\ (Lead (z, cg), cf) -> Lead (z, cg . cf))
+
+instance Arrow Follow where
+  arr f = foll where foll = Follow (\ a -> Lead (f a, foll))
+  first (Follow f) = Follow $
+    first f >>>
+    arr (\(Lead (x', c), y) -> Lead ((x', y), first c))
+
+-- Boilerplate Monoid instances for Applicative
+
+instance Monoid b => Monoid (Follow a b) where
+  mempty  = pure   mempty
+  mappend = liftA2 mappend
+
+instance Monoid b => Monoid (Lead a b) where
+  mempty  = pure   mempty
+  mappend = liftA2 mappend
+
+
+-- | Analog to 'scanl' -- single-output follow (no initial @b@).
+scanlF1 :: (b -> a -> b) -> b -> Follow a b
+scanlF1 f b = Follow $ \ a -> scanlL1 f (f b a)
+
+-- | Analog to 'scanl' -- single-output lead (with initial @b@).
+scanlL1 :: (b -> a -> b) -> b -> Lead a b
+scanlL1 f b = Lead (b, scanlF1 f b)
+
+-- | Accumulate function applications -- single-output, no initial @a@.
+accumF1 :: a -> Follow (a->a) a
+accumF1 = scanlF1 (flip ($))
+
+-- | Accumulate function applications -- single-output, with initial @a@.
+accumL1 :: a -> Lead (a->a) a
+accumL1 = scanlL1 (flip ($))
+
+
+{--------------------------------------------------------------------
+    Lead and follow -- mult-output
+--------------------------------------------------------------------}
+
+-- Multiple steps
+steps :: Monoid os => ([i], i `Follow` os) -> (os, i `Follow` os)
+steps (is,bot) =
+  first (mconcat.reverse) $ foldl step ([], bot) is
+ where
+   step :: ([b], a `Follow` b) -> a -> ([b], a `Follow` b)
+   step (bs, Follow f) = first (:bs) . unLead . f
+
+concatMB :: Monoid cs => Follow b cs -> Follow [b] cs
+concatMB bot = Follow $ \ bs -> Lead $ second concatMB $ steps (bs,bot)
+
+
+-- | Start out following (multi-output)
+newtype a :-> b = Follows { unFollows :: Follow a [b] } deriving Monoid
+
+instance Category (:->) where
+  id = arr id
+  Follows bc . Follows ab = Follows (concatMB bc . ab)
+
+instance Arrow (:->) where
+  arr h = Follows (arr (pure . h))
+  first (Follows f) = Follows $
+    first f >>> arr (\ (bs,c) -> [(b,c) | b <- bs])
+    -- first f >>> arr (\ (bs,c) -> fmap (flip (,) c) bs)
+
+instance Functor ((:->) i) where
+  fmap f (Follows z) = Follows ((fmap.fmap) f z)
+
+-- | Output an updated pair whenever either element changes.
+pairF :: (b,c) -> a :-> b -> a :-> c -> a :-> (b,c)
+pairF bc ab ac = (Left <$> ab) `mappend` (Right <$> ac) >>> editPairF bc
+
+
+-- | Start out leading.  Multi-output after initial.
+newtype a :>- b = Leads { unLeads :: (b, a :-> b) }
+
+instance Functor ((:>-) i) where
+  fmap f (Leads (b,fol)) = Leads (f b, fmap f fol)
+
+instance Applicative ((:>-) i) where
+  pure x = Leads (x,mempty)
+  lf <*> lx = uncurry ($) <$> (lf `pairL` lx)
+
+-- | Output an updated pair whenever either element changes.
+pairL :: a :>- b -> a :>- c -> a :>- (b,c)
+Leads (a,fa) `pairL` Leads (b,fb) =
+  Leads ((a,b), pairF (a,b) fa fb)
+
+-- instance Pair ((:>-) a) where pair = pairL
+
+
+
+
+-- Previous version:
+--
+--   newtype a :>- b = Leads { unLeads :: Lead a [b] } deriving Monoid
+
+-- instance Functor ((:>-) i) where
+--   fmap f (Leads   z) = Leads   ((fmap.fmap) f z)
+
+{-
+
+-- These two 'Applicative' instances are not very useful.  They require
+-- simultaneous outputs.
+
+instance Applicative ((:->) i) where
+  pure x                  = Follows ((pure.pure) x)
+  Follows f <*> Follows x = Follows (liftA2 (<*>) f x)
+
+instance Applicative ((:>-) i) where
+  pure x                  = Leads   ((pure.pure) x)
+  Leads   f <*> Leads   x = Leads   (liftA2 (<*>) f x)
+
+-}
+
+-- This one works very differently.  @pure x@ is initially @x@ and then
+-- empty, while @lf <*> lx@ changes when either changes.
+
+-- instance Applicative ((:>-) i) where
+--   pure x    = leads [x] mempty
+--   lf <*> lx = uncurry ($) <$> (lf `pairL` lx)
+
+-- -- | Output an updated pair whenever either element changes.
+-- pairL :: a :>- b -> a :>- c -> a :>- (b,c)
+-- ab `pairL` ac =
+--   leads (liftA2 (,) bs cs) $ pairF (b,c) abf acf
+--  where
+--    (bs,abf) = splitL ab
+--    (cs,acf) = splitL ac
+--    -- Oh dear.  b & c might not be well-defined
+--    b = last bs
+--    c = last cs
+
+
+-- | Wrap single-out follow as multi-out
+follow1 :: Follow a b -> a :-> b
+follow1 = Follows . fmap pure
+
+-- | Wrap single-out lead as multi-out
+lead1   :: Lead a b -> a :>- b
+lead1 (Lead (b,fol)) = Leads (b, follow1 fol)
+
+
+-- | Start out leading
+leads :: b -> a :-> b -> a :>- b
+leads = curry Leads
+
+-- | Start out following
+follows :: (a -> a :>- b) -> a :-> b
+follows h =
+  Follows (Follow (Lead . (pure *** unFollows) . unLeads . h))
+
+-- h :: a -> a :>- b
+-- unLeads . h :: a -> (b, a :-> b)
+-- (pure *** unFollows) . unLeads . h
+--   :: a -> ([b], a `Follow` [b])
+-- Lead . (pure *** unFollows) . unLeads . h
+--   :: a -> Lead a [b]
+
+-- follows :: forall a b. (a -> a :>- b) -> a :-> b
+-- follows h = Follows s
+--  where
+--    p :: a -> (b, a :-> b)
+--    p = unLeads . h
+--    q :: a -> ([b], a `Follow` [b])
+--    q = (pure *** unFollows) . p
+--    r :: a -> Lead a [b]
+--    r = Lead . q
+--    s :: Follow a [b]
+--    s = Follow r
+
+-- | Split lead into initial outputs and follow
+splitL :: a :>- b -> (b, a :-> b)
+splitL = unLeads
+
+-- | Initial outputs of a lead
+initL :: a :>- b -> b
+initL = fst . splitL
+
+-- | The follow after initial outputs
+followL :: a :>- b -> a :-> b
+followL = snd . splitL
+
+
+{--------------------------------------------------------------------
+    Filtering
+--------------------------------------------------------------------}
+
+
+justF :: Maybe a :-> a
+justF = Follows (arr maybeToList)
+
+filterF :: (a -> Bool) -> a :-> a
+filterF p = f ^>> justF
+ where
+   f a | p a       = Just a
+       | otherwise = Nothing
+
+
+{--------------------------------------------------------------------
+    Accumulation
+--------------------------------------------------------------------}
+
+-- | Analog to 'scanl', no initial @b@.
+scanlF :: (b -> a -> b) -> b -> a :-> b
+scanlF = (fmap.fmap) follow1 scanlF1
+
+-- | Analog to 'scanl', with initial @b@.
+scanlL :: (b -> a -> b) -> b -> a :>- b
+scanlL = (fmap.fmap) lead1 scanlL1
+
+-- | Accumulate function applications, no initial @a@.
+accumF :: a -> (a->a) :-> a
+accumF = scanlF (flip ($))
+
+-- | Accumulate function applications, with initial @a@.
+accumL :: a -> (a->a) :>- a
+accumL = scanlL (flip ($))
+
+
+
+{--------------------------------------------------------------------
+    Pair editing
+--------------------------------------------------------------------}
+
+-- | Decode a pair edit
+updPair :: Either c d -> (c,d) -> (c,d)
+updPair = (first.const) `either` (second.const)
+
+-- updPair (Left  c') (_,d) = (c',d)
+-- updPair (Right d') (c,_) = (c,d')
+
+-- | Pair edit decoder lead.  The inputs say to edit first or second
+-- element.  See 'editPairF'.
+editPairL :: (c,d) -> Either c d :>- (c,d)
+editPairL = leads <*> editPairF
+
+-- editPairL cd = leads cd (editPairF cd)
+
+-- | Pair edit decoder follow.  The inputs say to edit first or second
+-- element.  See 'editPairL'.
+editPairF :: (c,d) -> Either c d :-> (c,d)
+editPairF cd = updPair ^>> accumF cd
+</pre></br><h2>printed</h2></br><pre>{-# LANGUAGE TypeOperators, GeneralizedNewtypeDeriving, ScopedTypeVariables #-}
+----------------------------------------------------------------------
+-- |
+-- Module      :  Data.Bot.LeadFollow
+-- Copyright   :  (c) Conal Elliott 2008
+-- License     :  BSD3
+--
+-- Maintainer  :  conal@conal.net
+-- Stability   :  experimental
+--
+-- Functional reactive programming as an interactive dance of alternating
+-- lead and follow.  See <http://conal.net/blog/tag/dance/> for
+-- explanation and @Examples.LeadFollow@ for examples.
+----------------------------------------------------------------------
+
+module Data.Bot.LeadFollow
+  ( -- * Lead and follow -- single-output
+    Lead(..), Follow(..), lead, follow
+  , scanlF1, scanlL1, accumF1, accumL1
+    -- * Lead and follow -- multi-output
+  , (:>-)(..), (:->)(..)
+  , follow1, lead1, leads, follows
+  , splitL, followL, initL
+    -- * Filtering
+  , justF, filterF
+    -- * Accumulation
+  , scanlF, scanlL, accumF, accumL
+    -- * Pair editing
+  , editPairL, editPairF
+  ) where
+
+import Prelude hiding (id,(.))
+import Control.Applicative
+import Control.Category
+
+import Control.Arrow
+import Data.Maybe (maybeToList)
+import Data.Monoid
+
+
+-- Experimental: nice but adds TypeCompose dependency
+-- See pairL below.
+-- import Data.Pair
+
+
+{--------------------------------------------------------------------
+    Lead and follow -- single-output
+--------------------------------------------------------------------}
+
+-- | Respond to inputs, leading to start.
+--
+-- Isomorphic to @a -> (b, a -> (b, a -> (b, ...)))@
+newtype a  `Lead`  b = Lead   { unLead   :: (b ,  a `Follow` b) }
+
+-- | Respond to inputs, following to start.
+--
+-- Isomorphic to @(b, a -> (b, a -> (b, a -> ...)))@
+newtype a `Follow` b = Follow { unFollow ::  a -> a  `Lead`  b  }
+
+-- | Start out leading
+lead :: b -> a `Follow` b -> a `Lead` b
+lead = curry Lead
+
+-- | Start out following
+follow :: (a -> a `Lead` b) -> a `Follow` b
+follow = Follow
+
+-- instance Functor ((`Follow`) a) where
+--   fmap f (Follow h) = Follow (fmap f . h)
+
+-- instance Applicative ((`Follow`) a) where
+--   pure b = Follow (const (pure b))
+--   Follow h <*> Follow k = Follow $ \ a -> h a <*> k a
+
+-- -- We could also write
+
+instance Functor (Follow a) where
+  fmap f (Follow h) = Follow ((fmap.fmap) f h)
+
+instance Applicative (Follow a) where
+  pure b = Follow ((pure.pure) b)
+  Follow h <*> Follow k = Follow $ liftA2 (<*>) h k
+
+instance Functor (Lead a) where
+  fmap f (Lead (b, g)) = Lead (f b, fmap f g)
+
+instance Applicative (Lead a) where
+  pure b = Lead (b, pure b)
+  Lead (f,pf) <*> Lead (x,px) = Lead (f x, pf <*> px)
+
+-- The four instances above can almost be automatically generated:
+
+-- type Follow a = (->) a :.  Lead a
+-- type Lead a =   Id   :*: Follow a
+
+-- Then the Functor and Applicative instances for free.  But we'd still
+-- need a loop-breaker.  I don't know how to get GHC to derive instances
+-- through newtypes in this case.
+
+-- Adapted from the Automaton Arrow instance
+
+instance Category Follow where
+  id = arr id
+  Follow g . Follow f = Follow $
+    f >>>
+    arr unLead >>>
+    first g >>>
+    arr (\ (Lead (z, cg), cf) -> Lead (z, cg . cf))
+
+instance Arrow Follow where
+  arr f = foll where foll = Follow (\ a -> Lead (f a, foll))
+  first (Follow f) = Follow $
+    first f >>>
+    arr (\(Lead (x', c), y) -> Lead ((x', y), first c))
+
+-- Boilerplate Monoid instances for Applicative
+
+instance Monoid b => Monoid (Follow a b) where
+  mempty  = pure   mempty
+  mappend = liftA2 mappend
+
+instance Monoid b => Monoid (Lead a b) where
+  mempty  = pure   mempty
+  mappend = liftA2 mappend
+
+
+-- | Analog to 'scanl' -- single-output follow (no initial @b@).
+scanlF1 :: (b -> a -> b) -> b -> Follow a b
+scanlF1 f b = Follow $ \ a -> scanlL1 f (f b a)
+
+-- | Analog to 'scanl' -- single-output lead (with initial @b@).
+scanlL1 :: (b -> a -> b) -> b -> Lead a b
+scanlL1 f b = Lead (b, scanlF1 f b)
+
+-- | Accumulate function applications -- single-output, no initial @a@.
+accumF1 :: a -> Follow (a->a) a
+accumF1 = scanlF1 (flip ($))
+
+-- | Accumulate function applications -- single-output, with initial @a@.
+accumL1 :: a -> Lead (a->a) a
+accumL1 = scanlL1 (flip ($))
+
+
+{--------------------------------------------------------------------
+    Lead and follow -- mult-output
+--------------------------------------------------------------------}
+
+-- Multiple steps
+steps :: Monoid os => ([i], i `Follow` os) -> (os, i `Follow` os)
+steps (is,bot) =
+  first (mconcat.reverse) $ foldl step ([], bot) is
+ where
+   step :: ([b], a `Follow` b) -> a -> ([b], a `Follow` b)
+   step (bs, Follow f) = first (:bs) . unLead . f
+
+concatMB :: Monoid cs => Follow b cs -> Follow [b] cs
+concatMB bot = Follow $ \ bs -> Lead $ second concatMB $ steps (bs,bot)
+
+
+-- | Start out following (multi-output)
+newtype a :-> b = Follows { unFollows :: Follow a [b] } deriving Monoid
+
+instance Category (:->) where
+  id = arr id
+  Follows bc . Follows ab = Follows (concatMB bc . ab)
+
+instance Arrow (:->) where
+  arr h = Follows (arr (pure . h))
+  first (Follows f) = Follows $
+    first f >>> arr (\ (bs,c) ->        |(b,c) | b <- bs])
+    -- first f >>> arr (\ (bs,c) -> fmap (flip (,) c) bs)
+
+instance Functor ((:->) i) where
+  fmap f (Follows z) = Follows ((fmap.fmap) f z)
+
+-- | Output an updated pair whenever either element changes.
+pairF :: (b,c) -> a :-> b -> a :-> c -> a :-> (b,c)
+pairF bc ab ac = (Left <$> ab) `mappend` (Right <$> ac) >>> editPairF bc
+
+
+-- | Start out leading.  Multi-output after initial.
+newtype a :>- b = Leads { unLeads :: (b, a :-> b) }
+
+instance Functor ((:>-) i) where
+  fmap f (Leads (b,fol)) = Leads (f b, fmap f fol)
+
+instance Applicative ((:>-) i) where
+  pure x = Leads (x,mempty)
+  lf <*> lx = uncurry ($) <$> (lf `pairL` lx)
+
+-- | Output an updated pair whenever either element changes.
+pairL :: a :>- b -> a :>- c -> a :>- (b,c)
+Leads (a,fa) `pairL` Leads (b,fb) =
+  Leads ((a,b), pairF (a,b) fa fb)
+
+-- instance Pair ((:>-) a) where pair = pairL
+
+
+
+
+-- Previous version:
+--
+--   newtype a :>- b = Leads { unLeads :: Lead a [b] } deriving Monoid
+
+-- instance Functor ((:>-) i) where
+--   fmap f (Leads   z) = Leads   ((fmap.fmap) f z)
+
+{-
+
+-- These two 'Applicative' instances are not very useful.  They require
+-- simultaneous outputs.
+
+instance Applicative ((:->) i) where
+  pure x                  = Follows ((pure.pure) x)
+  Follows f <*> Follows x = Follows (liftA2 (<*>) f x)
+
+instance Applicative ((:>-) i) where
+  pure x                  = Leads   ((pure.pure) x)
+  Leads   f <*> Leads   x = Leads   (liftA2 (<*>) f x)
+
+-}
+
+-- This one works very differently.  @pure x@ is initially @x@ and then
+-- empty, while @lf <*> lx@ changes when either changes.
+
+-- instance Applicative ((:>-) i) where
+--   pure x    = leads [x] mempty
+--   lf <*> lx = uncurry ($) <$> (lf `pairL` lx)
+
+-- -- | Output an updated pair whenever either element changes.
+-- pairL :: a :>- b -> a :>- c -> a :>- (b,c)
+-- ab `pairL` ac =
+--   leads (liftA2 (,) bs cs) $ pairF (b,c) abf acf
+--  where
+--    (bs,abf) = splitL ab
+--    (cs,acf) = splitL ac
+--    -- Oh dear.  b & c might not be well-defined
+--    b = last bs
+--    c = last cs
+
+
+-- | Wrap single-out follow as multi-out
+follow1 :: Follow a b -> a :-> b
+follow1 = Follows . fmap pure
+
+-- | Wrap single-out lead as multi-out
+lead1   :: Lead a b -> a :>- b
+lead1 (Lead (b,fol)) = Leads (b, follow1 fol)
+
+
+-- | Start out leading
+leads :: b -> a :-> b -> a :>- b
+leads = curry Leads
+
+-- | Start out following
+follows :: (a -> a :>- b) -> a :-> b
+follows h =
+  Follows (Follow (Lead . (pure *** unFollows) . unLeads . h))
+
+-- h :: a -> a :>- b
+-- unLeads . h :: a -> (b, a :-> b)
+-- (pure *** unFollows) . unLeads . h
+--   :: a -> ([b], a `Follow` [b])
+-- Lead . (pure *** unFollows) . unLeads . h
+--   :: a -> Lead a [b]
+
+-- follows :: forall a b. (a -> a :>- b) -> a :-> b
+-- follows h = Follows s
+--  where
+--    p :: a -> (b, a :-> b)
+--    p = unLeads . h
+--    q :: a -> ([b], a `Follow` [b])
+--    q = (pure *** unFollows) . p
+--    r :: a -> Lead a [b]
+--    r = Lead . q
+--    s :: Follow a [b]
+--    s = Follow r
+
+-- | Split lead into initial outputs and follow
+splitL :: a :>- b -> (b, a :-> b)
+splitL = unLeads
+
+-- | Initial outputs of a lead
+initL :: a :>- b -> b
+initL = fst . splitL
+
+-- | The follow after initial outputs
+followL :: a :>- b -> a :-> b
+followL = snd . splitL
+
+
+{--------------------------------------------------------------------
+    Filtering
+--------------------------------------------------------------------}
+
+
+justF :: Maybe a :-> a
+justF = Follows (arr maybeToList)
+
+filterF :: (a -> Bool) -> a :-> a
+filterF p = f ^>> justF
+ where
+   f a | p a       = Just a
+       | otherwise = Nothing
+
+
+{--------------------------------------------------------------------
+    Accumulation
+--------------------------------------------------------------------}
+
+-- | Analog to 'scanl', no initial @b@.
+scanlF :: (b -> a -> b) -> b -> a :-> b
+scanlF = (fmap.fmap) follow1 scanlF1
+
+-- | Analog to 'scanl', with initial @b@.
+scanlL :: (b -> a -> b) -> b -> a :>- b
+scanlL = (fmap.fmap) lead1 scanlL1
+
+-- | Accumulate function applications, no initial @a@.
+accumF :: a -> (a->a) :-> a
+accumF = scanlF (flip ($))
+
+-- | Accumulate function applications, with initial @a@.
+accumL :: a -> (a->a) :>- a
+accumL = scanlL (flip ($))
+
+
+
+{--------------------------------------------------------------------
+    Pair editing
+--------------------------------------------------------------------}
+
+-- | Decode a pair edit
+updPair :: Either c d -> (c,d) -> (c,d)
+updPair = (first.const) `either` (second.const)
+
+-- updPair (Left  c') (_,d) = (c',d)
+-- updPair (Right d') (c,_) = (c,d')
+
+-- | Pair edit decoder lead.  The inputs say to edit first or second
+-- element.  See 'editPairF'.
+editPairL :: (c,d) -> Either c d :>- (c,d)
+editPairL = leads <*> editPairF
+
+-- editPairL cd = leads cd (editPairF cd)
+
+-- | Pair edit decoder follow.  The inputs say to edit first or second
+-- element.  See 'editPairL'.
+editPairF :: (c,d) -> Either c d :-> (c,d)
+editPairF cd = updPair ^>> accumF cd
+
+</pre>

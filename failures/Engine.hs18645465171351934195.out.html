@@ -1,0 +1,1170 @@
+<a href="Engine.hs1148079871137522503.out.html">prev</a></br><a href="failures.html">home</a></br><a href="Engine.hs771515668357571490.out.html">next</a></br></br><pre>543c543
+< {-# INLINE matchHere' #-}
+---
+> {-# INLINE matchHere' #
+553c553
+<   {-# INLINE applyHere #-}
+---
+>   {-# INLINE applyHere #
+579a580
+> 
+</pre></br><h2>original</h2></br><pre>{-
+
+Engine-mod.hs is an attempt to add missing functionality to Engine.hs
+  * ^ and $ anchor support
+  * Multiline compile option to affect .
+  * case sensitive compile option for characters (just downcase everything?)
+  * substring matching?  (libTRE papers?)
+
+Anchors are "boundary" matchers, not character matchers.  So I need to
+generalize the concept of the branching.  And boundaries can coincide.
+So for n kinds of boundaries there are 3^n possible ways to require /
+avoid / be apathetic to the boundary.
+
+And subgroups are also boundaries.
+
+Using predicates makes for black boxes.  Need "LookBehind" nodes.
+
+The keys to groups are these: The open groups form a lifo stack, and
+only the last opened group may be closed, and each group can only be
+(unused|open at pos #|closed from pos # to #).
+
+When combining Cont with >||< you have *decision* points: either open
+a group or not.  *mandatory* openings are also possible.
+
+There are many ways to arrange sub-group capture, but consider getting all possible ways:
+
+Maintain a set of LIFO stacks
+
+if you get an "open" command on a group not in the stack, then add it the head of the stack.
+if you get an "open" command for a group on the stack then copy it's tail and make a new element of the set with the new (open pos).
+
+if you get a "close" command on the group at the head of the stack, remove it and update the map's list for g.  Hooray.
+if you get a "close" command on a group not in the stack then WTF?  You have to ignore it.
+if you get a "close" command on a group deeper in the stack then take it's tail and make a new element of the set with new capture.
+
+Updating the map is annoying -- we need many possible versions.  Put the maps on the same stack:
+Map
+Map,Open
+Map,Open,Map
+Map,Open,Map,Open
+Map,Open,Map,Open,Map
+
+Hmmm...don't let the last element be an open command.
+Map
+Map,Open,Map
+Map,Open,Map,Open,Map
+
+When you open an new group, copy the previous map to the new head.
+When you close the top open, update the top map, remove the top map
+and open, and replace the new top map with the updated map.
+
+Now increase the symmetry by always starting with an open command (open 0):
+(Open 0, EmptyMap) will be the initial stack.
+
+Failing captures: Consider (ac|.|..a)* against aaaa.  You can parse it many ways:
+Staack is [(Open 0, Empty Map)]
+Open 1  Stack is  [(Open 0, Empty Map),(Open 1, Empty Map)]
+"a" matches, "." matches, "." matches
+-, Close 1, -   Stack is [(Open 0, 1=(0,1))]
+-, Open  1, -   Stack is [(Open 0, 1=(0,1)),(Open 1, 1=(0,1))]
+
+Stopping here would be Close 0 (0=(0,1), 1=(0,1))
+
+"c fails",,"." matches; "a" matches, "." matches", "." matches
+-,-,-;-,Close 1,- Stack is [(Open 0, 1=(1,1))]
+-,-,-;-,Open  1,- Stack is [(Open 0, 1=(1,1)),(Open 1,1=(1,1))]
+
+Stopping here would be Close 0 (0=(0,2), 1=(1,1))
+
+,,"a matches"; "c" fails,,"." matches; "a" matches","." matches","." matches
+-,-,Close 1;-,-,-;-,Close 1,-
+-,-,Open  1;-,-,-;-,Open  1,-
+-}
+
+{-|
+By Chris Kuklewicz (haskell (at) list (dot) mightyreason (dot) com), 2006.
+
+This file is licensed under the LGPL (version 2, see the LICENSE
+file), because it is a derivative work.  This DFAEngine takes the lazy
+transition table from Manuel Chakravarty's lexer in CTK Light, but
+uses it for simpler purposes.  The original CTK code can be found here
+<http://www.cse.unsw.edu.au/~chak/haskell/ctk/>
+
+Don Stewart (<http://www.cse.unsw.edu.au/~dons/contact.html>) also
+contributed to this code.
+
+I want the freedom to alter the types a bit, so this is a separate
+module.
+
+The CTK and DFA code can be thought of as three parts:
+
+1. The ability to compose Regexp combinators which will lazily assemble a DFA.  This is mainly bound up in the Cont type and the internal functions that merge it (exported as '>||<').
+
+2. The interface of how to specify "Failure" and "Success".  This was bound up in LexAction holding an function and is now lexAccept/lesFailure/lexContinue.
+
+3. The traversal engine.  At each longer and longer match the last seen match is updated.  Different traversals keep track of different levels of detail.
+
+As a descendent of the regex-dna entry at
+<http://shootout.alioth.debian.org/gp4/benchmark.php?test=regexdna&lang=all>,
+this module has contributions from Don Stewart, Alson Kemp, and Chris
+Kuklewicz.
+
+-}
+
+module Text.Regex.DFA.Engine
+  (Lexer(..),LexAction(..),Regexp,Cont(Done),Boundary(..),
+  emptyOp,char,alt,altNot,allChar,
+  beginLine,endLine,beginInput,endInput,
+  (>|<),orRE,(+>),concatRE,quest,star,plus,failure,accept,(>||<),
+  findRegex,matchesRegex,testHere,countRegex,findRegexS,
+  peek,inBounds,lexFailure,lexContinue,lexAccept ) where
+
+import Data.Array((!), assocs, accumArray, Array)
+import Data.List(sort)
+import Data.Map(Map)
+import qualified Data.Map as M(fromAscList, toAscList, singleton,
+  empty, findWithDefault)
+import Data.Set(Set)
+import Text.Regex.DFA.Pattern(DoPa)
+import qualified Data.Set as S
+
+-- import qualified Debug.Trace
+
+trace :: String -> a -> a
+trace _ = id
+
+--------------------------------------------------------------------------------
+-- * Types and supporting functions for the DFA (taken form CTK Light)
+--------------------------------------------------------------------------------
+
+-- | a regular expression
+type Regexp = Lexer -> Lexer
+
+-- | Need to encode, as data, the between character decision "am I at
+-- this boundary?".  The different types of boundary checks and their
+-- outcomes are all value of Boundary.  Currently only the ^ and $
+-- anchors are encoded.
+--
+data Boundary = BeginLine | EndLine | BeginInput | EndInput
+  deriving (Show,Eq)
+
+-- | tree structure used to represent the lexer table
+--
+-- each node in the tree corresponds to a of the lexer; the
+-- associated actions are those that apply when the corresponding
+-- is reached
+data Lexer = Lexer (Set DoPa) !LexAction Cont
+           | Predicate {rIndex :: Set DoPa
+                       ,whichBoundary :: Boundary
+                       ,atBoundary :: Lexer
+                       ,notAtBoundary :: Lexer}
+  deriving (Show)
+
+-- Smart construtors
+mkLexer :: LexAction -> Cont -> Lexer
+mkLexer a c = trace ("mkLexer " ++ show a) $ Lexer S.empty a c
+mkLexerI :: DoPa -> LexAction -> Cont -> Lexer
+mkLexerI i a c = trace ("mkLexerI " ++ show i) $ Lexer (S.singleton i) a c
+mkLexerS :: Set DoPa -> LexAction -> Cont -> Lexer
+mkLexerS si a c = trace ("mkLexerS " ++ show si) $ Lexer si a c
+mkPredicateI :: DoPa -> Boundary -> Lexer -> Lexer -> Lexer
+mkPredicateI i b cTrue cFalse = Predicate (S.singleton i) b cTrue cFalse
+mkPredicateS :: Set DoPa -> Boundary -> Lexer -> Lexer -> Lexer
+mkPredicateS si b cTrue cFalse = Predicate si b cTrue cFalse
+
+failure :: Lexer
+failure = mkLexer lexFailure Done
+
+-- | This is interface between the DFA table and the traversal engine,
+-- and is simpler than the original CTK version.
+newtype LexAction = LexAction Int deriving (Eq,Ord,Show)
+lexFailure,lexContinue,lexAccept :: LexAction
+lexFailure  = LexAction (-1)
+lexContinue = LexAction 0
+lexAccept   = LexAction 1
+-- The above allows the definition joinActions = max
+
+-- | 'Done' or a table-like-thing to associate the next character with a Lexer
+data Cont = Dense {bounds :: !BoundsNum
+                  ,transArray :: Array Char (Lexer)
+                  ,otherTrans :: Lexer}
+          | Sparse {bounds :: !BoundsNum
+                   ,transMap :: Map Char (Lexer)
+                   ,otherTrans :: Lexer}
+          | Done deriving (Show)
+
+-- | estimates the number of (non-'otherTrans') elements and the
+-- bounds of a DFA transition table
+data BoundsNum = B !Int !Char !Char deriving (Show)
+
+--------------------------------------------------------------------------------
+-- * Regexp matching functions and combinators (taken from CTK Light)
+--------------------------------------------------------------------------------
+
+----------------------------------------
+-- | Fixity declarations
+----------------------------------------
+
+infixr 4 `quest`, `star`, `plus`
+infixl 3 +>
+infixl 2 >|<, >||<
+
+----------------------------------------
+-- | These create Regexp
+----------------------------------------
+
+-- | Empty lexeme (noop)
+emptyOp :: Regexp
+{-# INLINE emptyOp #-}
+emptyOp = id
+
+beginLine :: DoPa -> Regexp
+beginLine i = \l -> mkPredicateI i BeginLine l failure
+
+endLine :: DoPa -> Regexp
+endLine i = \l -> mkPredicateI i EndLine l failure
+
+beginInput :: DoPa -> Regexp
+beginInput i = \l -> mkPredicateI i BeginInput l failure
+
+endInput :: DoPa -> Regexp
+endInput i = \l -> mkPredicateI i EndInput l failure
+
+-- | One character regexp
+char :: DoPa -> Char -> Regexp
+char i c = \l -> mkLexerI i lexContinue (Sparse (B 1 c c) (M.singleton c l) failure)
+
+-- | accepts any character
+allChar :: DoPa -> Regexp
+allChar i =
+  let bnds = B 0 maxBound minBound
+  in \l -> mkLexerI i lexContinue (Sparse bnds M.empty l)
+
+-- | accepts a list of alternative characters
+-- Equiv. to `(foldr1 (>|<) . map char) cs', but much faster
+alt :: DoPa -> [Char] -> Regexp
+alt _ [] = \_ -> failure
+alt i cs =
+   let scs = sort cs
+       (len,end) = lengthAndLast scs
+       bnds = B len (head scs) end
+   in \l -> mkLexerI i lexContinue (aggregateConts bnds [(c, l) | c <- sort cs] failure)
+
+-- | accepts an inverted list of alternative characters
+-- Equiv. to `(foldr1 (>|<) . map char) cs', but much faster
+altNot :: DoPa -> [Char] -> Regexp
+altNot i [] = allChar i
+altNot i cs =
+  let scs = sort cs
+      (len,end) = lengthAndLast scs
+      bnds = B len (head scs) end
+  in \l -> mkLexerI i lexContinue (aggregateConts bnds [(c, failure) | c <- sort cs] l)
+
+-- Helper function for alt and altNot to efficiently compute the bounds
+lengthAndLast :: [a] -> (Int,a)
+lengthAndLast = helper 1
+  where helper _ [] = (0,undefined)
+        helper i [x] = (i,x)
+        helper i (_:xs) = let i' = succ i in seq i' $ helper i' xs
+
+----------------------------------------
+-- | These combine two Regexp's
+----------------------------------------
+
+-- | Concatenation of regexps is just concatenation of functions
+-- x +> y corresponds to xy
+(+>) :: Regexp -> Regexp -> Regexp
+{-# INLINE (+>) #-}
+(+>)  = (.)
+
+concatRE :: [Regexp] -> Regexp
+{-# INLINE concatRE #-}
+concatRE [] = emptyOp
+concatRE rs = foldr1 (+>) rs
+
+-- | disjunctive combination of two regexps, corresponding to x|y.
+--
+-- This will find the longest match
+(>|<) :: Regexp -> Regexp -> Regexp
+{-# INLINE (>|<) #-}
+re1 >|< re2  = \l -> re1 l >||< re2 l
+
+orRE :: [Regexp] -> Regexp
+{-# INLINE orRE #-}
+orRE [] = emptyOp
+orRE rs = foldl1 (>|<) rs
+
+-- | x `quest` y corresponds to the regular expression x?y
+quest :: Regexp -> Regexp -> Regexp
+{-# INLINE quest #-}
+quest re1 re2  = (re1 +> re2) >|< re2
+
+-- | x `plus` y corresponds to the regular expression x+y
+plus :: Regexp -> Regexp -> Regexp
+{-# INLINE plus #-}
+plus re1 re2  = re1 +> (re1 `star` re2)
+
+--
+-- The definition used below can be obtained by equational reasoning from this
+-- one (which is much easier to understand):
+--
+--   star re1 re2 = let self = (re1 +> self >|< emptyOp) in self +> re2
+--
+-- However, in the above, `self' is of type `Regexp s t' (ie, a functional),
+-- whereas below it is of type `Lexer s t'.  Thus, below we have a graphical
+-- body (finite representation of an infinite structure), which doesn't grow
+-- with the size of the accepted lexeme - in contrast to the definition using
+-- the functional recursion.
+
+-- | x `star` y corresponds to the regular expression x*y
+-- "self" is of type Lexer
+star :: Regexp -> Regexp -> Regexp
+star re1 re2  = \l -> let self = re1 self >||< re2 l in self
+
+--------------------------------------------------------------------------------
+-- * Converting Regexp into Lexer and combinind lexers
+--------------------------------------------------------------------------------
+
+-- | Have a match to Regexp be consider a success
+accept :: Regexp -> Lexer
+{-# INLINE accept #-}
+accept re = re (mkLexer lexAccept Done)
+
+-- | disjunctive combination of two lexers (longest match, right biased)
+(>||<) :: Lexer -> Lexer -> Lexer
+(Lexer i a c) >||< (Lexer j a' c')  = mkLexerS (S.union i j) (joinActions a a') (joinConts c c')
+(Predicate i x t f) >||< (Predicate i' x' t' f') | x==x' = mkPredicateS (S.union i i') x (t >||< t') (f >||< f')
+(Predicate i x t f) >||< b = mkPredicateS i x (t >||< b) (f >||< b)
+a >||< (Predicate i x t f) = mkPredicateS i x (a >||< t) (a >||< f)
+
+-- internal
+joinActions :: LexAction -> LexAction -> LexAction
+joinActions = max
+
+-- internal, combine two disjunctive continuations
+joinConts :: Cont -> Cont -> Cont
+joinConts Done c'   = c'
+joinConts c    Done = c
+joinConts c    c'   = let (bn , cls , other ) = listify c
+                          (bn', cls', other') = listify c'
+                      -- note: `addsBoundsNum' can, at this point, only
+                      --       approx. the number of *non-overlapping* cases;
+                      --       however, the bounds are correct
+                      in aggregateConts (addBoundsNum bn bn') (fuse cls other cls' other') (other >||< other')
+  where -- listify converts the array or map into an ascending list
+        listify :: Cont -> (BoundsNum,[(Char,Lexer)],Lexer)
+        listify (Dense  {bounds=n,transArray=arr,otherTrans=other}) = (n, assocs arr, other)
+        listify (Sparse {bounds=n,transMap=cls,  otherTrans=other}) = (n, M.toAscList cls, other)
+        listify _ = undefined
+
+-- Combine two ascending lists with defaults into a new ascending list
+fuse :: [(Char,Lexer)] -> (Lexer) -> [(Char,Lexer)] -> (Lexer) -> [(Char, Lexer)]
+{-# INLINE fuse #-}
+fuse [] xo y  _  = map (\(yc,ya) -> (yc,xo >||< ya)) y
+fuse x  _  [] yo = map (\(xc,xa) -> (xc,xa >||< yo)) x
+fuse x@((xc,xa):xs) xo y@((yc,ya):ys) yo =
+    case compare xc yc of
+      LT -> (xc,xa >||< yo) : fuse xs xo y  yo
+      EQ -> (xc,xa >||< ya) : fuse xs xo ys yo
+      GT -> (yc,xo >||< ya) : fuse x  xo ys yo
+
+-- Take a new BoundsNum, a new ascending list, and new default
+aggregateConts :: BoundsNum -> [(Char, Lexer)] -> Lexer -> Cont
+{-# INLINE aggregateConts #-}
+aggregateConts bn@(B n lc hc) cls other
+  | n >= denseMin = Dense  bn (accumArray (\_ new -> new) other (lc, hc) cls) other
+  | otherwise     = Sparse bn (M.fromAscList cls) other
+
+-- we use the dense representation if a table has an upper bound of at
+-- least this number of (non-error) elements
+denseMin :: Int
+denseMin = 20
+
+-- combine two bounds.  Note that n,n',newN are upper bounds on the
+-- number of characters.
+addBoundsNum :: BoundsNum -> BoundsNum -> BoundsNum
+{-# INLINE addBoundsNum #-}
+addBoundsNum (B 0 _ _ ) b = b
+addBoundsNum b (B 0 _ _ ) = b
+addBoundsNum (B n lc hc) (B n' lc' hc')  = let newLc = min lc lc'
+                                               newHc = max hc hc'
+                                               newN = min (n + n') (fromEnum newHc - fromEnum newLc + 1)
+                                           in B newN newLc newHc
+
+--------------------------------------------------------------------------------
+-- * Matching engine
+--------------------------------------------------------------------------------
+
+-- | This is the ultra-lazy matching engine.  It returns the longest match.
+--
+-- This will not examine any more of the input than needed, checking
+-- and returning a character at a time. Once a character is read that
+-- leads to no possibility of future match it does not evaluate any
+-- deeper.
+--
+-- When a match is found, the input past match is not examined at all.
+--
+-- In the extreme case of the input string being (error _) this will
+-- still succeed if the Regexp matches only an empty string since the
+-- input will not be demanded at all.  The "input before matching" in
+-- this case will be [] and its length is 0, and the length of the
+-- match is 0, which the input at start of match and the input past
+-- the match will both be (error _).
+--
+-- This loops over 'matchHere' to find the first match
+findRegex :: Lexer            -- ^ The regular expression to match
+          -> String            -- ^ The input string to scan along, looking for a match
+          -> (String,Int,Maybe (String,Int,String))  -- ^ The input string before the match, length of the string before the match, Nothing if there was no match or Just input string at the start of the match, length of the match, input string starting just past the match
+findRegex lexer input =
+  let loop :: Char -> String -> Int -> (String,Int,Maybe(String,Int,String))
+      loop p s i = case matchHere lexer i p s of
+                     ((-1),_) -> let ~(rest,len,result) = loop (head s) (tail s) $! (succ i)
+                                 in if null s then ([],i,Nothing)
+                                              else (head s : rest,len,result)
+                     (n,~leftover) -> ([],i,Just (s,n,leftover))
+  in loop '\n' input 0
+
+-- | This returns (-1,[]) if there was no match
+matchHere :: Lexer      -- ^ (accept regexp) to match
+          -> Int        -- ^ Offset into original string
+          -> Char       -- ^ previous character
+          -> String     -- ^ The input string
+          -> (Int, String)  -- ^ The length 'n' of the prefix of input that matched (take n input), The input starting past the match (drop n input)
+{-# INLINE matchHere #-}
+matchHere lexerIn offsetIn prevIn inputIn = applyHere lexerIn prevIn inputIn ((-1),[]) 0
+ where
+  -- internal.  All the matching logic and boundary logic and group logic are here.
+  applyHere :: Lexer        -- ^ The current lexeme
+            -> Char         -- ^ previous character
+            -> String       -- ^ Current input
+            -> (Int,String) -- ^ Longest match so far
+            -> Int          -- ^ Number of characters in the match so far
+            -> (Int,String) -- ^ Length of match and input past match
+  {-# INLINE applyHere #-}
+  applyHere (Lexer _ action cont) _ input lastItem here | here `seq` False = undefined
+                                                        | otherwise =
+    let lastItem' = if action == lexAccept then (here,input) else lastItem
+    in case seq lastItem' cont of -- seq ensures we evaluate the if predicate
+         Done -> lastItem'
+         _ -> case input of
+                [] -> lastItem'
+                (h:t) -> case peek cont h of
+                           Lexer _ action' _ | action' == lexFailure -> lastItem'
+                           lexer' -> applyHere lexer' h t lastItem' (succ here)
+
+  applyHere (Predicate _ p yes no) prev input lastItem here | here `seq` False = undefined
+                                                          | otherwise =
+    let t = case p of
+              BeginLine -> (prev == '\n') || (offsetIn==0 && here==0)
+              EndLine -> null input || ('\n' == head input)
+              BeginInput -> offsetIn==0 && here==0
+              EndInput -> null input
+        lexer = if t then yes else no
+    in applyHere lexer prev input lastItem here
+
+-- Do the lookup of the current character in the DFA transition table.
+peek :: Cont -> Char -> Lexer
+{-# INLINE peek #-}
+peek (Dense bn arr other)  c | c `inBounds` bn = arr ! c
+                             | otherwise = other
+peek (Sparse bn cls other) c | c `inBounds` bn = M.findWithDefault other c cls
+                             | otherwise = other
+peek _ _ = undefined
+-- check whether a character is in the bounds
+inBounds :: Char -> BoundsNum -> Bool
+{-# INLINE inBounds #-}
+inBounds _ (B 0 _  _ ) = False
+inBounds c (B _ lc hc) = c >= lc && c <= hc
+
+-- | This counts the number of matches to regex in the string, (it
+-- checks each possible starting position).  This should be the same
+-- as ((length (splitRegex re input))-1) but more efficient
+-- ^^^ fix
+countRegex :: Lexer -> [Char] -> Int
+countRegex lexer input =
+  let loop p s i | seq i False = undefined
+                 | otherwise =
+        if testHere lexer i p s
+          then if null s then succ i else loop (head s) (tail s) (succ i)
+          else if null s then      i else loop (head s) (tail s)       i
+  in loop '\n' input 0
+
+-- | This searches the input string for a match to the regex
+-- There is no need to wait for the longest match, so stop at first lexAccept
+matchesRegex :: Lexer -> [Char] -> Bool
+matchesRegex lexer input =
+  let loop p s i | i `seq` False = undefined
+                 | otherwise =
+        if testHere lexer i p s
+          then True
+          else if null s then False else loop (head s) (tail s) (succ i)
+  in loop '\n' input 0
+
+-- | This checks for a match to the regex starting at the beginning of the input
+-- There is no need to wait for the longest match, so stop at first lexAccept
+testHere :: Lexer          -- ^ current lexeme
+         -> Int            -- ^ Origin offset
+         -> Char           -- ^ previous input character
+         -> [Char]         -- ^ current input
+         -> Bool
+testHere lexerIn offsetIn prevIn inputIn = test lexerIn (offsetIn==0) prevIn inputIn
+ where
+  test (Lexer _ action cont) _ _ input | action == lexAccept = True
+                                              | otherwise =
+    case cont of
+      Done -> False
+      _ -> case input of
+             [] -> False
+             (h:t) -> case peek cont h of
+                        Lexer _ action' _ | action' == lexFailure -> False
+                        lexer' -> test lexer' False h t
+
+  test (Predicate _ p yes no) atFront prev input =
+    let t = case p of
+              BeginLine -> atFront || (prev == '\n')
+              EndLine -> null input || ('\n' == head input)
+              BeginInput -> atFront
+              EndInput -> null input
+        lexer = if t then yes else no
+    in test lexer atFront prev input
+
+-- | This is a version of findRegex that does not compute the length of the prefix
+findRegexS :: Lexer -> String -> (String, Maybe (String, Int, String))
+findRegexS lexer input =
+  let loop :: Char -> String -> Int -> (String,Maybe(String,Int,String))
+      loop p s i | i `seq` False = undefined
+                 | otherwise =
+        case matchHere lexer i p s of
+          ((-1),_) -> if null s
+                        then ([],Nothing)
+                        else  let ~(rest,result) = loop (head s) (tail s) (succ i)
+                              in (head s : rest,result)
+          (n,~leftover) -> ([],Just (s,n,leftover))
+  in loop '\n' input 0
+{-
+
+-- | This returns (-1,[]) if there was no match
+matchHere' :: Lexer      -- ^ (accept regexp) to match
+          -> Int        -- ^ Offset into original string
+          -> Char       -- ^ previous character
+          -> String     -- ^ The input string
+          -> (Int, String)  -- ^ The length 'n' of the prefix of input that matched (take n input), The input starting past the match (drop n input)
+{-# INLINE matchHere' #-}
+matchHere' lexerIn offsetIn prevIn inputIn = applyHere lexerIn prevIn inputIn ((-1),[]) 0
+ where
+  -- internal.  All the matching logic and boundary logic and group logic are here.
+  applyHere :: Lexer        -- ^ The current lexeme
+            -> Char         -- ^ previous character
+            -> String       -- ^ Current input
+            -> (Int,String) -- ^ Longest match so far
+            -> Int          -- ^ Number of characters in the match so far
+            -> (Int,String) -- ^ Length of match and input past match
+  {-# INLINE applyHere #-}
+  applyHere (Lexer _ action cont) _ input lastItem here | here `seq` False = undefined
+                                                      | otherwise =
+    let lastItem' = if action == lexAccept then (here,input) else lastItem
+    in case seq lastItem' cont of -- seq ensures we evaluate the if predicate
+         Done -> lastItem'
+         _ -> case input of
+                [] -> lastItem'
+                (h:t) -> case peek cont h of
+                           Lexer _ action' _ | action' == lexFailure -> lastItem'
+                           lexer' -> applyHere lexer' h t lastItem' (succ here)
+
+  applyHere (Predicate _ p yes no) prev input lastItem here | here `seq` False = undefined
+                                                          | otherwise =
+    let t = case p of
+              BeginLine -> (prev == '\n') || (offsetIn==0 && here==0)
+              EndLine -> null input || ('\n' == head input)
+              BeginInput -> offsetIn==0 && here==0
+              EndInput -> null input
+        lexer = if t then yes else no
+    in applyHere lexer prev input lastItem here
+
+-- Sensible tracking of open and closed information
+data Opened = Opened [Closed] Int (String,Int) Opened | EndOpened [Closed] deriving (Show)
+data Closed = Closed [Closed] Int (String,(Int,Int)) deriving (Show)
+
+-}
+</pre></br><h2>printed</h2></br><pre>{-
+
+Engine-mod.hs is an attempt to add missing functionality to Engine.hs
+  * ^ and $ anchor support
+  * Multiline compile option to affect .
+  * case sensitive compile option for characters (just downcase everything?)
+  * substring matching?  (libTRE papers?)
+
+Anchors are "boundary" matchers, not character matchers.  So I need to
+generalize the concept of the branching.  And boundaries can coincide.
+So for n kinds of boundaries there are 3^n possible ways to require /
+avoid / be apathetic to the boundary.
+
+And subgroups are also boundaries.
+
+Using predicates makes for black boxes.  Need "LookBehind" nodes.
+
+The keys to groups are these: The open groups form a lifo stack, and
+only the last opened group may be closed, and each group can only be
+(unused|open at pos #|closed from pos # to #).
+
+When combining Cont with >||< you have *decision* points: either open
+a group or not.  *mandatory* openings are also possible.
+
+There are many ways to arrange sub-group capture, but consider getting all possible ways:
+
+Maintain a set of LIFO stacks
+
+if you get an "open" command on a group not in the stack, then add it the head of the stack.
+if you get an "open" command for a group on the stack then copy it's tail and make a new element of the set with the new (open pos).
+
+if you get a "close" command on the group at the head of the stack, remove it and update the map's list for g.  Hooray.
+if you get a "close" command on a group not in the stack then WTF?  You have to ignore it.
+if you get a "close" command on a group deeper in the stack then take it's tail and make a new element of the set with new capture.
+
+Updating the map is annoying -- we need many possible versions.  Put the maps on the same stack:
+Map
+Map,Open
+Map,Open,Map
+Map,Open,Map,Open
+Map,Open,Map,Open,Map
+
+Hmmm...don't let the last element be an open command.
+Map
+Map,Open,Map
+Map,Open,Map,Open,Map
+
+When you open an new group, copy the previous map to the new head.
+When you close the top open, update the top map, remove the top map
+and open, and replace the new top map with the updated map.
+
+Now increase the symmetry by always starting with an open command (open 0):
+(Open 0, EmptyMap) will be the initial stack.
+
+Failing captures: Consider (ac|.|..a)* against aaaa.  You can parse it many ways:
+Staack is [(Open 0, Empty Map)]
+Open 1  Stack is  [(Open 0, Empty Map),(Open 1, Empty Map)]
+"a" matches, "." matches, "." matches
+-, Close 1, -   Stack is [(Open 0, 1=(0,1))]
+-, Open  1, -   Stack is [(Open 0, 1=(0,1)),(Open 1, 1=(0,1))]
+
+Stopping here would be Close 0 (0=(0,1), 1=(0,1))
+
+"c fails",,"." matches; "a" matches, "." matches", "." matches
+-,-,-;-,Close 1,- Stack is [(Open 0, 1=(1,1))]
+-,-,-;-,Open  1,- Stack is [(Open 0, 1=(1,1)),(Open 1,1=(1,1))]
+
+Stopping here would be Close 0 (0=(0,2), 1=(1,1))
+
+,,"a matches"; "c" fails,,"." matches; "a" matches","." matches","." matches
+-,-,Close 1;-,-,-;-,Close 1,-
+-,-,Open  1;-,-,-;-,Open  1,-
+-}
+
+{-|
+By Chris Kuklewicz (haskell (at) list (dot) mightyreason (dot) com), 2006.
+
+This file is licensed under the LGPL (version 2, see the LICENSE
+file), because it is a derivative work.  This DFAEngine takes the lazy
+transition table from Manuel Chakravarty's lexer in CTK Light, but
+uses it for simpler purposes.  The original CTK code can be found here
+<http://www.cse.unsw.edu.au/~chak/haskell/ctk/>
+
+Don Stewart (<http://www.cse.unsw.edu.au/~dons/contact.html>) also
+contributed to this code.
+
+I want the freedom to alter the types a bit, so this is a separate
+module.
+
+The CTK and DFA code can be thought of as three parts:
+
+1. The ability to compose Regexp combinators which will lazily assemble a DFA.  This is mainly bound up in the Cont type and the internal functions that merge it (exported as '>||<').
+
+2. The interface of how to specify "Failure" and "Success".  This was bound up in LexAction holding an function and is now lexAccept/lesFailure/lexContinue.
+
+3. The traversal engine.  At each longer and longer match the last seen match is updated.  Different traversals keep track of different levels of detail.
+
+As a descendent of the regex-dna entry at
+<http://shootout.alioth.debian.org/gp4/benchmark.php?test=regexdna&lang=all>,
+this module has contributions from Don Stewart, Alson Kemp, and Chris
+Kuklewicz.
+
+-}
+
+module Text.Regex.DFA.Engine
+  (Lexer(..),LexAction(..),Regexp,Cont(Done),Boundary(..),
+  emptyOp,char,alt,altNot,allChar,
+  beginLine,endLine,beginInput,endInput,
+  (>|<),orRE,(+>),concatRE,quest,star,plus,failure,accept,(>||<),
+  findRegex,matchesRegex,testHere,countRegex,findRegexS,
+  peek,inBounds,lexFailure,lexContinue,lexAccept ) where
+
+import Data.Array((!), assocs, accumArray, Array)
+import Data.List(sort)
+import Data.Map(Map)
+import qualified Data.Map as M(fromAscList, toAscList, singleton,
+  empty, findWithDefault)
+import Data.Set(Set)
+import Text.Regex.DFA.Pattern(DoPa)
+import qualified Data.Set as S
+
+-- import qualified Debug.Trace
+
+trace :: String -> a -> a
+trace _ = id
+
+--------------------------------------------------------------------------------
+-- * Types and supporting functions for the DFA (taken form CTK Light)
+--------------------------------------------------------------------------------
+
+-- | a regular expression
+type Regexp = Lexer -> Lexer
+
+-- | Need to encode, as data, the between character decision "am I at
+-- this boundary?".  The different types of boundary checks and their
+-- outcomes are all value of Boundary.  Currently only the ^ and $
+-- anchors are encoded.
+--
+data Boundary = BeginLine | EndLine | BeginInput | EndInput
+  deriving (Show,Eq)
+
+-- | tree structure used to represent the lexer table
+--
+-- each node in the tree corresponds to a of the lexer; the
+-- associated actions are those that apply when the corresponding
+-- is reached
+data Lexer = Lexer (Set DoPa) !LexAction Cont
+           | Predicate {rIndex :: Set DoPa
+                       ,whichBoundary :: Boundary
+                       ,atBoundary :: Lexer
+                       ,notAtBoundary :: Lexer}
+  deriving (Show)
+
+-- Smart construtors
+mkLexer :: LexAction -> Cont -> Lexer
+mkLexer a c = trace ("mkLexer " ++ show a) $ Lexer S.empty a c
+mkLexerI :: DoPa -> LexAction -> Cont -> Lexer
+mkLexerI i a c = trace ("mkLexerI " ++ show i) $ Lexer (S.singleton i) a c
+mkLexerS :: Set DoPa -> LexAction -> Cont -> Lexer
+mkLexerS si a c = trace ("mkLexerS " ++ show si) $ Lexer si a c
+mkPredicateI :: DoPa -> Boundary -> Lexer -> Lexer -> Lexer
+mkPredicateI i b cTrue cFalse = Predicate (S.singleton i) b cTrue cFalse
+mkPredicateS :: Set DoPa -> Boundary -> Lexer -> Lexer -> Lexer
+mkPredicateS si b cTrue cFalse = Predicate si b cTrue cFalse
+
+failure :: Lexer
+failure = mkLexer lexFailure Done
+
+-- | This is interface between the DFA table and the traversal engine,
+-- and is simpler than the original CTK version.
+newtype LexAction = LexAction Int deriving (Eq,Ord,Show)
+lexFailure,lexContinue,lexAccept :: LexAction
+lexFailure  = LexAction (-1)
+lexContinue = LexAction 0
+lexAccept   = LexAction 1
+-- The above allows the definition joinActions = max
+
+-- | 'Done' or a table-like-thing to associate the next character with a Lexer
+data Cont = Dense {bounds :: !BoundsNum
+                  ,transArray :: Array Char (Lexer)
+                  ,otherTrans :: Lexer}
+          | Sparse {bounds :: !BoundsNum
+                   ,transMap :: Map Char (Lexer)
+                   ,otherTrans :: Lexer}
+          | Done deriving (Show)
+
+-- | estimates the number of (non-'otherTrans') elements and the
+-- bounds of a DFA transition table
+data BoundsNum = B !Int !Char !Char deriving (Show)
+
+--------------------------------------------------------------------------------
+-- * Regexp matching functions and combinators (taken from CTK Light)
+--------------------------------------------------------------------------------
+
+----------------------------------------
+-- | Fixity declarations
+----------------------------------------
+
+infixr 4 `quest`, `star`, `plus`
+infixl 3 +>
+infixl 2 >|<, >||<
+
+----------------------------------------
+-- | These create Regexp
+----------------------------------------
+
+-- | Empty lexeme (noop)
+emptyOp :: Regexp
+{-# INLINE emptyOp #-}
+emptyOp = id
+
+beginLine :: DoPa -> Regexp
+beginLine i = \l -> mkPredicateI i BeginLine l failure
+
+endLine :: DoPa -> Regexp
+endLine i = \l -> mkPredicateI i EndLine l failure
+
+beginInput :: DoPa -> Regexp
+beginInput i = \l -> mkPredicateI i BeginInput l failure
+
+endInput :: DoPa -> Regexp
+endInput i = \l -> mkPredicateI i EndInput l failure
+
+-- | One character regexp
+char :: DoPa -> Char -> Regexp
+char i c = \l -> mkLexerI i lexContinue (Sparse (B 1 c c) (M.singleton c l) failure)
+
+-- | accepts any character
+allChar :: DoPa -> Regexp
+allChar i =
+  let bnds = B 0 maxBound minBound
+  in \l -> mkLexerI i lexContinue (Sparse bnds M.empty l)
+
+-- | accepts a list of alternative characters
+-- Equiv. to `(foldr1 (>|<) . map char) cs', but much faster
+alt :: DoPa -> [Char] -> Regexp
+alt _ [] = \_ -> failure
+alt i cs =
+   let scs = sort cs
+       (len,end) = lengthAndLast scs
+       bnds = B len (head scs) end
+   in \l -> mkLexerI i lexContinue (aggregateConts bnds [(c, l) | c <- sort cs] failure)
+
+-- | accepts an inverted list of alternative characters
+-- Equiv. to `(foldr1 (>|<) . map char) cs', but much faster
+altNot :: DoPa -> [Char] -> Regexp
+altNot i [] = allChar i
+altNot i cs =
+  let scs = sort cs
+      (len,end) = lengthAndLast scs
+      bnds = B len (head scs) end
+  in \l -> mkLexerI i lexContinue (aggregateConts bnds [(c, failure) | c <- sort cs] l)
+
+-- Helper function for alt and altNot to efficiently compute the bounds
+lengthAndLast :: [a] -> (Int,a)
+lengthAndLast = helper 1
+  where helper _ [] = (0,undefined)
+        helper i [x] = (i,x)
+        helper i (_:xs) = let i' = succ i in seq i' $ helper i' xs
+
+----------------------------------------
+-- | These combine two Regexp's
+----------------------------------------
+
+-- | Concatenation of regexps is just concatenation of functions
+-- x +> y corresponds to xy
+(+>) :: Regexp -> Regexp -> Regexp
+{-# INLINE (+>) #-}
+(+>)  = (.)
+
+concatRE :: [Regexp] -> Regexp
+{-# INLINE concatRE #-}
+concatRE [] = emptyOp
+concatRE rs = foldr1 (+>) rs
+
+-- | disjunctive combination of two regexps, corresponding to x|y.
+--
+-- This will find the longest match
+(>|<) :: Regexp -> Regexp -> Regexp
+{-# INLINE (>|<) #-}
+re1 >|< re2  = \l -> re1 l >||< re2 l
+
+orRE :: [Regexp] -> Regexp
+{-# INLINE orRE #-}
+orRE [] = emptyOp
+orRE rs = foldl1 (>|<) rs
+
+-- | x `quest` y corresponds to the regular expression x?y
+quest :: Regexp -> Regexp -> Regexp
+{-# INLINE quest #-}
+quest re1 re2  = (re1 +> re2) >|< re2
+
+-- | x `plus` y corresponds to the regular expression x+y
+plus :: Regexp -> Regexp -> Regexp
+{-# INLINE plus #-}
+plus re1 re2  = re1 +> (re1 `star` re2)
+
+--
+-- The definition used below can be obtained by equational reasoning from this
+-- one (which is much easier to understand):
+--
+--   star re1 re2 = let self = (re1 +> self >|< emptyOp) in self +> re2
+--
+-- However, in the above, `self' is of type `Regexp s t' (ie, a functional),
+-- whereas below it is of type `Lexer s t'.  Thus, below we have a graphical
+-- body (finite representation of an infinite structure), which doesn't grow
+-- with the size of the accepted lexeme - in contrast to the definition using
+-- the functional recursion.
+
+-- | x `star` y corresponds to the regular expression x*y
+-- "self" is of type Lexer
+star :: Regexp -> Regexp -> Regexp
+star re1 re2  = \l -> let self = re1 self >||< re2 l in self
+
+--------------------------------------------------------------------------------
+-- * Converting Regexp into Lexer and combinind lexers
+--------------------------------------------------------------------------------
+
+-- | Have a match to Regexp be consider a success
+accept :: Regexp -> Lexer
+{-# INLINE accept #-}
+accept re = re (mkLexer lexAccept Done)
+
+-- | disjunctive combination of two lexers (longest match, right biased)
+(>||<) :: Lexer -> Lexer -> Lexer
+(Lexer i a c) >||< (Lexer j a' c')  = mkLexerS (S.union i j) (joinActions a a') (joinConts c c')
+(Predicate i x t f) >||< (Predicate i' x' t' f') | x==x' = mkPredicateS (S.union i i') x (t >||< t') (f >||< f')
+(Predicate i x t f) >||< b = mkPredicateS i x (t >||< b) (f >||< b)
+a >||< (Predicate i x t f) = mkPredicateS i x (a >||< t) (a >||< f)
+
+-- internal
+joinActions :: LexAction -> LexAction -> LexAction
+joinActions = max
+
+-- internal, combine two disjunctive continuations
+joinConts :: Cont -> Cont -> Cont
+joinConts Done c'   = c'
+joinConts c    Done = c
+joinConts c    c'   = let (bn , cls , other ) = listify c
+                          (bn', cls', other') = listify c'
+                      -- note: `addsBoundsNum' can, at this point, only
+                      --       approx. the number of *non-overlapping* cases;
+                      --       however, the bounds are correct
+                      in aggregateConts (addBoundsNum bn bn') (fuse cls other cls' other') (other >||< other')
+  where -- listify converts the array or map into an ascending list
+        listify :: Cont -> (BoundsNum,[(Char,Lexer)],Lexer)
+        listify (Dense  {bounds=n,transArray=arr,otherTrans=other}) = (n, assocs arr, other)
+        listify (Sparse {bounds=n,transMap=cls,  otherTrans=other}) = (n, M.toAscList cls, other)
+        listify _ = undefined
+
+-- Combine two ascending lists with defaults into a new ascending list
+fuse :: [(Char,Lexer)] -> (Lexer) -> [(Char,Lexer)] -> (Lexer) -> [(Char, Lexer)]
+{-# INLINE fuse #-}
+fuse [] xo y  _  = map (\(yc,ya) -> (yc,xo >||< ya)) y
+fuse x  _  [] yo = map (\(xc,xa) -> (xc,xa >||< yo)) x
+fuse x@((xc,xa):xs) xo y@((yc,ya):ys) yo =
+    case compare xc yc of
+      LT -> (xc,xa >||< yo) : fuse xs xo y  yo
+      EQ -> (xc,xa >||< ya) : fuse xs xo ys yo
+      GT -> (yc,xo >||< ya) : fuse x  xo ys yo
+
+-- Take a new BoundsNum, a new ascending list, and new default
+aggregateConts :: BoundsNum -> [(Char, Lexer)] -> Lexer -> Cont
+{-# INLINE aggregateConts #-}
+aggregateConts bn@(B n lc hc) cls other
+  | n >= denseMin = Dense  bn (accumArray (\_ new -> new) other (lc, hc) cls) other
+  | otherwise     = Sparse bn (M.fromAscList cls) other
+
+-- we use the dense representation if a table has an upper bound of at
+-- least this number of (non-error) elements
+denseMin :: Int
+denseMin = 20
+
+-- combine two bounds.  Note that n,n',newN are upper bounds on the
+-- number of characters.
+addBoundsNum :: BoundsNum -> BoundsNum -> BoundsNum
+{-# INLINE addBoundsNum #-}
+addBoundsNum (B 0 _ _ ) b = b
+addBoundsNum b (B 0 _ _ ) = b
+addBoundsNum (B n lc hc) (B n' lc' hc')  = let newLc = min lc lc'
+                                               newHc = max hc hc'
+                                               newN = min (n + n') (fromEnum newHc - fromEnum newLc + 1)
+                                           in B newN newLc newHc
+
+--------------------------------------------------------------------------------
+-- * Matching engine
+--------------------------------------------------------------------------------
+
+-- | This is the ultra-lazy matching engine.  It returns the longest match.
+--
+-- This will not examine any more of the input than needed, checking
+-- and returning a character at a time. Once a character is read that
+-- leads to no possibility of future match it does not evaluate any
+-- deeper.
+--
+-- When a match is found, the input past match is not examined at all.
+--
+-- In the extreme case of the input string being (error _) this will
+-- still succeed if the Regexp matches only an empty string since the
+-- input will not be demanded at all.  The "input before matching" in
+-- this case will be [] and its length is 0, and the length of the
+-- match is 0, which the input at start of match and the input past
+-- the match will both be (error _).
+--
+-- This loops over 'matchHere' to find the first match
+findRegex :: Lexer            -- ^ The regular expression to match
+          -> String            -- ^ The input string to scan along, looking for a match
+          -> (String,Int,Maybe (String,Int,String))  -- ^ The input string before the match, length of the string before the match, Nothing if there was no match or Just input string at the start of the match, length of the match, input string starting just past the match
+findRegex lexer input =
+  let loop :: Char -> String -> Int -> (String,Int,Maybe(String,Int,String))
+      loop p s i = case matchHere lexer i p s of
+                     ((-1),_) -> let ~(rest,len,result) = loop (head s) (tail s) $! (succ i)
+                                 in if null s then ([],i,Nothing)
+                                              else (head s : rest,len,result)
+                     (n,~leftover) -> ([],i,Just (s,n,leftover))
+  in loop '\n' input 0
+
+-- | This returns (-1,[]) if there was no match
+matchHere :: Lexer      -- ^ (accept regexp) to match
+          -> Int        -- ^ Offset into original string
+          -> Char       -- ^ previous character
+          -> String     -- ^ The input string
+          -> (Int, String)  -- ^ The length 'n' of the prefix of input that matched (take n input), The input starting past the match (drop n input)
+{-# INLINE matchHere #-}
+matchHere lexerIn offsetIn prevIn inputIn = applyHere lexerIn prevIn inputIn ((-1),[]) 0
+ where
+  -- internal.  All the matching logic and boundary logic and group logic are here.
+  applyHere :: Lexer        -- ^ The current lexeme
+            -> Char         -- ^ previous character
+            -> String       -- ^ Current input
+            -> (Int,String) -- ^ Longest match so far
+            -> Int          -- ^ Number of characters in the match so far
+            -> (Int,String) -- ^ Length of match and input past match
+  {-# INLINE applyHere #-}
+  applyHere (Lexer _ action cont) _ input lastItem here | here `seq` False = undefined
+                                                        | otherwise =
+    let lastItem' = if action == lexAccept then (here,input) else lastItem
+    in case seq lastItem' cont of -- seq ensures we evaluate the if predicate
+         Done -> lastItem'
+         _ -> case input of
+                [] -> lastItem'
+                (h:t) -> case peek cont h of
+                           Lexer _ action' _ | action' == lexFailure -> lastItem'
+                           lexer' -> applyHere lexer' h t lastItem' (succ here)
+
+  applyHere (Predicate _ p yes no) prev input lastItem here | here `seq` False = undefined
+                                                          | otherwise =
+    let t = case p of
+              BeginLine -> (prev == '\n') || (offsetIn==0 && here==0)
+              EndLine -> null input || ('\n' == head input)
+              BeginInput -> offsetIn==0 && here==0
+              EndInput -> null input
+        lexer = if t then yes else no
+    in applyHere lexer prev input lastItem here
+
+-- Do the lookup of the current character in the DFA transition table.
+peek :: Cont -> Char -> Lexer
+{-# INLINE peek #-}
+peek (Dense bn arr other)  c | c `inBounds` bn = arr ! c
+                             | otherwise = other
+peek (Sparse bn cls other) c | c `inBounds` bn = M.findWithDefault other c cls
+                             | otherwise = other
+peek _ _ = undefined
+-- check whether a character is in the bounds
+inBounds :: Char -> BoundsNum -> Bool
+{-# INLINE inBounds #-}
+inBounds _ (B 0 _  _ ) = False
+inBounds c (B _ lc hc) = c >= lc && c <= hc
+
+-- | This counts the number of matches to regex in the string, (it
+-- checks each possible starting position).  This should be the same
+-- as ((length (splitRegex re input))-1) but more efficient
+-- ^^^ fix
+countRegex :: Lexer -> [Char] -> Int
+countRegex lexer input =
+  let loop p s i | seq i False = undefined
+                 | otherwise =
+        if testHere lexer i p s
+          then if null s then succ i else loop (head s) (tail s) (succ i)
+          else if null s then      i else loop (head s) (tail s)       i
+  in loop '\n' input 0
+
+-- | This searches the input string for a match to the regex
+-- There is no need to wait for the longest match, so stop at first lexAccept
+matchesRegex :: Lexer -> [Char] -> Bool
+matchesRegex lexer input =
+  let loop p s i | i `seq` False = undefined
+                 | otherwise =
+        if testHere lexer i p s
+          then True
+          else if null s then False else loop (head s) (tail s) (succ i)
+  in loop '\n' input 0
+
+-- | This checks for a match to the regex starting at the beginning of the input
+-- There is no need to wait for the longest match, so stop at first lexAccept
+testHere :: Lexer          -- ^ current lexeme
+         -> Int            -- ^ Origin offset
+         -> Char           -- ^ previous input character
+         -> [Char]         -- ^ current input
+         -> Bool
+testHere lexerIn offsetIn prevIn inputIn = test lexerIn (offsetIn==0) prevIn inputIn
+ where
+  test (Lexer _ action cont) _ _ input | action == lexAccept = True
+                                              | otherwise =
+    case cont of
+      Done -> False
+      _ -> case input of
+             [] -> False
+             (h:t) -> case peek cont h of
+                        Lexer _ action' _ | action' == lexFailure -> False
+                        lexer' -> test lexer' False h t
+
+  test (Predicate _ p yes no) atFront prev input =
+    let t = case p of
+              BeginLine -> atFront || (prev == '\n')
+              EndLine -> null input || ('\n' == head input)
+              BeginInput -> atFront
+              EndInput -> null input
+        lexer = if t then yes else no
+    in test lexer atFront prev input
+
+-- | This is a version of findRegex that does not compute the length of the prefix
+findRegexS :: Lexer -> String -> (String, Maybe (String, Int, String))
+findRegexS lexer input =
+  let loop :: Char -> String -> Int -> (String,Maybe(String,Int,String))
+      loop p s i | i `seq` False = undefined
+                 | otherwise =
+        case matchHere lexer i p s of
+          ((-1),_) -> if null s
+                        then ([],Nothing)
+                        else  let ~(rest,result) = loop (head s) (tail s) (succ i)
+                              in (head s : rest,result)
+          (n,~leftover) -> ([],Just (s,n,leftover))
+  in loop '\n' input 0
+{-
+
+-- | This returns (-1,[]) if there was no match
+matchHere' :: Lexer      -- ^ (accept regexp) to match
+          -> Int        -- ^ Offset into original string
+          -> Char       -- ^ previous character
+          -> String     -- ^ The input string
+          -> (Int, String)  -- ^ The length 'n' of the prefix of input that matched (take n input), The input starting past the match (drop n input)
+{-# INLINE matchHere' #
+matchHere' lexerIn offsetIn prevIn inputIn = applyHere lexerIn prevIn inputIn ((-1),[]) 0
+ where
+  -- internal.  All the matching logic and boundary logic and group logic are here.
+  applyHere :: Lexer        -- ^ The current lexeme
+            -> Char         -- ^ previous character
+            -> String       -- ^ Current input
+            -> (Int,String) -- ^ Longest match so far
+            -> Int          -- ^ Number of characters in the match so far
+            -> (Int,String) -- ^ Length of match and input past match
+  {-# INLINE applyHere #
+  applyHere (Lexer _ action cont) _ input lastItem here | here `seq` False = undefined
+                                                      | otherwise =
+    let lastItem' = if action == lexAccept then (here,input) else lastItem
+    in case seq lastItem' cont of -- seq ensures we evaluate the if predicate
+         Done -> lastItem'
+         _ -> case input of
+                [] -> lastItem'
+                (h:t) -> case peek cont h of
+                           Lexer _ action' _ | action' == lexFailure -> lastItem'
+                           lexer' -> applyHere lexer' h t lastItem' (succ here)
+
+  applyHere (Predicate _ p yes no) prev input lastItem here | here `seq` False = undefined
+                                                          | otherwise =
+    let t = case p of
+              BeginLine -> (prev == '\n') || (offsetIn==0 && here==0)
+              EndLine -> null input || ('\n' == head input)
+              BeginInput -> offsetIn==0 && here==0
+              EndInput -> null input
+        lexer = if t then yes else no
+    in applyHere lexer prev input lastItem here
+
+-- Sensible tracking of open and closed information
+data Opened = Opened [Closed] Int (String,Int) Opened | EndOpened [Closed] deriving (Show)
+data Closed = Closed [Closed] Int (String,(Int,Int)) deriving (Show)
+
+-}
+
+</pre>

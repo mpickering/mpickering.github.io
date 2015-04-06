@@ -1,0 +1,198 @@
+<a href="RunExplStk.hs1194314738318153057.out.html">prev</a></br><a href="failures.html">home</a></br><a href="RunImplStk.hs2111631616877819790.out.html">next</a></br></br><pre>50c50
+<         (_,_,_,Just r)  -> [| GeneratorTestResult Nothing $(ebDevelReload e) (Just $r) |]
+---
+>         (_,_,_,Just r)  -> [| GeneratorTestResult Nothing $(ebDevelReload e) (Just r) |]
+95a96
+> 
+</pre></br><h2>original</h2></br><pre>{-# LANGUAGE OverloadedStrings, QuasiQuotes, TemplateHaskell #-}
+module RunGenerator where
+
+import Control.Monad (forM_)
+import Data.List (sortBy)
+import Data.Ord (comparing)
+import Language.Haskell.TH
+import Test.HUnit
+import Yesod.EmbeddedStatic
+import Yesod.EmbeddedStatic.Types
+
+import qualified Data.ByteString as B
+import qualified Data.ByteString.Lazy as BL
+import qualified Data.Text as T
+import qualified Data.Text.Lazy as TL
+import qualified Data.Text.Lazy.Encoding as TL
+
+data GeneratorTestResult = GeneratorTestResult {
+    gtError :: Maybe String
+  , gtDevelReload :: IO BL.ByteString
+  , gtDevelExtraFiles :: Maybe ([T.Text] -> IO (Maybe (B.ByteString, BL.ByteString)))
+  }
+
+devExtra :: GeneratorTestResult -> [T.Text] -> IO (B.ByteString, BL.ByteString)
+devExtra gtr p = case gtDevelExtraFiles gtr of
+                    Nothing -> error $ "Devel extra files is nothing for " ++ show p
+                    Just d -> d p >>= maybe (error $ "Devel returned nothing for" ++ show p) return
+
+dumpExpected :: Generator -> String -> Q [Dec]
+dumpExpected g extra = do
+    entries <- g
+    runIO $ forM_ entries $ \e -> do
+        ct <- ebProductionContent e
+        BL.writeFile (ebLocation e ++ extra) ct
+    return []
+
+testEntry :: Entry -> (Location, B.ByteString, FilePath) -> ExpQ
+testEntry e (loc, mime, f) = do
+    eCt <- runIO $ BL.readFile f
+    gCt <- runIO $ ebProductionContent e
+    case (loc == ebLocation e, mime == ebMimeType e, eCt == gCt, ebDevelExtraFiles e) of
+        (False,_,_,_) -> [| GeneratorTestResult (Just $ "Locations don't match for " ++ $(litE $ stringL loc))
+                                                undefined undefined |]
+        (_,False,_,_) -> [| GeneratorTestResult (Just $ "Mime type does not match for " ++ $(litE $ stringL loc))
+                                                undefined undefined |]
+        (_,_,False,_) -> [| GeneratorTestResult (Just $ "File content does not match for " ++ $(litE $ stringL loc) ++ "\n"
+                                                   ++ $(litE $ stringL $ TL.unpack $ TL.decodeUtf8 gCt))
+                                                undefined undefined |]
+        (_,_,_,Nothing) -> [| GeneratorTestResult Nothing $(ebDevelReload e) Nothing |]
+        (_,_,_,Just r)  -> [| GeneratorTestResult Nothing $(ebDevelReload e) (Just $r) |]
+
+testGen :: Generator -> [(Location, B.ByteString, FilePath)] -> ExpQ
+testGen g expected = do
+    entries <- g
+    if length expected /= length entries
+        then [| [GeneratorTestResult (Just "Not same length") undefined undefined] |]
+        else do
+            let entries' = sortBy (comparing ebLocation) entries
+                fst3 (x,_,_) = x
+                expected' = sortBy (comparing fst3) expected
+            listE $ zipWith testEntry entries' expected'
+
+dumpDev :: GeneratorTestResult -> FilePath -> IO ()
+dumpDev g f = do
+    gCt <- gtDevelReload g
+    BL.writeFile f gCt
+
+assertDev :: GeneratorTestResult -> FilePath -> Assertion
+assertDev g f = do
+    fCt <- BL.readFile f
+    gCt <- gtDevelReload g
+    assertEqual ("Content for " ++ f) fCt gCt
+
+dumpDevExtra :: GeneratorTestResult -> [T.Text] -> FilePath -> IO ()
+dumpDevExtra g url file =
+    case gtDevelExtraFiles g of
+        Nothing -> error $ "Dev extra not found: " ++ show url
+        Just f -> do
+            mres <- f url
+            case mres of
+                Nothing -> error $ "No response for " ++ show url
+                Just (_, ct) -> BL.writeFile file ct
+
+assertDevExtra :: GeneratorTestResult -> [T.Text] -> B.ByteString -> FilePath -> Assertion
+assertDevExtra g url mime file = do
+    fCt <- BL.readFile file
+    case gtDevelExtraFiles g of
+        Nothing -> assertFailure $ "No dev extra for " ++ show url
+        Just f -> do
+            mres <- f url
+            case mres of
+                Nothing -> assertFailure $ "No response for " ++ show url
+                Just (mime', ct') -> do
+                    assertEqual ("Mime for " ++ show url) mime mime'
+                    assertEqual ("Content for " ++ show url) fCt ct'
+</pre></br><h2>printed</h2></br><pre>{-# LANGUAGE OverloadedStrings, QuasiQuotes, TemplateHaskell #-}
+module RunGenerator where
+
+import Control.Monad (forM_)
+import Data.List (sortBy)
+import Data.Ord (comparing)
+import Language.Haskell.TH
+import Test.HUnit
+import Yesod.EmbeddedStatic
+import Yesod.EmbeddedStatic.Types
+
+import qualified Data.ByteString as B
+import qualified Data.ByteString.Lazy as BL
+import qualified Data.Text as T
+import qualified Data.Text.Lazy as TL
+import qualified Data.Text.Lazy.Encoding as TL
+
+data GeneratorTestResult = GeneratorTestResult {
+    gtError :: Maybe String
+  , gtDevelReload :: IO BL.ByteString
+  , gtDevelExtraFiles :: Maybe ([T.Text] -> IO (Maybe (B.ByteString, BL.ByteString)))
+  }
+
+devExtra :: GeneratorTestResult -> [T.Text] -> IO (B.ByteString, BL.ByteString)
+devExtra gtr p = case gtDevelExtraFiles gtr of
+                    Nothing -> error $ "Devel extra files is nothing for " ++ show p
+                    Just d -> d p >>= maybe (error $ "Devel returned nothing for" ++ show p) return
+
+dumpExpected :: Generator -> String -> Q [Dec]
+dumpExpected g extra = do
+    entries <- g
+    runIO $ forM_ entries $ \e -> do
+        ct <- ebProductionContent e
+        BL.writeFile (ebLocation e ++ extra) ct
+    return []
+
+testEntry :: Entry -> (Location, B.ByteString, FilePath) -> ExpQ
+testEntry e (loc, mime, f) = do
+    eCt <- runIO $ BL.readFile f
+    gCt <- runIO $ ebProductionContent e
+    case (loc == ebLocation e, mime == ebMimeType e, eCt == gCt, ebDevelExtraFiles e) of
+        (False,_,_,_) -> [| GeneratorTestResult (Just $ "Locations don't match for " ++ $(litE $ stringL loc))
+                                                undefined undefined |]
+        (_,False,_,_) -> [| GeneratorTestResult (Just $ "Mime type does not match for " ++ $(litE $ stringL loc))
+                                                undefined undefined |]
+        (_,_,False,_) -> [| GeneratorTestResult (Just $ "File content does not match for " ++ $(litE $ stringL loc) ++ "\n"
+                                                   ++ $(litE $ stringL $ TL.unpack $ TL.decodeUtf8 gCt))
+                                                undefined undefined |]
+        (_,_,_,Nothing) -> [| GeneratorTestResult Nothing $(ebDevelReload e) Nothing |]
+        (_,_,_,Just r)  -> [| GeneratorTestResult Nothing $(ebDevelReload e) (Just r) |]
+
+testGen :: Generator -> [(Location, B.ByteString, FilePath)] -> ExpQ
+testGen g expected = do
+    entries <- g
+    if length expected /= length entries
+        then [| [GeneratorTestResult (Just "Not same length") undefined undefined] |]
+        else do
+            let entries' = sortBy (comparing ebLocation) entries
+                fst3 (x,_,_) = x
+                expected' = sortBy (comparing fst3) expected
+            listE $ zipWith testEntry entries' expected'
+
+dumpDev :: GeneratorTestResult -> FilePath -> IO ()
+dumpDev g f = do
+    gCt <- gtDevelReload g
+    BL.writeFile f gCt
+
+assertDev :: GeneratorTestResult -> FilePath -> Assertion
+assertDev g f = do
+    fCt <- BL.readFile f
+    gCt <- gtDevelReload g
+    assertEqual ("Content for " ++ f) fCt gCt
+
+dumpDevExtra :: GeneratorTestResult -> [T.Text] -> FilePath -> IO ()
+dumpDevExtra g url file =
+    case gtDevelExtraFiles g of
+        Nothing -> error $ "Dev extra not found: " ++ show url
+        Just f -> do
+            mres <- f url
+            case mres of
+                Nothing -> error $ "No response for " ++ show url
+                Just (_, ct) -> BL.writeFile file ct
+
+assertDevExtra :: GeneratorTestResult -> [T.Text] -> B.ByteString -> FilePath -> Assertion
+assertDevExtra g url mime file = do
+    fCt <- BL.readFile file
+    case gtDevelExtraFiles g of
+        Nothing -> assertFailure $ "No dev extra for " ++ show url
+        Just f -> do
+            mres <- f url
+            case mres of
+                Nothing -> assertFailure $ "No response for " ++ show url
+                Just (mime', ct') -> do
+                    assertEqual ("Mime for " ++ show url) mime mime'
+                    assertEqual ("Content for " ++ show url) fCt ct'
+
+</pre>

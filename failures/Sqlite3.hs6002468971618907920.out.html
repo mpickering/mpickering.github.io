@@ -1,0 +1,416 @@
+<a href="SQL.hs6855834541351345223.out.html">prev</a></br><a href="failures.html">home</a></br><a href="SrcRepo.hs10422278781847320614.out.html">next</a></br></br><pre>59c59
+< type a :. b = Stack (a, b)
+---
+> type   :.    b = Stack (a, b)
+204a205
+> 
+</pre></br><h2>original</h2></br><pre>{-
+  Copyright (C) <2007-2009> <Evgeny Jukov>
+  <If you contribute to Database.Sqlite3, please add your name here.>
+
+  This library is free software; you can redistribute it and/or
+  modify it under the terms of the GNU Lesser General Public
+  License as published by the Free Software Foundation; either
+  version 2.1 of the License, or (at your option) any later
+  version.
+-}
+
+module Database.Sqlite3
+ ( sql, bind, fetch, runSimpleDb
+ , Stack(..), Nil, (:.), Cell(..)
+ ) where
+
+import Foreign
+import Foreign.C
+import Data.Char
+import Control.Monad
+import Data.Int
+import Bindings.Sqlite3
+import qualified Data.ByteString as B
+import Control.Arrow
+
+import Control.Monad.Trans
+import Control.Monad.Error
+import Control.Monad.State.Lazy
+
+import Data.Monoid
+
+
+import qualified Codec.Binary.UTF8.String as UTF8
+
+import Database.Sqlite3.Middle
+
+--
+
+fstT :: Stack (a, b) -> a
+fstT _ = error "fstT"
+
+sndT :: Stack (a, b) -> b
+sndT _ = error "sndT"
+
+headT :: [a] -> a
+headT _ = error "headT"
+
+performT :: Monad m => m a -> a
+performT _ = error "performT"
+
+derivT :: (Monad m, TypesStack a)
+      => ([Int] -> m [Stack a]) -> m [Stack a]
+derivT f = fix $ \self -> do
+  f $ typesStack $ headT $ performT self
+
+infixl 9 :.
+
+type Nil = Stack ()
+type a :. b = Stack (a, b)
+
+data Stack a where
+  Nil  :: Stack ()
+  (:.) :: Stack a -> b -> Stack (Stack a, b)
+
+instance (Show a, Show b) => Show (Stack (a, b)) where
+  show (Nil :. a) = show a
+  show (a :. b) = show a ++ "," ++ show b
+
+class Length a where
+  lengthT :: Stack a -> Int
+
+instance Length () where
+  lengthT _ = 0
+
+instance Show (Stack ()) where
+  show _ = []
+
+instance Length a => Length (Stack a, b) where
+  lengthT a = lengthT (fstT a) + 1
+
+class Cell a where
+  bindT   :: Int -> a -> Db ()
+  columnT :: Int -> Db a
+  idT     :: a -> Int
+
+instance TypesStack () where
+  typesStack _ = []
+
+instance (TypesStack a, Cell b) => TypesStack (Stack a, b) where
+  typesStack a = idT (sndT a) : typesStack (fstT a)
+
+class Length a => ColumnStack a where
+  columnStack :: Db (Stack a)
+
+instance ColumnStack () where
+  columnStack = return Nil
+
+instance (ColumnStack a, Cell b) => ColumnStack (Stack a, b) where
+  columnStack = fix $ \self -> do
+    let stack = performT self
+    a <- columnStack
+    b <- columnT $ lengthT stack - 1
+    return (a :. b)
+
+class Length a => BindStack a where
+  bindStack :: Stack a -> Db ()
+
+instance (BindStack a, Cell b) => BindStack (Stack a, b) where
+  bindStack o@(a :. b) = do
+    bindStack a
+    bindT (lengthT o) b
+
+instance BindStack () where
+  bindStack _ = return ()
+
+sql :: String -> Db ()
+sql sql = do
+  prepare sql
+  step
+  finalize
+
+class TypesStack a where
+  typesStack :: Stack a -> [Int]
+
+--
+
+bind :: BindStack a => String -> [Stack a] -> Db ()
+bind sql tab = do
+  prepare sql
+  mapM (\a -> bindStack a >> step >> reset) tab
+  finalize
+
+fetch sql = do
+  prepare sql
+  a <- step
+  if a
+   then finalize >> return []
+   else derivT fetchBody
+
+fetchTail :: ColumnStack a => Db [Stack a]
+fetchTail = do
+  a <- step
+  if a
+   then return []
+   else do
+    x  <- columnStack
+    xs <- fetchTail
+    return (x:xs)
+
+data SimpleState = SimpleState
+ { database  :: Maybe (Ptr C'sqlite3)
+ , statement :: Maybe (Ptr C'sqlite3_stmt ) }
+
+type SimpleDb a =
+ StateT SimpleState (ErrorT (Either CInt String) IO) a
+
+instance Error (Either CInt String) where
+  strMsg = Right
+
+instance DbError (Either CInt a) where
+  makeErr = Left
+  castErr (Left a) = Just a
+  castErr _ = Nothing
+
+runSimpleDb :: SimpleDb a -> IO a
+runSimpleDb a = do
+  c <- runErrorT tupleM
+  case c of
+    (Left (Left a))  -> fail (show a)
+    (Left (Right a)) -> fail a
+    (Right (a,_))    -> return a
+ where
+  tupleM = runStateT (errorHook a) $ SimpleState Nothing Nothing
+
+instance MonadDb (StateT SimpleState (ErrorT (Either CInt String) IO)) where
+  getDb = get >>= maybe (fail "Empty database")  return . database
+  getSt = get >>= maybe (fail "Empty statement") return . statement
+  putDb x = modify $ \a -> a { database  = Just x }
+  putSt x = modify $ \a -> a { statement = Just x }
+  cleanDb = modify $ \a -> a { database  = Nothing }
+  cleanSt = modify $ \a -> a { statement = Nothing }
+  isDbReady = get >>= return . maybe False (const True) . database
+  isStReady = get >>= return . maybe False (const True) . statement
+
+fetchBody derived = do
+  cn <- columnCount
+  dbTypes <- mapM columnType $ enumFromThenTo (cn-1) (cn-2) 0
+  case dbTypes == derived of
+   False -> fail "different database and haskell types"
+   True  -> return ()
+  x  <- columnStack
+  xs <- fetchTail
+  finalize
+  return (x:xs)
+
+instance Cell Int where
+  idT _    = 1
+  columnT  = columnInt
+  bindT    = bindInt
+
+instance Cell Double where
+  idT _    = 2
+  columnT  = columnDouble
+  bindT    = bindDouble
+</pre></br><h2>printed</h2></br><pre>{-
+  Copyright (C) <2007-2009> <Evgeny Jukov>
+  <If you contribute to Database.Sqlite3, please add your name here.>
+
+  This library is free software; you can redistribute it and/or
+  modify it under the terms of the GNU Lesser General Public
+  License as published by the Free Software Foundation; either
+  version 2.1 of the License, or (at your option) any later
+  version.
+-}
+
+module Database.Sqlite3
+ ( sql, bind, fetch, runSimpleDb
+ , Stack(..), Nil, (:.), Cell(..)
+ ) where
+
+import Foreign
+import Foreign.C
+import Data.Char
+import Control.Monad
+import Data.Int
+import Bindings.Sqlite3
+import qualified Data.ByteString as B
+import Control.Arrow
+
+import Control.Monad.Trans
+import Control.Monad.Error
+import Control.Monad.State.Lazy
+
+import Data.Monoid
+
+
+import qualified Codec.Binary.UTF8.String as UTF8
+
+import Database.Sqlite3.Middle
+
+--
+
+fstT :: Stack (a, b) -> a
+fstT _ = error "fstT"
+
+sndT :: Stack (a, b) -> b
+sndT _ = error "sndT"
+
+headT :: [a] -> a
+headT _ = error "headT"
+
+performT :: Monad m => m a -> a
+performT _ = error "performT"
+
+derivT :: (Monad m, TypesStack a)
+      => ([Int] -> m [Stack a]) -> m [Stack a]
+derivT f = fix $ \self -> do
+  f $ typesStack $ headT $ performT self
+
+infixl 9 :.
+
+type Nil = Stack ()
+type   :.    b = Stack (a, b)
+
+data Stack a where
+  Nil  :: Stack ()
+  (:.) :: Stack a -> b -> Stack (Stack a, b)
+
+instance (Show a, Show b) => Show (Stack (a, b)) where
+  show (Nil :. a) = show a
+  show (a :. b) = show a ++ "," ++ show b
+
+class Length a where
+  lengthT :: Stack a -> Int
+
+instance Length () where
+  lengthT _ = 0
+
+instance Show (Stack ()) where
+  show _ = []
+
+instance Length a => Length (Stack a, b) where
+  lengthT a = lengthT (fstT a) + 1
+
+class Cell a where
+  bindT   :: Int -> a -> Db ()
+  columnT :: Int -> Db a
+  idT     :: a -> Int
+
+instance TypesStack () where
+  typesStack _ = []
+
+instance (TypesStack a, Cell b) => TypesStack (Stack a, b) where
+  typesStack a = idT (sndT a) : typesStack (fstT a)
+
+class Length a => ColumnStack a where
+  columnStack :: Db (Stack a)
+
+instance ColumnStack () where
+  columnStack = return Nil
+
+instance (ColumnStack a, Cell b) => ColumnStack (Stack a, b) where
+  columnStack = fix $ \self -> do
+    let stack = performT self
+    a <- columnStack
+    b <- columnT $ lengthT stack - 1
+    return (a :. b)
+
+class Length a => BindStack a where
+  bindStack :: Stack a -> Db ()
+
+instance (BindStack a, Cell b) => BindStack (Stack a, b) where
+  bindStack o@(a :. b) = do
+    bindStack a
+    bindT (lengthT o) b
+
+instance BindStack () where
+  bindStack _ = return ()
+
+sql :: String -> Db ()
+sql sql = do
+  prepare sql
+  step
+  finalize
+
+class TypesStack a where
+  typesStack :: Stack a -> [Int]
+
+--
+
+bind :: BindStack a => String -> [Stack a] -> Db ()
+bind sql tab = do
+  prepare sql
+  mapM (\a -> bindStack a >> step >> reset) tab
+  finalize
+
+fetch sql = do
+  prepare sql
+  a <- step
+  if a
+   then finalize >> return []
+   else derivT fetchBody
+
+fetchTail :: ColumnStack a => Db [Stack a]
+fetchTail = do
+  a <- step
+  if a
+   then return []
+   else do
+    x  <- columnStack
+    xs <- fetchTail
+    return (x:xs)
+
+data SimpleState = SimpleState
+ { database  :: Maybe (Ptr C'sqlite3)
+ , statement :: Maybe (Ptr C'sqlite3_stmt ) }
+
+type SimpleDb a =
+ StateT SimpleState (ErrorT (Either CInt String) IO) a
+
+instance Error (Either CInt String) where
+  strMsg = Right
+
+instance DbError (Either CInt a) where
+  makeErr = Left
+  castErr (Left a) = Just a
+  castErr _ = Nothing
+
+runSimpleDb :: SimpleDb a -> IO a
+runSimpleDb a = do
+  c <- runErrorT tupleM
+  case c of
+    (Left (Left a))  -> fail (show a)
+    (Left (Right a)) -> fail a
+    (Right (a,_))    -> return a
+ where
+  tupleM = runStateT (errorHook a) $ SimpleState Nothing Nothing
+
+instance MonadDb (StateT SimpleState (ErrorT (Either CInt String) IO)) where
+  getDb = get >>= maybe (fail "Empty database")  return . database
+  getSt = get >>= maybe (fail "Empty statement") return . statement
+  putDb x = modify $ \a -> a { database  = Just x }
+  putSt x = modify $ \a -> a { statement = Just x }
+  cleanDb = modify $ \a -> a { database  = Nothing }
+  cleanSt = modify $ \a -> a { statement = Nothing }
+  isDbReady = get >>= return . maybe False (const True) . database
+  isStReady = get >>= return . maybe False (const True) . statement
+
+fetchBody derived = do
+  cn <- columnCount
+  dbTypes <- mapM columnType $ enumFromThenTo (cn-1) (cn-2) 0
+  case dbTypes == derived of
+   False -> fail "different database and haskell types"
+   True  -> return ()
+  x  <- columnStack
+  xs <- fetchTail
+  finalize
+  return (x:xs)
+
+instance Cell Int where
+  idT _    = 1
+  columnT  = columnInt
+  bindT    = bindInt
+
+instance Cell Double where
+  idT _    = 2
+  columnT  = columnDouble
+  bindT    = bindDouble
+
+</pre>

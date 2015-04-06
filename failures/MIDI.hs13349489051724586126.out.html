@@ -1,0 +1,410 @@
+<a href="Microformats2.hs563613512101929267.out.html">prev</a></br><a href="failures.html">home</a></br><a href="MigrationData.hs837204200578134256.out.html">next</a></br></br><pre>53c53
+< {-# INLINE piecewiseConstantInit #-}
+---
+> {-# INLINE piecewiseConstantInit #
+64c64
+< {-# INLINE controllerLinear #-}
+---
+> {-# INLINE controllerLinear #
+77c77
+< {-# INLINE controllerExponential #-}
+---
+> {-# INLINE controllerExponential #
+94d93
+< -}
+95c94
+< {-# INLINE pitchBend #-}
+---
+> 
+95a95
+> {-# INLINE pitchBend #
+108c108
+< {-# INLINE channelPressure #-}
+---
+> {-# INLINE channelPressure #
+121c121
+< {-# INLINE bendWheelPressure #-}
+---
+> {-# INLINE bendWheelPressure #
+189a190
+> 
+</pre></br><h2>original</h2></br><pre>{-# LANGUAGE NoImplicitPrelude #-}
+{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE RankNTypes #-}
+{- |
+Convert MIDI events of a MIDI controller to a control signal.
+-}
+module Synthesizer.LLVM.MIDI (
+   frequencyFromBendModulation,
+   frequencyFromBendModulationPacked,
+   Gen.applyModulation,
+   ) where
+
+import qualified Synthesizer.MIDI.Generic as Gen
+import qualified Synthesizer.LLVM.MIDI.BendModulation as BM
+import qualified Synthesizer.LLVM.Frame.SerialVector as Serial
+
+import Synthesizer.LLVM.CausalParameterized.Process (($>), )
+import qualified Synthesizer.LLVM.CausalParameterized.Functional as Func
+import qualified Synthesizer.LLVM.CausalParameterized.Process as CausalP
+import qualified Synthesizer.LLVM.Parameterized.SignalPacked as SigPS
+import qualified Synthesizer.LLVM.Parameterized.Signal as SigP
+import qualified Synthesizer.LLVM.Parameter as Param
+import qualified Synthesizer.LLVM.Wave as Wave
+
+import qualified LLVM.Extra.ScalarOrVector as SoV
+import qualified LLVM.Extra.Vector as Vector
+import qualified LLVM.Extra.Memory as Memory
+import qualified LLVM.Extra.Arithmetic as A
+import qualified LLVM.Extra.Class as Class
+import qualified LLVM.Core as LLVM
+import LLVM.Core (IsSized, SizeOf, )
+
+import qualified Types.Data.Num as TypeNum
+import Types.Data.Num.Ops ((:*:), )
+
+import Foreign.Storable (Storable, )
+
+import qualified Algebra.RealField      as RealField
+import qualified Algebra.Additive       as Additive
+
+import Control.Arrow (second, (<<<), (<<^), )
+import Control.Monad ({- liftM, -} liftM2, )
+import Data.Tuple.HT (mapPair, )
+
+-- import NumericPrelude.Base
+import NumericPrelude.Numeric
+import Prelude (($), )
+
+
+{-
+{-# INLINE piecewiseConstantInit #-}
+piecewiseConstantInit ::
+   (Storable y, Class.MakeValueTuple y, Class.ValueTuple y ~ yl,
+    Memory.C yl ym, LLVM.IsSized ym ys) =>
+   y -> EventListTT.T LazyTime y -> SigP.T p yl
+piecewiseConstantInit initial evs =
+   SigP.piecewiseConstant $#
+   (PC.subdivideInt $
+    EventListMT.consBody initial evs)
+
+
+{-# INLINE controllerLinear #-}
+controllerLinear ::
+   (Field.C y, Storable y, Class.MakeValueTuple y, Class.ValueTuple y ~ yl,
+    Memory.C yl ym, LLVM.IsSized ym ys) =>
+   Channel -> Controller ->
+   (y,y) -> y ->
+   Filter (SigP.T p yl)
+controllerLinear chan ctrl bnd initial =
+   liftM (piecewiseConstantInit initial .
+          EventListTT.mapBody (MV.controllerLinear bnd)) $
+   getControllerEvents chan ctrl
+
+
+{-# INLINE controllerExponential #-}
+controllerExponential ::
+   (Trans.C y, Storable y, Class.MakeValueTuple y, Class.ValueTuple y ~ yl,
+    Memory.C yl ym, LLVM.IsSized ym ys) =>
+   Channel -> Controller ->
+   (y,y) -> y ->
+   Filter (SigP.T p yl)
+controllerExponential chan ctrl bnd initial =
+   liftM (piecewiseConstantInit initial .
+          EventListTT.mapBody (MV.controllerExponential bnd)) $
+   getControllerEvents chan ctrl
+
+
+{- |
+@pitchBend channel range center@:
+emits frequencies on an exponential scale from
+@center/range@ to @center*range@.
+-}
+{-# INLINE pitchBend #-}
+pitchBend ::
+   (Trans.C y, Storable y, Class.MakeValueTuple y, Class.ValueTuple y ~ yl,
+    Memory.C yl ym, LLVM.IsSized ym ys) =>
+   Channel ->
+   y -> y ->
+   Filter (SigP.T p yl)
+pitchBend chan range center =
+   liftM (piecewiseConstantInit center .
+          EventListTT.mapBody (MV.pitchBend range center)) $
+   getSlice (maybePitchBend chan)
+--   getPitchBendEvents chan
+
+{-# INLINE channelPressure #-}
+channelPressure ::
+   (Trans.C y, Storable y, Class.MakeValueTuple y, Class.ValueTuple y ~ yl,
+    Memory.C yl ym, LLVM.IsSized ym ys) =>
+   Channel ->
+   y -> y ->
+   Filter (SigP.T p yl)
+channelPressure chan maxVal initVal =
+   liftM (piecewiseConstantInit initVal .
+          EventListTT.mapBody (MV.controllerLinear (0,maxVal))) $
+   getSlice (maybeChannelPressure chan)
+
+
+{-# INLINE bendWheelPressure #-}
+bendWheelPressure ::
+   (Ring.C a, LLVM.IsConst a,
+    RealField.C y, Trans.C y,
+    LLVM.IsConst y, SoV.Fraction y, a ~ SoV.Scalar y, SoV.Replicate y,
+    Storable y, Class.MakeValueTuple y (LLVM.Value y), LLVM.IsSized y ys) =>
+   Channel ->
+   Int -> y -> y -> y ->
+   Filter (SigP.T p (LLVM.Value y))
+bendWheelPressure chan
+     pitchRange speed wheelDepth pressDepth =
+   do bend  <- pitchBend chan
+                  (2^?(fromIntegral pitchRange/12) `asTypeOf` speed) 1
+      fm    <- controllerLinear chan VoiceMsg.modulation (0,wheelDepth) 0
+      press <- channelPressure chan pressDepth 0
+      return $
+         SigP.envelope bend $
+         SigP.mapSimple (A.add A.one) $
+         SigP.envelope
+            (SigP.mix fm press)
+            (SigP.osciSimple Wave.approxSine2 zero $# speed)
+-}
+
+
+frequencyFromBendModulation ::
+   (Additive.C y, Storable y, Class.MakeValueTuple y, Class.ValueTuple y ~ yl,
+    A.PseudoRing yl, A.Fraction yl, A.IntegerConstant yl, Memory.C yl) =>
+   Param.T p y ->
+   CausalP.T p (BM.T yl) yl
+frequencyFromBendModulation speed =
+   frequencyFromPair SigP.osciSimple speed
+   <<^
+   (\(BM.Cons b m) -> (b,m))
+
+
+frequencyFromBendModulationPacked ::
+   (RealField.C a, LLVM.IsConst a, LLVM.IsFloating a,
+    Memory.FirstClass a, Memory.Stored a ~ am, IsSized a, IsSized am,
+    LLVM.IsPrimitive am,
+    Storable a, Class.MakeValueTuple a, Class.ValueTuple a ~ (LLVM.Value a),
+    Vector.Real a, SoV.IntegerConstant a,
+    TypeNum.PositiveT n,
+    TypeNum.PositiveT (n :*: SizeOf a),
+    TypeNum.PositiveT (n :*: SizeOf am)) =>
+   Param.T p a ->
+   CausalP.T p (BM.T (LLVM.Value a)) (Serial.Value n a)
+frequencyFromBendModulationPacked speed =
+   frequencyFromPair SigPS.osciSimple speed
+   <<<
+   CausalP.mapSimple
+      (\(BM.Cons b m) ->
+         liftM2 (,) (Serial.upsample b) (Serial.upsample m))
+
+frequencyFromPair, _frequencyFromPair ::
+   (Additive.C y, A.PseudoRing yl, A.IntegerConstant yl, A.Fraction yl) =>
+   ((forall r. yl -> LLVM.CodeGenFunction r yl) ->
+    Param.T p y -> Param.T p y -> SigP.T p yl) ->
+   Param.T p y ->
+   CausalP.T p (yl,yl) yl
+frequencyFromPair osci speed =
+   (Func.withArgs $ \(b, m) ->
+      b * (1 + m * Func.fromSignal (osci Wave.approxSine2 zero speed)))
+   <<^
+   mapPair (Func.AnyArg, Func.AnyArg)
+
+_frequencyFromPair osci speed =
+   CausalP.envelope
+   <<<
+   second (1 + (CausalP.envelope $> osci Wave.approxSine2 zero speed))
+</pre></br><h2>printed</h2></br><pre>{-# LANGUAGE NoImplicitPrelude #-}
+{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE RankNTypes #-}
+{- |
+Convert MIDI events of a MIDI controller to a control signal.
+-}
+module Synthesizer.LLVM.MIDI (
+   frequencyFromBendModulation,
+   frequencyFromBendModulationPacked,
+   Gen.applyModulation,
+   ) where
+
+import qualified Synthesizer.MIDI.Generic as Gen
+import qualified Synthesizer.LLVM.MIDI.BendModulation as BM
+import qualified Synthesizer.LLVM.Frame.SerialVector as Serial
+
+import Synthesizer.LLVM.CausalParameterized.Process (($>), )
+import qualified Synthesizer.LLVM.CausalParameterized.Functional as Func
+import qualified Synthesizer.LLVM.CausalParameterized.Process as CausalP
+import qualified Synthesizer.LLVM.Parameterized.SignalPacked as SigPS
+import qualified Synthesizer.LLVM.Parameterized.Signal as SigP
+import qualified Synthesizer.LLVM.Parameter as Param
+import qualified Synthesizer.LLVM.Wave as Wave
+
+import qualified LLVM.Extra.ScalarOrVector as SoV
+import qualified LLVM.Extra.Vector as Vector
+import qualified LLVM.Extra.Memory as Memory
+import qualified LLVM.Extra.Arithmetic as A
+import qualified LLVM.Extra.Class as Class
+import qualified LLVM.Core as LLVM
+import LLVM.Core (IsSized, SizeOf, )
+
+import qualified Types.Data.Num as TypeNum
+import Types.Data.Num.Ops ((:*:), )
+
+import Foreign.Storable (Storable, )
+
+import qualified Algebra.RealField      as RealField
+import qualified Algebra.Additive       as Additive
+
+import Control.Arrow (second, (<<<), (<<^), )
+import Control.Monad ({- liftM, -} liftM2, )
+import Data.Tuple.HT (mapPair, )
+
+-- import NumericPrelude.Base
+import NumericPrelude.Numeric
+import Prelude (($), )
+
+
+{-
+{-# INLINE piecewiseConstantInit #
+piecewiseConstantInit ::
+   (Storable y, Class.MakeValueTuple y, Class.ValueTuple y ~ yl,
+    Memory.C yl ym, LLVM.IsSized ym ys) =>
+   y -> EventListTT.T LazyTime y -> SigP.T p yl
+piecewiseConstantInit initial evs =
+   SigP.piecewiseConstant $#
+   (PC.subdivideInt $
+    EventListMT.consBody initial evs)
+
+
+{-# INLINE controllerLinear #
+controllerLinear ::
+   (Field.C y, Storable y, Class.MakeValueTuple y, Class.ValueTuple y ~ yl,
+    Memory.C yl ym, LLVM.IsSized ym ys) =>
+   Channel -> Controller ->
+   (y,y) -> y ->
+   Filter (SigP.T p yl)
+controllerLinear chan ctrl bnd initial =
+   liftM (piecewiseConstantInit initial .
+          EventListTT.mapBody (MV.controllerLinear bnd)) $
+   getControllerEvents chan ctrl
+
+
+{-# INLINE controllerExponential #
+controllerExponential ::
+   (Trans.C y, Storable y, Class.MakeValueTuple y, Class.ValueTuple y ~ yl,
+    Memory.C yl ym, LLVM.IsSized ym ys) =>
+   Channel -> Controller ->
+   (y,y) -> y ->
+   Filter (SigP.T p yl)
+controllerExponential chan ctrl bnd initial =
+   liftM (piecewiseConstantInit initial .
+          EventListTT.mapBody (MV.controllerExponential bnd)) $
+   getControllerEvents chan ctrl
+
+
+{- |
+@pitchBend channel range center@:
+emits frequencies on an exponential scale from
+@center/range@ to @center*range@.
+
+{-# INLINE pitchBend #
+pitchBend ::
+   (Trans.C y, Storable y, Class.MakeValueTuple y, Class.ValueTuple y ~ yl,
+    Memory.C yl ym, LLVM.IsSized ym ys) =>
+   Channel ->
+   y -> y ->
+   Filter (SigP.T p yl)
+pitchBend chan range center =
+   liftM (piecewiseConstantInit center .
+          EventListTT.mapBody (MV.pitchBend range center)) $
+   getSlice (maybePitchBend chan)
+--   getPitchBendEvents chan
+
+{-# INLINE channelPressure #
+channelPressure ::
+   (Trans.C y, Storable y, Class.MakeValueTuple y, Class.ValueTuple y ~ yl,
+    Memory.C yl ym, LLVM.IsSized ym ys) =>
+   Channel ->
+   y -> y ->
+   Filter (SigP.T p yl)
+channelPressure chan maxVal initVal =
+   liftM (piecewiseConstantInit initVal .
+          EventListTT.mapBody (MV.controllerLinear (0,maxVal))) $
+   getSlice (maybeChannelPressure chan)
+
+
+{-# INLINE bendWheelPressure #
+bendWheelPressure ::
+   (Ring.C a, LLVM.IsConst a,
+    RealField.C y, Trans.C y,
+    LLVM.IsConst y, SoV.Fraction y, a ~ SoV.Scalar y, SoV.Replicate y,
+    Storable y, Class.MakeValueTuple y (LLVM.Value y), LLVM.IsSized y ys) =>
+   Channel ->
+   Int -> y -> y -> y ->
+   Filter (SigP.T p (LLVM.Value y))
+bendWheelPressure chan
+     pitchRange speed wheelDepth pressDepth =
+   do bend  <- pitchBend chan
+                  (2^?(fromIntegral pitchRange/12) `asTypeOf` speed) 1
+      fm    <- controllerLinear chan VoiceMsg.modulation (0,wheelDepth) 0
+      press <- channelPressure chan pressDepth 0
+      return $
+         SigP.envelope bend $
+         SigP.mapSimple (A.add A.one) $
+         SigP.envelope
+            (SigP.mix fm press)
+            (SigP.osciSimple Wave.approxSine2 zero $# speed)
+-}
+
+
+frequencyFromBendModulation ::
+   (Additive.C y, Storable y, Class.MakeValueTuple y, Class.ValueTuple y ~ yl,
+    A.PseudoRing yl, A.Fraction yl, A.IntegerConstant yl, Memory.C yl) =>
+   Param.T p y ->
+   CausalP.T p (BM.T yl) yl
+frequencyFromBendModulation speed =
+   frequencyFromPair SigP.osciSimple speed
+   <<^
+   (\(BM.Cons b m) -> (b,m))
+
+
+frequencyFromBendModulationPacked ::
+   (RealField.C a, LLVM.IsConst a, LLVM.IsFloating a,
+    Memory.FirstClass a, Memory.Stored a ~ am, IsSized a, IsSized am,
+    LLVM.IsPrimitive am,
+    Storable a, Class.MakeValueTuple a, Class.ValueTuple a ~ (LLVM.Value a),
+    Vector.Real a, SoV.IntegerConstant a,
+    TypeNum.PositiveT n,
+    TypeNum.PositiveT (n :*: SizeOf a),
+    TypeNum.PositiveT (n :*: SizeOf am)) =>
+   Param.T p a ->
+   CausalP.T p (BM.T (LLVM.Value a)) (Serial.Value n a)
+frequencyFromBendModulationPacked speed =
+   frequencyFromPair SigPS.osciSimple speed
+   <<<
+   CausalP.mapSimple
+      (\(BM.Cons b m) ->
+         liftM2 (,) (Serial.upsample b) (Serial.upsample m))
+
+frequencyFromPair, _frequencyFromPair ::
+   (Additive.C y, A.PseudoRing yl, A.IntegerConstant yl, A.Fraction yl) =>
+   ((forall r. yl -> LLVM.CodeGenFunction r yl) ->
+    Param.T p y -> Param.T p y -> SigP.T p yl) ->
+   Param.T p y ->
+   CausalP.T p (yl,yl) yl
+frequencyFromPair osci speed =
+   (Func.withArgs $ \(b, m) ->
+      b * (1 + m * Func.fromSignal (osci Wave.approxSine2 zero speed)))
+   <<^
+   mapPair (Func.AnyArg, Func.AnyArg)
+
+_frequencyFromPair osci speed =
+   CausalP.envelope
+   <<<
+   second (1 + (CausalP.envelope $> osci Wave.approxSine2 zero speed))
+
+</pre>

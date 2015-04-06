@@ -1,0 +1,354 @@
+<a href="GADTRecords.hs907225550605925150.out.html">prev</a></br><a href="failures.html">home</a></br><a href="Gam.hs462851407957828015.out.html">next</a></br></br><pre>108c108
+<       || takeExtension path `elem` [{-"",-} ".a", ".hi", ".h"]
+---
+>       || takeExtension path `elem` [{-"", ".a", ".hi", ".h"]
+111c111
+< --     (takeExtension file `elem` [""{-directory-}, ".dll", ".hs", ".lhs", ".idl", ".h", ".pkg"])
+---
+> --     (takeExtension file `elem` [""{-directory, ".dll", ".hs", ".lhs", ".idl", ".h", ".pkg"])
+171a172
+> 
+</pre></br><h2>original</h2></br><pre>--------------------------------------------------------------------
+-- |
+-- Module      : GaloisPkg
+-- Description : Specification/template for the GaloisPkg installer builder.
+-- Copyright   : (c) Sigbjorn Finne, 2004-2009
+-- License     : BSD3
+--
+-- Maintainer  : Sigbjorn Finne <sof@forkIO.com>
+-- Stability   : provisional
+-- Portability : portable
+--
+-- To create your own installer, you need to supply a Haskell module
+-- which exports functions and values that together define the
+-- functionality (and contents) of your package;
+-- see Base.hs just what those exports are.
+--
+--------------------------------------------------------------------
+module GaloisPkg where
+
+import Bamse.Util.Dir
+import System.FilePath
+import Bamse.Package
+import Bamse.PackageUtils
+import Data.Maybe ( fromJust )
+
+versionNumber :: String
+versionNumber = "0.10"
+libName :: String
+libName="galois"
+
+libVersion :: String
+libVersion = "galois-" ++ versionNumber
+
+defaultOutFile :: FilePath
+defaultOutFile = toMsiFileName libVersion
+
+pkg :: Package
+pkg = Package
+      { name           = "GaloisPkg"
+      , title          = "Galois Haskell libraries (for GHC 6.2.2)"
+      , productVersion = "1.0.0.0"
+      , author         = "Galois Connections, Inc"
+      , comment        = "Version: " ++ versionNumber
+      }
+
+webSite :: String
+webSite = "http://galois.com/"
+
+bannerBitmap :: InstallEnv -> Maybe FilePath
+bannerBitmap ienv = Just (lFile (toolDir ienv) "art/banner.bmp")
+
+bgroundBitmap :: InstallEnv -> Maybe FilePath
+bgroundBitmap _ = Nothing
+
+registry :: [RegEntry]
+registry = []
+
+features :: [Tree Feature]
+features = [ Leaf baseFeature ]
+
+baseFeatureName :: String
+baseFeatureName = "GaloisPkg"
+
+baseFeature :: Feature
+baseFeature = (baseFeatureName, "Galois Haskell library for GHC")
+
+startMenu :: InstallEnv -> (String, [Shortcut])
+startMenu ienv = ("GHC/ghc-" ++
+          ghc_forVersion (fromJust ghcPackageInfo) ++
+          "/libraries/"++libName, entries)
+  where
+    entries :: [Shortcut]
+    entries =
+      [ Shortcut "Documentation (HTML)"
+                 (lFile (srcDir ienv) "doc\\index.html")
+         ""
+         "Library documentation"
+             (Just (lFile iconDir "html.exe"))
+         1
+         "[TARGETDIR]"
+      ]
+
+    iconDir = toolDir ienv ++ "\\icons"
+
+desktopShortcuts :: InstallEnv -> [Shortcut]
+desktopShortcuts _ienv = []
+
+extensions :: InstallEnv -> [ Extension ]
+extensions _ienv = [ ]
+
+verbs :: [ ( String  -- extension
+       , String  -- verb
+       , String  -- label
+       , String  -- arguments
+       )
+     ]
+verbs = []
+
+dirTree :: InstallEnv -> IO DirTree
+dirTree ienv = findFiles ofInterest (srcDir ienv)
+ where
+    -- Note: 'path' is prefixed by 'topDir'.
+   ofInterest _path = True
+{-
+     =   path == topDir
+      || takeFileName path `elem` ["com.pkg", "HScom.o", "doc", "imports", "include"]
+      || takeFileName path == "doc" || takeFileName (takeDirectory path) == "doc"
+      || takeExtension path `elem` [{-"",-} ".a", ".hi", ".h"]
+          -- By leaving out "", we won't recurse into subdirs. We specially
+      -- check for the toplevel directory, as it needs to be present.
+--     (takeExtension file `elem` [""{-directory-}, ".dll", ".hs", ".lhs", ".idl", ".h", ".pkg"])
+
+-}
+
+distFileMap :: Maybe (InstallEnv -> FilePath -> Maybe FilePath)
+distFileMap = Nothing -- Just ( \ f -> Just (toDist f))
+{-
+ where
+   -- Note: 'fn' does not have 'topDir' prepended to it.
+  toDist fn
+   | isHiFile fn     = lFile "imports" fn -- store interface files in the imports/ directory,
+   | isDocFile fn    = lFile "doc" fn     -- doc/html files in doc/ directory,
+   | isHeaderFile fn = lFile "include" fn -- header files in include/,
+   | otherwise       = takeFileName fn        -- and everything else in the toplevel directory.
+-}
+
+featureMap :: Maybe (FilePath -> FeatureName)
+featureMap = Nothing
+
+license :: InstallEnv -> Maybe FilePath
+license _ienv = Nothing
+
+userRegistration :: Bool
+userRegistration = False
+
+defaultInstallFolder :: Maybe String
+defaultInstallFolder = Nothing
+
+finalMessage :: Maybe String
+finalMessage = Nothing
+
+userInstall :: Bool
+userInstall = False
+
+services :: [Service]
+services = []
+
+ghcPackageInfo :: Maybe GhcPackage
+ghcPackageInfo = Just $
+   GhcPackage { ghc_packageName = "galois"
+          -- ToDo: allow 'most-recent' compiler to be used.
+          , ghc_forVersion  = "6.2.2"
+          , ghc_packageFile = Just "galois.pkg"
+          , ghc_pkgCmdLine  = Just (unwords [ def "impdir" "imports"
+                            , def "libdir" ""
+                        ])
+          }
+ where
+   tgt "" = "\"[TARGETDIR]\\\""
+   tgt s  = "\"[TARGETDIR]\\\\" ++ s ++ "\""
+
+   def s v = '-':'D':s ++ '=':tgt v
+
+nestedInstalls :: [(FilePath,Maybe String)]
+nestedInstalls = []
+
+cabalPackageInfo :: Maybe CabalPackage
+cabalPackageInfo = Nothing
+
+assemblies :: [Assembly]
+assemblies = []
+</pre></br><h2>printed</h2></br><pre>--------------------------------------------------------------------
+-- |
+-- Module      : GaloisPkg
+-- Description : Specification/template for the GaloisPkg installer builder.
+-- Copyright   : (c) Sigbjorn Finne, 2004-2009
+-- License     : BSD3
+--
+-- Maintainer  : Sigbjorn Finne <sof@forkIO.com>
+-- Stability   : provisional
+-- Portability : portable
+--
+-- To create your own installer, you need to supply a Haskell module
+-- which exports functions and values that together define the
+-- functionality (and contents) of your package;
+-- see Base.hs just what those exports are.
+--
+--------------------------------------------------------------------
+module GaloisPkg where
+
+import Bamse.Util.Dir
+import System.FilePath
+import Bamse.Package
+import Bamse.PackageUtils
+import Data.Maybe ( fromJust )
+
+versionNumber :: String
+versionNumber = "0.10"
+libName :: String
+libName="galois"
+
+libVersion :: String
+libVersion = "galois-" ++ versionNumber
+
+defaultOutFile :: FilePath
+defaultOutFile = toMsiFileName libVersion
+
+pkg :: Package
+pkg = Package
+      { name           = "GaloisPkg"
+      , title          = "Galois Haskell libraries (for GHC 6.2.2)"
+      , productVersion = "1.0.0.0"
+      , author         = "Galois Connections, Inc"
+      , comment        = "Version: " ++ versionNumber
+      }
+
+webSite :: String
+webSite = "http://galois.com/"
+
+bannerBitmap :: InstallEnv -> Maybe FilePath
+bannerBitmap ienv = Just (lFile (toolDir ienv) "art/banner.bmp")
+
+bgroundBitmap :: InstallEnv -> Maybe FilePath
+bgroundBitmap _ = Nothing
+
+registry :: [RegEntry]
+registry = []
+
+features :: [Tree Feature]
+features = [ Leaf baseFeature ]
+
+baseFeatureName :: String
+baseFeatureName = "GaloisPkg"
+
+baseFeature :: Feature
+baseFeature = (baseFeatureName, "Galois Haskell library for GHC")
+
+startMenu :: InstallEnv -> (String, [Shortcut])
+startMenu ienv = ("GHC/ghc-" ++
+          ghc_forVersion (fromJust ghcPackageInfo) ++
+          "/libraries/"++libName, entries)
+  where
+    entries :: [Shortcut]
+    entries =
+      [ Shortcut "Documentation (HTML)"
+                 (lFile (srcDir ienv) "doc\\index.html")
+         ""
+         "Library documentation"
+             (Just (lFile iconDir "html.exe"))
+         1
+         "[TARGETDIR]"
+      ]
+
+    iconDir = toolDir ienv ++ "\\icons"
+
+desktopShortcuts :: InstallEnv -> [Shortcut]
+desktopShortcuts _ienv = []
+
+extensions :: InstallEnv -> [ Extension ]
+extensions _ienv = [ ]
+
+verbs :: [ ( String  -- extension
+       , String  -- verb
+       , String  -- label
+       , String  -- arguments
+       )
+     ]
+verbs = []
+
+dirTree :: InstallEnv -> IO DirTree
+dirTree ienv = findFiles ofInterest (srcDir ienv)
+ where
+    -- Note: 'path' is prefixed by 'topDir'.
+   ofInterest _path = True
+{-
+     =   path == topDir
+      || takeFileName path `elem` ["com.pkg", "HScom.o", "doc", "imports", "include"]
+      || takeFileName path == "doc" || takeFileName (takeDirectory path) == "doc"
+      || takeExtension path `elem` [{-"", ".a", ".hi", ".h"]
+          -- By leaving out "", we won't recurse into subdirs. We specially
+      -- check for the toplevel directory, as it needs to be present.
+--     (takeExtension file `elem` [""{-directory, ".dll", ".hs", ".lhs", ".idl", ".h", ".pkg"])
+
+-}
+
+distFileMap :: Maybe (InstallEnv -> FilePath -> Maybe FilePath)
+distFileMap = Nothing -- Just ( \ f -> Just (toDist f))
+{-
+ where
+   -- Note: 'fn' does not have 'topDir' prepended to it.
+  toDist fn
+   | isHiFile fn     = lFile "imports" fn -- store interface files in the imports/ directory,
+   | isDocFile fn    = lFile "doc" fn     -- doc/html files in doc/ directory,
+   | isHeaderFile fn = lFile "include" fn -- header files in include/,
+   | otherwise       = takeFileName fn        -- and everything else in the toplevel directory.
+-}
+
+featureMap :: Maybe (FilePath -> FeatureName)
+featureMap = Nothing
+
+license :: InstallEnv -> Maybe FilePath
+license _ienv = Nothing
+
+userRegistration :: Bool
+userRegistration = False
+
+defaultInstallFolder :: Maybe String
+defaultInstallFolder = Nothing
+
+finalMessage :: Maybe String
+finalMessage = Nothing
+
+userInstall :: Bool
+userInstall = False
+
+services :: [Service]
+services = []
+
+ghcPackageInfo :: Maybe GhcPackage
+ghcPackageInfo = Just $
+   GhcPackage { ghc_packageName = "galois"
+          -- ToDo: allow 'most-recent' compiler to be used.
+          , ghc_forVersion  = "6.2.2"
+          , ghc_packageFile = Just "galois.pkg"
+          , ghc_pkgCmdLine  = Just (unwords [ def "impdir" "imports"
+                            , def "libdir" ""
+                        ])
+          }
+ where
+   tgt "" = "\"[TARGETDIR]\\\""
+   tgt s  = "\"[TARGETDIR]\\\\" ++ s ++ "\""
+
+   def s v = '-':'D':s ++ '=':tgt v
+
+nestedInstalls :: [(FilePath,Maybe String)]
+nestedInstalls = []
+
+cabalPackageInfo :: Maybe CabalPackage
+cabalPackageInfo = Nothing
+
+assemblies :: [Assembly]
+assemblies = []
+
+</pre>

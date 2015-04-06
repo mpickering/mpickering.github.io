@@ -1,0 +1,294 @@
+<a href="QuadTree.hs1828087692621301815.out.html">prev</a></br><a href="failures.html">home</a></br><a href="Quantity.hs178077656332106102.out.html">next</a></br></br><pre>26c26
+< {-# LINE 57 "src/ehc/Gam/Quantify.chs" #-}
+---
+> 
+26a27
+> 
+26a28
+> 
+26a29
+> 
+26a30
+> 
+26a31
+> 
+26a32
+> 
+26a33
+> 
+26a34
+> 
+26a35
+> 
+26a36
+> 
+26a37
+> 
+26a38
+> 
+26a39
+> 
+26a40
+> 
+26a41
+> 
+26a42
+> 
+26a43
+> 
+26a44
+> 
+26a45
+> 
+26a46
+> 
+26a47
+> 
+26a48
+> 
+26a49
+> 
+26a50
+> 
+26a51
+> 
+26a52
+> 
+26a53
+> 
+26a54
+> 
+26a55
+> 
+26a56
+> 
+35c65
+< {-# LINE 67 "src/ehc/Gam/Quantify.chs" #-}
+---
+> 
+35a66
+> 
+49c80
+< {-# LINE 95 "src/ehc/Gam/Quantify.chs" #-}
+---
+> 
+49a81
+> 
+49a82
+> 
+49a83
+> 
+49a84
+> 
+49a85
+> 
+49a86
+> 
+49a87
+> 
+49a88
+> 
+49a89
+> 
+49a90
+> 
+49a91
+> 
+49a92
+> 
+49a93
+> 
+49a94
+> 
+56c101
+< {-# LINE 107 "src/ehc/Gam/Quantify.chs" #-}
+---
+> 
+56a102
+> 
+56a103
+> 
+56a104
+> 
+56a105
+> 
+56a106
+> 
+62a113
+> 
+</pre></br><h2>original</h2></br><pre>module UHC.Light.Compiler.Gam.Quantify
+( tyKiGamQuantifyWithVarMp
+, valGamQuantify
+, valGamQuantifyWithVarMp
+, quantifyPolGam )
+where
+import UHC.Light.Compiler.Base.Common
+import UHC.Light.Compiler.Opts.Base
+import UHC.Light.Compiler.Ty
+import UHC.Light.Compiler.VarMp
+import qualified Data.Set as Set
+import UHC.Light.Compiler.Ty.Trf.Quantify
+import UHC.Light.Compiler.VarMp
+import UHC.Light.Compiler.Substitutable
+import UHC.Light.Compiler.Gam
+import UHC.Light.Compiler.Gam.ValGam
+import UHC.Light.Compiler.Gam.TyKiGam
+import UHC.Light.Compiler.Ty.Trf.MergePreds
+import UHC.Light.Compiler.Gam.PolGam
+
+
+
+
+
+
+{-# LINE 57 "src/ehc/Gam/Quantify.chs" #-}
+valGamQuantify :: TyVarIdS -> [PredOcc] -> ValGam -> (ValGam,TQOGam)
+valGamQuantify globTvS prL g
+  =  let  g' = gamMapElts  (\vgi ->  let  tmpo = tyMergePreds prL (vgiTy vgi)
+                                          ty   = valTyQuantify (const kiStar) (`Set.member` globTvS) (tmpoTy tmpo)
+                                     in   (vgi {vgiTy = ty},tmpo {tmpoTy = ty})
+                           ) g
+     in   gamUnzip g'
+
+{-# LINE 67 "src/ehc/Gam/Quantify.chs" #-}
+valGamQuantifyWithVarMp :: Bool -> TyKiGam -> VarMp -> VarMp -> TyVarIdS -> [PredOcc] -> ValGam -> (ValGam,VarMp,(VarMp,TQOGam))
+valGamQuantifyWithVarMp doQuant tyKiGam tvKiVarMp gamVarMp globTvS prL valGam
+  = valGamDoWithVarMp quant gamVarMp (emptyVarMp,emptyGam) valGam
+  where quant nm (t,tyCycVarMp) newVarMp (cycVarMp,tmpoGam)
+          = ( ty
+            , newVarMp
+            , (tyCycVarMp `varUpd` cycVarMp
+              , gamAdd nm (tmpo {tmpoTy = ty}) tmpoGam
+            ) )
+          where tmpo           = tyMergePreds prL t
+                ty | doQuant   = valTyQuantify (tvarKi tyKiGam tvKiVarMp gamVarMp) (`Set.member` globTvS) (tmpoTy tmpo)
+                   | otherwise = tmpoTy tmpo
+
+{-# LINE 95 "src/ehc/Gam/Quantify.chs" #-}
+tyKiGamQuantifyWithVarMp :: EHCOpts -> VarMp -> TyVarIdS -> TyKiGam -> (TyKiGam,VarMp,VarMp)
+tyKiGamQuantifyWithVarMp opts {- tyKiGam tvKiVarMp -} gamVarMp globTvS gam
+  = tyKiGamDoWithVarMp
+      (\_ (t,tyCycMp) m cycMp -> (tyKiQuantify (ehcOptPolyKinds opts) {- (tvarKi tyKiGam tvKiVarMp gamVarMp) -} (`Set.member` globTvS) t,m,tyCycMp `varUpd` cycMp))
+      gamVarMp emptyVarMp gam
+
+{-# LINE 107 "src/ehc/Gam/Quantify.chs" #-}
+quantifyPolGam :: PolGam -> PolGam
+quantifyPolGam gam
+  = let fvs = varFree gam
+        notElemFtvs tv = not $ elem tv fvs
+     in mapPolGam (tyQuantify notElemFtvs) gam
+
+</pre></br><h2>printed</h2></br><pre>module UHC.Light.Compiler.Gam.Quantify
+( tyKiGamQuantifyWithVarMp
+, valGamQuantify
+, valGamQuantifyWithVarMp
+, quantifyPolGam )
+where
+import UHC.Light.Compiler.Base.Common
+import UHC.Light.Compiler.Opts.Base
+import UHC.Light.Compiler.Ty
+import UHC.Light.Compiler.VarMp
+import qualified Data.Set as Set
+import UHC.Light.Compiler.Ty.Trf.Quantify
+import UHC.Light.Compiler.VarMp
+import UHC.Light.Compiler.Substitutable
+import UHC.Light.Compiler.Gam
+import UHC.Light.Compiler.Gam.ValGam
+import UHC.Light.Compiler.Gam.TyKiGam
+import UHC.Light.Compiler.Ty.Trf.MergePreds
+import UHC.Light.Compiler.Gam.PolGam
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+valGamQuantify :: TyVarIdS -> [PredOcc] -> ValGam -> (ValGam,TQOGam)
+valGamQuantify globTvS prL g
+  =  let  g' = gamMapElts  (\vgi ->  let  tmpo = tyMergePreds prL (vgiTy vgi)
+                                          ty   = valTyQuantify (const kiStar) (`Set.member` globTvS) (tmpoTy tmpo)
+                                     in   (vgi {vgiTy = ty},tmpo {tmpoTy = ty})
+                           ) g
+     in   gamUnzip g'
+
+
+
+valGamQuantifyWithVarMp :: Bool -> TyKiGam -> VarMp -> VarMp -> TyVarIdS -> [PredOcc] -> ValGam -> (ValGam,VarMp,(VarMp,TQOGam))
+valGamQuantifyWithVarMp doQuant tyKiGam tvKiVarMp gamVarMp globTvS prL valGam
+  = valGamDoWithVarMp quant gamVarMp (emptyVarMp,emptyGam) valGam
+  where quant nm (t,tyCycVarMp) newVarMp (cycVarMp,tmpoGam)
+          = ( ty
+            , newVarMp
+            , (tyCycVarMp `varUpd` cycVarMp
+              , gamAdd nm (tmpo {tmpoTy = ty}) tmpoGam
+            ) )
+          where tmpo           = tyMergePreds prL t
+                ty | doQuant   = valTyQuantify (tvarKi tyKiGam tvKiVarMp gamVarMp) (`Set.member` globTvS) (tmpoTy tmpo)
+                   | otherwise = tmpoTy tmpo
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+tyKiGamQuantifyWithVarMp :: EHCOpts -> VarMp -> TyVarIdS -> TyKiGam -> (TyKiGam,VarMp,VarMp)
+tyKiGamQuantifyWithVarMp opts {- tyKiGam tvKiVarMp -} gamVarMp globTvS gam
+  = tyKiGamDoWithVarMp
+      (\_ (t,tyCycMp) m cycMp -> (tyKiQuantify (ehcOptPolyKinds opts) {- (tvarKi tyKiGam tvKiVarMp gamVarMp) -} (`Set.member` globTvS) t,m,tyCycMp `varUpd` cycMp))
+      gamVarMp emptyVarMp gam
+
+
+
+
+
+
+
+quantifyPolGam :: PolGam -> PolGam
+quantifyPolGam gam
+  = let fvs = varFree gam
+        notElemFtvs tv = not $ elem tv fvs
+     in mapPolGam (tyQuantify notElemFtvs) gam
+
+
+</pre>

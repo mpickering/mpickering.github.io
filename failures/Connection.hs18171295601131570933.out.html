@@ -1,0 +1,302 @@
+<a href="ConiferLSystem.hs1622650073984943658.out.html">prev</a></br><a href="failures.html">home</a></br><a href="Const.hs1108728549685118024.out.html">next</a></br></br><pre>141c141
+< {-# NOINLINE foobar #-}
+---
+> {-# NOINLINE foobar #
+147a148
+> 
+</pre></br><h2>original</h2></br><pre>module Database.MetaHDBC.Connection
+
+where
+
+import Database.HDBC      as HDBC
+import Database.HDBC.ODBC as HDBC
+import qualified Data.HashTable.IO as M
+import Control.Concurrent.MVar
+
+{- Caching prepared statements
+
+Investigating various optimizations - maybe we can avoid the need for
+seperate run and prepare statements.
+
+* Automatic prepare:
+** Change connection to data Connection = (HDBC.Connection, Map String Statement)
+** On each execute:
+*** At compile-time: compute a string stmtId = Module name ++ line number
+*** At run-time: Lookup the Stement in the map via stmtId
+***   if do not statement exist then create it
+***   execute query
+
+The computed map-key should be as short as possible. Think about, at
+compile-time, generating globally unique Int-s. The unique id-s must
+be attached to a connection somehow, as two identical sql statements
+with two different connections should be prepared twice. The map
+(SmartConnection) solution below do just that.
+
+We could also compress the string (at compile-time) to archieve better
+comparison speed.
+http://hackage.haskell.org/cgi-bin/hackage-scripts/package/bzlib .  We
+can a UTF-8 library to encode the [Char
+http://hackage.haskell.org/packages/archive/utf8-string/0.3/doc/html/Codec-Binary-UTF8-String.html
+. See also http://haskell.org/haskellwiki/Performance/Strings .
+
+
+See also http://www.haskell.org/haskellwiki/Global_keys and
+http://www.haskell.org/haskellwiki/Global_variables .
+
+= Database generated unique numbers =
+
+We could create a table (String, Int), and generate unique numbers
+this way.  Or maybe it could be a single row table with the next
+unique number. The unique numbers would be generated at compile-time.
+
+= Data.Unique =
+
+We could use unsafePerformIO and newUnique. But where do we place this
+call?  If we place it in the Template Haskell ExpQ-code (the code to
+be spliced in) and generate the Unique values at run-time, then the
+user must place no-inline pragmas and compile with -fno-cse. See
+http://cvs.haskell.org/Hugs/pages/libraries/base/System-IO-Unsafe.html
+. Not a good option.
+
+We could also generate the unique values at compile-time. But then
+what about seperate compilation. Wouldn't that reset the unique
+counter?
+
+And how unique is the Unique? Unique within the splice. Unique within
+the compilation? If the latter, a combination of
+(Language.Haskell.TH.currentModule, newUnique) should be safe.
+
+= Concurrent statements which are equal (the same SQL) ? =
+
+Note, in this context, concurrently do not imply multi-threaded. It
+just means that we have started to execute a statement and before
+fetching all the rows, then we start another execution of the same
+statement.
+
+What if we want two statements, containing the same SQL, to be
+executed concurrently? This cannot not be done, as they are cached and
+returns the same statement. The user would have to have two
+connections.
+
+If we used (module name, newUnique) then we could actually do it
+provided that user duplicated his SQL statements.
+
+= Module name and line number =
+
+* http://hackage.haskell.org/trac/ghc/ticket/1803
+
+-}
+
+type HashTable k v = M.BasicHashTable k v
+
+data CachingConnection =
+    CachingConnection { hdbcConnection :: HDBC.Connection
+                      , statementMap   :: MVar (HashTable String HDBC.Statement)
+                      }
+
+cachingConnection :: String -> IO CachingConnection
+cachingConnection dsn =
+    do conn    <- connectODBC dsn
+       stmtMap <- newMVar =<< M.new
+       return $ CachingConnection conn stmtMap
+
+-- FIXME: remove putStrLn-s
+cachingPrepare :: CachingConnection -> String -> IO HDBC.Statement
+cachingPrepare conn sqlStmt =
+    do putStrLn "Entering cachingPrepare"
+       maybeStmt <- withMVar (statementMap conn) (\m -> M.lookup m sqlStmt)
+       case maybeStmt of
+         Just stmt -> putStrLn "Returning existing stmt" >> return stmt
+         Nothing   -> secondLookup
+    where
+      secondLookup :: IO HDBC.Statement
+      secondLookup =
+          do -- We do not want the ODBC-call prepare to occur while locking
+             -- the MVar, as it can potentially take a logn time.
+             putStrLn "Creating new stmt"
+             stmt <- prepare (hdbcConnection conn) sqlStmt
+             withMVar (statementMap conn)
+                             (\m -> do -- need to make another lookup, in case another thread
+                                       -- has created the statement in between the first lookup
+                                       -- and "now".
+                                       maybeStmt <- M.lookup m sqlStmt
+                                       case maybeStmt of
+                                         Just otherThreadsStmt -> return otherThreadsStmt
+                                         Nothing -> do M.insert m sqlStmt stmt
+                                                       return stmt
+                             )
+
+{-
+import System.IO.Unsafe
+
+cachingStmt dsn extendedSql =
+    do (vars, parsedSqlExpr, paramInfo, columnInfo) <- runIO $ inferTypes dsn extendedSql
+       (parmPatterns, parmExpr) <- fromParams (zip vars paramInfo)
+       [| \conn -> $( lamE (map varP parmPatterns)
+                               [| do let preStmt = foobar conn parsedSqlExpr
+                                     rows <- fetchRows preStmt $( parmExpr )
+                                     $( if null columnInfo
+                                           then [| return () |]
+                                           else [| return $ map ( $(fromRow columnInfo) ) rows |]
+                                      )
+                                |]
+                    )
+        |]
+
+
+{-# NOINLINE foobar #-}
+foobar conn parsedSqlExpr = unsafePerformIO ((putStrLn "preparing statement" >> prepare conn parsedSqlExpr) `rethrowDoing` "calling prepare")
+
+--    do (conn, params, prepareStmtQ, executeExpQ) <- prepareParts dsn extendedSql
+--       lamE (map varP (conn:params)) (doE [noBindS (appE [| return . id |] (doE [prepareStmtQ])), executeExpQ])
+
+-}
+</pre></br><h2>printed</h2></br><pre>module Database.MetaHDBC.Connection
+
+where
+
+import Database.HDBC      as HDBC
+import Database.HDBC.ODBC as HDBC
+import qualified Data.HashTable.IO as M
+import Control.Concurrent.MVar
+
+{- Caching prepared statements
+
+Investigating various optimizations - maybe we can avoid the need for
+seperate run and prepare statements.
+
+* Automatic prepare:
+** Change connection to data Connection = (HDBC.Connection, Map String Statement)
+** On each execute:
+*** At compile-time: compute a string stmtId = Module name ++ line number
+*** At run-time: Lookup the Stement in the map via stmtId
+***   if do not statement exist then create it
+***   execute query
+
+The computed map-key should be as short as possible. Think about, at
+compile-time, generating globally unique Int-s. The unique id-s must
+be attached to a connection somehow, as two identical sql statements
+with two different connections should be prepared twice. The map
+(SmartConnection) solution below do just that.
+
+We could also compress the string (at compile-time) to archieve better
+comparison speed.
+http://hackage.haskell.org/cgi-bin/hackage-scripts/package/bzlib .  We
+can a UTF-8 library to encode the [Char
+http://hackage.haskell.org/packages/archive/utf8-string/0.3/doc/html/Codec-Binary-UTF8-String.html
+. See also http://haskell.org/haskellwiki/Performance/Strings .
+
+
+See also http://www.haskell.org/haskellwiki/Global_keys and
+http://www.haskell.org/haskellwiki/Global_variables .
+
+= Database generated unique numbers =
+
+We could create a table (String, Int), and generate unique numbers
+this way.  Or maybe it could be a single row table with the next
+unique number. The unique numbers would be generated at compile-time.
+
+= Data.Unique =
+
+We could use unsafePerformIO and newUnique. But where do we place this
+call?  If we place it in the Template Haskell ExpQ-code (the code to
+be spliced in) and generate the Unique values at run-time, then the
+user must place no-inline pragmas and compile with -fno-cse. See
+http://cvs.haskell.org/Hugs/pages/libraries/base/System-IO-Unsafe.html
+. Not a good option.
+
+We could also generate the unique values at compile-time. But then
+what about seperate compilation. Wouldn't that reset the unique
+counter?
+
+And how unique is the Unique? Unique within the splice. Unique within
+the compilation? If the latter, a combination of
+(Language.Haskell.TH.currentModule, newUnique) should be safe.
+
+= Concurrent statements which are equal (the same SQL) ? =
+
+Note, in this context, concurrently do not imply multi-threaded. It
+just means that we have started to execute a statement and before
+fetching all the rows, then we start another execution of the same
+statement.
+
+What if we want two statements, containing the same SQL, to be
+executed concurrently? This cannot not be done, as they are cached and
+returns the same statement. The user would have to have two
+connections.
+
+If we used (module name, newUnique) then we could actually do it
+provided that user duplicated his SQL statements.
+
+= Module name and line number =
+
+* http://hackage.haskell.org/trac/ghc/ticket/1803
+
+-}
+
+type HashTable k v = M.BasicHashTable k v
+
+data CachingConnection =
+    CachingConnection { hdbcConnection :: HDBC.Connection
+                      , statementMap   :: MVar (HashTable String HDBC.Statement)
+                      }
+
+cachingConnection :: String -> IO CachingConnection
+cachingConnection dsn =
+    do conn    <- connectODBC dsn
+       stmtMap <- newMVar =<< M.new
+       return $ CachingConnection conn stmtMap
+
+-- FIXME: remove putStrLn-s
+cachingPrepare :: CachingConnection -> String -> IO HDBC.Statement
+cachingPrepare conn sqlStmt =
+    do putStrLn "Entering cachingPrepare"
+       maybeStmt <- withMVar (statementMap conn) (\m -> M.lookup m sqlStmt)
+       case maybeStmt of
+         Just stmt -> putStrLn "Returning existing stmt" >> return stmt
+         Nothing   -> secondLookup
+    where
+      secondLookup :: IO HDBC.Statement
+      secondLookup =
+          do -- We do not want the ODBC-call prepare to occur while locking
+             -- the MVar, as it can potentially take a logn time.
+             putStrLn "Creating new stmt"
+             stmt <- prepare (hdbcConnection conn) sqlStmt
+             withMVar (statementMap conn)
+                             (\m -> do -- need to make another lookup, in case another thread
+                                       -- has created the statement in between the first lookup
+                                       -- and "now".
+                                       maybeStmt <- M.lookup m sqlStmt
+                                       case maybeStmt of
+                                         Just otherThreadsStmt -> return otherThreadsStmt
+                                         Nothing -> do M.insert m sqlStmt stmt
+                                                       return stmt
+                             )
+
+{-
+import System.IO.Unsafe
+
+cachingStmt dsn extendedSql =
+    do (vars, parsedSqlExpr, paramInfo, columnInfo) <- runIO $ inferTypes dsn extendedSql
+       (parmPatterns, parmExpr) <- fromParams (zip vars paramInfo)
+       [| \conn -> $( lamE (map varP parmPatterns)
+                               [| do let preStmt = foobar conn parsedSqlExpr
+                                     rows <- fetchRows preStmt $( parmExpr )
+                                     $( if null columnInfo
+                                           then [| return () |]
+                                           else [| return $ map ( $(fromRow columnInfo) ) rows |]
+                                      )
+                                |]
+                    )
+        |]
+
+
+{-# NOINLINE foobar #
+foobar conn parsedSqlExpr = unsafePerformIO ((putStrLn "preparing statement" >> prepare conn parsedSqlExpr) `rethrowDoing` "calling prepare")
+
+--    do (conn, params, prepareStmtQ, executeExpQ) <- prepareParts dsn extendedSql
+--       lamE (map varP (conn:params)) (doE [noBindS (appE [| return . id |] (doE [prepareStmtQ])), executeExpQ])
+
+-}
+
+</pre>

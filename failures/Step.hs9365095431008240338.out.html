@@ -1,0 +1,1026 @@
+<a href="Stdlib.hs750597385971307217.out.html">prev</a></br><a href="failures.html">home</a></br><a href="StorableBench.hs510616708590357944.out.html">next</a></br></br><pre>303d302
+< handleUpdatesCore :: (forall a. (InternallyUpdating a
+304c303
+<                        => (a -> Time -> a)))
+---
+> handleUpdatesCore :: (forall a.  InternallyUpdating a
+304a304
+>                        => (a -> Time -> a) )
+507a508
+> 
+</pre></br><h2>original</h2></br><pre>{-# LANGUAGE ExistentialQuantification, Rank2Types #-}
+
+module Step (stepUniverse) where
+
+import Universe
+    ( Arena(afterFX, asteroids, focus, items, lance, lanceProjectiles,
+            simpleUnits, smartUnits, unitProjectiles, wrapMap),
+      Universe(arena, blipSoundSource, delayRemaining, level,
+               levelMessageTimer, lives, panelActivationTimer, queueBlipSound,
+               resourceTracker, skipLevel, startGameTimer, levels) )
+import SpaceJunk ()
+import Moving
+    ( Colliding(collisionRadius),
+      Locatable(center),
+      maxExpectedVelocity,
+      collision,
+      collisionWindow )
+import Data.WrapAround ( wrappoint )
+import Updating
+    ( Observant(updateVision),
+      Transient(expired'),
+      InternallyUpdating(..) )
+import GHC.Float ( float2Double )
+import Lance
+    ( Lance(angle, godMode, inventory, swClock, center, velocity),
+      new,
+      processItem )
+import Data.List ()
+import Combat
+    ( Launcher(deployProjectiles),
+      Projectile(Projectile),
+      handleCollisionDamage,
+      handleCollisionDamage' )
+import Data.Maybe ( fromMaybe, isNothing, fromJust, isJust )
+import AfterEffect ( AfterEffect(AfterEffect) )
+import qualified AfterEffect.SimpleExplosion as SimpleExplosion ()
+import Unit ()
+import Animation ( Audible(processAudio) )
+import Control.Monad ( (>=>) )
+import System.IO ()
+import System.Exit ()
+import Resources ( initLevels )
+import Sound.ALUT
+    ( HasSetter(($=)), ObjectName(genObjectNames), play, buffer )
+import Common ( Time )
+import ResourceTracker ( getSound )
+
+delayOnDeath = 4.0
+
+stepUniverse :: Float -> Universe -> IO Universe
+stepUniverse t u =
+  let t' = float2Double t in
+  do (_, u') <- (handleNewLevel
+                 >=> handleLives
+                 >=> handlePureUpdates
+                 >=> handleSound) (t', u)
+     return u'
+
+
+handleLives :: (Time, Universe) -> IO (Time, Universe)
+handleLives (t, u) =
+  do let a = arena u
+     let wmap = Universe.wrapMap a
+     let rt = resourceTracker u
+     if isJust (lance (arena u))
+       then return (t, u)
+       else if delayRemaining u > 0
+              then return ( t
+                          , u { delayRemaining = delayRemaining u - t }
+                          )
+              else if lives u > 0
+                     then return
+                          ( t
+                          , u { arena =
+                                  a { lance = Just (Lance.new rt wmap
+                                                     (wrappoint wmap (0, 0)))
+                                    }
+                              , delayRemaining = delayOnDeath
+                              , panelActivationTimer = 0.0
+                              , queueBlipSound = True
+                              }
+                          )
+                     else do levels' <- initLevels rt
+                             return
+                               ( t
+                               , u { arena =
+                                       (head (levels u))
+                                         { lance = Just (Lance.new rt wmap
+                                                          (wrappoint wmap (0, 0)))
+                                         }
+                                   , level = 0
+                                   , levels = levels'
+                                   , lives = 3
+                                   , delayRemaining = delayOnDeath
+                                   , panelActivationTimer = 0.0
+                                   , queueBlipSound = True
+                                   }
+                               )
+
+handleNewLevel :: (Time, Universe) -> IO (Time, Universe)
+handleNewLevel (t, u)
+    | not (null (simpleUnits (arena u)) && null (smartUnits (arena u)))
+      && not (skipLevel u)
+      = return (t, u)
+    | level u + 1 >= length (Universe.levels u) =
+      do case lance (arena u) of
+           Nothing -> return (t, u)
+           Just l -> f u { arena = (arena u) { lance = Just l
+                                                { godMode = True
+                                                , inventory =
+                                                    map (\_ -> True) (inventory l)
+                                                , swClock = 0
+                                                } } } 0
+    | otherwise = f u (level u + 1)
+
+  where f c b =
+          do silenceMost (arena c)
+             let a = Universe.levels c !! b
+             let l = lance (arena c)
+             let wmap = Universe.wrapMap a
+             let a'
+                   = c { arena =
+                           a { lance =
+                                 fmap
+                                   (\ l ->
+                                      l { Lance.center = wrappoint wmap
+                                                                   (0.0, 0.0)
+                                        , angle = 0.0
+                                        , Lance.velocity = (0.0, 0.0)})
+                                 l
+                             }
+                       , level = b
+                       , skipLevel = False
+                       , levelMessageTimer = Just 0.0
+                       }
+             return (t, a')
+
+{-
+  Here we'll terminateAudio everything in the arena that can receive it, not
+  including the Lance, which is carried across level changes.
+-}
+silenceMost a = return ()
+
+-- newLevel u = -- let mProcessAudio = mapM processAudio in
+--              let a = arena in
+--              if level u >= length (levels u)
+--                then
+
+handlePureUpdates :: (Time, Universe) -> IO (Time, Universe)
+handlePureUpdates (t, u) = return $ ( handleExpiration
+                                     . handlePostUpdates
+                                     . handleCollisions
+                                     . handleUnitLaunches
+                                     . handleLanceLaunches
+                                     . handlePreUpdates
+                                     . handleVisionUpdates
+                                     . fixFocus
+                                     . handleUniverseTimers
+                                     ) (t, u)
+
+handleUniverseTimers :: (Time, Universe) -> (Time, Universe)
+handleUniverseTimers (t, u) =
+  let u' = u { levelMessageTimer = case levelMessageTimer u of
+                                     Nothing -> Nothing
+                                     Just mt -> if mt > 1.5
+                                                  then Nothing
+                                                  else Just (mt + t)
+             , panelActivationTimer = panelActivationTimer u + t
+             , startGameTimer = startGameTimer u + t
+             } in
+  (t, u')
+
+handleSound :: (Time, Universe) -> IO (Time, Universe)
+handleSound (t, u) =
+  let arena' = arena u in
+    do let listenerCoords = focus arena'
+       lance' <- case lance arena' of
+                   Nothing -> return Nothing
+                   Just l -> do l' <- processAudio l listenerCoords
+                                return (Just l')
+       simpleUnits' <- mapM (\x -> processAudio x listenerCoords) (simpleUnits arena')
+       smartUnits' <- mapM (\x -> processAudio x listenerCoords) (smartUnits arena')
+       afterFX' <- mapM (\x -> processAudio x listenerCoords) (afterFX arena')
+       let u' = u { arena = arena' { lance = lance'
+                                   , simpleUnits = simpleUnits'
+                                   , smartUnits = smartUnits'
+                                   , afterFX = afterFX'
+                                   }
+                  }
+       u'' <- handleBlipSound u'
+       return (t, u'')
+
+handleBlipSound u =
+    do u' <- if isNothing (blipSoundSource u)
+                  then initializeBlipSoundSource u
+                  else return u
+       if not (queueBlipSound u')
+               then return u'
+               else if isNothing (lance (arena u))
+                       then return u' { queueBlipSound = False }
+                       else do play [fromJust $ blipSoundSource u']
+                               return u' { queueBlipSound = False }
+
+initializeBlipSoundSource u =
+  do [source] <- genObjectNames 1
+     buffer source $= getSound (resourceTracker u) "blip.wav"
+     return u { blipSoundSource = Just source }
+
+handleExpiration :: (Time, Universe) -> (Time, Universe)
+handleExpiration (t, u) =
+  let arena' = arena u in
+
+  let (lance', aFX_lance) = case lance arena' of
+                         Nothing -> (Nothing, [])
+                         Just l -> case expired' l of
+                                     Nothing -> (Just l, [])
+                                     Just a -> (Nothing, a) in
+
+  let lives' = if isJust (lance arena') && isNothing lance'
+                 then lives u - 1
+                 else lives u in
+
+  let (lanceProjectiles', aFX_lanceProjectiles) =
+        expirationFold (lanceProjectiles arena') in
+
+  let (unitProjectiles', aFX_unitProjectiles) =
+        expirationFold (unitProjectiles arena') in
+
+  let (afterFX', aFX_afterFX) =
+        expirationFold (afterFX arena') in
+
+  let (simpleUnits', aFX_simpleUnits) =
+        expirationFold (simpleUnits arena') in
+
+  let (smartUnits', aFX_smartUnits) =
+        expirationFold (smartUnits arena') in
+
+  let u' = u { arena = arena' { lance = lance'
+                              , lanceProjectiles = lanceProjectiles'
+                              , unitProjectiles = unitProjectiles'
+                              , simpleUnits = simpleUnits'
+                              , smartUnits = smartUnits'
+                              , afterFX = afterFX'
+                                          ++ aFX_afterFX
+                                          ++ aFX_lance
+                                          ++ aFX_lanceProjectiles
+                                          ++ aFX_unitProjectiles
+                                          ++ aFX_simpleUnits
+                                          ++ aFX_smartUnits
+                              }
+             , lives = lives'
+             } in
+  (t, u')
+
+  where expirationFold xs = foldr foldF ([], []) xs
+
+        foldF x (nxs, nAFX) = case expired' x of
+                                Nothing -> (nxs ++ [x], nAFX)
+                                Just a -> (nxs, nAFX ++ a)
+
+
+handleLanceLaunches :: (Time, Universe) -> (Time, Universe)
+handleLanceLaunches (t, u) =
+  let arena' = arena u in
+  case lance arena' of
+    Nothing -> (t, u)
+    Just llance -> let (nProj, nLance) = deployProjectiles llance in
+                     let u' = u { arena = arena' { lanceProjectiles =
+                                                     lanceProjectiles arena'
+                                                       ++ nProj
+                                                 , lance = Just nLance
+                                                 }
+                                } in
+                       (t, u')
+
+handleUnitLaunches :: (Time, Universe) -> (Time, Universe)
+handleUnitLaunches (t, u) =
+  let arena' = arena u in
+  let (simpleUnits', unitProjectiles') =
+        foldr foldDepl ([], []) (simpleUnits arena') in
+  let (smartUnits', unitProjectiles'') =
+        foldr foldDepl ([], []) (smartUnits arena') in
+  let u' = u { arena = arena' { unitProjectiles = unitProjectiles arena'
+                                                    ++ unitProjectiles'
+                                                    ++ unitProjectiles''
+                              , simpleUnits = simpleUnits'
+                              , smartUnits = smartUnits'
+                              }
+             } in
+ (t, u')
+
+  where foldDepl s (units, projectiles) =
+          let (nProjectiles, updatedUnit) = deployProjectiles s in
+          (units ++ [updatedUnit], projectiles ++ nProjectiles)
+
+fixFocus (t, u) =
+  let a = arena u in
+  let f = do l <- lance a
+             Just (Moving.center l) in
+  let u' = u { arena = a { focus = fromMaybe (focus a) f } } in
+  (t, u')
+
+handleUpdatesCore :: (forall a. (InternallyUpdating a
+                       => (a -> Time -> a)))
+                       -> (Time, Universe)
+                       -> (Time, Universe)
+handleUpdatesCore f (t, u) =
+  let arena' = arena u in
+  let lance' = do llance <- lance arena'
+                  Just (f llance t) in
+  let asteroids' = [ f a t | a <- asteroids arena' ] in
+  let lanceProjectiles' = [ Projectile (f a t)
+                          | Projectile a <- lanceProjectiles arena' ] in
+  let unitProjectiles' = [ Projectile (f a t)
+                         | Projectile a <- unitProjectiles arena' ] in
+  let afterFX' = [ case effect of
+                     AfterEffect a -> AfterEffect (f a t)
+                 | effect <- afterFX arena' ] in
+  let simpleUnits' = [ f s t | s <- simpleUnits arena' ] in
+  let smartUnits' = [ f s t | s <- smartUnits arena' ] in
+  let u' = u { arena = arena' { lance = lance'
+                              , asteroids = asteroids'
+                              , lanceProjectiles = lanceProjectiles'
+                              , afterFX = afterFX'
+                              , simpleUnits = simpleUnits'
+                              , smartUnits = smartUnits'
+                              , unitProjectiles = unitProjectiles'
+                              }
+             } in
+  (t, u')
+
+handlePreUpdates :: (Time, Universe) -> (Time, Universe)
+handlePreUpdates (t, u) = handleUpdatesCore Updating.preUpdate (t, u)
+
+handlePostUpdates :: (Time, Universe) -> (Time, Universe)
+handlePostUpdates (t, u) = handleUpdatesCore Updating.postUpdate (t, u)
+
+handleVisionUpdates :: (Time, Universe) -> (Time, Universe)
+handleVisionUpdates (t, u) =
+  let a = arena u in
+  let u' = u { arena =
+                 a { smartUnits = [ updateVision s a | s <- smartUnits a ] }
+             } in
+  (t, u')
+
+handleCollisionsLanceAsteroids (t, u) =
+  let lance' = case lance a of
+                 Nothing -> Nothing
+                 Just l -> let (x, _) = handleCollisionDamage
+                                          wmap t l (asteroids a) in
+                             Just x in
+  let u' = u { arena = a { lance = lance' } } in
+  (t, u')
+    where
+      a = arena u
+      wmap = Universe.wrapMap a
+
+handleCollisionsLanceUnitProjectiles (t, u) =
+  let (lance', unitProjectiles') =
+        case lance a of
+          Nothing -> (Nothing, unitProjectiles a)
+          Just l -> let (x, ys) = handleCollisionDamage
+                                   wmap t l (unitProjectiles a) in
+                      (Just x, ys) in
+  let u' = u { arena = a { lance = lance'
+                         , unitProjectiles = unitProjectiles'
+                         }
+             } in
+  (t, u')
+    where
+      a = arena u
+      wmap = Universe.wrapMap a
+
+handleCollisionsLanceProjectilesAsteroids (t, u) =
+  let (lanceProjectiles', _) = handleCollisionDamage'
+                                wmap t
+                                  (lanceProjectiles a)
+                                    (asteroids a) in
+  let u' = u { arena = a { lanceProjectiles = lanceProjectiles'
+                         }
+             } in
+  (t, u')
+    where
+      a = arena u
+      wmap = Universe.wrapMap a
+
+handleCollisionsLanceProjectilesSimpleUnits (t, u) =
+  let (lanceProjectiles', simpleUnits') = handleCollisionDamage'
+                                            wmap t
+                                              (lanceProjectiles a)
+                                                (simpleUnits a) in
+
+  let u' = u { arena = a { lanceProjectiles = lanceProjectiles'
+                         , simpleUnits = simpleUnits'
+                         }
+             } in
+  (t, u')
+    where
+      a = arena u
+      wmap = Universe.wrapMap a
+
+handleCollisionsUnitProjectilesAsteroids (t, u) =
+  let (unitProjectiles', _) = handleCollisionDamage'
+                                 wmap t
+                                   (unitProjectiles a)
+                                     (asteroids a) in
+
+  let u' = u { arena = a { unitProjectiles = unitProjectiles'
+                         }
+             } in
+  (t, u')
+    where
+      a = arena u
+      wmap = Universe.wrapMap a
+
+handleCollisionsLanceSimpleUnits (t, u) =
+  let (lance', simpleUnits') =
+        case (lance a) of
+          Nothing -> (Nothing, (simpleUnits a))
+          Just l -> let (x, ys) = handleCollisionDamage
+                                   wmap t l (simpleUnits a) in
+                      (Just x, ys) in
+
+  let u' = u { arena = a { lance = lance'
+                         , simpleUnits = simpleUnits'
+                         }
+             } in
+  (t, u')
+    where
+      a = arena u
+      wmap = Universe.wrapMap a
+
+handleCollisionsLanceProjectilesSmartUnits (t, u) =
+  let (lanceProjectiles', smartUnits') = handleCollisionDamage'
+                                               wmap t
+                                                 (lanceProjectiles a)
+                                                   (smartUnits a) in
+
+  let u' = u { arena = a { lanceProjectiles = lanceProjectiles'
+                         , smartUnits = smartUnits'
+                         }
+             } in
+  (t, u')
+    where
+      a = arena u
+      wmap = Universe.wrapMap a
+
+handleCollisionsLanceSmartUnits (t, u) =
+  let (lance', smartUnits') =
+        case (lance a) of
+          Nothing -> (Nothing, (smartUnits a))
+          Just l -> let (x, ys) = handleCollisionDamage
+                                   wmap t l (smartUnits a) in
+                      (Just x, ys) in
+
+  let u' = u { arena = a { lance = lance'
+                         , smartUnits = smartUnits'
+                         }
+             } in
+  (t, u')
+    where
+      a = arena u
+      wmap = Universe.wrapMap a
+
+handleCollisionsLanceItems (t, u) =
+  let (lance', items') =
+        case (lance a) of
+          Nothing -> (Nothing, (items a))
+          Just l -> let (x, ys) = collisionHandler l (items a) [] in
+                      (Just x, ys) in
+
+  let u' = u { arena = a { lance = lance'
+                         , items = items'
+                         }
+             } in
+  (t, u')
+    where
+      a = arena u
+      wmap = Universe.wrapMap a
+      collisionHandler x [] nys = (x, nys)
+      collisionHandler x (y:ys) nys =
+        if not (collisionWindow wmap (max
+                                     (maxExpectedVelocity * t)
+                                     (collisionRadius x + collisionRadius y)) x y)
+          then collisionHandler x ys (nys ++ [y])
+          else
+            case collision wmap t x y of
+              Nothing -> collisionHandler x ys (nys ++ [y])
+              Just _ -> let nx = processItem x y in
+                         collisionHandler nx ys nys
+
+handleCollisions :: (Time, Universe) -> (Time, Universe)
+handleCollisions (t, u) =
+
+  ( handleCollisionsLanceItems
+   . handleCollisionsLanceSmartUnits
+   . handleCollisionsLanceProjectilesSmartUnits
+   . handleCollisionsLanceSimpleUnits
+   . handleCollisionsUnitProjectilesAsteroids
+   . handleCollisionsLanceProjectilesSimpleUnits
+   . handleCollisionsLanceProjectilesAsteroids
+   . handleCollisionsLanceUnitProjectiles
+   . handleCollisionsLanceAsteroids
+   ) (t, u)
+
+
+
+</pre></br><h2>printed</h2></br><pre>{-# LANGUAGE ExistentialQuantification, Rank2Types #-}
+
+module Step (stepUniverse) where
+
+import Universe
+    ( Arena(afterFX, asteroids, focus, items, lance, lanceProjectiles,
+            simpleUnits, smartUnits, unitProjectiles, wrapMap),
+      Universe(arena, blipSoundSource, delayRemaining, level,
+               levelMessageTimer, lives, panelActivationTimer, queueBlipSound,
+               resourceTracker, skipLevel, startGameTimer, levels) )
+import SpaceJunk ()
+import Moving
+    ( Colliding(collisionRadius),
+      Locatable(center),
+      maxExpectedVelocity,
+      collision,
+      collisionWindow )
+import Data.WrapAround ( wrappoint )
+import Updating
+    ( Observant(updateVision),
+      Transient(expired'),
+      InternallyUpdating(..) )
+import GHC.Float ( float2Double )
+import Lance
+    ( Lance(angle, godMode, inventory, swClock, center, velocity),
+      new,
+      processItem )
+import Data.List ()
+import Combat
+    ( Launcher(deployProjectiles),
+      Projectile(Projectile),
+      handleCollisionDamage,
+      handleCollisionDamage' )
+import Data.Maybe ( fromMaybe, isNothing, fromJust, isJust )
+import AfterEffect ( AfterEffect(AfterEffect) )
+import qualified AfterEffect.SimpleExplosion as SimpleExplosion ()
+import Unit ()
+import Animation ( Audible(processAudio) )
+import Control.Monad ( (>=>) )
+import System.IO ()
+import System.Exit ()
+import Resources ( initLevels )
+import Sound.ALUT
+    ( HasSetter(($=)), ObjectName(genObjectNames), play, buffer )
+import Common ( Time )
+import ResourceTracker ( getSound )
+
+delayOnDeath = 4.0
+
+stepUniverse :: Float -> Universe -> IO Universe
+stepUniverse t u =
+  let t' = float2Double t in
+  do (_, u') <- (handleNewLevel
+                 >=> handleLives
+                 >=> handlePureUpdates
+                 >=> handleSound) (t', u)
+     return u'
+
+
+handleLives :: (Time, Universe) -> IO (Time, Universe)
+handleLives (t, u) =
+  do let a = arena u
+     let wmap = Universe.wrapMap a
+     let rt = resourceTracker u
+     if isJust (lance (arena u))
+       then return (t, u)
+       else if delayRemaining u > 0
+              then return ( t
+                          , u { delayRemaining = delayRemaining u - t }
+                          )
+              else if lives u > 0
+                     then return
+                          ( t
+                          , u { arena =
+                                  a { lance = Just (Lance.new rt wmap
+                                                     (wrappoint wmap (0, 0)))
+                                    }
+                              , delayRemaining = delayOnDeath
+                              , panelActivationTimer = 0.0
+                              , queueBlipSound = True
+                              }
+                          )
+                     else do levels' <- initLevels rt
+                             return
+                               ( t
+                               , u { arena =
+                                       (head (levels u))
+                                         { lance = Just (Lance.new rt wmap
+                                                          (wrappoint wmap (0, 0)))
+                                         }
+                                   , level = 0
+                                   , levels = levels'
+                                   , lives = 3
+                                   , delayRemaining = delayOnDeath
+                                   , panelActivationTimer = 0.0
+                                   , queueBlipSound = True
+                                   }
+                               )
+
+handleNewLevel :: (Time, Universe) -> IO (Time, Universe)
+handleNewLevel (t, u)
+    | not (null (simpleUnits (arena u)) && null (smartUnits (arena u)))
+      && not (skipLevel u)
+      = return (t, u)
+    | level u + 1 >= length (Universe.levels u) =
+      do case lance (arena u) of
+           Nothing -> return (t, u)
+           Just l -> f u { arena = (arena u) { lance = Just l
+                                                { godMode = True
+                                                , inventory =
+                                                    map (\_ -> True) (inventory l)
+                                                , swClock = 0
+                                                } } } 0
+    | otherwise = f u (level u + 1)
+
+  where f c b =
+          do silenceMost (arena c)
+             let a = Universe.levels c !! b
+             let l = lance (arena c)
+             let wmap = Universe.wrapMap a
+             let a'
+                   = c { arena =
+                           a { lance =
+                                 fmap
+                                   (\ l ->
+                                      l { Lance.center = wrappoint wmap
+                                                                   (0.0, 0.0)
+                                        , angle = 0.0
+                                        , Lance.velocity = (0.0, 0.0)})
+                                 l
+                             }
+                       , level = b
+                       , skipLevel = False
+                       , levelMessageTimer = Just 0.0
+                       }
+             return (t, a')
+
+{-
+  Here we'll terminateAudio everything in the arena that can receive it, not
+  including the Lance, which is carried across level changes.
+-}
+silenceMost a = return ()
+
+-- newLevel u = -- let mProcessAudio = mapM processAudio in
+--              let a = arena in
+--              if level u >= length (levels u)
+--                then
+
+handlePureUpdates :: (Time, Universe) -> IO (Time, Universe)
+handlePureUpdates (t, u) = return $ ( handleExpiration
+                                     . handlePostUpdates
+                                     . handleCollisions
+                                     . handleUnitLaunches
+                                     . handleLanceLaunches
+                                     . handlePreUpdates
+                                     . handleVisionUpdates
+                                     . fixFocus
+                                     . handleUniverseTimers
+                                     ) (t, u)
+
+handleUniverseTimers :: (Time, Universe) -> (Time, Universe)
+handleUniverseTimers (t, u) =
+  let u' = u { levelMessageTimer = case levelMessageTimer u of
+                                     Nothing -> Nothing
+                                     Just mt -> if mt > 1.5
+                                                  then Nothing
+                                                  else Just (mt + t)
+             , panelActivationTimer = panelActivationTimer u + t
+             , startGameTimer = startGameTimer u + t
+             } in
+  (t, u')
+
+handleSound :: (Time, Universe) -> IO (Time, Universe)
+handleSound (t, u) =
+  let arena' = arena u in
+    do let listenerCoords = focus arena'
+       lance' <- case lance arena' of
+                   Nothing -> return Nothing
+                   Just l -> do l' <- processAudio l listenerCoords
+                                return (Just l')
+       simpleUnits' <- mapM (\x -> processAudio x listenerCoords) (simpleUnits arena')
+       smartUnits' <- mapM (\x -> processAudio x listenerCoords) (smartUnits arena')
+       afterFX' <- mapM (\x -> processAudio x listenerCoords) (afterFX arena')
+       let u' = u { arena = arena' { lance = lance'
+                                   , simpleUnits = simpleUnits'
+                                   , smartUnits = smartUnits'
+                                   , afterFX = afterFX'
+                                   }
+                  }
+       u'' <- handleBlipSound u'
+       return (t, u'')
+
+handleBlipSound u =
+    do u' <- if isNothing (blipSoundSource u)
+                  then initializeBlipSoundSource u
+                  else return u
+       if not (queueBlipSound u')
+               then return u'
+               else if isNothing (lance (arena u))
+                       then return u' { queueBlipSound = False }
+                       else do play [fromJust $ blipSoundSource u']
+                               return u' { queueBlipSound = False }
+
+initializeBlipSoundSource u =
+  do [source] <- genObjectNames 1
+     buffer source $= getSound (resourceTracker u) "blip.wav"
+     return u { blipSoundSource = Just source }
+
+handleExpiration :: (Time, Universe) -> (Time, Universe)
+handleExpiration (t, u) =
+  let arena' = arena u in
+
+  let (lance', aFX_lance) = case lance arena' of
+                         Nothing -> (Nothing, [])
+                         Just l -> case expired' l of
+                                     Nothing -> (Just l, [])
+                                     Just a -> (Nothing, a) in
+
+  let lives' = if isJust (lance arena') && isNothing lance'
+                 then lives u - 1
+                 else lives u in
+
+  let (lanceProjectiles', aFX_lanceProjectiles) =
+        expirationFold (lanceProjectiles arena') in
+
+  let (unitProjectiles', aFX_unitProjectiles) =
+        expirationFold (unitProjectiles arena') in
+
+  let (afterFX', aFX_afterFX) =
+        expirationFold (afterFX arena') in
+
+  let (simpleUnits', aFX_simpleUnits) =
+        expirationFold (simpleUnits arena') in
+
+  let (smartUnits', aFX_smartUnits) =
+        expirationFold (smartUnits arena') in
+
+  let u' = u { arena = arena' { lance = lance'
+                              , lanceProjectiles = lanceProjectiles'
+                              , unitProjectiles = unitProjectiles'
+                              , simpleUnits = simpleUnits'
+                              , smartUnits = smartUnits'
+                              , afterFX = afterFX'
+                                          ++ aFX_afterFX
+                                          ++ aFX_lance
+                                          ++ aFX_lanceProjectiles
+                                          ++ aFX_unitProjectiles
+                                          ++ aFX_simpleUnits
+                                          ++ aFX_smartUnits
+                              }
+             , lives = lives'
+             } in
+  (t, u')
+
+  where expirationFold xs = foldr foldF ([], []) xs
+
+        foldF x (nxs, nAFX) = case expired' x of
+                                Nothing -> (nxs ++ [x], nAFX)
+                                Just a -> (nxs, nAFX ++ a)
+
+
+handleLanceLaunches :: (Time, Universe) -> (Time, Universe)
+handleLanceLaunches (t, u) =
+  let arena' = arena u in
+  case lance arena' of
+    Nothing -> (t, u)
+    Just llance -> let (nProj, nLance) = deployProjectiles llance in
+                     let u' = u { arena = arena' { lanceProjectiles =
+                                                     lanceProjectiles arena'
+                                                       ++ nProj
+                                                 , lance = Just nLance
+                                                 }
+                                } in
+                       (t, u')
+
+handleUnitLaunches :: (Time, Universe) -> (Time, Universe)
+handleUnitLaunches (t, u) =
+  let arena' = arena u in
+  let (simpleUnits', unitProjectiles') =
+        foldr foldDepl ([], []) (simpleUnits arena') in
+  let (smartUnits', unitProjectiles'') =
+        foldr foldDepl ([], []) (smartUnits arena') in
+  let u' = u { arena = arena' { unitProjectiles = unitProjectiles arena'
+                                                    ++ unitProjectiles'
+                                                    ++ unitProjectiles''
+                              , simpleUnits = simpleUnits'
+                              , smartUnits = smartUnits'
+                              }
+             } in
+ (t, u')
+
+  where foldDepl s (units, projectiles) =
+          let (nProjectiles, updatedUnit) = deployProjectiles s in
+          (units ++ [updatedUnit], projectiles ++ nProjectiles)
+
+fixFocus (t, u) =
+  let a = arena u in
+  let f = do l <- lance a
+             Just (Moving.center l) in
+  let u' = u { arena = a { focus = fromMaybe (focus a) f } } in
+  (t, u')
+
+handleUpdatesCore :: (forall a.  InternallyUpdating a
+                       => (a -> Time -> a) )
+                       -> (Time, Universe)
+                       -> (Time, Universe)
+handleUpdatesCore f (t, u) =
+  let arena' = arena u in
+  let lance' = do llance <- lance arena'
+                  Just (f llance t) in
+  let asteroids' = [ f a t | a <- asteroids arena' ] in
+  let lanceProjectiles' = [ Projectile (f a t)
+                          | Projectile a <- lanceProjectiles arena' ] in
+  let unitProjectiles' = [ Projectile (f a t)
+                         | Projectile a <- unitProjectiles arena' ] in
+  let afterFX' = [ case effect of
+                     AfterEffect a -> AfterEffect (f a t)
+                 | effect <- afterFX arena' ] in
+  let simpleUnits' = [ f s t | s <- simpleUnits arena' ] in
+  let smartUnits' = [ f s t | s <- smartUnits arena' ] in
+  let u' = u { arena = arena' { lance = lance'
+                              , asteroids = asteroids'
+                              , lanceProjectiles = lanceProjectiles'
+                              , afterFX = afterFX'
+                              , simpleUnits = simpleUnits'
+                              , smartUnits = smartUnits'
+                              , unitProjectiles = unitProjectiles'
+                              }
+             } in
+  (t, u')
+
+handlePreUpdates :: (Time, Universe) -> (Time, Universe)
+handlePreUpdates (t, u) = handleUpdatesCore Updating.preUpdate (t, u)
+
+handlePostUpdates :: (Time, Universe) -> (Time, Universe)
+handlePostUpdates (t, u) = handleUpdatesCore Updating.postUpdate (t, u)
+
+handleVisionUpdates :: (Time, Universe) -> (Time, Universe)
+handleVisionUpdates (t, u) =
+  let a = arena u in
+  let u' = u { arena =
+                 a { smartUnits = [ updateVision s a | s <- smartUnits a ] }
+             } in
+  (t, u')
+
+handleCollisionsLanceAsteroids (t, u) =
+  let lance' = case lance a of
+                 Nothing -> Nothing
+                 Just l -> let (x, _) = handleCollisionDamage
+                                          wmap t l (asteroids a) in
+                             Just x in
+  let u' = u { arena = a { lance = lance' } } in
+  (t, u')
+    where
+      a = arena u
+      wmap = Universe.wrapMap a
+
+handleCollisionsLanceUnitProjectiles (t, u) =
+  let (lance', unitProjectiles') =
+        case lance a of
+          Nothing -> (Nothing, unitProjectiles a)
+          Just l -> let (x, ys) = handleCollisionDamage
+                                   wmap t l (unitProjectiles a) in
+                      (Just x, ys) in
+  let u' = u { arena = a { lance = lance'
+                         , unitProjectiles = unitProjectiles'
+                         }
+             } in
+  (t, u')
+    where
+      a = arena u
+      wmap = Universe.wrapMap a
+
+handleCollisionsLanceProjectilesAsteroids (t, u) =
+  let (lanceProjectiles', _) = handleCollisionDamage'
+                                wmap t
+                                  (lanceProjectiles a)
+                                    (asteroids a) in
+  let u' = u { arena = a { lanceProjectiles = lanceProjectiles'
+                         }
+             } in
+  (t, u')
+    where
+      a = arena u
+      wmap = Universe.wrapMap a
+
+handleCollisionsLanceProjectilesSimpleUnits (t, u) =
+  let (lanceProjectiles', simpleUnits') = handleCollisionDamage'
+                                            wmap t
+                                              (lanceProjectiles a)
+                                                (simpleUnits a) in
+
+  let u' = u { arena = a { lanceProjectiles = lanceProjectiles'
+                         , simpleUnits = simpleUnits'
+                         }
+             } in
+  (t, u')
+    where
+      a = arena u
+      wmap = Universe.wrapMap a
+
+handleCollisionsUnitProjectilesAsteroids (t, u) =
+  let (unitProjectiles', _) = handleCollisionDamage'
+                                 wmap t
+                                   (unitProjectiles a)
+                                     (asteroids a) in
+
+  let u' = u { arena = a { unitProjectiles = unitProjectiles'
+                         }
+             } in
+  (t, u')
+    where
+      a = arena u
+      wmap = Universe.wrapMap a
+
+handleCollisionsLanceSimpleUnits (t, u) =
+  let (lance', simpleUnits') =
+        case (lance a) of
+          Nothing -> (Nothing, (simpleUnits a))
+          Just l -> let (x, ys) = handleCollisionDamage
+                                   wmap t l (simpleUnits a) in
+                      (Just x, ys) in
+
+  let u' = u { arena = a { lance = lance'
+                         , simpleUnits = simpleUnits'
+                         }
+             } in
+  (t, u')
+    where
+      a = arena u
+      wmap = Universe.wrapMap a
+
+handleCollisionsLanceProjectilesSmartUnits (t, u) =
+  let (lanceProjectiles', smartUnits') = handleCollisionDamage'
+                                               wmap t
+                                                 (lanceProjectiles a)
+                                                   (smartUnits a) in
+
+  let u' = u { arena = a { lanceProjectiles = lanceProjectiles'
+                         , smartUnits = smartUnits'
+                         }
+             } in
+  (t, u')
+    where
+      a = arena u
+      wmap = Universe.wrapMap a
+
+handleCollisionsLanceSmartUnits (t, u) =
+  let (lance', smartUnits') =
+        case (lance a) of
+          Nothing -> (Nothing, (smartUnits a))
+          Just l -> let (x, ys) = handleCollisionDamage
+                                   wmap t l (smartUnits a) in
+                      (Just x, ys) in
+
+  let u' = u { arena = a { lance = lance'
+                         , smartUnits = smartUnits'
+                         }
+             } in
+  (t, u')
+    where
+      a = arena u
+      wmap = Universe.wrapMap a
+
+handleCollisionsLanceItems (t, u) =
+  let (lance', items') =
+        case (lance a) of
+          Nothing -> (Nothing, (items a))
+          Just l -> let (x, ys) = collisionHandler l (items a) [] in
+                      (Just x, ys) in
+
+  let u' = u { arena = a { lance = lance'
+                         , items = items'
+                         }
+             } in
+  (t, u')
+    where
+      a = arena u
+      wmap = Universe.wrapMap a
+      collisionHandler x [] nys = (x, nys)
+      collisionHandler x (y:ys) nys =
+        if not (collisionWindow wmap (max
+                                     (maxExpectedVelocity * t)
+                                     (collisionRadius x + collisionRadius y)) x y)
+          then collisionHandler x ys (nys ++ [y])
+          else
+            case collision wmap t x y of
+              Nothing -> collisionHandler x ys (nys ++ [y])
+              Just _ -> let nx = processItem x y in
+                         collisionHandler nx ys nys
+
+handleCollisions :: (Time, Universe) -> (Time, Universe)
+handleCollisions (t, u) =
+
+  ( handleCollisionsLanceItems
+   . handleCollisionsLanceSmartUnits
+   . handleCollisionsLanceProjectilesSmartUnits
+   . handleCollisionsLanceSimpleUnits
+   . handleCollisionsUnitProjectilesAsteroids
+   . handleCollisionsLanceProjectilesSimpleUnits
+   . handleCollisionsLanceProjectilesAsteroids
+   . handleCollisionsLanceUnitProjectiles
+   . handleCollisionsLanceAsteroids
+   ) (t, u)
+
+
+
+
+</pre>

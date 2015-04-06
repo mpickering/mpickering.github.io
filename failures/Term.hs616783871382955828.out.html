@@ -1,0 +1,98 @@
+<a href="Term.hs197941363348318738.out.html">prev</a></br><a href="failures.html">home</a></br><a href="TermLike.hs1777724115269220094.out.html">next</a></br></br><pre>15c15
+<         showComp :: Bool → Expr → String
+---
+>         showComp :: Bool -> Expr -> String
+17d16
+<             Application (Application e1 e2) e3 → maybeWrap $ show e1 ⧺ " " ⧺ diverge e2 ⧺ " " ⧺ diverge e3
+18d16
+<             Application e1 e2 → maybeWrap $ diverge e1 ⧺ " " ⧺ diverge e2
+19c17
+<             Variable v → v
+---
+>             Application (Application e1 e2) e3 -> maybeWrap $ show e1 ⧺ " " ⧺ diverge e2 ⧺ " " ⧺ diverge e3
+19a18
+>             Application e1 e2 -> maybeWrap $ diverge e1 ⧺ " " ⧺ diverge e2
+19a19
+>             Variable v -> v
+24c24
+< parse ∷ String → Expr
+---
+> parse :: String -> Expr
+27c27
+< parseFile ∷ FilePath → IO Expr
+---
+> parseFile :: FilePath -> IO Expr
+30c30
+< parser ∷ Parser Expr
+---
+> parser :: Parser Expr
+33a34
+> 
+</pre></br><h2>original</h2></br><pre>{-# LANGUAGE UnicodeSyntax #-}
+module Term where
+
+import Prelude.Unicode
+import Text.ParserCombinators.Parsec as Parsec
+import Text.ParserCombinators.Parsec.Token as Parsec
+import Text.ParserCombinators.Parsec.Language as Parsec
+import Control.Monad (liftM)
+
+
+data Expr = Application Expr Expr | Variable String deriving (Ord, Eq)
+
+instance Show Expr where
+    show = showComp False where
+        showComp :: Bool → Expr → String
+        showComp isComponent expr = case expr of
+            Application (Application e1 e2) e3 → maybeWrap $ show e1 ⧺ " " ⧺ diverge e2 ⧺ " " ⧺ diverge e3
+            Application e1 e2 → maybeWrap $ diverge e1 ⧺ " " ⧺ diverge e2
+            Variable v → v
+            where
+            maybeWrap str = if isComponent then "(" ⧺ str ⧺ ")" else str
+            diverge = showComp True
+
+parse ∷ String → Expr
+parse str = either (error ∘ show) id (Parsec.parse parser "(null)" str)
+
+parseFile ∷ FilePath → IO Expr
+parseFile = liftM (either (error ∘ show) id) ∘ Parsec.parseFromFile parser
+
+parser ∷ Parser Expr
+parser = let expr = parser in liftM (foldl1 Application) $ many1 $ choice
+    [parens haskell expr,
+     liftM Variable $ identifier haskell]
+</pre></br><h2>printed</h2></br><pre>{-# LANGUAGE UnicodeSyntax #-}
+module Term where
+
+import Prelude.Unicode
+import Text.ParserCombinators.Parsec as Parsec
+import Text.ParserCombinators.Parsec.Token as Parsec
+import Text.ParserCombinators.Parsec.Language as Parsec
+import Control.Monad (liftM)
+
+
+data Expr = Application Expr Expr | Variable String deriving (Ord, Eq)
+
+instance Show Expr where
+    show = showComp False where
+        showComp :: Bool -> Expr -> String
+        showComp isComponent expr = case expr of
+            Application (Application e1 e2) e3 -> maybeWrap $ show e1 ⧺ " " ⧺ diverge e2 ⧺ " " ⧺ diverge e3
+            Application e1 e2 -> maybeWrap $ diverge e1 ⧺ " " ⧺ diverge e2
+            Variable v -> v
+            where
+            maybeWrap str = if isComponent then "(" ⧺ str ⧺ ")" else str
+            diverge = showComp True
+
+parse :: String -> Expr
+parse str = either (error ∘ show) id (Parsec.parse parser "(null)" str)
+
+parseFile :: FilePath -> IO Expr
+parseFile = liftM (either (error ∘ show) id) ∘ Parsec.parseFromFile parser
+
+parser :: Parser Expr
+parser = let expr = parser in liftM (foldl1 Application) $ many1 $ choice
+    [parens haskell expr,
+     liftM Variable $ identifier haskell]
+
+</pre>

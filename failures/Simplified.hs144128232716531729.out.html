@@ -1,0 +1,682 @@
+<a href="Simplification.hs473917746118710299.out.html">prev</a></br><a href="failures.html">home</a></br><a href="Simplify.hs1144108930470211272.out.html">next</a></br></br><pre>226c226
+< {-# LANGUAGE Rank2Types, MultiParamTypeClasses #-}
+---
+> {-# LANGUAGE Rank2Types, MultiParamTypeClasses #
+337a338
+> 
+</pre></br><h2>original</h2></br><pre>{-# LANGUAGE MultiParamTypeClasses #-}
+
+{-|
+0\. Given these data types for a simple language:
+
+@data Prog a = Prog a [Decl]
+
+data Decl = VarDecl Var Expr
+          | FunDecl Var [Var] [Decl]
+          | Return Expr
+
+data Expr = Ref String
+          | Number Int
+          | Add Expr Expr
+          | Mul Expr Expr
+
+data Var = Var String
+@
+
+\----------------------------------------
+
+1\. Define a @Plate f@ data type
+
+The name of the fields should refer to the actual data type: they will be prefixed with a \"p\" here.
+These field accessors are called projectors for the given plate and the actual data type (see the @Projector p a@ type alias).
+You have to use projectors to provide definition for the @multiplate@ method, and also for functions like @foldFor@.
+With this module, you only need projectors for the 'IsProjector' instance definition.
+(However you do have to use projectors anyway if @List, Maybe, (,)@, etc. are not part of the plate,
+in which case you have to explicitly traverse them to expose their structure to Multiplate. See: point 3.)
+
+@data Plate f = Plate
+  { pProg :: forall a. Prog a -> f (Prog a)
+  , pDecl :: Decl -> f Decl
+  , pExpr :: Expr -> f Expr
+  , pVar  :: Var  -> f Var
+  }
+@
+
+\----------------------------------------
+
+2\. Define 'IsProjector' instances for @Plate@ and all the actual data types
+
+@instance IsProjector Plate (Prog a) where
+  getProjector _ _ = pProg
+
+instance IsProjector Plate Decl where
+  getProjector _ _ = pDecl
+
+instance IsProjector Plate Expr where
+  getProjector _ _ = pExpr
+
+instance IsProjector Plate Var where
+  getProjector _ _ = pVar
+@
+
+\----------------------------------------
+
+3\. Define a single @Multiplate@ instance for @Plate@
+
+Definitions required without this module are given in the comments.
+(The \"b\" prefixes in functions stand for \"build\".)
+
+@
+instance Multiplate Plate where
+  mkPlate build = Plate (build pProg) (build pDecl) (build pExpr) (build pVar)
+  multiplate p  = Plate bProg bDecl bExpr bVar where
+@
+
+@    \-- you have to define these here to capture the \'p\' parameter
+    constr \<$>: a = constr \<$> (getProjector p a) p a
+    appl   \<*>: a = appl   \<*> (getProjector p a) p a
+    infixl 4 \<$>:
+    infixl 4 \<*>:
+@
+
+@
+    \-- definitions:
+@
+
+@    \-- lists, maybe values, etc. have a Traversable instance, which has to be used for these \[\*\]
+    bProg (Prog a decls)           = Prog \<$> pure a \<*> traverse (pDecl p) decls
+@
+
+@    bDecl (VarDecl var expr)       = VarDecl \<$>: var \<*>: expr
+    \-- bDecl (VarDecl str expr)    = VarDecl \<$> pVar p var \<*> pExpr p expr
+    bDecl (FunDecl var vars decls) = FunDecl \<$>: var \<*> traverse (pVar p) vars \<*> traverse (pDecl p) decls
+    bDecl (Return expr)            = Return \<$>: expr
+    \-- bDecl (Return expr)         = Return \<$> pExpr p expr
+@
+
+@    bExpr (Ref str)                = Ref \<$> pure str
+    bExpr (Number int)             = Number \<$> pure int
+    bExpr (Add expr expr\')         = Add \<$>: expr \<*>: expr\'
+    \-- bExpr (Add expr expr\')      = Add \<$> pExpr p expr \<*> pExpr p expr\'
+    bExpr (Mul expr expr\')         = Mul \<$>: expr \<*>: expr\'
+    \-- bExpr (Mul expr expr\')      = Mul \<$> pExpr p expr \<*> pExpr p expr\'
+@
+
+
+@    bVar (Var str)                 = Var \<$> pure str
+@
+
+\[\*\] However, tuples for example are not @Traversable@ (since they don't have the appropriate kind)
+so instead of @traverse@ one can use a function like this:
+
+@traverseTuple fa fb (a, b) = (,) \<$> fa a \<*> fb b
+
+bConstr (Constr a b) = Constr \<$> traverseTuple (pTypeOfA p) (pTypeOfB p) (a, b)
+@
+
+OR
+simply add tuples for the plate definition, just like @Expr@ or @Decl@.
+This also can be done for @List, Maybe@, etc., and then the @traverse@ functions can be replaced with @\<$>:@, @\<*>:@,
+and generic functions defined in this module can be used for these too.
+
+\----------------------------------------
+
+4\. Using multiplate
+
+In a given program:
+
+@var a = 1;
+function func(arg1, arg2){
+  return a + arg1
+}
+@
+
+and its representation:
+
+@prog :: Prog ()
+prog = Prog () [VarDecl (Var \"a\") (Number 1)
+               ,FunDecl (Var \"func\") [(Var \"arg1\"), (Var \"arg2\")]
+                    [Return (Add (Ref \"a\") (Ref \"arg1\"))]]
+@
+
+to get the list of variables one has to define a plate by
+updating another plate containing defaults for all types (@purePlate@) by
+modifying the field that correpsondes to 'Var' data type.
+Then create another plate where the order of traversal is set (@preorderFold@),
+and finally call 'gfoldFor' with the plate we defined, and then with the actual data type.
+Without this module instead of 'gfoldFor' one can only use @foldFor@,
+which requires an extra argument (a projector), which corresponds to the root datatype:
+in this case it's @pProg@ because our program has a 'Prog' data type.
+But 'gfoldFor', 'gtraverseFor', etc. can be used with any data type,
+because in the 'IsProjector' instances we already defined what it's projector is.
+
+@
+variablesPlate :: Plate (Constant [String])
+variablesPlate = preorderFold purePlate { pVar = (\(Var str) -> Constant [str]) }
+
+vars :: (IsProjector Plate a) => a -> [String]
+vars  x = gfoldFor       variablesPlate x
+
+vars' :: Prog a -> [String]
+vars' x =  foldFor pProg variablesPlate x
+@
+
+@> vars prog
+[\"a\",\"func\",\"arg1\",\"arg2\"]
+@
+
+\----------------------------------------
+
+All of this code is included in the source at the end of this file for easier copying.
+
+Multiplate documentation: <http://hackage.haskell.org/package/multiplate>
+
+-}
+
+
+module Data.Generics.Multiplate.Simplified where
+
+import Data.Generics.Multiplate
+import Data.Functor.Identity
+import Data.Functor.Constant
+import Data.Functor.Compose
+import Data.Monoid
+
+class (Multiplate p) => IsProjector p a where
+    getProjector :: p appl -> a -> Projector p a
+
+
+--traverseFor :: (Multiplate p) => Projector p a -> p Identity -> a -> a
+--traverseFor proj f = runIdentity . proj f
+gtraverseFor :: (IsProjector p a) => p Identity -> a -> a
+gtraverseFor f a = traverseFor (getProjector f a) f a
+
+--traverseMFor :: (Multiplate p, Monad m) => Projector p a -> p m -> a -> m a
+--traverseMFor proj f = proj f
+gtraverseMFor :: (IsProjector p a, Monad m) => p m -> a -> m a
+gtraverseMFor f a = traverseMFor (getProjector f a) f a
+
+--foldFor :: (Multiplate p) => Projector p a -> p (Constant o) -> a -> o
+--foldFor proj f = getConstant . proj f
+gfoldFor :: (IsProjector p a) => p (Constant o) -> a -> o
+gfoldFor f a = foldFor (getProjector f a) f a
+
+--unwrapFor :: (Multiplate p) => (o -> b) -> Projector p a -> p (Constant o) -> a -> b
+--unwrapFor unwrapper proj f = unwrapper . foldFor proj f
+gunwrapFor :: (IsProjector p a) => (o -> b) -> p (Constant o) -> a -> b
+gunwrapFor unwrapper f a = unwrapFor unwrapper (getProjector f a) f a
+
+
+gsumFor     :: (IsProjector p a) => p (Constant (Sum n)) -> a -> n
+gsumFor     = gunwrapFor getSum
+
+gproductFor :: (IsProjector p a) => p (Constant (Product n)) -> a -> n
+gproductFor = gunwrapFor getProduct
+
+gallFor     :: (IsProjector p a) => p (Constant All) -> a -> Bool
+gallFor     = gunwrapFor getAll
+
+ganyFor     :: (IsProjector p a) => p (Constant Any) -> a -> Bool
+ganyFor     = gunwrapFor getAny
+
+gfirstFor   :: (IsProjector p a) => p (Constant (First b)) -> a -> Maybe b
+gfirstFor   = gunwrapFor getFirst
+
+glastFor    :: (IsProjector p a) => p (Constant (Last b)) -> a -> Maybe b
+glastFor    = gunwrapFor getLast
+
+
+
+{-
+
+{-# LANGUAGE Rank2Types, MultiParamTypeClasses #-}
+
+import Data.Generics.Multiplate
+import Data.Generics.Multiplate.Simplified
+import Data.Functor.Identity
+import Data.Functor.Constant
+import Data.Functor.Compose
+import Data.Monoid
+import Data.Traversable
+import Control.Applicative
+--import Control.Monad
+--import Control.Monad.Trans.Maybe
+--import Control.Newtype
+
+
+
+data Prog a = Prog a [Decl]
+
+data Decl = VarDecl Var Expr
+          | FunDecl Var [Var] [Decl]
+          | Return Expr
+
+data Expr = Ref String
+          | Number Int
+          | Add Expr Expr
+          | Mul Expr Expr
+
+data Var = Var String
+
+
+
+data Plate f = Plate
+  { pProg :: forall a. Prog a -> f (Prog a)
+  , pDecl :: Decl -> f Decl
+  , pExpr :: Expr -> f Expr
+  , pVar  :: Var  -> f Var
+  }
+
+
+
+instance IsProjector Plate (Prog a) where
+  getProjector _ _ = pProg
+
+instance IsProjector Plate Decl where
+  getProjector _ _ = pDecl
+
+instance IsProjector Plate Expr where
+  getProjector _ _ = pExpr
+
+instance IsProjector Plate Var where
+  getProjector _ _ = pVar
+
+
+
+
+instance Multiplate Plate where
+
+  mkPlate build = Plate (build pProg) (build pDecl) (build pExpr) (build pVar)
+
+  multiplate p  = Plate bProg bDecl bExpr bVar where
+
+   -- you have to define these here to capture the 'p' parameter
+   constr <$>: a = constr <$> (getProjector p a) p a
+   appl   <*>: a = appl   <*> (getProjector p a) p a
+   infixl 4 <$>:
+   infixl 4 <*>:
+
+   -- definitions
+
+   -- lists, maybe values, etc. have a Traversable instance, which has to be used for these [*]
+
+   bProg (Prog a decls)           = Prog <$> pure a <*> traverse (pDecl p) decls
+
+   bDecl (VarDecl var expr)       = VarDecl <$>: var <*>: expr
+   -- bDecl (VarDecl str expr)    = VarDecl <$> pVar p var <*> pExpr p expr
+
+   bDecl (FunDecl var vars decls) = FunDecl <$>: var <*> traverse (pVar p) vars <*> traverse (pDecl p) decls
+
+   bDecl (Return expr)            = Return <$>: expr
+   -- bDecl (Return expr)         = Return <$> pExpr p expr
+
+   bExpr (Ref str)                = Ref <$> pure str
+
+   bExpr (Number int)             = Number <$> pure int
+
+   bExpr (Add expr expr')         = Add <$>: expr <*>: expr'
+   -- bExpr (Add expr expr')      = Add <$> pExpr p expr <*> pExpr p expr'
+
+   bExpr (Mul expr expr')         = Mul <$>: expr <*>: expr'
+   -- bExpr (Mul expr expr')      = Mul <$> pExpr p expr <*> pExpr p expr'
+
+   bVar (Var str)                 = Var <$> pure str
+
+
+-- var a = 1;
+-- function func(arg1, arg2){
+--   return a + arg1
+-- }
+
+
+-- prog :: Prog ()
+prog = Prog () [VarDecl (Var "a") (Number 1)
+               ,FunDecl (Var "func") [(Var "arg1"), (Var "arg2")]
+                    [Return (Add (Ref "a") (Ref "arg1"))]]
+
+-- variablesPlate :: Plate (Constant [String])
+variablesPlate = preorderFold purePlate { pVar = (\(Var str) -> Constant [str]) }
+
+vars  x = gfoldFor       variablesPlate x
+vars' x =  foldFor pProg variablesPlate x
+
+-}
+</pre></br><h2>printed</h2></br><pre>{-# LANGUAGE MultiParamTypeClasses #-}
+
+{-|
+0\. Given these data types for a simple language:
+
+@data Prog a = Prog a [Decl]
+
+data Decl = VarDecl Var Expr
+          | FunDecl Var [Var] [Decl]
+          | Return Expr
+
+data Expr = Ref String
+          | Number Int
+          | Add Expr Expr
+          | Mul Expr Expr
+
+data Var = Var String
+@
+
+\----------------------------------------
+
+1\. Define a @Plate f@ data type
+
+The name of the fields should refer to the actual data type: they will be prefixed with a \"p\" here.
+These field accessors are called projectors for the given plate and the actual data type (see the @Projector p a@ type alias).
+You have to use projectors to provide definition for the @multiplate@ method, and also for functions like @foldFor@.
+With this module, you only need projectors for the 'IsProjector' instance definition.
+(However you do have to use projectors anyway if @List, Maybe, (,)@, etc. are not part of the plate,
+in which case you have to explicitly traverse them to expose their structure to Multiplate. See: point 3.)
+
+@data Plate f = Plate
+  { pProg :: forall a. Prog a -> f (Prog a)
+  , pDecl :: Decl -> f Decl
+  , pExpr :: Expr -> f Expr
+  , pVar  :: Var  -> f Var
+  }
+@
+
+\----------------------------------------
+
+2\. Define 'IsProjector' instances for @Plate@ and all the actual data types
+
+@instance IsProjector Plate (Prog a) where
+  getProjector _ _ = pProg
+
+instance IsProjector Plate Decl where
+  getProjector _ _ = pDecl
+
+instance IsProjector Plate Expr where
+  getProjector _ _ = pExpr
+
+instance IsProjector Plate Var where
+  getProjector _ _ = pVar
+@
+
+\----------------------------------------
+
+3\. Define a single @Multiplate@ instance for @Plate@
+
+Definitions required without this module are given in the comments.
+(The \"b\" prefixes in functions stand for \"build\".)
+
+@
+instance Multiplate Plate where
+  mkPlate build = Plate (build pProg) (build pDecl) (build pExpr) (build pVar)
+  multiplate p  = Plate bProg bDecl bExpr bVar where
+@
+
+@    \-- you have to define these here to capture the \'p\' parameter
+    constr \<$>: a = constr \<$> (getProjector p a) p a
+    appl   \<*>: a = appl   \<*> (getProjector p a) p a
+    infixl 4 \<$>:
+    infixl 4 \<*>:
+@
+
+@
+    \-- definitions:
+@
+
+@    \-- lists, maybe values, etc. have a Traversable instance, which has to be used for these \[\*\]
+    bProg (Prog a decls)           = Prog \<$> pure a \<*> traverse (pDecl p) decls
+@
+
+@    bDecl (VarDecl var expr)       = VarDecl \<$>: var \<*>: expr
+    \-- bDecl (VarDecl str expr)    = VarDecl \<$> pVar p var \<*> pExpr p expr
+    bDecl (FunDecl var vars decls) = FunDecl \<$>: var \<*> traverse (pVar p) vars \<*> traverse (pDecl p) decls
+    bDecl (Return expr)            = Return \<$>: expr
+    \-- bDecl (Return expr)         = Return \<$> pExpr p expr
+@
+
+@    bExpr (Ref str)                = Ref \<$> pure str
+    bExpr (Number int)             = Number \<$> pure int
+    bExpr (Add expr expr\')         = Add \<$>: expr \<*>: expr\'
+    \-- bExpr (Add expr expr\')      = Add \<$> pExpr p expr \<*> pExpr p expr\'
+    bExpr (Mul expr expr\')         = Mul \<$>: expr \<*>: expr\'
+    \-- bExpr (Mul expr expr\')      = Mul \<$> pExpr p expr \<*> pExpr p expr\'
+@
+
+
+@    bVar (Var str)                 = Var \<$> pure str
+@
+
+\[\*\] However, tuples for example are not @Traversable@ (since they don't have the appropriate kind)
+so instead of @traverse@ one can use a function like this:
+
+@traverseTuple fa fb (a, b) = (,) \<$> fa a \<*> fb b
+
+bConstr (Constr a b) = Constr \<$> traverseTuple (pTypeOfA p) (pTypeOfB p) (a, b)
+@
+
+OR
+simply add tuples for the plate definition, just like @Expr@ or @Decl@.
+This also can be done for @List, Maybe@, etc., and then the @traverse@ functions can be replaced with @\<$>:@, @\<*>:@,
+and generic functions defined in this module can be used for these too.
+
+\----------------------------------------
+
+4\. Using multiplate
+
+In a given program:
+
+@var a = 1;
+function func(arg1, arg2){
+  return a + arg1
+}
+@
+
+and its representation:
+
+@prog :: Prog ()
+prog = Prog () [VarDecl (Var \"a\") (Number 1)
+               ,FunDecl (Var \"func\") [(Var \"arg1\"), (Var \"arg2\")]
+                    [Return (Add (Ref \"a\") (Ref \"arg1\"))]]
+@
+
+to get the list of variables one has to define a plate by
+updating another plate containing defaults for all types (@purePlate@) by
+modifying the field that correpsondes to 'Var' data type.
+Then create another plate where the order of traversal is set (@preorderFold@),
+and finally call 'gfoldFor' with the plate we defined, and then with the actual data type.
+Without this module instead of 'gfoldFor' one can only use @foldFor@,
+which requires an extra argument (a projector), which corresponds to the root datatype:
+in this case it's @pProg@ because our program has a 'Prog' data type.
+But 'gfoldFor', 'gtraverseFor', etc. can be used with any data type,
+because in the 'IsProjector' instances we already defined what it's projector is.
+
+@
+variablesPlate :: Plate (Constant [String])
+variablesPlate = preorderFold purePlate { pVar = (\(Var str) -> Constant [str]) }
+
+vars :: (IsProjector Plate a) => a -> [String]
+vars  x = gfoldFor       variablesPlate x
+
+vars' :: Prog a -> [String]
+vars' x =  foldFor pProg variablesPlate x
+@
+
+@> vars prog
+[\"a\",\"func\",\"arg1\",\"arg2\"]
+@
+
+\----------------------------------------
+
+All of this code is included in the source at the end of this file for easier copying.
+
+Multiplate documentation: <http://hackage.haskell.org/package/multiplate>
+
+-}
+
+
+module Data.Generics.Multiplate.Simplified where
+
+import Data.Generics.Multiplate
+import Data.Functor.Identity
+import Data.Functor.Constant
+import Data.Functor.Compose
+import Data.Monoid
+
+class (Multiplate p) => IsProjector p a where
+    getProjector :: p appl -> a -> Projector p a
+
+
+--traverseFor :: (Multiplate p) => Projector p a -> p Identity -> a -> a
+--traverseFor proj f = runIdentity . proj f
+gtraverseFor :: (IsProjector p a) => p Identity -> a -> a
+gtraverseFor f a = traverseFor (getProjector f a) f a
+
+--traverseMFor :: (Multiplate p, Monad m) => Projector p a -> p m -> a -> m a
+--traverseMFor proj f = proj f
+gtraverseMFor :: (IsProjector p a, Monad m) => p m -> a -> m a
+gtraverseMFor f a = traverseMFor (getProjector f a) f a
+
+--foldFor :: (Multiplate p) => Projector p a -> p (Constant o) -> a -> o
+--foldFor proj f = getConstant . proj f
+gfoldFor :: (IsProjector p a) => p (Constant o) -> a -> o
+gfoldFor f a = foldFor (getProjector f a) f a
+
+--unwrapFor :: (Multiplate p) => (o -> b) -> Projector p a -> p (Constant o) -> a -> b
+--unwrapFor unwrapper proj f = unwrapper . foldFor proj f
+gunwrapFor :: (IsProjector p a) => (o -> b) -> p (Constant o) -> a -> b
+gunwrapFor unwrapper f a = unwrapFor unwrapper (getProjector f a) f a
+
+
+gsumFor     :: (IsProjector p a) => p (Constant (Sum n)) -> a -> n
+gsumFor     = gunwrapFor getSum
+
+gproductFor :: (IsProjector p a) => p (Constant (Product n)) -> a -> n
+gproductFor = gunwrapFor getProduct
+
+gallFor     :: (IsProjector p a) => p (Constant All) -> a -> Bool
+gallFor     = gunwrapFor getAll
+
+ganyFor     :: (IsProjector p a) => p (Constant Any) -> a -> Bool
+ganyFor     = gunwrapFor getAny
+
+gfirstFor   :: (IsProjector p a) => p (Constant (First b)) -> a -> Maybe b
+gfirstFor   = gunwrapFor getFirst
+
+glastFor    :: (IsProjector p a) => p (Constant (Last b)) -> a -> Maybe b
+glastFor    = gunwrapFor getLast
+
+
+
+{-
+
+{-# LANGUAGE Rank2Types, MultiParamTypeClasses #
+
+import Data.Generics.Multiplate
+import Data.Generics.Multiplate.Simplified
+import Data.Functor.Identity
+import Data.Functor.Constant
+import Data.Functor.Compose
+import Data.Monoid
+import Data.Traversable
+import Control.Applicative
+--import Control.Monad
+--import Control.Monad.Trans.Maybe
+--import Control.Newtype
+
+
+
+data Prog a = Prog a [Decl]
+
+data Decl = VarDecl Var Expr
+          | FunDecl Var [Var] [Decl]
+          | Return Expr
+
+data Expr = Ref String
+          | Number Int
+          | Add Expr Expr
+          | Mul Expr Expr
+
+data Var = Var String
+
+
+
+data Plate f = Plate
+  { pProg :: forall a. Prog a -> f (Prog a)
+  , pDecl :: Decl -> f Decl
+  , pExpr :: Expr -> f Expr
+  , pVar  :: Var  -> f Var
+  }
+
+
+
+instance IsProjector Plate (Prog a) where
+  getProjector _ _ = pProg
+
+instance IsProjector Plate Decl where
+  getProjector _ _ = pDecl
+
+instance IsProjector Plate Expr where
+  getProjector _ _ = pExpr
+
+instance IsProjector Plate Var where
+  getProjector _ _ = pVar
+
+
+
+
+instance Multiplate Plate where
+
+  mkPlate build = Plate (build pProg) (build pDecl) (build pExpr) (build pVar)
+
+  multiplate p  = Plate bProg bDecl bExpr bVar where
+
+   -- you have to define these here to capture the 'p' parameter
+   constr <$>: a = constr <$> (getProjector p a) p a
+   appl   <*>: a = appl   <*> (getProjector p a) p a
+   infixl 4 <$>:
+   infixl 4 <*>:
+
+   -- definitions
+
+   -- lists, maybe values, etc. have a Traversable instance, which has to be used for these [*]
+
+   bProg (Prog a decls)           = Prog <$> pure a <*> traverse (pDecl p) decls
+
+   bDecl (VarDecl var expr)       = VarDecl <$>: var <*>: expr
+   -- bDecl (VarDecl str expr)    = VarDecl <$> pVar p var <*> pExpr p expr
+
+   bDecl (FunDecl var vars decls) = FunDecl <$>: var <*> traverse (pVar p) vars <*> traverse (pDecl p) decls
+
+   bDecl (Return expr)            = Return <$>: expr
+   -- bDecl (Return expr)         = Return <$> pExpr p expr
+
+   bExpr (Ref str)                = Ref <$> pure str
+
+   bExpr (Number int)             = Number <$> pure int
+
+   bExpr (Add expr expr')         = Add <$>: expr <*>: expr'
+   -- bExpr (Add expr expr')      = Add <$> pExpr p expr <*> pExpr p expr'
+
+   bExpr (Mul expr expr')         = Mul <$>: expr <*>: expr'
+   -- bExpr (Mul expr expr')      = Mul <$> pExpr p expr <*> pExpr p expr'
+
+   bVar (Var str)                 = Var <$> pure str
+
+
+-- var a = 1;
+-- function func(arg1, arg2){
+--   return a + arg1
+-- }
+
+
+-- prog :: Prog ()
+prog = Prog () [VarDecl (Var "a") (Number 1)
+               ,FunDecl (Var "func") [(Var "arg1"), (Var "arg2")]
+                    [Return (Add (Ref "a") (Ref "arg1"))]]
+
+-- variablesPlate :: Plate (Constant [String])
+variablesPlate = preorderFold purePlate { pVar = (\(Var str) -> Constant [str]) }
+
+vars  x = gfoldFor       variablesPlate x
+vars' x =  foldFor pProg variablesPlate x
+
+-}
+
+</pre>

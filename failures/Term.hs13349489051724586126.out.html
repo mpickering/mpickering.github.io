@@ -1,0 +1,182 @@
+<a href="Templates.hs784170963454233502.out.html">prev</a></br><a href="failures.html">home</a></br><a href="Term.hs195400260589673557.out.html">next</a></br></br><pre>16c16
+<         showComp :: Bool → Term → String
+---
+>         showComp :: Bool -> Term -> String
+18d17
+<             App (App e1 e2) e3 → maybeWrap $ show e1 ⧺ diverge e2 ⧺ diverge e3
+19d17
+<             App e1 e2 → maybeWrap $ diverge e1 ⧺ diverge e2
+20c18
+<             Var v → [v]
+---
+>             App (App e1 e2) e3 -> maybeWrap $ show e1 ⧺ diverge e2 ⧺ diverge e3
+20a19
+>             App e1 e2 -> maybeWrap $ diverge e1 ⧺ diverge e2
+20a20
+>             Var v -> [v]
+25c25
+< parse ∷ Parser a → String → (a, [Error LineCol])
+---
+> parse :: Parser a -> String -> (a, [Error LineCol])
+28c28
+< var ∷ Parser Term
+---
+> var :: Parser Term
+31c31
+< term ∷ Parser Term
+---
+> term :: Parser Term
+35c35
+< pImport ∷ Parser Import
+---
+> pImport :: Parser Import
+38c38
+< ruleset ∷ Parser ([Import], [(Term,Term)])
+---
+> ruleset :: Parser ([Import], [(Term,Term)])
+41c41
+< rule ∷ Parser (Term,Term)
+---
+> rule :: Parser (Term,Term)
+46c46
+< newlines ∷ Parser ()
+---
+> newlines :: Parser ()
+49c49
+< ε ∷ Parser () -- spaces
+---
+> ε :: Parser () -- spaces
+52c52
+< arrow ∷ Parser String
+---
+> arrow :: Parser String
+55c55
+< alphaNum ∷ Parser Char
+---
+> alphaNum :: Parser Char
+58c58
+< asciiPrintable ∷ Parser Char
+---
+> asciiPrintable :: Parser Char
+59a60
+> 
+</pre></br><h2>original</h2></br><pre>{-# LANGUAGE UnicodeSyntax, FlexibleContexts, Rank2Types #-}
+module Term where
+
+import Prelude.Unicode
+import Text.ParserCombinators.UU as UU
+import Text.ParserCombinators.UU.Utils as UU
+import Text.ParserCombinators.UU.BasicInstances as UU
+
+
+data Term = App Term Term | Var Char deriving (Ord, Eq)
+
+type Import = FilePath
+
+instance Show Term where
+    show = showComp False where
+        showComp :: Bool → Term → String
+        showComp isComponent expr = case expr of
+            App (App e1 e2) e3 → maybeWrap $ show e1 ⧺ diverge e2 ⧺ diverge e3
+            App e1 e2 → maybeWrap $ diverge e1 ⧺ diverge e2
+            Var v → [v]
+            where
+            maybeWrap str = if isComponent then "(" ⧺ str ⧺ ")" else str
+            diverge = showComp True
+
+parse ∷ Parser a → String → (a, [Error LineCol])
+parse p inp = UU.parse ((,) <$> p <*> pEnd) (createStr (LineCol 0 0) inp)
+
+var ∷ Parser Term
+var = Var <$> alphaNum <?> "variable"
+
+term ∷ Parser Term
+term = foldl1 App <$> pList1 (var <|> parens term) <?> "term"
+    where parens p = pSym '(' *> p <* pSym ')'
+
+pImport ∷ Parser Import
+pImport = pToken "import" *>ε*> pList1 asciiPrintable
+
+ruleset ∷ Parser ([Import], [(Term,Term)])
+ruleset = (,) <$> pList (pImport <* newlines) <*> pList1 (rule <* newlines)
+
+rule ∷ Parser (Term,Term)
+rule = (,) <$> term <*ε<* arrow <*ε<*> term
+
+-- primitive parsers
+
+newlines ∷ Parser ()
+newlines = pMunch (`elem` "\n\r") *> pure ()
+
+ε ∷ Parser () -- spaces
+ε = pMunch (`elem` "\t ") *> pure ()
+
+arrow ∷ Parser String
+arrow = pToken "->" <|> pToken "→" <?> "arrow"
+
+alphaNum ∷ Parser Char
+alphaNum = pLetter <|> pDigit <?> "alphaNum"
+
+asciiPrintable ∷ Parser Char
+asciiPrintable = pRange ('!', '~')
+</pre></br><h2>printed</h2></br><pre>{-# LANGUAGE UnicodeSyntax, FlexibleContexts, Rank2Types #-}
+module Term where
+
+import Prelude.Unicode
+import Text.ParserCombinators.UU as UU
+import Text.ParserCombinators.UU.Utils as UU
+import Text.ParserCombinators.UU.BasicInstances as UU
+
+
+data Term = App Term Term | Var Char deriving (Ord, Eq)
+
+type Import = FilePath
+
+instance Show Term where
+    show = showComp False where
+        showComp :: Bool -> Term -> String
+        showComp isComponent expr = case expr of
+            App (App e1 e2) e3 -> maybeWrap $ show e1 ⧺ diverge e2 ⧺ diverge e3
+            App e1 e2 -> maybeWrap $ diverge e1 ⧺ diverge e2
+            Var v -> [v]
+            where
+            maybeWrap str = if isComponent then "(" ⧺ str ⧺ ")" else str
+            diverge = showComp True
+
+parse :: Parser a -> String -> (a, [Error LineCol])
+parse p inp = UU.parse ((,) <$> p <*> pEnd) (createStr (LineCol 0 0) inp)
+
+var :: Parser Term
+var = Var <$> alphaNum <?> "variable"
+
+term :: Parser Term
+term = foldl1 App <$> pList1 (var <|> parens term) <?> "term"
+    where parens p = pSym '(' *> p <* pSym ')'
+
+pImport :: Parser Import
+pImport = pToken "import" *>ε*> pList1 asciiPrintable
+
+ruleset :: Parser ([Import], [(Term,Term)])
+ruleset = (,) <$> pList (pImport <* newlines) <*> pList1 (rule <* newlines)
+
+rule :: Parser (Term,Term)
+rule = (,) <$> term <*ε<* arrow <*ε<*> term
+
+-- primitive parsers
+
+newlines :: Parser ()
+newlines = pMunch (`elem` "\n\r") *> pure ()
+
+ε :: Parser () -- spaces
+ε = pMunch (`elem` "\t ") *> pure ()
+
+arrow :: Parser String
+arrow = pToken "->" <|> pToken "→" <?> "arrow"
+
+alphaNum :: Parser Char
+alphaNum = pLetter <|> pDigit <?> "alphaNum"
+
+asciiPrintable :: Parser Char
+asciiPrintable = pRange ('!', '~')
+
+</pre>

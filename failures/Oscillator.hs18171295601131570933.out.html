@@ -1,0 +1,828 @@
+<a href="Oscillator.hs172315317770982397.out.html">prev</a></br><a href="failures.html">home</a></br><a href="Oscillator.hs6441594889688008.out.html">next</a></br></br><pre>278c278
+< {-# INLINE shapeFreqModSample #-}
+---
+> {-# INLINE shapeFreqModSample #
+285c285
+<                    {- v shape control -}
+---
+>                    {- v shape control 
+287c287
+<                    {- v frequency control -}
+---
+>                    {- v frequency control 
+318d317
+<          \shapes freqs ->
+319d317
+<             osci
+320d317
+<             `CausalD.applyFlatFst`
+321d317
+<             shapes
+322d317
+<             `CausalD.apply`
+323c318
+<             freqs)
+---
+>                        ->shapes freqs ->
+323a319
+>                            osci
+323a320
+>                            `CausalD.applyFlatFst`
+323a321
+>                            shapes
+323a322
+>                            `CausalD.apply`
+323a323
+>                            freqs)
+351d350
+<          \shapes phaseDistort freqs ->
+352d350
+<             (osci CausalD.<<^ MapD.packTriple)
+353d350
+<             `CausalD.applyFlatFst`
+354d350
+<             shapes
+355d350
+<             `CausalD.applyFlatFst`
+356d350
+<             phaseDistort
+357d350
+<             `CausalD.apply`
+358c351
+<             freqs)
+---
+>                                     ->shapes phaseDistort freqs ->
+358a352
+>                                         (osci CausalD.<<^ MapD.packTriple)
+358a353
+>                                         `CausalD.applyFlatFst`
+358a354
+>                                         shapes
+358a355
+>                                         `CausalD.applyFlatFst`
+358a356
+>                                         phaseDistort
+358a357
+>                                         `CausalD.apply`
+358a358
+>                                         freqs)
+378a379
+> 
+</pre></br><h2>original</h2></br><pre>{-# LANGUAGE NoImplicitPrelude #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE FunctionalDependencies #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE FlexibleContexts #-}
+{- |
+Copyright   :  (c) Henning Thielemann 2008, 2009
+License     :  GPL
+
+Maintainer  :  synthesizer@henning-thielemann.de
+Stability   :  provisional
+Portability :  requires multi-parameter type classes
+
+-}
+module Synthesizer.Dimensional.Rate.Oscillator (
+   {- * Oscillators with constant waveforms -}
+   static,
+   staticAntiAlias,
+   freqMod,
+   freqModAntiAlias,
+   phaseMod,
+   phaseFreqMod,
+   shapeMod,
+   shapeFreqMod,
+   staticSample,
+   freqModSample,
+--   shapeFreqModSample,
+   shapeFreqModFromSampledTone,
+   shapePhaseFreqModFromSampledTone,
+   ) where
+
+import qualified Synthesizer.Dimensional.Abstraction.HomogeneousGen as Hom
+import qualified Synthesizer.Dimensional.Abstraction.Flat as Flat
+
+import qualified Synthesizer.Dimensional.Amplitude as Amp
+import qualified Synthesizer.Dimensional.RatePhantom as RP
+import qualified Synthesizer.Dimensional.RateWrapper as SigP
+
+import qualified Synthesizer.State.Oscillator as Osci
+import qualified Synthesizer.State.Signal as Sig
+
+import qualified Synthesizer.Dimensional.Causal.Process as CausalD
+import qualified Synthesizer.Dimensional.Causal.Oscillator as OsciC
+import qualified Synthesizer.Dimensional.Map as MapD
+
+import qualified Synthesizer.Generic.Signal as SigG
+
+import qualified Synthesizer.Basic.WaveSmoothed as WaveSmooth
+import qualified Synthesizer.Basic.Wave         as Wave
+import qualified Synthesizer.Basic.Phase        as Phase
+
+import qualified Synthesizer.Dimensional.Straight.Signal as SigS
+import qualified Synthesizer.Dimensional.Cyclic.Signal as SigC
+
+import qualified Synthesizer.Dimensional.Amplitude.Signal as SigA
+import qualified Synthesizer.Dimensional.Process as Proc
+import Synthesizer.Dimensional.Process (toFrequencyScalar, )
+
+import qualified Synthesizer.Interpolation as Interpolation
+
+import qualified Number.DimensionTerm        as DN
+import qualified Algebra.DimensionTerm       as Dim
+-- import Number.DimensionTerm ((&*&))
+
+import qualified Algebra.RealField          as RealField
+import qualified Algebra.Field              as Field
+
+-- import NumericPrelude
+import PreludeBase as P
+
+{- |
+This class is similar to the Homogeneous class
+in the implementation,
+but it is even more strict semantically.
+It requires that values from the waveform
+go untouched to the output signal,
+whereas Homogeneous class still allows homogeneous
+(aka amplitude-unit-independent) operations.
+
+We could use the Homogeneous constraints
+immediately in the oscillator functions,
+but with the functional dependencies
+we get more from type inference.
+This way, the compiler knows,
+that when we apply an oscillator to a flat wave,
+that we want a flat signal as output.
+-}
+class (Hom.C amp (Wave.T t) wave, Hom.C amp Sig.T signal) =>
+      Simple amp t wave signal
+      | wave -> t, signal t -> wave, wave -> signal,
+        signal -> amp, wave -> amp where
+
+instance Simple CausalD.Flat t (Wave.T t) (SigS.T Sig.T) where
+
+instance (Amp.C amp) =>
+   Simple amp t (SigA.T amp (Wave.T t)) (SigA.T amp (SigS.T Sig.T)) where
+
+
+class (Hom.C amp (WaveSmooth.T t) wave, Hom.C amp Sig.T signal) =>
+      Smooth amp t wave signal
+      | wave -> t, signal t -> wave, wave -> signal,
+        signal -> amp, wave -> amp where
+
+instance Smooth CausalD.Flat t (WaveSmooth.T t) (SigS.T Sig.T) where
+
+instance (Amp.C amp) =>
+   Smooth amp t (SigA.T amp (WaveSmooth.T t)) (SigA.T amp (SigS.T Sig.T)) where
+
+
+withWave ::
+   (Hom.C amp waveStore wave, Hom.C amp Sig.T sig) =>
+   wave y -> (waveStore y -> Sig.T y) -> RP.T s sig y
+withWave w f =
+   RP.fromSignal $ Hom.plainProcessSamples f w
+
+
+{- * Oscillators with constant waveforms -}
+
+{- | oscillator with a functional waveform with constant frequency -}
+{-# INLINE static #-}
+static ::
+   (RealField.C t, Dim.C u,
+    Simple amp t wave sig) =>
+      wave y       {- ^ waveform -}
+   -> Phase.T t    {- ^ start phase -}
+   -> DN.T (Dim.Recip u) t
+                   {- ^ frequency -}
+   -> Proc.T s u t (RP.T s sig y)
+static wave phase =
+   staticAux (\freq -> withWave wave $ \w -> Osci.static w phase freq)
+
+{- | oscillator with a functional waveform with constant frequency -}
+{-# INLINE staticAntiAlias #-}
+staticAntiAlias ::
+   (RealField.C t, Dim.C u,
+    Smooth amp t wave sig) =>
+      wave y
+                   {- ^ waveform -}
+   -> Phase.T t    {- ^ start phase -}
+   -> DN.T (Dim.Recip u) t
+                   {- ^ frequency -}
+   -> Proc.T s u t (RP.T s sig y)
+staticAntiAlias wave phase =
+   staticAux (\freq -> withWave wave $ \w -> Osci.staticAntiAlias w phase freq)
+
+{- | oscillator with a functional waveform with modulated frequency -}
+{-# INLINE freqMod #-}
+freqMod ::
+   (RealField.C t, Dim.C u,
+    Simple amp t wave sig) =>
+      wave y       {- ^ waveform -}
+   -> Phase.T t    {- ^ start phase -}
+   -> Proc.T s u t (
+        SigA.R s (Dim.Recip u) t t
+                   {- v frequency control -}
+     -> RP.T s sig y)
+freqMod wave phase =
+   freqModAux (\t -> withWave wave $ \w -> Osci.freqMod w phase t)
+
+{- | oscillator with a functional waveform with modulated frequency -}
+{-# INLINE freqModAntiAlias #-}
+freqModAntiAlias ::
+   (RealField.C t, Dim.C u,
+    Smooth amp t wave sig) =>
+      wave y
+                   {- ^ waveform -}
+   -> Phase.T t    {- ^ start phase -}
+   -> Proc.T s u t (
+        SigA.R s (Dim.Recip u) t t
+                   {- v frequency control -}
+     -> RP.T s sig y)
+freqModAntiAlias wave phase =
+   freqModAux (\t -> withWave wave $ \w -> Osci.freqModAntiAlias w phase t)
+
+{- | oscillator with modulated phase -}
+{-# INLINE phaseMod #-}
+phaseMod ::
+   (Flat.C flat t, RealField.C t, Dim.C u,
+    Simple amp t wave sig) =>
+      wave y       {- ^ waveform -}
+   -> DN.T (Dim.Recip u) t
+                   {- ^ frequency -}
+   -> Proc.T s u t (
+        RP.T s flat t
+                   {- v phase modulation, phases must have no unit -}
+     -> RP.T s sig y)
+phaseMod wave =
+   staticAux (\freq sig ->
+      withWave wave $ \w -> Osci.phaseMod w freq . Flat.toSamples $ sig)
+
+{- | oscillator with modulated shape -}
+{-# INLINE shapeMod #-}
+shapeMod ::
+   (Flat.C flat c, RealField.C t, Dim.C u) =>
+      (c -> Wave.T t y)
+                   {- ^ waveform -}
+   -> Phase.T t    {- ^ phase -}
+   -> DN.T (Dim.Recip u) t
+                   {- ^ frequency -}
+   -> Proc.T s u t (
+        RP.T s flat c {- v shape control -}
+     -> SigS.R s y)
+shapeMod wave phase =
+   staticAux (\freq -> SigS.fromSamples . Osci.shapeMod wave phase freq . Flat.toSamples)
+
+
+{- | oscillator with a functional waveform with modulated phase and frequency -}
+{-# INLINE phaseFreqMod #-}
+phaseFreqMod ::
+   (Flat.C flat t, RealField.C t, Dim.C u,
+    Simple amp t wave sig) =>
+      wave y       {- ^ waveform -}
+   -> Proc.T s u t (
+        RP.T s flat t
+                     {- v phase control -}
+     -> SigA.R s (Dim.Recip u) t t
+                     {- v frequency control -}
+     -> RP.T s sig y)
+phaseFreqMod wave =
+   fmap flip $
+      freqModAux (\ freqs phases ->
+         withWave wave $ \w ->
+            Osci.phaseFreqMod w (Flat.toSamples phases) freqs)
+
+{- | oscillator with both shape and frequency modulation -}
+{-# INLINE shapeFreqMod #-}
+shapeFreqMod :: (Flat.C flat c, RealField.C t, Dim.C u) =>
+      (c -> Wave.T t y)
+                   {- ^ waveform -}
+   -> Phase.T t    {- ^ phase -}
+   -> Proc.T s u t (
+        RP.T s flat c
+                     {- v shape control -}
+     -> SigA.R s (Dim.Recip u) t t
+                     {- v frequency control -}
+     -> SigS.R s y)
+shapeFreqMod wave phase =
+   fmap flip $
+      freqModAux
+         (\ freqs parameters ->
+              SigS.fromSamples $ Osci.shapeFreqMod wave phase (Flat.toSamples parameters) freqs)
+
+
+{- |
+oscillator with a sampled waveform with constant frequency
+This is essentially an interpolation with cyclic padding.
+You can also achieve this with a waveform constructed by 'Wave.sample'.
+-}
+{-# INLINE staticSample #-}
+staticSample :: (RealField.C t, Dim.C u) =>
+      Interpolation.T t y
+   -> SigC.R r y   {- ^ waveform -}
+   -> Phase.T t    {- ^ start phase -}
+   -> DN.T (Dim.Recip u) t
+                   {- ^ frequency -}
+   -> Proc.T s u t (SigS.R s y)
+staticSample ip wave phase =
+   staticAux (SigS.fromSamples . Osci.staticSample ip (SigC.toPeriod wave) phase)
+
+{- |
+oscillator with a sampled waveform with modulated frequency
+Should behave homogenously for different types of interpolation.
+-}
+{-# INLINE freqModSample #-}
+freqModSample :: (RealField.C t, Dim.C u) =>
+      Interpolation.T t y
+   -> SigC.R r y   {- ^ waveform -}
+   -> Phase.T t    {- ^ start phase -}
+   -> Proc.T s u t (
+        SigA.R s (Dim.Recip u) t t
+                   {- v frequency control -}
+     -> SigS.R s y)
+freqModSample ip wave phase =
+   freqModAux (SigS.fromSamples . Osci.freqModSample ip (SigC.toPeriod wave) phase)
+
+
+{-
+{-# INLINE shapeFreqModSample #-}
+shapeFreqModSample :: (RealField.C c, RealField.C t) =>
+      Interpolation.T c (Wave.T t y)
+   -> sig (Wave.T t y)
+   -> c -> Phase.T t
+   -> Proc.T s u t (
+        RP.T s flat c
+                   {- v shape control -}
+     -> SigA.R s (Dim.Recip u) t t
+                   {- v frequency control -}
+     -> SigS.R s y)
+shapeFreqModSample ip waves shape0 phase =
+    uncurry Wave.apply ^<<
+       (InterpolationC.relativeConstantPad ip shape0 waves ***
+        freqsToPhases phase)
+-}
+
+{-# INLINE shapeFreqModFromSampledTone #-}
+shapeFreqModFromSampledTone ::
+    (RealField.C t, SigG.Transform storage yv, Dim.C u,
+     Hom.C amp storage input, Hom.C amp Sig.T output,
+     Flat.C flat t) =>
+      Interpolation.T t yv
+   -> Interpolation.T t yv
+   -> DN.T (Dim.Recip u) t
+                   {- ^ source frequency -}
+   -> SigP.T u t input yv
+   -> t -> Phase.T t
+   -> Proc.T s u t (
+        RP.T s flat t
+                   {- v shape control -}
+     -> SigA.R s (Dim.Recip u) t t
+                   {- v frequency control -}
+     -> RP.T s output yv)
+shapeFreqModFromSampledTone
+      ipLeap ipStep srcFreq sampledTone shape0 phase =
+   flip fmap
+      (OsciC.shapeFreqModFromSampledTone
+         ipLeap ipStep srcFreq sampledTone shape0 phase)
+      (\osci ->
+         \shapes freqs ->
+            osci
+            `CausalD.applyFlatFst`
+            shapes
+            `CausalD.apply`
+            freqs)
+
+
+{-# INLINE shapePhaseFreqModFromSampledTone #-}
+shapePhaseFreqModFromSampledTone ::
+    (RealField.C t, SigG.Transform storage yv, Dim.C u,
+     Hom.C amp storage input, Hom.C amp Sig.T output,
+     Flat.C flatS t, Flat.C flatP t) =>
+      Interpolation.T t yv
+   -> Interpolation.T t yv
+   -> DN.T (Dim.Recip u) t
+                   {- ^ source frequency -}
+   -> SigP.T u t input yv
+   -> t -> Phase.T t
+   -> Proc.T s u t (
+        RP.T s flatS t
+                   {- v shape control -}
+     -> RP.T s flatP t
+                   {- v phase control -}
+     -> SigA.R s (Dim.Recip u) t t
+                   {- v frequency control -}
+     -> RP.T s output yv)
+shapePhaseFreqModFromSampledTone
+      ipLeap ipStep srcFreq sampledTone shape0 phase =
+   flip fmap
+      (OsciC.shapePhaseFreqModFromSampledTone
+         ipLeap ipStep srcFreq sampledTone shape0 phase)
+      (\osci ->
+         \shapes phaseDistort freqs ->
+            (osci CausalD.<<^ MapD.packTriple)
+            `CausalD.applyFlatFst`
+            shapes
+            `CausalD.applyFlatFst`
+            phaseDistort
+            `CausalD.apply`
+            freqs)
+
+
+{-# INLINE freqModAux #-}
+freqModAux :: (Field.C t, Dim.C u) =>
+      (Sig.T t -> c)
+   -> Proc.T s u t (
+        SigA.R s (Dim.Recip u) t t
+     -> c)
+freqModAux f =
+   fmap
+      (\toFreq -> f . SigA.scalarSamples toFreq)
+      (Proc.withParam toFrequencyScalar)
+
+{-# INLINE staticAux #-}
+staticAux :: (Dim.C u, Field.C t) =>
+      (t -> c)
+   -> DN.T (Dim.Recip u) t
+   -> Proc.T s u t c
+staticAux f freq =
+   fmap f (toFrequencyScalar freq)
+</pre></br><h2>printed</h2></br><pre>{-# LANGUAGE NoImplicitPrelude #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE FunctionalDependencies #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE FlexibleContexts #-}
+{- |
+Copyright   :  (c) Henning Thielemann 2008, 2009
+License     :  GPL
+
+Maintainer  :  synthesizer@henning-thielemann.de
+Stability   :  provisional
+Portability :  requires multi-parameter type classes
+
+-}
+module Synthesizer.Dimensional.Rate.Oscillator (
+   {- * Oscillators with constant waveforms -}
+   static,
+   staticAntiAlias,
+   freqMod,
+   freqModAntiAlias,
+   phaseMod,
+   phaseFreqMod,
+   shapeMod,
+   shapeFreqMod,
+   staticSample,
+   freqModSample,
+--   shapeFreqModSample,
+   shapeFreqModFromSampledTone,
+   shapePhaseFreqModFromSampledTone,
+   ) where
+
+import qualified Synthesizer.Dimensional.Abstraction.HomogeneousGen as Hom
+import qualified Synthesizer.Dimensional.Abstraction.Flat as Flat
+
+import qualified Synthesizer.Dimensional.Amplitude as Amp
+import qualified Synthesizer.Dimensional.RatePhantom as RP
+import qualified Synthesizer.Dimensional.RateWrapper as SigP
+
+import qualified Synthesizer.State.Oscillator as Osci
+import qualified Synthesizer.State.Signal as Sig
+
+import qualified Synthesizer.Dimensional.Causal.Process as CausalD
+import qualified Synthesizer.Dimensional.Causal.Oscillator as OsciC
+import qualified Synthesizer.Dimensional.Map as MapD
+
+import qualified Synthesizer.Generic.Signal as SigG
+
+import qualified Synthesizer.Basic.WaveSmoothed as WaveSmooth
+import qualified Synthesizer.Basic.Wave         as Wave
+import qualified Synthesizer.Basic.Phase        as Phase
+
+import qualified Synthesizer.Dimensional.Straight.Signal as SigS
+import qualified Synthesizer.Dimensional.Cyclic.Signal as SigC
+
+import qualified Synthesizer.Dimensional.Amplitude.Signal as SigA
+import qualified Synthesizer.Dimensional.Process as Proc
+import Synthesizer.Dimensional.Process (toFrequencyScalar, )
+
+import qualified Synthesizer.Interpolation as Interpolation
+
+import qualified Number.DimensionTerm        as DN
+import qualified Algebra.DimensionTerm       as Dim
+-- import Number.DimensionTerm ((&*&))
+
+import qualified Algebra.RealField          as RealField
+import qualified Algebra.Field              as Field
+
+-- import NumericPrelude
+import PreludeBase as P
+
+{- |
+This class is similar to the Homogeneous class
+in the implementation,
+but it is even more strict semantically.
+It requires that values from the waveform
+go untouched to the output signal,
+whereas Homogeneous class still allows homogeneous
+(aka amplitude-unit-independent) operations.
+
+We could use the Homogeneous constraints
+immediately in the oscillator functions,
+but with the functional dependencies
+we get more from type inference.
+This way, the compiler knows,
+that when we apply an oscillator to a flat wave,
+that we want a flat signal as output.
+-}
+class (Hom.C amp (Wave.T t) wave, Hom.C amp Sig.T signal) =>
+      Simple amp t wave signal
+      | wave -> t, signal t -> wave, wave -> signal,
+        signal -> amp, wave -> amp where
+
+instance Simple CausalD.Flat t (Wave.T t) (SigS.T Sig.T) where
+
+instance (Amp.C amp) =>
+   Simple amp t (SigA.T amp (Wave.T t)) (SigA.T amp (SigS.T Sig.T)) where
+
+
+class (Hom.C amp (WaveSmooth.T t) wave, Hom.C amp Sig.T signal) =>
+      Smooth amp t wave signal
+      | wave -> t, signal t -> wave, wave -> signal,
+        signal -> amp, wave -> amp where
+
+instance Smooth CausalD.Flat t (WaveSmooth.T t) (SigS.T Sig.T) where
+
+instance (Amp.C amp) =>
+   Smooth amp t (SigA.T amp (WaveSmooth.T t)) (SigA.T amp (SigS.T Sig.T)) where
+
+
+withWave ::
+   (Hom.C amp waveStore wave, Hom.C amp Sig.T sig) =>
+   wave y -> (waveStore y -> Sig.T y) -> RP.T s sig y
+withWave w f =
+   RP.fromSignal $ Hom.plainProcessSamples f w
+
+
+{- * Oscillators with constant waveforms -}
+
+{- | oscillator with a functional waveform with constant frequency -}
+{-# INLINE static #-}
+static ::
+   (RealField.C t, Dim.C u,
+    Simple amp t wave sig) =>
+      wave y       {- ^ waveform -}
+   -> Phase.T t    {- ^ start phase -}
+   -> DN.T (Dim.Recip u) t
+                   {- ^ frequency -}
+   -> Proc.T s u t (RP.T s sig y)
+static wave phase =
+   staticAux (\freq -> withWave wave $ \w -> Osci.static w phase freq)
+
+{- | oscillator with a functional waveform with constant frequency -}
+{-# INLINE staticAntiAlias #-}
+staticAntiAlias ::
+   (RealField.C t, Dim.C u,
+    Smooth amp t wave sig) =>
+      wave y
+                   {- ^ waveform -}
+   -> Phase.T t    {- ^ start phase -}
+   -> DN.T (Dim.Recip u) t
+                   {- ^ frequency -}
+   -> Proc.T s u t (RP.T s sig y)
+staticAntiAlias wave phase =
+   staticAux (\freq -> withWave wave $ \w -> Osci.staticAntiAlias w phase freq)
+
+{- | oscillator with a functional waveform with modulated frequency -}
+{-# INLINE freqMod #-}
+freqMod ::
+   (RealField.C t, Dim.C u,
+    Simple amp t wave sig) =>
+      wave y       {- ^ waveform -}
+   -> Phase.T t    {- ^ start phase -}
+   -> Proc.T s u t (
+        SigA.R s (Dim.Recip u) t t
+                   {- v frequency control -}
+     -> RP.T s sig y)
+freqMod wave phase =
+   freqModAux (\t -> withWave wave $ \w -> Osci.freqMod w phase t)
+
+{- | oscillator with a functional waveform with modulated frequency -}
+{-# INLINE freqModAntiAlias #-}
+freqModAntiAlias ::
+   (RealField.C t, Dim.C u,
+    Smooth amp t wave sig) =>
+      wave y
+                   {- ^ waveform -}
+   -> Phase.T t    {- ^ start phase -}
+   -> Proc.T s u t (
+        SigA.R s (Dim.Recip u) t t
+                   {- v frequency control -}
+     -> RP.T s sig y)
+freqModAntiAlias wave phase =
+   freqModAux (\t -> withWave wave $ \w -> Osci.freqModAntiAlias w phase t)
+
+{- | oscillator with modulated phase -}
+{-# INLINE phaseMod #-}
+phaseMod ::
+   (Flat.C flat t, RealField.C t, Dim.C u,
+    Simple amp t wave sig) =>
+      wave y       {- ^ waveform -}
+   -> DN.T (Dim.Recip u) t
+                   {- ^ frequency -}
+   -> Proc.T s u t (
+        RP.T s flat t
+                   {- v phase modulation, phases must have no unit -}
+     -> RP.T s sig y)
+phaseMod wave =
+   staticAux (\freq sig ->
+      withWave wave $ \w -> Osci.phaseMod w freq . Flat.toSamples $ sig)
+
+{- | oscillator with modulated shape -}
+{-# INLINE shapeMod #-}
+shapeMod ::
+   (Flat.C flat c, RealField.C t, Dim.C u) =>
+      (c -> Wave.T t y)
+                   {- ^ waveform -}
+   -> Phase.T t    {- ^ phase -}
+   -> DN.T (Dim.Recip u) t
+                   {- ^ frequency -}
+   -> Proc.T s u t (
+        RP.T s flat c {- v shape control -}
+     -> SigS.R s y)
+shapeMod wave phase =
+   staticAux (\freq -> SigS.fromSamples . Osci.shapeMod wave phase freq . Flat.toSamples)
+
+
+{- | oscillator with a functional waveform with modulated phase and frequency -}
+{-# INLINE phaseFreqMod #-}
+phaseFreqMod ::
+   (Flat.C flat t, RealField.C t, Dim.C u,
+    Simple amp t wave sig) =>
+      wave y       {- ^ waveform -}
+   -> Proc.T s u t (
+        RP.T s flat t
+                     {- v phase control -}
+     -> SigA.R s (Dim.Recip u) t t
+                     {- v frequency control -}
+     -> RP.T s sig y)
+phaseFreqMod wave =
+   fmap flip $
+      freqModAux (\ freqs phases ->
+         withWave wave $ \w ->
+            Osci.phaseFreqMod w (Flat.toSamples phases) freqs)
+
+{- | oscillator with both shape and frequency modulation -}
+{-# INLINE shapeFreqMod #-}
+shapeFreqMod :: (Flat.C flat c, RealField.C t, Dim.C u) =>
+      (c -> Wave.T t y)
+                   {- ^ waveform -}
+   -> Phase.T t    {- ^ phase -}
+   -> Proc.T s u t (
+        RP.T s flat c
+                     {- v shape control -}
+     -> SigA.R s (Dim.Recip u) t t
+                     {- v frequency control -}
+     -> SigS.R s y)
+shapeFreqMod wave phase =
+   fmap flip $
+      freqModAux
+         (\ freqs parameters ->
+              SigS.fromSamples $ Osci.shapeFreqMod wave phase (Flat.toSamples parameters) freqs)
+
+
+{- |
+oscillator with a sampled waveform with constant frequency
+This is essentially an interpolation with cyclic padding.
+You can also achieve this with a waveform constructed by 'Wave.sample'.
+-}
+{-# INLINE staticSample #-}
+staticSample :: (RealField.C t, Dim.C u) =>
+      Interpolation.T t y
+   -> SigC.R r y   {- ^ waveform -}
+   -> Phase.T t    {- ^ start phase -}
+   -> DN.T (Dim.Recip u) t
+                   {- ^ frequency -}
+   -> Proc.T s u t (SigS.R s y)
+staticSample ip wave phase =
+   staticAux (SigS.fromSamples . Osci.staticSample ip (SigC.toPeriod wave) phase)
+
+{- |
+oscillator with a sampled waveform with modulated frequency
+Should behave homogenously for different types of interpolation.
+-}
+{-# INLINE freqModSample #-}
+freqModSample :: (RealField.C t, Dim.C u) =>
+      Interpolation.T t y
+   -> SigC.R r y   {- ^ waveform -}
+   -> Phase.T t    {- ^ start phase -}
+   -> Proc.T s u t (
+        SigA.R s (Dim.Recip u) t t
+                   {- v frequency control -}
+     -> SigS.R s y)
+freqModSample ip wave phase =
+   freqModAux (SigS.fromSamples . Osci.freqModSample ip (SigC.toPeriod wave) phase)
+
+
+{-
+{-# INLINE shapeFreqModSample #
+shapeFreqModSample :: (RealField.C c, RealField.C t) =>
+      Interpolation.T c (Wave.T t y)
+   -> sig (Wave.T t y)
+   -> c -> Phase.T t
+   -> Proc.T s u t (
+        RP.T s flat c
+                   {- v shape control 
+     -> SigA.R s (Dim.Recip u) t t
+                   {- v frequency control 
+     -> SigS.R s y)
+shapeFreqModSample ip waves shape0 phase =
+    uncurry Wave.apply ^<<
+       (InterpolationC.relativeConstantPad ip shape0 waves ***
+        freqsToPhases phase)
+-}
+
+{-# INLINE shapeFreqModFromSampledTone #-}
+shapeFreqModFromSampledTone ::
+    (RealField.C t, SigG.Transform storage yv, Dim.C u,
+     Hom.C amp storage input, Hom.C amp Sig.T output,
+     Flat.C flat t) =>
+      Interpolation.T t yv
+   -> Interpolation.T t yv
+   -> DN.T (Dim.Recip u) t
+                   {- ^ source frequency -}
+   -> SigP.T u t input yv
+   -> t -> Phase.T t
+   -> Proc.T s u t (
+        RP.T s flat t
+                   {- v shape control -}
+     -> SigA.R s (Dim.Recip u) t t
+                   {- v frequency control -}
+     -> RP.T s output yv)
+shapeFreqModFromSampledTone
+      ipLeap ipStep srcFreq sampledTone shape0 phase =
+   flip fmap
+      (OsciC.shapeFreqModFromSampledTone
+         ipLeap ipStep srcFreq sampledTone shape0 phase)
+      (\osci ->
+                       ->shapes freqs ->
+                           osci
+                           `CausalD.applyFlatFst`
+                           shapes
+                           `CausalD.apply`
+                           freqs)
+
+
+{-# INLINE shapePhaseFreqModFromSampledTone #-}
+shapePhaseFreqModFromSampledTone ::
+    (RealField.C t, SigG.Transform storage yv, Dim.C u,
+     Hom.C amp storage input, Hom.C amp Sig.T output,
+     Flat.C flatS t, Flat.C flatP t) =>
+      Interpolation.T t yv
+   -> Interpolation.T t yv
+   -> DN.T (Dim.Recip u) t
+                   {- ^ source frequency -}
+   -> SigP.T u t input yv
+   -> t -> Phase.T t
+   -> Proc.T s u t (
+        RP.T s flatS t
+                   {- v shape control -}
+     -> RP.T s flatP t
+                   {- v phase control -}
+     -> SigA.R s (Dim.Recip u) t t
+                   {- v frequency control -}
+     -> RP.T s output yv)
+shapePhaseFreqModFromSampledTone
+      ipLeap ipStep srcFreq sampledTone shape0 phase =
+   flip fmap
+      (OsciC.shapePhaseFreqModFromSampledTone
+         ipLeap ipStep srcFreq sampledTone shape0 phase)
+      (\osci ->
+                                    ->shapes phaseDistort freqs ->
+                                        (osci CausalD.<<^ MapD.packTriple)
+                                        `CausalD.applyFlatFst`
+                                        shapes
+                                        `CausalD.applyFlatFst`
+                                        phaseDistort
+                                        `CausalD.apply`
+                                        freqs)
+
+
+{-# INLINE freqModAux #-}
+freqModAux :: (Field.C t, Dim.C u) =>
+      (Sig.T t -> c)
+   -> Proc.T s u t (
+        SigA.R s (Dim.Recip u) t t
+     -> c)
+freqModAux f =
+   fmap
+      (\toFreq -> f . SigA.scalarSamples toFreq)
+      (Proc.withParam toFrequencyScalar)
+
+{-# INLINE staticAux #-}
+staticAux :: (Dim.C u, Field.C t) =>
+      (t -> c)
+   -> DN.T (Dim.Recip u) t
+   -> Proc.T s u t c
+staticAux f freq =
+   fmap f (toFrequencyScalar freq)
+
+</pre>

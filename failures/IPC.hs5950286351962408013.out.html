@@ -1,0 +1,366 @@
+<a href="IOUtils.hs482756891501848671.out.html">prev</a></br><a href="failures.html">home</a></br><a href="IpynbToLhs.hs5661201711429157787.out.html">next</a></br></br><pre>74c74
+< connect = IPC.connect >>= \case
+---
+> connect = IPC.connect >>= 
+122c122
+<         readBoth events a b = atomically (readTChan events) >>= \case
+---
+>         readBoth events a b = atomically (readTChan events) >>= 
+135c135
+<   let loop = atomically (readTChan chan) >>= \case
+---
+>   let loop = atomically (readTChan chan) >>= 
+151c151
+<   atomically ((Just <$> readTChan msgs) `orElse` (waitForFd >> return Nothing)) >>= \case
+---
+>   atomically ((Just <$> readTChan msgs) `orElse` (waitForFd >> return Nothing)) >>= 
+157c157
+<       let loop2 = IPC.tryRecvEvent con >>= \case
+---
+>       let loop2 = IPC.tryRecvEvent con >>= 
+171a172
+> 
+</pre></br><h2>original</h2></br><pre>{-# LANGUAGE LambdaCase, RecordWildCards, ScopedTypeVariables #-}
+
+-- | An IPC client implementation for the <http://herbstluftwm.org herbstluftwm>
+-- window manager.
+--
+-- See <http://herbstluftwm.org/herbstluftwm.html herbstluftwm(1)> and
+-- <http://herbstluftwm.org/herbstclient.html herbstclient(1)> for what this is
+-- all about.
+--
+-- == Examples
+-- Sending a command to herbstluftwm:
+--
+-- >>> withConnection (\con -> sendCommand con ["echo", "foo"])
+-- Just (0,"foo\n")
+--
+-- Printing 2 hooks:
+--
+-- >>> withConnection (\con -> replicateM_ 2 $ unwords <$> nextHook con >>= putStrLn)
+-- focus_changed 0x340004c IPC.hs - emacs
+-- focus_changed 0x3200073 ROXTerm
+-- Just ()
+--
+-- Although 'sendCommand' is synchronous, you can use it with forkIO or the
+-- <http://hackage.haskell.org/package/async async> library:
+--
+-- > withConnection $ \con -> do
+-- >   var <- newEmptyMVar
+-- >   forkIO $ sendCommand con ["echo","foo"] >>= putMVar var
+-- >   -- do some stuff ...
+-- >   -- finally read output
+-- >   output <- takeMVar var
+
+module HLWM.IPC
+       ( -- * Connection
+         HerbstConnection
+       , connect
+       , disconnect
+       , withConnection
+         -- * Commands and Hooks
+       , sendCommand
+       , nextHook
+       ) where
+
+import HLWM.IPC.Internal (HerbstEvent(..))
+import qualified HLWM.IPC.Internal as IPC
+
+import Control.Concurrent.STM
+import Control.Concurrent
+import Control.Monad
+import Control.Applicative
+import Data.Maybe
+import Control.Exception
+import System.Posix.Types (Fd(..))
+import Graphics.X11.Xlib
+
+-- | Opaque type representing the connection to the herbstluftwm server
+--
+-- See 'connect' and 'disconnect'.
+data HerbstConnection = HerbstConnection {
+  connection :: IPC.HerbstConnection,
+  commandLock :: Lock,
+  eventChan :: TChan HerbstEvent,
+  controlChan :: TChan Message,
+  dieVar :: TMVar ()
+}
+
+-- | Connect to the herbstluftwm server.
+--
+-- Be sure to call 'disconnect' if you don't need the connection anymore, to
+-- free any allocated resources. When in doubt, call 'withConnection'.
+--
+-- Note that there must not be more than one connection open at any time!
+connect :: IO (Maybe HerbstConnection)
+connect = IPC.connect >>= \case
+  Nothing -> return Nothing
+  Just connection -> do
+    commandLock <- newEmptyTMVarIO
+    eventChan <- newBroadcastTChanIO
+    controlChan <- newTChanIO
+    dieVar <- newEmptyTMVarIO
+    void $ forkIO $ xThread connection eventChan controlChan dieVar
+    return $ Just $ HerbstConnection {..}
+
+-- | Close connection to the herbstluftwm server.
+--
+-- After calling this function, the 'HerbstConnection' is no longer valid and
+-- must not be used anymore.
+disconnect :: HerbstConnection -> IO ()
+disconnect HerbstConnection{..} = do
+  atomically $ do
+    lock commandLock
+    writeTChan controlChan Die
+  atomically $ takeTMVar dieVar
+  IPC.disconnect connection
+
+-- | Execute an action with a newly established 'HerbstConnection'.
+--
+-- Connects to the herbstluftwm server, passes the connection on to the supplied
+-- action and closes the connection again after the action has finished.
+withConnection :: (HerbstConnection -> IO a) -> IO (Maybe a)
+withConnection f =
+  bracket connect (maybe (return ()) disconnect)
+                  (maybe (return Nothing) (fmap Just . f))
+
+-- | Execute a command in the herbstluftwm server.
+--
+-- Send a command consisting of a list of Strings to the server and wait for the
+-- response. Herbstluftwm interprets this list as a command followed by a number
+-- of arguments. Returns a tuple of the exit status and output of the called
+-- command.
+sendCommand :: HerbstConnection -> [String] -> IO (Int, String)
+sendCommand client args = do
+  events <- atomically $ do
+    lock (commandLock client)
+    dupTChan (eventChan client) <*
+      writeTChan (controlChan client) (HerbstCmd args)
+  res <- readBoth events Nothing Nothing
+  atomically $ unlock (commandLock client)
+  return res
+
+  where readBoth _ (Just s) (Just o) = return (o,s)
+        readBoth events a b = atomically (readTChan events) >>= \case
+          OutputEvent o | isNothing a -> readBoth events (Just o) b
+          StatusEvent s | isNothing b -> readBoth events a (Just s)
+          _ -> readBoth events a b
+
+-- | Wait for a hook event from the server and return it.
+--
+-- A hook is just an arbitrary list of strings generated by herbstluftwm or its
+-- clients.
+nextHook :: HerbstConnection -> IO [String]
+nextHook client = do
+  chan <- atomically $ dupTChan (eventChan client)
+
+  let loop = atomically (readTChan chan) >>= \case
+        HookEvent res -> return res
+        _             -> loop
+
+  loop
+
+data Message = HerbstCmd [String]
+             | Die
+
+xThread :: IPC.HerbstConnection -> TChan HerbstEvent -> TChan Message
+        -> TMVar () -> IO ()
+xThread con events msgs dieVar = do
+  (waitForFd, disconnectFd) <- threadWaitReadSTM (connectionFd con)
+
+  let loop = disconnectFd >> xThread con events msgs dieVar
+
+  atomically ((Just <$> readTChan msgs) `orElse` (waitForFd >> return Nothing)) >>= \case
+    Just Die -> do
+      disconnectFd
+      atomically $ putTMVar dieVar () -- notify caller that we died
+    Just (HerbstCmd args) -> IPC.asyncSendCommand con args >> loop
+    Nothing ->
+      let loop2 = IPC.tryRecvEvent con >>= \case
+            Just ev -> atomically (writeTChan events ev) >> loop2
+            Nothing -> loop
+      in loop2
+
+type Lock = TMVar ()
+
+lock :: TMVar () -> STM ()
+lock l = putTMVar l ()
+
+unlock :: TMVar () -> STM ()
+unlock l = takeTMVar l >> return ()
+
+connectionFd :: IPC.HerbstConnection -> Fd
+connectionFd = Fd . connectionNumber . IPC.display
+</pre></br><h2>printed</h2></br><pre>{-# LANGUAGE LambdaCase, RecordWildCards, ScopedTypeVariables #-}
+
+-- | An IPC client implementation for the <http://herbstluftwm.org herbstluftwm>
+-- window manager.
+--
+-- See <http://herbstluftwm.org/herbstluftwm.html herbstluftwm(1)> and
+-- <http://herbstluftwm.org/herbstclient.html herbstclient(1)> for what this is
+-- all about.
+--
+-- == Examples
+-- Sending a command to herbstluftwm:
+--
+-- >>> withConnection (\con -> sendCommand con ["echo", "foo"])
+-- Just (0,"foo\n")
+--
+-- Printing 2 hooks:
+--
+-- >>> withConnection (\con -> replicateM_ 2 $ unwords <$> nextHook con >>= putStrLn)
+-- focus_changed 0x340004c IPC.hs - emacs
+-- focus_changed 0x3200073 ROXTerm
+-- Just ()
+--
+-- Although 'sendCommand' is synchronous, you can use it with forkIO or the
+-- <http://hackage.haskell.org/package/async async> library:
+--
+-- > withConnection $ \con -> do
+-- >   var <- newEmptyMVar
+-- >   forkIO $ sendCommand con ["echo","foo"] >>= putMVar var
+-- >   -- do some stuff ...
+-- >   -- finally read output
+-- >   output <- takeMVar var
+
+module HLWM.IPC
+       ( -- * Connection
+         HerbstConnection
+       , connect
+       , disconnect
+       , withConnection
+         -- * Commands and Hooks
+       , sendCommand
+       , nextHook
+       ) where
+
+import HLWM.IPC.Internal (HerbstEvent(..))
+import qualified HLWM.IPC.Internal as IPC
+
+import Control.Concurrent.STM
+import Control.Concurrent
+import Control.Monad
+import Control.Applicative
+import Data.Maybe
+import Control.Exception
+import System.Posix.Types (Fd(..))
+import Graphics.X11.Xlib
+
+-- | Opaque type representing the connection to the herbstluftwm server
+--
+-- See 'connect' and 'disconnect'.
+data HerbstConnection = HerbstConnection {
+  connection :: IPC.HerbstConnection,
+  commandLock :: Lock,
+  eventChan :: TChan HerbstEvent,
+  controlChan :: TChan Message,
+  dieVar :: TMVar ()
+}
+
+-- | Connect to the herbstluftwm server.
+--
+-- Be sure to call 'disconnect' if you don't need the connection anymore, to
+-- free any allocated resources. When in doubt, call 'withConnection'.
+--
+-- Note that there must not be more than one connection open at any time!
+connect :: IO (Maybe HerbstConnection)
+connect = IPC.connect >>= 
+  Nothing -> return Nothing
+  Just connection -> do
+    commandLock <- newEmptyTMVarIO
+    eventChan <- newBroadcastTChanIO
+    controlChan <- newTChanIO
+    dieVar <- newEmptyTMVarIO
+    void $ forkIO $ xThread connection eventChan controlChan dieVar
+    return $ Just $ HerbstConnection {..}
+
+-- | Close connection to the herbstluftwm server.
+--
+-- After calling this function, the 'HerbstConnection' is no longer valid and
+-- must not be used anymore.
+disconnect :: HerbstConnection -> IO ()
+disconnect HerbstConnection{..} = do
+  atomically $ do
+    lock commandLock
+    writeTChan controlChan Die
+  atomically $ takeTMVar dieVar
+  IPC.disconnect connection
+
+-- | Execute an action with a newly established 'HerbstConnection'.
+--
+-- Connects to the herbstluftwm server, passes the connection on to the supplied
+-- action and closes the connection again after the action has finished.
+withConnection :: (HerbstConnection -> IO a) -> IO (Maybe a)
+withConnection f =
+  bracket connect (maybe (return ()) disconnect)
+                  (maybe (return Nothing) (fmap Just . f))
+
+-- | Execute a command in the herbstluftwm server.
+--
+-- Send a command consisting of a list of Strings to the server and wait for the
+-- response. Herbstluftwm interprets this list as a command followed by a number
+-- of arguments. Returns a tuple of the exit status and output of the called
+-- command.
+sendCommand :: HerbstConnection -> [String] -> IO (Int, String)
+sendCommand client args = do
+  events <- atomically $ do
+    lock (commandLock client)
+    dupTChan (eventChan client) <*
+      writeTChan (controlChan client) (HerbstCmd args)
+  res <- readBoth events Nothing Nothing
+  atomically $ unlock (commandLock client)
+  return res
+
+  where readBoth _ (Just s) (Just o) = return (o,s)
+        readBoth events a b = atomically (readTChan events) >>= 
+          OutputEvent o | isNothing a -> readBoth events (Just o) b
+          StatusEvent s | isNothing b -> readBoth events a (Just s)
+          _ -> readBoth events a b
+
+-- | Wait for a hook event from the server and return it.
+--
+-- A hook is just an arbitrary list of strings generated by herbstluftwm or its
+-- clients.
+nextHook :: HerbstConnection -> IO [String]
+nextHook client = do
+  chan <- atomically $ dupTChan (eventChan client)
+
+  let loop = atomically (readTChan chan) >>= 
+        HookEvent res -> return res
+        _             -> loop
+
+  loop
+
+data Message = HerbstCmd [String]
+             | Die
+
+xThread :: IPC.HerbstConnection -> TChan HerbstEvent -> TChan Message
+        -> TMVar () -> IO ()
+xThread con events msgs dieVar = do
+  (waitForFd, disconnectFd) <- threadWaitReadSTM (connectionFd con)
+
+  let loop = disconnectFd >> xThread con events msgs dieVar
+
+  atomically ((Just <$> readTChan msgs) `orElse` (waitForFd >> return Nothing)) >>= 
+    Just Die -> do
+      disconnectFd
+      atomically $ putTMVar dieVar () -- notify caller that we died
+    Just (HerbstCmd args) -> IPC.asyncSendCommand con args >> loop
+    Nothing ->
+      let loop2 = IPC.tryRecvEvent con >>= 
+            Just ev -> atomically (writeTChan events ev) >> loop2
+            Nothing -> loop
+      in loop2
+
+type Lock = TMVar ()
+
+lock :: TMVar () -> STM ()
+lock l = putTMVar l ()
+
+unlock :: TMVar () -> STM ()
+unlock l = takeTMVar l >> return ()
+
+connectionFd :: IPC.HerbstConnection -> Fd
+connectionFd = Fd . connectionNumber . IPC.display
+
+</pre>

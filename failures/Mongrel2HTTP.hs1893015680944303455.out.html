@@ -1,0 +1,660 @@
+<a href="MongoDB.hs487495370684570285.out.html">prev</a></br><a href="failures.html">home</a></br><a href="Monitor.hs937357732231367332.out.html">next</a></br></br><pre>136c136
+<     _input_enum :: (forall a . Enumerator ByteString IO a)
+---
+>     _input_enum :: (       a   Enumerator ByteString IO a)
+326a327
+> 
+</pre></br><h2>original</h2></br><pre>{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE Rank2Types #-}
+{-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+
+module Hack2.Handler.Mongrel2HTTP
+(
+
+  runWithConfig
+, ServerConfig(..)
+, Mongrel2.Handler(..)
+) where
+
+import Prelude ()
+import Air.Env hiding (def, Default, log)
+
+import Hack2
+import Data.Default (def, Default)
+import Data.ByteString.Char8 (ByteString, pack)
+import qualified Data.ByteString.Char8 as B
+import Data.Enumerator (Enumerator, Iteratee (..), ($$), joinI, run_, Enumeratee, Step, (=$), ($=), enumList, concatEnums)
+import Blaze.ByteString.Builder (Builder, fromByteString, fromLazyByteString, toByteString)
+
+import Data.Maybe (listToMaybe, fromMaybe, isJust, fromJust)
+import Data.Map (toAscList, fromAscList)
+
+import Control.Monad (when, forever)
+
+import Hack2.Handler.Mongrel2.IO
+import qualified Hack2.Handler.Mongrel2.Types as Mongrel2
+
+import qualified Control.Exception as Exception
+import System.IO (hPutStr, stderr)
+
+import System.Posix.Signals
+import Control.Concurrent
+
+import qualified Data.Map as Map
+import Blaze.Text.Int (integral)
+import Data.Monoid
+import qualified Data.Aeson as Aeson
+import Safe (readMay, readDef)
+
+import Hack2.Handler.Mongrel2.Utils
+
+import Control.Concurrent.STM
+import Data.Int
+import qualified Data.Set as Set
+import qualified Data.List as List
+import qualified Prelude as P
+
+buildSpace :: Builder
+buildSpace = fromByteString " "
+
+buildNewLine :: Builder
+buildNewLine = fromByteString "\r\n"
+
+make_response_enumerator :: Response -> Enumerator ByteString IO a
+make_response_enumerator response =
+  concatEnums
+    [
+      header_enum
+    , response.body.unHackEnumerator
+    ]
+  where
+    header_enum = enumList 1 - return - make_response_header - response
+
+make_response_header :: Response -> ByteString
+make_response_header response =
+  [
+    fromByteString "HTTP/1.1"
+  , buildSpace
+  , integral - response.status
+  , buildSpace
+  , fromByteString - (statusReasonMap.Map.lookup (response.status) .fromMaybe "Unknown Status Code")
+
+  , buildNewLine
+  , mconcat - response.headers.map build_header
+  , buildNewLine
+  ]
+
+  .mconcat
+  .toByteString
+
+  where
+    build_header :: (ByteString, ByteString) -> Builder
+    build_header (header, value) =
+      [
+        fromByteString header
+      , fromByteString ": "
+      , fromByteString value
+      , buildNewLine
+      ]
+      .mconcat
+
+-- example json request string
+-- {"PATH":"/","x-forwarded-for":"127.0.0.1","accept":"*/*","user-agent":"curl/7.19.7 (universal-apple-darwin10.0) libcurl/7.19.7 OpenSSL/0.9.8l zlib/1.2.3","host":"127.0.0.1:6767","METHOD":"GET","VERSION":"HTTP/1.1","URI":"/","PATTERN":"/"}
+
+-- {  requestMethod  :: RequestMethod
+-- ,  scriptName     :: ByteString
+-- ,  pathInfo       :: ByteString
+-- ,  queryString    :: ByteString
+-- ,  serverName     :: ByteString
+-- ,  serverPort     :: Int
+-- ,  httpHeaders    :: [(ByteString, ByteString)]
+-- ,  hackVersion    :: (Int, Int, Int)
+-- ,  hackUrlScheme  :: HackUrlScheme
+-- ,  hackInput      :: HackEnumerator
+-- ,  hackErrors     :: HackErrors
+-- ,  hackHeaders    :: [(ByteString, ByteString)]
+
+
+
+requestToEnv :: Mongrel2.Request -> Env
+requestToEnv request =
+  let
+    maybe_string (Aeson.String x) = Just - x
+    maybe_string _ = Nothing
+
+    _headers = request.Mongrel2.requestHeaders.jsonToList
+
+    _host = _headers.lookup "host" .fromMaybe ""
+    _query = _headers.lookup "QUERY" .fromMaybe ""
+
+    _mongrel2_header_names =
+
+        [
+          "PATH"
+        , "host"
+        , "METHOD"
+        , "VERSION"
+        ]
+
+    _http_headers = _headers
+
+    _input_enum :: (forall a . Enumerator ByteString IO a)
+    _input_enum = enumList 1 [request.Mongrel2.requestBody]
+
+  in
+  def
+    {
+      requestMethod = ( _headers.lookup "METHOD" >>= B.unpack > readMay ).fromMaybe GET
+    , pathInfo = request.Mongrel2.requestPath
+    , queryString = _query
+    , serverName = _host.B.takeWhile (is_not ':')
+    , serverPort = _host.B.dropWhile (is_not ':') .B.dropWhile (is ':') .B.unpack.readDef 80
+    , httpHeaders = _http_headers
+    , hackInput = HackEnumerator _input_enum
+    }
+
+
+
+
+-- copied from snap-core
+statusReasonMap :: Map.Map Int ByteString
+statusReasonMap = Map.fromAscList [
+        (100, "Continue"),
+        (101, "Switching Protocols"),
+        (200, "OK"),
+        (201, "Created"),
+        (202, "Accepted"),
+        (203, "Non-Authoritative Information"),
+        (204, "No Content"),
+        (205, "Reset Content"),
+        (206, "Partial Content"),
+        (300, "Multiple Choices"),
+        (301, "Moved Permanently"),
+        (302, "Found"),
+        (303, "See Other"),
+        (304, "Not Modified"),
+        (305, "Use Proxy"),
+        (307, "Temporary Redirect"),
+        (400, "Bad Request"),
+        (401, "Unauthorized"),
+        (402, "Payment Required"),
+        (403, "Forbidden"),
+        (404, "Not Found"),
+        (405, "Method Not Allowed"),
+        (406, "Not Acceptable"),
+        (407, "Proxy Authentication Required"),
+        (408, "Request Time-out"),
+        (409, "Conflict"),
+        (410, "Gone"),
+        (411, "Length Required"),
+        (412, "Precondition Failed"),
+        (413, "Request Entity Too Large"),
+        (414, "Request-URI Too Large"),
+        (415, "Unsupported Media Type"),
+        (416, "Requested range not satisfiable"),
+        (417, "Expectation Failed"),
+        (500, "Internal Server Error"),
+        (501, "Not Implemented"),
+        (502, "Bad Gateway"),
+        (503, "Service Unavailable"),
+        (504, "Gateway Time-out"),
+        (505, "HTTP Version not supported")
+    ]
+
+
+
+--
+
+data ServerConfig = ServerConfig
+  {
+    handler :: Mongrel2.Handler
+  , number_of_application_instances :: Int
+  }
+
+instance Default ServerConfig where
+  def = ServerConfig
+    {
+      handler = def
+    , number_of_application_instances = 10
+    }
+
+
+exit_handler :: MVar () -> IO ()
+exit_handler exit_indicator = do
+  log "Exiting..."
+  putMVar exit_indicator ()
+
+
+
+-- log :: String -> IO ()
+-- log = const (return ())
+
+
+runWithConfig :: ServerConfig -> Application -> IO ()
+runWithConfig config app = do
+    exit_indicator <- newEmptyMVar
+
+    installHandler sigINT (Catch (exit_handler exit_indicator)) Nothing
+
+    disconnected <- newTVarIO def
+
+    threads <- [1..config.number_of_application_instances] .mapM (\instance_id ->
+        forkIO - server_safe_loop instance_id disconnected
+      )
+
+    fork - forever - clean_up_disconnected_client_ids disconnected
+
+    log "taking exit_indicator"
+    takeMVar exit_indicator
+    log "done taking exit_indicator"
+
+
+    -- log "killing threads ..."
+    -- threads.mapM_ killThread
+    --
+    -- log "waiting threads termination ..."
+    -- sleep 2
+    --
+    -- log "all threads killed"
+    -- log "Mongrel2 main will exist"
+
+
+
+    where
+      server_safe_loop instance_id disconnected = do
+        forever - do
+          catch_all "ZeroMQ error:" - loop instance_id (config.handler) disconnected app
+
+catch_all :: String -> IO () -> IO ()
+catch_all message io_action =
+  Exception.catch io_action - \e ->
+    log_error - message + " " + (e :: Exception.SomeException).show + "\n"
+
+clean_up_disconnected_client_ids :: TVar (Set.Set Int64) -> IO ()
+clean_up_disconnected_client_ids disconnected = do
+  sleep 10
+
+  atomically - do
+    ids <- readTVar disconnected
+    let set_length = ids.Set.size
+
+        max_length = 10000
+
+    when (set_length >= max_length) - do
+      let new_ids = ids.to_list.List.sort.drop (set_length P.- max_length).Set.fromList
+      writeTVar disconnected new_ids
+
+
+loop :: Int -> Mongrel2.Handler -> TVar (Set.Set Int64) -> Application -> IO ()
+loop instance_id _handler disconnected app = do
+
+  withConnectedHandler _handler - \connected_handler -> do
+
+    -- catch_all "Hack2 Application error:" - do
+
+      log - "instance " + show instance_id + " waiting ..."
+      request <- receiveRequest connected_handler
+
+      log - "instance " + show instance_id + " handling ..."
+      -- putStrLn - "instance " + show instance_id + " handling ..."
+
+
+      let uuid = request.Mongrel2.requestUuid
+          client_id = request.Mongrel2.requestClientId
+
+          json_request = request.requestJsonBody
+
+      case json_request of
+        Nothing -> do
+          app_response <- app - requestToEnv request
+
+          let { resposne =
+            Mongrel2.Response
+              {
+                Mongrel2.responseUuid = uuid
+              , Mongrel2.responseClientId = client_id
+              , Mongrel2.responseBody = make_response_enumerator app_response
+              }
+            }
+
+          sendResponse connected_handler disconnected resposne
+        Just xs -> do
+          case xs.lookup "type" of
+            Just "disconnect" -> do
+              log - "client " + show client_id + " disconnected"
+              atomically - do
+                _ids <- readTVar disconnected
+                writeTVar disconnected - _ids.Set.insert client_id
+
+            _ ->
+              log_error - "Unknown json reponse: " + request.Mongrel2.requestBody.B.unpack
+
+</pre></br><h2>printed</h2></br><pre>{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE Rank2Types #-}
+{-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+
+module Hack2.Handler.Mongrel2HTTP
+(
+
+  runWithConfig
+, ServerConfig(..)
+, Mongrel2.Handler(..)
+) where
+
+import Prelude ()
+import Air.Env hiding (def, Default, log)
+
+import Hack2
+import Data.Default (def, Default)
+import Data.ByteString.Char8 (ByteString, pack)
+import qualified Data.ByteString.Char8 as B
+import Data.Enumerator (Enumerator, Iteratee (..), ($$), joinI, run_, Enumeratee, Step, (=$), ($=), enumList, concatEnums)
+import Blaze.ByteString.Builder (Builder, fromByteString, fromLazyByteString, toByteString)
+
+import Data.Maybe (listToMaybe, fromMaybe, isJust, fromJust)
+import Data.Map (toAscList, fromAscList)
+
+import Control.Monad (when, forever)
+
+import Hack2.Handler.Mongrel2.IO
+import qualified Hack2.Handler.Mongrel2.Types as Mongrel2
+
+import qualified Control.Exception as Exception
+import System.IO (hPutStr, stderr)
+
+import System.Posix.Signals
+import Control.Concurrent
+
+import qualified Data.Map as Map
+import Blaze.Text.Int (integral)
+import Data.Monoid
+import qualified Data.Aeson as Aeson
+import Safe (readMay, readDef)
+
+import Hack2.Handler.Mongrel2.Utils
+
+import Control.Concurrent.STM
+import Data.Int
+import qualified Data.Set as Set
+import qualified Data.List as List
+import qualified Prelude as P
+
+buildSpace :: Builder
+buildSpace = fromByteString " "
+
+buildNewLine :: Builder
+buildNewLine = fromByteString "\r\n"
+
+make_response_enumerator :: Response -> Enumerator ByteString IO a
+make_response_enumerator response =
+  concatEnums
+    [
+      header_enum
+    , response.body.unHackEnumerator
+    ]
+  where
+    header_enum = enumList 1 - return - make_response_header - response
+
+make_response_header :: Response -> ByteString
+make_response_header response =
+  [
+    fromByteString "HTTP/1.1"
+  , buildSpace
+  , integral - response.status
+  , buildSpace
+  , fromByteString - (statusReasonMap.Map.lookup (response.status) .fromMaybe "Unknown Status Code")
+
+  , buildNewLine
+  , mconcat - response.headers.map build_header
+  , buildNewLine
+  ]
+
+  .mconcat
+  .toByteString
+
+  where
+    build_header :: (ByteString, ByteString) -> Builder
+    build_header (header, value) =
+      [
+        fromByteString header
+      , fromByteString ": "
+      , fromByteString value
+      , buildNewLine
+      ]
+      .mconcat
+
+-- example json request string
+-- {"PATH":"/","x-forwarded-for":"127.0.0.1","accept":"*/*","user-agent":"curl/7.19.7 (universal-apple-darwin10.0) libcurl/7.19.7 OpenSSL/0.9.8l zlib/1.2.3","host":"127.0.0.1:6767","METHOD":"GET","VERSION":"HTTP/1.1","URI":"/","PATTERN":"/"}
+
+-- {  requestMethod  :: RequestMethod
+-- ,  scriptName     :: ByteString
+-- ,  pathInfo       :: ByteString
+-- ,  queryString    :: ByteString
+-- ,  serverName     :: ByteString
+-- ,  serverPort     :: Int
+-- ,  httpHeaders    :: [(ByteString, ByteString)]
+-- ,  hackVersion    :: (Int, Int, Int)
+-- ,  hackUrlScheme  :: HackUrlScheme
+-- ,  hackInput      :: HackEnumerator
+-- ,  hackErrors     :: HackErrors
+-- ,  hackHeaders    :: [(ByteString, ByteString)]
+
+
+
+requestToEnv :: Mongrel2.Request -> Env
+requestToEnv request =
+  let
+    maybe_string (Aeson.String x) = Just - x
+    maybe_string _ = Nothing
+
+    _headers = request.Mongrel2.requestHeaders.jsonToList
+
+    _host = _headers.lookup "host" .fromMaybe ""
+    _query = _headers.lookup "QUERY" .fromMaybe ""
+
+    _mongrel2_header_names =
+
+        [
+          "PATH"
+        , "host"
+        , "METHOD"
+        , "VERSION"
+        ]
+
+    _http_headers = _headers
+
+    _input_enum :: (       a   Enumerator ByteString IO a)
+    _input_enum = enumList 1 [request.Mongrel2.requestBody]
+
+  in
+  def
+    {
+      requestMethod = ( _headers.lookup "METHOD" >>= B.unpack > readMay ).fromMaybe GET
+    , pathInfo = request.Mongrel2.requestPath
+    , queryString = _query
+    , serverName = _host.B.takeWhile (is_not ':')
+    , serverPort = _host.B.dropWhile (is_not ':') .B.dropWhile (is ':') .B.unpack.readDef 80
+    , httpHeaders = _http_headers
+    , hackInput = HackEnumerator _input_enum
+    }
+
+
+
+
+-- copied from snap-core
+statusReasonMap :: Map.Map Int ByteString
+statusReasonMap = Map.fromAscList [
+        (100, "Continue"),
+        (101, "Switching Protocols"),
+        (200, "OK"),
+        (201, "Created"),
+        (202, "Accepted"),
+        (203, "Non-Authoritative Information"),
+        (204, "No Content"),
+        (205, "Reset Content"),
+        (206, "Partial Content"),
+        (300, "Multiple Choices"),
+        (301, "Moved Permanently"),
+        (302, "Found"),
+        (303, "See Other"),
+        (304, "Not Modified"),
+        (305, "Use Proxy"),
+        (307, "Temporary Redirect"),
+        (400, "Bad Request"),
+        (401, "Unauthorized"),
+        (402, "Payment Required"),
+        (403, "Forbidden"),
+        (404, "Not Found"),
+        (405, "Method Not Allowed"),
+        (406, "Not Acceptable"),
+        (407, "Proxy Authentication Required"),
+        (408, "Request Time-out"),
+        (409, "Conflict"),
+        (410, "Gone"),
+        (411, "Length Required"),
+        (412, "Precondition Failed"),
+        (413, "Request Entity Too Large"),
+        (414, "Request-URI Too Large"),
+        (415, "Unsupported Media Type"),
+        (416, "Requested range not satisfiable"),
+        (417, "Expectation Failed"),
+        (500, "Internal Server Error"),
+        (501, "Not Implemented"),
+        (502, "Bad Gateway"),
+        (503, "Service Unavailable"),
+        (504, "Gateway Time-out"),
+        (505, "HTTP Version not supported")
+    ]
+
+
+
+--
+
+data ServerConfig = ServerConfig
+  {
+    handler :: Mongrel2.Handler
+  , number_of_application_instances :: Int
+  }
+
+instance Default ServerConfig where
+  def = ServerConfig
+    {
+      handler = def
+    , number_of_application_instances = 10
+    }
+
+
+exit_handler :: MVar () -> IO ()
+exit_handler exit_indicator = do
+  log "Exiting..."
+  putMVar exit_indicator ()
+
+
+
+-- log :: String -> IO ()
+-- log = const (return ())
+
+
+runWithConfig :: ServerConfig -> Application -> IO ()
+runWithConfig config app = do
+    exit_indicator <- newEmptyMVar
+
+    installHandler sigINT (Catch (exit_handler exit_indicator)) Nothing
+
+    disconnected <- newTVarIO def
+
+    threads <- [1..config.number_of_application_instances] .mapM (\instance_id ->
+        forkIO - server_safe_loop instance_id disconnected
+      )
+
+    fork - forever - clean_up_disconnected_client_ids disconnected
+
+    log "taking exit_indicator"
+    takeMVar exit_indicator
+    log "done taking exit_indicator"
+
+
+    -- log "killing threads ..."
+    -- threads.mapM_ killThread
+    --
+    -- log "waiting threads termination ..."
+    -- sleep 2
+    --
+    -- log "all threads killed"
+    -- log "Mongrel2 main will exist"
+
+
+
+    where
+      server_safe_loop instance_id disconnected = do
+        forever - do
+          catch_all "ZeroMQ error:" - loop instance_id (config.handler) disconnected app
+
+catch_all :: String -> IO () -> IO ()
+catch_all message io_action =
+  Exception.catch io_action - \e ->
+    log_error - message + " " + (e :: Exception.SomeException).show + "\n"
+
+clean_up_disconnected_client_ids :: TVar (Set.Set Int64) -> IO ()
+clean_up_disconnected_client_ids disconnected = do
+  sleep 10
+
+  atomically - do
+    ids <- readTVar disconnected
+    let set_length = ids.Set.size
+
+        max_length = 10000
+
+    when (set_length >= max_length) - do
+      let new_ids = ids.to_list.List.sort.drop (set_length P.- max_length).Set.fromList
+      writeTVar disconnected new_ids
+
+
+loop :: Int -> Mongrel2.Handler -> TVar (Set.Set Int64) -> Application -> IO ()
+loop instance_id _handler disconnected app = do
+
+  withConnectedHandler _handler - \connected_handler -> do
+
+    -- catch_all "Hack2 Application error:" - do
+
+      log - "instance " + show instance_id + " waiting ..."
+      request <- receiveRequest connected_handler
+
+      log - "instance " + show instance_id + " handling ..."
+      -- putStrLn - "instance " + show instance_id + " handling ..."
+
+
+      let uuid = request.Mongrel2.requestUuid
+          client_id = request.Mongrel2.requestClientId
+
+          json_request = request.requestJsonBody
+
+      case json_request of
+        Nothing -> do
+          app_response <- app - requestToEnv request
+
+          let { resposne =
+            Mongrel2.Response
+              {
+                Mongrel2.responseUuid = uuid
+              , Mongrel2.responseClientId = client_id
+              , Mongrel2.responseBody = make_response_enumerator app_response
+              }
+            }
+
+          sendResponse connected_handler disconnected resposne
+        Just xs -> do
+          case xs.lookup "type" of
+            Just "disconnect" -> do
+              log - "client " + show client_id + " disconnected"
+              atomically - do
+                _ids <- readTVar disconnected
+                writeTVar disconnected - _ids.Set.insert client_id
+
+            _ ->
+              log_error - "Unknown json reponse: " + request.Mongrel2.requestBody.B.unpack
+
+
+</pre>

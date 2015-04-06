@@ -1,0 +1,580 @@
+<a href="Strict.hs14594134961951894885.out.html">prev</a></br><a href="failures.html">home</a></br><a href="Strictness.hs2020739063107554536.out.html">next</a></br></br><pre>93c93
+<     ((StateX x)::(StateX ix s a)) >>= f  = mkStateX (getVal::ix) $ \s ->
+---
+>     ((StateX x):: StateX ix s a ) >>= f  = mkStateX (getVal::ix) $ \s ->
+95c95
+<     ((StateX x)::(StateX ix s a)) >> f  = mkStateX (getVal::ix) $ \s ->
+---
+>     ((StateX x):: StateX ix s a ) >> f  = mkStateX (getVal::ix) $ \s ->
+157c157
+<     ((StateTX x)::(StateTX ix s m a)) >>= f  = mkStateTX (getVal::ix) $ \s -> do
+---
+>     ((StateTX x):: StateTX ix s m a ) >>= f  = mkStateTX (getVal::ix) $ \s -> do
+160c160
+<     ((StateTX x)::(StateTX ix s m a)) >> f  = mkStateTX (getVal::ix) $ \s -> do
+---
+>     ((StateTX x):: StateTX ix s m a ) >> f  = mkStateTX (getVal::ix) $ \s -> do
+280a281
+> 
+</pre></br><h2>original</h2></br><pre>{-# LANGUAGE ScopedTypeVariables, UndecidableInstances, OverlappingInstances, FlexibleInstances, MultiParamTypeClasses #-}
+
+
+{-
+Module      :  Control.Monad.StateX.Strict
+Copyright   :  (c) Mark Snyder 2012.
+License     :  BSD-style
+Maintainer  :  Mark Snyder, msnyde14@gmu.edu
+Stability   :  experimental
+Portability :  non-portable (multi-param classes, functional dependencies)
+-}
+
+
+module Control.Monad.StateX.Strict (
+    module Control.Monad.StateX.Class,
+    -- * The StateX Monad
+    StateX(..),
+    mkStateX,
+    runStateX,
+    evalStatex,
+    execStatex,
+    mapStatex,
+    withStatex,
+    -- * The StateTX Monad
+    StateTX(..),
+    mkStateTX,
+    runStateTX,
+    evalStateTX,
+    execStateTX,
+    mapStateTX,
+    withStateTX,
+    module Control.Monad,
+    module Control.Monad.Fix,
+    module Control.Monad.Trans,
+  ) where
+
+import Control.Monad
+import Control.Monad.Cont.Class
+import Control.Monad.Fix
+import Control.Monad.Trans
+
+import Control.Monad.Error
+import Control.Monad.Writer
+import Control.Monad.RWS
+
+import Control.Monad.Index
+
+import Control.Monad.ErrorX.Class
+import Control.Monad.ReaderX.Class
+import Control.Monad.StateX.Class
+import Control.Monad.WriterX.Class
+
+
+-- ---------------------------------------------------------------------------
+
+-- {-# INLINE runStateX' #-}
+newtype StateX ix s a = StateX { runStateX' :: s -> (a, s) }
+
+{-# INLINE mkStateX #-}
+mkStateX :: (Index ix) => ix -> (s->(a,s)) -> StateX ix s a
+mkStateX _ v = StateX v
+
+{-# INLINE runStateX #-}
+runStateX :: (Index ix) => ix -> StateX ix s a -> (s->(a,s))
+runStateX _ m s = runStateX' m s
+
+{-# INLINE evalStatex #-}
+evalStatex :: (Index ix) => ix -> StateX ix s a -> s -> a
+evalStatex (_::ix) m s = fst (runStateX' m s)
+
+{-# INLINE execStatex #-}
+execStatex :: (Index ix) => ix -> StateX ix s a -> s -> s
+execStatex (_::ix) m s = snd (runStateX' m s)
+
+{-# INLINE mapStatex #-}
+mapStatex :: (Index ix) => ix -> ((a, s) -> (b, s)) -> StateX ix s a -> StateX ix s b
+mapStatex (_::ix) f m = mkStateX (getVal::ix) $ f . runStateX' m
+
+{-# INLINE withStatex #-}
+withStatex :: (Index ix) => ix -> (s -> s) -> StateX ix s a -> StateX ix s a
+withStatex (_::ix) f m = mkStateX (getVal::ix) $ runStateX' m . f
+
+instance (Index ix) => Functor (StateX ix s) where
+    fmap f m = mkStateX (getVal::ix) $ \s ->
+               case runStateX' m s of
+                 (a, s') -> (f a, s')
+
+instance (Index ix) => Monad (StateX ix s) where
+    {-# INLINE return #-}
+    {-# INLINE (>>=) #-}
+    {-# INLINE (>>) #-}
+    return a = mkStateX (getVal::ix) $ \s -> (a, s)
+    ((StateX x)::(StateX ix s a)) >>= f  = mkStateX (getVal::ix) $ \s ->
+        case (x s) of (v,s') -> runStateX' (f v) s'
+    ((StateX x)::(StateX ix s a)) >> f  = mkStateX (getVal::ix) $ \s ->
+        case (x s) of (_{-v-},s') -> runStateX' (f) s'
+{-- before lazy copy:
+instance (Index ix) => Monad (StateX ix s) where
+    return a = mkStateX (getVal::ix) $ \s -> (a, s)
+    ((StateXx)::(StateX ix s a)) >>= f  = mkStateX (getVal::ix) $ \s ->
+               case runStateX' m s of
+                 (v, s') -> runStateX' (f v) s'
+--}
+
+instance (Index ix) => MonadFix (StateX ix s) where
+    mfix f = mkStateX (getVal::ix) $ \s -> let (a, s') = runStateX' (f a) s in (a, s')
+
+instance (Index ix) => MonadStateX ix s (StateX ix s) where
+    {-# INLINE getx #-}
+    {-# INLINE putx #-}
+    getx (ixv::ix)   = mkStateX ixv $ \s -> (s, s)
+    putx (ixv::ix) s = mkStateX ixv $ \_ -> ((), s)
+
+-- ---------------------------------------------------------------------------
+
+-- {-# INLINE runStateTX' #-}
+newtype StateTX ix s m a = StateTX { runStateTX' :: s -> m (a,s) }
+
+{-# INLINE mkStateTX #-}
+mkStateTX :: (Index ix) => ix -> (s->m(a,s)) -> StateTX ix s m a
+mkStateTX  _ v = StateTX v
+
+{-# INLINE runStateTX #-}
+runStateTX :: (Index ix) => ix -> StateTX ix s m a -> s -> m (a,s)
+runStateTX _ m s = runStateTX' m s
+
+{-# INLINE evalStateTX #-}
+evalStateTX :: (Monad m, Index ix) => ix -> StateTX ix s m a -> s -> m a
+evalStateTX (_::ix) m s = do
+    (a, _) <- runStateTX' m s
+    return a
+
+{-# INLINE execStateTX #-}
+execStateTX :: (Monad m, Index ix) => ix -> StateTX ix s m a -> s -> m s
+execStateTX (_::ix) m s = do
+    (_, s') <- runStateTX' m s
+    return s'
+
+{-# INLINE mapStateTX #-}
+mapStateTX :: (Index ix) => ix -> (m (a, s) -> n (b, s)) -> StateTX ix s m a -> StateTX ix s n b
+mapStateTX (_::ix) f m = mkStateTX (getVal::ix) $ f . runStateTX' m
+
+{-# INLINE withStateTX #-}
+withStateTX :: (Index ix) => ix -> (s -> s) -> StateTX ix s m a -> StateTX ix s m a
+withStateTX (_::ix) f m = mkStateTX (getVal::ix) $ runStateTX' m . f
+
+instance (Monad m, Index ix) => Functor (StateTX ix s m) where
+    fmap f m = mkStateTX (getVal::ix) $ \s -> do
+        (x, s') <- runStateTX' m s
+        return (f x, s')
+
+instance (Monad m, Index ix) => Monad (StateTX ix s m) where
+    {-# INLINE return #-}
+    {-# INLINE (>>=) #-}
+    {-# INLINE (>>) #-}
+    return a = mkStateTX (getVal::ix) $ \s -> return (a, s)
+    ((StateTX x)::(StateTX ix s m a)) >>= f  = mkStateTX (getVal::ix) $ \s -> do
+        (a, s') <- x s
+        runStateTX' (f a) s'
+    ((StateTX x)::(StateTX ix s m a)) >> f  = mkStateTX (getVal::ix) $ \s -> do
+        (_{-a-}, s') <- x s
+        runStateTX' (f) s'
+    fail str = mkStateTX (getVal::ix) $ \_ -> fail str
+{- before lazy copy:
+instance (Monad m, Index ix) => Monad (StateTX ix s m) where
+    return a = mkStateTX (getVal::ix) $ \s -> return (a, s)
+    ((StateTX x) :: (StateTX ix s m a)) >>= k  = mkStateTX (getVal::ix) $ \s -> do
+        (a, s') <- runStateTX' m s
+        runStateTX' (k a) s'
+    fail str = mkStateTX (getVal::ix) $ \_ -> fail str
+-}
+
+instance (MonadPlus m, Index ix) => MonadPlus (StateTX ix s m) where
+    mzero       = mkStateTX (getVal::ix) $ \_ -> mzero
+    m `mplus` n = mkStateTX (getVal::ix) $ \s -> runStateTX' m s `mplus` runStateTX' n s
+
+instance (MonadFix m, Index ix) => MonadFix (StateTX ix s m) where
+    mfix f = mkStateTX (getVal::ix) $ \s -> mfix $ \ ~(a, _) -> runStateTX' (f a) s
+
+-- providing Monad's behavior (same index)
+instance (Monad m, Index ix) => MonadStateX ix s (StateTX ix s m) where
+    {-# INLINE getx #-}
+    {-# INLINE putx #-}
+    getx (ixv::ix)   = mkStateTX ixv $ \s -> return (s, s)
+    putx (ixv::ix) s = mkStateTX ixv $ \_ -> return ((), s)
+
+-- ---------------------------------------------------------------------------
+-- Instances for other mtl transformers
+
+instance (Index ix) => MonadTrans (StateTX ix s) where
+    lift m = mkStateTX (getVal::ix) $ \s -> do
+        a <- m
+        return (a, s)
+
+-- IO
+instance (MonadIO m, Index ix) => MonadIO (StateTX ix s m) where
+    liftIO = lift . liftIO
+
+-- Cont
+instance (MonadCont m, Index ix) => MonadCont (StateTX ix s m) where
+    callCC f = mkStateTX (getVal::ix) $ \s ->
+        callCC $ \c ->
+        runStateTX' (f (\a -> mkStateTX (getVal::ix) $ \s' -> c (a, s'))) s
+
+-- ---------------------------------------------------------------------------
+
+-- Error
+instance (MonadError e m, Index ix) => MonadError e (StateTX ix s m) where
+    throwError       = lift . throwError
+    m `catchError` h = mkStateTX (getVal::ix) $ \s -> runStateTX' m s
+        `catchError` \e -> runStateTX' (h e) s
+
+
+-- ErrorX
+instance (MonadErrorX ixe e m, Index ixs) => MonadErrorX ixe e (StateTX ixs s m) where
+    throwErrorx (ixv::ixe)      = lift . throwErrorx ixv
+    catchErrorx (ixv::ixe) m h = mkStateTX (getVal::ixs) $ \s ->
+         catchErrorx
+         ixv
+         (runStateTX' m s)
+         (\e -> runStateTX' (h e) s)
+
+
+-- State
+instance (MonadState s1 m,Index ix) => MonadState s1 (StateTX ix s2 m) where
+    get   = mkStateTX (getVal::ix) $ \s -> do
+                                n <- get
+                                return (n,s)
+    put (v::s1) = mkStateTX (getVal::ix) $ \s -> do
+                                put v
+                                return ((),s)
+
+
+-- StateX (different indexes)
+instance (Index ix1, Index ix2, MonadStateX ix1 s1 m)
+    => MonadStateX ix1 s1 (StateTX ix2 s2 m) where
+    {-# INLINE getx #-}
+    {-# INLINE putx #-}
+    getx (ixv::ix1)    =  mkStateTX (getVal::ix2) $
+                       \(s::s2)-> getx (ixv::ix1) >>= (\v1 -> return (v1,s))
+    putx (ixv::ix1) v1 =  mkStateTX (getVal::ix2) $
+                       \(s::s2)-> putx (ixv::ix1) (v1) >> return  ((),s)
+
+
+-- Reader
+instance (Index ix, MonadReader r m) =>  MonadReader r (StateTX ix st m) where
+  ask  = lift ask
+  local f m = mkStateTX (getVal::ix) $ \(s::st) -> local f (runStateTX' m s)
+
+
+-- ReaderX
+instance (Index ixs, MonadReaderX ixr r m) =>  MonadReaderX ixr r (StateTX ixs st m) where
+  askx (ixv::ixr)  = lift $ askx ixv
+  localx (ixv::ixr) f m = mkStateTX (getVal::ixs) $ \(s::st) -> localx ixv f (runStateTX' m s)
+
+
+--Writer
+instance (Index ix, MonadWriter w m) => MonadWriter w (StateTX ix s m) where
+   tell     = lift . tell
+   listen m = mkStateTX (getVal::ix) $ \s -> do
+       ~((a,s'),w) <- listen (runStateTX' m s)
+       return ((a,w),s')
+   pass   m = mkStateTX (getVal::ix) $ \s -> pass $ do
+       ~((a,f),s') <- runStateTX' m s
+       return ((a,s'),f)
+
+
+-- WriterX
+instance (Index ixs, MonadWriterX ixw w m) => MonadWriterX ixw w (StateTX ixs s m) where
+   tellx (ixv::ixw)     = lift . tellx ixv
+   listenx (ixv::ixw) m = mkStateTX (getVal::ixs) $ \s -> do
+       ~((a,s'),w) <- listenx ixv (runStateTX' m s)
+       return ((a,w),s')
+   passx (ixv::ixw)   m = mkStateTX (getVal::ixs) $ \s -> passx ixv $ do
+       ~((a,f),s') <- runStateTX' m s
+       return ((a,s'),f)
+
+-- RWS
+instance (Monoid w, Index ix2, MonadReader r m, MonadState s m, MonadWriter w m)
+   => MonadRWS r w s (StateTX ix2 s2 m) where
+</pre></br><h2>printed</h2></br><pre>{-# LANGUAGE ScopedTypeVariables, UndecidableInstances, OverlappingInstances, FlexibleInstances, MultiParamTypeClasses #-}
+
+
+{-
+Module      :  Control.Monad.StateX.Strict
+Copyright   :  (c) Mark Snyder 2012.
+License     :  BSD-style
+Maintainer  :  Mark Snyder, msnyde14@gmu.edu
+Stability   :  experimental
+Portability :  non-portable (multi-param classes, functional dependencies)
+-}
+
+
+module Control.Monad.StateX.Strict (
+    module Control.Monad.StateX.Class,
+    -- * The StateX Monad
+    StateX(..),
+    mkStateX,
+    runStateX,
+    evalStatex,
+    execStatex,
+    mapStatex,
+    withStatex,
+    -- * The StateTX Monad
+    StateTX(..),
+    mkStateTX,
+    runStateTX,
+    evalStateTX,
+    execStateTX,
+    mapStateTX,
+    withStateTX,
+    module Control.Monad,
+    module Control.Monad.Fix,
+    module Control.Monad.Trans,
+  ) where
+
+import Control.Monad
+import Control.Monad.Cont.Class
+import Control.Monad.Fix
+import Control.Monad.Trans
+
+import Control.Monad.Error
+import Control.Monad.Writer
+import Control.Monad.RWS
+
+import Control.Monad.Index
+
+import Control.Monad.ErrorX.Class
+import Control.Monad.ReaderX.Class
+import Control.Monad.StateX.Class
+import Control.Monad.WriterX.Class
+
+
+-- ---------------------------------------------------------------------------
+
+-- {-# INLINE runStateX' #-}
+newtype StateX ix s a = StateX { runStateX' :: s -> (a, s) }
+
+{-# INLINE mkStateX #-}
+mkStateX :: (Index ix) => ix -> (s->(a,s)) -> StateX ix s a
+mkStateX _ v = StateX v
+
+{-# INLINE runStateX #-}
+runStateX :: (Index ix) => ix -> StateX ix s a -> (s->(a,s))
+runStateX _ m s = runStateX' m s
+
+{-# INLINE evalStatex #-}
+evalStatex :: (Index ix) => ix -> StateX ix s a -> s -> a
+evalStatex (_::ix) m s = fst (runStateX' m s)
+
+{-# INLINE execStatex #-}
+execStatex :: (Index ix) => ix -> StateX ix s a -> s -> s
+execStatex (_::ix) m s = snd (runStateX' m s)
+
+{-# INLINE mapStatex #-}
+mapStatex :: (Index ix) => ix -> ((a, s) -> (b, s)) -> StateX ix s a -> StateX ix s b
+mapStatex (_::ix) f m = mkStateX (getVal::ix) $ f . runStateX' m
+
+{-# INLINE withStatex #-}
+withStatex :: (Index ix) => ix -> (s -> s) -> StateX ix s a -> StateX ix s a
+withStatex (_::ix) f m = mkStateX (getVal::ix) $ runStateX' m . f
+
+instance (Index ix) => Functor (StateX ix s) where
+    fmap f m = mkStateX (getVal::ix) $ \s ->
+               case runStateX' m s of
+                 (a, s') -> (f a, s')
+
+instance (Index ix) => Monad (StateX ix s) where
+    {-# INLINE return #-}
+    {-# INLINE (>>=) #-}
+    {-# INLINE (>>) #-}
+    return a = mkStateX (getVal::ix) $ \s -> (a, s)
+    ((StateX x):: StateX ix s a ) >>= f  = mkStateX (getVal::ix) $ \s ->
+        case (x s) of (v,s') -> runStateX' (f v) s'
+    ((StateX x):: StateX ix s a ) >> f  = mkStateX (getVal::ix) $ \s ->
+        case (x s) of (_{-v-},s') -> runStateX' (f) s'
+{-- before lazy copy:
+instance (Index ix) => Monad (StateX ix s) where
+    return a = mkStateX (getVal::ix) $ \s -> (a, s)
+    ((StateXx)::(StateX ix s a)) >>= f  = mkStateX (getVal::ix) $ \s ->
+               case runStateX' m s of
+                 (v, s') -> runStateX' (f v) s'
+--}
+
+instance (Index ix) => MonadFix (StateX ix s) where
+    mfix f = mkStateX (getVal::ix) $ \s -> let (a, s') = runStateX' (f a) s in (a, s')
+
+instance (Index ix) => MonadStateX ix s (StateX ix s) where
+    {-# INLINE getx #-}
+    {-# INLINE putx #-}
+    getx (ixv::ix)   = mkStateX ixv $ \s -> (s, s)
+    putx (ixv::ix) s = mkStateX ixv $ \_ -> ((), s)
+
+-- ---------------------------------------------------------------------------
+
+-- {-# INLINE runStateTX' #-}
+newtype StateTX ix s m a = StateTX { runStateTX' :: s -> m (a,s) }
+
+{-# INLINE mkStateTX #-}
+mkStateTX :: (Index ix) => ix -> (s->m(a,s)) -> StateTX ix s m a
+mkStateTX  _ v = StateTX v
+
+{-# INLINE runStateTX #-}
+runStateTX :: (Index ix) => ix -> StateTX ix s m a -> s -> m (a,s)
+runStateTX _ m s = runStateTX' m s
+
+{-# INLINE evalStateTX #-}
+evalStateTX :: (Monad m, Index ix) => ix -> StateTX ix s m a -> s -> m a
+evalStateTX (_::ix) m s = do
+    (a, _) <- runStateTX' m s
+    return a
+
+{-# INLINE execStateTX #-}
+execStateTX :: (Monad m, Index ix) => ix -> StateTX ix s m a -> s -> m s
+execStateTX (_::ix) m s = do
+    (_, s') <- runStateTX' m s
+    return s'
+
+{-# INLINE mapStateTX #-}
+mapStateTX :: (Index ix) => ix -> (m (a, s) -> n (b, s)) -> StateTX ix s m a -> StateTX ix s n b
+mapStateTX (_::ix) f m = mkStateTX (getVal::ix) $ f . runStateTX' m
+
+{-# INLINE withStateTX #-}
+withStateTX :: (Index ix) => ix -> (s -> s) -> StateTX ix s m a -> StateTX ix s m a
+withStateTX (_::ix) f m = mkStateTX (getVal::ix) $ runStateTX' m . f
+
+instance (Monad m, Index ix) => Functor (StateTX ix s m) where
+    fmap f m = mkStateTX (getVal::ix) $ \s -> do
+        (x, s') <- runStateTX' m s
+        return (f x, s')
+
+instance (Monad m, Index ix) => Monad (StateTX ix s m) where
+    {-# INLINE return #-}
+    {-# INLINE (>>=) #-}
+    {-# INLINE (>>) #-}
+    return a = mkStateTX (getVal::ix) $ \s -> return (a, s)
+    ((StateTX x):: StateTX ix s m a ) >>= f  = mkStateTX (getVal::ix) $ \s -> do
+        (a, s') <- x s
+        runStateTX' (f a) s'
+    ((StateTX x):: StateTX ix s m a ) >> f  = mkStateTX (getVal::ix) $ \s -> do
+        (_{-a-}, s') <- x s
+        runStateTX' (f) s'
+    fail str = mkStateTX (getVal::ix) $ \_ -> fail str
+{- before lazy copy:
+instance (Monad m, Index ix) => Monad (StateTX ix s m) where
+    return a = mkStateTX (getVal::ix) $ \s -> return (a, s)
+    ((StateTX x) :: (StateTX ix s m a)) >>= k  = mkStateTX (getVal::ix) $ \s -> do
+        (a, s') <- runStateTX' m s
+        runStateTX' (k a) s'
+    fail str = mkStateTX (getVal::ix) $ \_ -> fail str
+-}
+
+instance (MonadPlus m, Index ix) => MonadPlus (StateTX ix s m) where
+    mzero       = mkStateTX (getVal::ix) $ \_ -> mzero
+    m `mplus` n = mkStateTX (getVal::ix) $ \s -> runStateTX' m s `mplus` runStateTX' n s
+
+instance (MonadFix m, Index ix) => MonadFix (StateTX ix s m) where
+    mfix f = mkStateTX (getVal::ix) $ \s -> mfix $ \ ~(a, _) -> runStateTX' (f a) s
+
+-- providing Monad's behavior (same index)
+instance (Monad m, Index ix) => MonadStateX ix s (StateTX ix s m) where
+    {-# INLINE getx #-}
+    {-# INLINE putx #-}
+    getx (ixv::ix)   = mkStateTX ixv $ \s -> return (s, s)
+    putx (ixv::ix) s = mkStateTX ixv $ \_ -> return ((), s)
+
+-- ---------------------------------------------------------------------------
+-- Instances for other mtl transformers
+
+instance (Index ix) => MonadTrans (StateTX ix s) where
+    lift m = mkStateTX (getVal::ix) $ \s -> do
+        a <- m
+        return (a, s)
+
+-- IO
+instance (MonadIO m, Index ix) => MonadIO (StateTX ix s m) where
+    liftIO = lift . liftIO
+
+-- Cont
+instance (MonadCont m, Index ix) => MonadCont (StateTX ix s m) where
+    callCC f = mkStateTX (getVal::ix) $ \s ->
+        callCC $ \c ->
+        runStateTX' (f (\a -> mkStateTX (getVal::ix) $ \s' -> c (a, s'))) s
+
+-- ---------------------------------------------------------------------------
+
+-- Error
+instance (MonadError e m, Index ix) => MonadError e (StateTX ix s m) where
+    throwError       = lift . throwError
+    m `catchError` h = mkStateTX (getVal::ix) $ \s -> runStateTX' m s
+        `catchError` \e -> runStateTX' (h e) s
+
+
+-- ErrorX
+instance (MonadErrorX ixe e m, Index ixs) => MonadErrorX ixe e (StateTX ixs s m) where
+    throwErrorx (ixv::ixe)      = lift . throwErrorx ixv
+    catchErrorx (ixv::ixe) m h = mkStateTX (getVal::ixs) $ \s ->
+         catchErrorx
+         ixv
+         (runStateTX' m s)
+         (\e -> runStateTX' (h e) s)
+
+
+-- State
+instance (MonadState s1 m,Index ix) => MonadState s1 (StateTX ix s2 m) where
+    get   = mkStateTX (getVal::ix) $ \s -> do
+                                n <- get
+                                return (n,s)
+    put (v::s1) = mkStateTX (getVal::ix) $ \s -> do
+                                put v
+                                return ((),s)
+
+
+-- StateX (different indexes)
+instance (Index ix1, Index ix2, MonadStateX ix1 s1 m)
+    => MonadStateX ix1 s1 (StateTX ix2 s2 m) where
+    {-# INLINE getx #-}
+    {-# INLINE putx #-}
+    getx (ixv::ix1)    =  mkStateTX (getVal::ix2) $
+                       \(s::s2)-> getx (ixv::ix1) >>= (\v1 -> return (v1,s))
+    putx (ixv::ix1) v1 =  mkStateTX (getVal::ix2) $
+                       \(s::s2)-> putx (ixv::ix1) (v1) >> return  ((),s)
+
+
+-- Reader
+instance (Index ix, MonadReader r m) =>  MonadReader r (StateTX ix st m) where
+  ask  = lift ask
+  local f m = mkStateTX (getVal::ix) $ \(s::st) -> local f (runStateTX' m s)
+
+
+-- ReaderX
+instance (Index ixs, MonadReaderX ixr r m) =>  MonadReaderX ixr r (StateTX ixs st m) where
+  askx (ixv::ixr)  = lift $ askx ixv
+  localx (ixv::ixr) f m = mkStateTX (getVal::ixs) $ \(s::st) -> localx ixv f (runStateTX' m s)
+
+
+--Writer
+instance (Index ix, MonadWriter w m) => MonadWriter w (StateTX ix s m) where
+   tell     = lift . tell
+   listen m = mkStateTX (getVal::ix) $ \s -> do
+       ~((a,s'),w) <- listen (runStateTX' m s)
+       return ((a,w),s')
+   pass   m = mkStateTX (getVal::ix) $ \s -> pass $ do
+       ~((a,f),s') <- runStateTX' m s
+       return ((a,s'),f)
+
+
+-- WriterX
+instance (Index ixs, MonadWriterX ixw w m) => MonadWriterX ixw w (StateTX ixs s m) where
+   tellx (ixv::ixw)     = lift . tellx ixv
+   listenx (ixv::ixw) m = mkStateTX (getVal::ixs) $ \s -> do
+       ~((a,s'),w) <- listenx ixv (runStateTX' m s)
+       return ((a,w),s')
+   passx (ixv::ixw)   m = mkStateTX (getVal::ixs) $ \s -> passx ixv $ do
+       ~((a,f),s') <- runStateTX' m s
+       return ((a,s'),f)
+
+-- RWS
+instance (Monoid w, Index ix2, MonadReader r m, MonadState s m, MonadWriter w m)
+   => MonadRWS r w s (StateTX ix2 s2 m) where
+
+</pre>

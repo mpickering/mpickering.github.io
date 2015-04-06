@@ -1,0 +1,210 @@
+<a href="Internal.hs15810301051557810404.out.html">prev</a></br><a href="failures.html">home</a></br><a href="Internal.hs1653662173366782137.out.html">next</a></br></br><pre>46c46
+<         v .: "loginStatus" >>= \case
+---
+>         v .: "loginStatus" >>= 
+64c64
+<     modifyMVar_ workRateThreadMVar $ \case
+---
+>     modifyMVar_ workRateThreadMVar $ 
+99a100
+> 
+</pre></br><h2>original</h2></br><pre>{-# LANGUAGE FunctionalDependencies #-}
+{-# LANGUAGE AutoDeriveTypeable #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE LambdaCase #-}
+
+-- | Internal operations of the Betfair API.
+--
+
+module Network.Betfair.Internal
+    (
+    -- * Login procedures
+      LoginResponse(..)
+    , SessionKey
+    -- * API call limit
+    --
+    -- | I really advice against using these from user code.
+    , NumberOfRequests
+    , rateLimit
+    , workRateLimit
+    -- * Requests
+    , Request(..)
+    -- ** Betfair URLs
+    , bettingUrl
+    , heartbeatUrl
+    , Url )
+    where
+
+import Control.Applicative
+import Control.Concurrent
+import Control.Monad
+import Control.Monad.Catch
+import Data.Aeson
+import Data.IORef
+import Data.Text ( Text )
+import Data.Typeable
+import System.IO.Unsafe
+
+type SessionKey = Text
+
+data LoginResponse = LoginFailed Text
+                   | LoginSuccessful SessionKey
+                   deriving ( Eq, Ord, Show, Read, Typeable )
+
+instance FromJSON LoginResponse where
+    parseJSON (Object v) =
+        v .: "loginStatus" >>= \case
+            "SUCCESS" -> LoginSuccessful <$> v .: "sessionToken"
+            notsuccess -> return $ LoginFailed notsuccess
+    parseJSON _ = empty
+
+---- The rate limiter ----
+type NumberOfRequests = Double
+
+rateLimit :: IORef NumberOfRequests
+rateLimit = unsafePerformIO $ newIORef 4
+{-# NOINLINE rateLimit #-}
+
+---- The lock used to limit the number of API calls ---
+
+-- | Call before you request anything from Betfair, the locking system makes
+-- sure this cannot be called too many times per second.
+workRateLimit :: IO ()
+workRateLimit = mask_ $ do
+    modifyMVar_ workRateThreadMVar $ \case
+        Nothing -> Just <$> forkIO workRateThread
+        x -> return x
+    takeMVar workRateLock
+
+workRateLock :: MVar ()
+workRateLock = unsafePerformIO $ newEmptyMVar
+{-# NOINLINE workRateLock #-}
+
+workRateThreadMVar :: MVar (Maybe ThreadId)
+workRateThreadMVar = unsafePerformIO $ newMVar Nothing
+{-# NOINLINE workRateThread #-}
+
+workRateThread :: IO ()
+workRateThread = forever $ do
+    putMVar workRateLock ()
+    x <- readIORef rateLimit
+    if x <= 0
+      then forever $ threadDelay 10000000
+      else when (x > 0) $
+               threadDelay $ ceiling $ (1000000 :: Double) / x
+
+type Url = String
+
+bettingUrl :: Url
+bettingUrl = "https://api.betfair.com/exchange/betting/json-rpc/v1"
+
+heartbeatUrl :: Url
+heartbeatUrl = "https://api.betfair.com/exchange/heartbeat/json-rpc/v1"
+
+-- | Class of types that can be used as requests to Betfair, with their
+-- response defined as the second type variable.
+class (ToJSON a, FromJSON b) => Request a b | a -> b where
+    requestMethod :: Proxy a -> Text
+    requestUrl :: Proxy a -> Url
+
+</pre></br><h2>printed</h2></br><pre>{-# LANGUAGE FunctionalDependencies #-}
+{-# LANGUAGE AutoDeriveTypeable #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE LambdaCase #-}
+
+-- | Internal operations of the Betfair API.
+--
+
+module Network.Betfair.Internal
+    (
+    -- * Login procedures
+      LoginResponse(..)
+    , SessionKey
+    -- * API call limit
+    --
+    -- | I really advice against using these from user code.
+    , NumberOfRequests
+    , rateLimit
+    , workRateLimit
+    -- * Requests
+    , Request(..)
+    -- ** Betfair URLs
+    , bettingUrl
+    , heartbeatUrl
+    , Url )
+    where
+
+import Control.Applicative
+import Control.Concurrent
+import Control.Monad
+import Control.Monad.Catch
+import Data.Aeson
+import Data.IORef
+import Data.Text ( Text )
+import Data.Typeable
+import System.IO.Unsafe
+
+type SessionKey = Text
+
+data LoginResponse = LoginFailed Text
+                   | LoginSuccessful SessionKey
+                   deriving ( Eq, Ord, Show, Read, Typeable )
+
+instance FromJSON LoginResponse where
+    parseJSON (Object v) =
+        v .: "loginStatus" >>= 
+            "SUCCESS" -> LoginSuccessful <$> v .: "sessionToken"
+            notsuccess -> return $ LoginFailed notsuccess
+    parseJSON _ = empty
+
+---- The rate limiter ----
+type NumberOfRequests = Double
+
+rateLimit :: IORef NumberOfRequests
+rateLimit = unsafePerformIO $ newIORef 4
+{-# NOINLINE rateLimit #-}
+
+---- The lock used to limit the number of API calls ---
+
+-- | Call before you request anything from Betfair, the locking system makes
+-- sure this cannot be called too many times per second.
+workRateLimit :: IO ()
+workRateLimit = mask_ $ do
+    modifyMVar_ workRateThreadMVar $ 
+        Nothing -> Just <$> forkIO workRateThread
+        x -> return x
+    takeMVar workRateLock
+
+workRateLock :: MVar ()
+workRateLock = unsafePerformIO $ newEmptyMVar
+{-# NOINLINE workRateLock #-}
+
+workRateThreadMVar :: MVar (Maybe ThreadId)
+workRateThreadMVar = unsafePerformIO $ newMVar Nothing
+{-# NOINLINE workRateThread #-}
+
+workRateThread :: IO ()
+workRateThread = forever $ do
+    putMVar workRateLock ()
+    x <- readIORef rateLimit
+    if x <= 0
+      then forever $ threadDelay 10000000
+      else when (x > 0) $
+               threadDelay $ ceiling $ (1000000 :: Double) / x
+
+type Url = String
+
+bettingUrl :: Url
+bettingUrl = "https://api.betfair.com/exchange/betting/json-rpc/v1"
+
+heartbeatUrl :: Url
+heartbeatUrl = "https://api.betfair.com/exchange/heartbeat/json-rpc/v1"
+
+-- | Class of types that can be used as requests to Betfair, with their
+-- response defined as the second type variable.
+class (ToJSON a, FromJSON b) => Request a b | a -> b where
+    requestMethod :: Proxy a -> Text
+    requestUrl :: Proxy a -> Url
+
+
+</pre>

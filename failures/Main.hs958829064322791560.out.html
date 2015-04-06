@@ -1,0 +1,440 @@
+<a href="Main.hs915896220304987844.out.html">prev</a></br><a href="failures.html">home</a></br><a href="main.hs9964979722063936098.out.html">next</a></br></br><pre>133c133
+< thread = foldr (\f g -> \a -> f a >>= g) return
+---
+> thread = foldr (\f g ->    ->a -> f a >>= g) return
+216a217
+> 
+</pre></br><h2>original</h2></br><pre>module Main
+
+where
+
+import Form ( Form, parse )
+import Hylotab
+
+import System.IO           ( hPrint, stderr, hSetBuffering, stdin, BufferMode(LineBuffering))
+import System.Exit         ( exitWith, ExitCode(ExitFailure) )
+
+import System.Console.GetOpt ( OptDescr(..), ArgDescr(..), ArgOrder(..),
+                               getOpt, usageInfo )
+import System.Environment    ( getArgs, getProgName )
+import System.CPUTime( getCPUTime )
+import System.Timeout ( timeout )
+
+import Control.Monad.Error (MonadError(..))
+import Control.Applicative ( (<$>) )
+import Prelude hiding ( catch, log )
+import Control.Exception   ( catch, SomeException )
+import Control.Monad(unless)
+
+main :: IO ()
+main = do r <- runCmdLineVersion
+                `catch` \e -> do
+                    let msg = show (e::SomeException)
+                    unless (msg == "ExitSuccess") $ hPrint stderr msg
+                    exit r_RUNTIME_ERROR
+          --
+          case r of
+            Nothing             -> exit r_DID_NOT_RUN
+            Just Nothing        -> exit r_TIMEOUT
+            Just (Just UNSAT)   -> exit r_UNSAT
+            Just (Just (SAT _)) -> exit r_SAT
+    --
+    where r_SAT           = 1
+          r_UNSAT         = 2
+          r_TIMEOUT       = 3
+          r_DID_NOT_RUN   = 10
+          r_RUNTIME_ERROR = 13
+
+exit :: Int -> IO a
+exit = exitWith . ExitFailure
+
+runCmdLineVersion :: IO (Maybe (Maybe SatFlag))
+runCmdLineVersion =
+    do p_clp <- getParams
+       case p_clp of
+         Left  err -> do putStrLn header
+                         putStrLn err
+                         progName <- getProgName
+                         putStrLn $ "Try `" ++ progName ++ " --help' " ++
+                                     "for more information"
+                         return Nothing
+         --
+         Right clp -> if showhelp clp
+                        then do putStrLn header
+                                progName <- getProgName
+                                putStrLn $ usage (progName ++ " [OPTIONS]")
+                                putStrLn gplTag
+                                return Nothing
+                        --
+                        else Just <$> runWithParams clp
+
+runWithParams :: Params -> IO (Maybe SatFlag)
+runWithParams par =
+ do  start <- getCPUTime
+     --
+     let myPutStrLn = if quietmode par then const (return ()) else putStrLn
+     --
+     let fromStdIn = do myPutStrLn $ "Reading from stdin (run again with" ++
+                                     "`--help' for usage options)"
+                        hSetBuffering stdin LineBuffering
+                        getContents
+
+     f <- parse <$> maybe fromStdIn readFile (filename par)
+     --
+     f `seq` myPutStrLn $ "\nInput:\n{ " ++ show f ++" }\nEnd of input\n"
+     --
+     let fcs = frameconds par
+     let md = expandmode par
+     let verbose = log par
+     --
+     unless (null fcs) $ myPutStrLn $ "\nAxioms:\n{ " ++ show fcs ++ " }\n"
+     --
+     result <- if maxtimeout par == 0
+                then Just <$> genSat verbose md fcs f
+                else timeout (maxtimeout par * (10::Int)^(6::Int))
+                             (genSat verbose md fcs f)
+     --
+     case result of
+        Nothing           ->  myPutStrLn "TIMEOUT"
+        Just UNSAT        ->  myPutStrLn "not satisfiable"
+        Just (SAT nodes)  ->  myPutStrLn $ "satisfiable:\n" ++ extract (head nodes)
+     --
+     end <- getCPUTime
+     let elapsedTime = fromInteger (end - start) / 1000000000000.0
+     myPutStrLn $ "Elapsed time: " ++ show (elapsedTime :: Double)
+     --
+     return result
+
+{- Command line parameters handling -}
+
+data Params = Params { expandmode :: Mode,
+                       maxtimeout :: Int,
+                         showhelp :: Bool,
+                        quietmode :: Bool,
+                       frameconds :: [Form],
+                         filename :: Maybe FilePath,
+                              log :: Bool}
+
+defaultParams :: Params
+defaultParams = Params { expandmode = Extend,
+                         maxtimeout = 0,
+                           showhelp = False,
+                         frameconds = [],
+                           filename = Nothing,
+                          quietmode = False,
+                                log = False }
+
+type ParamsModifier   = Params -> Either ParsingErrMsg Params
+type ParsingErrMsg = String
+
+parseCmds :: [String] -> Params -> Either ParsingErrMsg Params
+parseCmds argv par = case getOpt RequireOrder options argv of
+                       (clpMods, [],  []) -> thread clpMods par
+                       (      _,unk,  []) -> fail $ "Unknown option: " ++
+                                                   unwords unk
+                       (     _,   _,errs) -> fail $ unlines errs
+
+
+thread :: Monad m => [a -> m a] -> a -> m a
+thread = foldr (\f g -> \a -> f a >>= g) return
+
+options :: [OptDescr ParamsModifier]
+options =
+  [Option ['h','?']
+          ["help"]
+          (NoArg $ \p -> return p{showhelp = True})
+          "display this help and exit",
+   Option ['f']
+          ["input-file"]
+          (ReqArg ((not . null) ?-> \s p -> return p{filename = Just s}) "file")
+          "obtain input formulas from file instead of stdin",
+   Option ['t']
+          ["timeout"]
+          (ReqArg ((not . null) ?-> \s p -> return p{maxtimeout = read s}) "T")
+          "run for at most T seconds",
+   Option ['q']
+          ["quiet", "silent"]
+          (NoArg $ \p -> return p{quietmode = True})
+          "suppress all normal output",
+   Option []
+          ["min"]
+          (NoArg $ \p -> return p{expandmode = Try})
+          "search minimal model",
+   Option ['v']
+          ["verbose"]
+          (NoArg $ \p -> return p{log = True})
+          "log tableau calculus"
+  ] ++
+  map genAxiomOptions
+             [(["trans","k4"], trans, "transitivity (k4) axiom"),
+              (["intrans"], intrans, "intransitivity axiom"),
+              (["refl","kt"],refl, "reflexivity axiom"),
+              (["irrefl"], irrefl, "irreflexivity axiom"),
+              (["symm","kb"], symm, "symmetry axiom"),
+              (["asymm"], asymm,  "asymmetry axiom"),
+              (["s4","kt4"], s4, "s4 axiom"),
+              (["s5"], s5, "s5 axiom"),
+              (["serial","kd"], serial, "serial (kd) axiom"),
+              (["euclid","k5"], euclid, "euclid (k5) axiom"),
+              (["kdb"], kdb, "kdb axiom"),
+              (["kd4"], kd4, "kd4 axiom"),
+              (["kd5"], kd5, "kd5 axiom"),
+              (["k45"], k45, "k45 axiom"),
+              (["kd45"], kd45, "kd45 axiom"),
+              (["kb4"], kb4, "kb4 axiom"),
+              (["ktb"], ktb, "ktb axiom"),
+              (["antisymm"], antisymm, "antisymmetry axiom")]
+
+genAxiomOptions :: ([String],Form,String) -> OptDescr ParamsModifier
+genAxiomOptions (flags, form, description)
+  = Option []
+           flags
+           (NoArg $ \p -> return p{frameconds = form:frameconds p})
+           description
+
+(?->) :: (String -> Bool) -> (String -> ParamsModifier) -> String -> ParamsModifier
+p ?-> m = \s -> if not (null s) && p s
+                  then m s
+                  else \_ -> throwError ("Invalid argument: '" ++ s ++ "'")
+
+getParams :: IO (Either ParsingErrMsg Params)
+getParams =
+    do cmdline_args <- getArgs
+       return $ parseCmds cmdline_args defaultParams
+
+usage :: String -> String
+usage hdr = usageInfo hdr options
+
+showInfo :: IO ()
+showInfo = putStrLn ("HyLoTab 1.2.0: no input file.\n" ++
+             "Usage: `--help' option gives basic information.\n")
+
+header :: String
+header = unlines ["Hylotab 1.2.0",
+                  "J. van Eijck, G. Hoffmann. (c) 2002-2010."]
+
+gplTag :: String
+gplTag = unlines [
+    "This program is distributed in the hope that it will be useful,",
+    "but WITHOUT ANY WARRANTY; without even the implied warranty of",
+    "MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the",
+    "GNU General Public License for more details."]
+
+</pre></br><h2>printed</h2></br><pre>module Main
+
+where
+
+import Form ( Form, parse )
+import Hylotab
+
+import System.IO           ( hPrint, stderr, hSetBuffering, stdin, BufferMode(LineBuffering))
+import System.Exit         ( exitWith, ExitCode(ExitFailure) )
+
+import System.Console.GetOpt ( OptDescr(..), ArgDescr(..), ArgOrder(..),
+                               getOpt, usageInfo )
+import System.Environment    ( getArgs, getProgName )
+import System.CPUTime( getCPUTime )
+import System.Timeout ( timeout )
+
+import Control.Monad.Error (MonadError(..))
+import Control.Applicative ( (<$>) )
+import Prelude hiding ( catch, log )
+import Control.Exception   ( catch, SomeException )
+import Control.Monad(unless)
+
+main :: IO ()
+main = do r <- runCmdLineVersion
+                `catch` \e -> do
+                    let msg = show (e::SomeException)
+                    unless (msg == "ExitSuccess") $ hPrint stderr msg
+                    exit r_RUNTIME_ERROR
+          --
+          case r of
+            Nothing             -> exit r_DID_NOT_RUN
+            Just Nothing        -> exit r_TIMEOUT
+            Just (Just UNSAT)   -> exit r_UNSAT
+            Just (Just (SAT _)) -> exit r_SAT
+    --
+    where r_SAT           = 1
+          r_UNSAT         = 2
+          r_TIMEOUT       = 3
+          r_DID_NOT_RUN   = 10
+          r_RUNTIME_ERROR = 13
+
+exit :: Int -> IO a
+exit = exitWith . ExitFailure
+
+runCmdLineVersion :: IO (Maybe (Maybe SatFlag))
+runCmdLineVersion =
+    do p_clp <- getParams
+       case p_clp of
+         Left  err -> do putStrLn header
+                         putStrLn err
+                         progName <- getProgName
+                         putStrLn $ "Try `" ++ progName ++ " --help' " ++
+                                     "for more information"
+                         return Nothing
+         --
+         Right clp -> if showhelp clp
+                        then do putStrLn header
+                                progName <- getProgName
+                                putStrLn $ usage (progName ++ " [OPTIONS]")
+                                putStrLn gplTag
+                                return Nothing
+                        --
+                        else Just <$> runWithParams clp
+
+runWithParams :: Params -> IO (Maybe SatFlag)
+runWithParams par =
+ do  start <- getCPUTime
+     --
+     let myPutStrLn = if quietmode par then const (return ()) else putStrLn
+     --
+     let fromStdIn = do myPutStrLn $ "Reading from stdin (run again with" ++
+                                     "`--help' for usage options)"
+                        hSetBuffering stdin LineBuffering
+                        getContents
+
+     f <- parse <$> maybe fromStdIn readFile (filename par)
+     --
+     f `seq` myPutStrLn $ "\nInput:\n{ " ++ show f ++" }\nEnd of input\n"
+     --
+     let fcs = frameconds par
+     let md = expandmode par
+     let verbose = log par
+     --
+     unless (null fcs) $ myPutStrLn $ "\nAxioms:\n{ " ++ show fcs ++ " }\n"
+     --
+     result <- if maxtimeout par == 0
+                then Just <$> genSat verbose md fcs f
+                else timeout (maxtimeout par * (10::Int)^(6::Int))
+                             (genSat verbose md fcs f)
+     --
+     case result of
+        Nothing           ->  myPutStrLn "TIMEOUT"
+        Just UNSAT        ->  myPutStrLn "not satisfiable"
+        Just (SAT nodes)  ->  myPutStrLn $ "satisfiable:\n" ++ extract (head nodes)
+     --
+     end <- getCPUTime
+     let elapsedTime = fromInteger (end - start) / 1000000000000.0
+     myPutStrLn $ "Elapsed time: " ++ show (elapsedTime :: Double)
+     --
+     return result
+
+{- Command line parameters handling -}
+
+data Params = Params { expandmode :: Mode,
+                       maxtimeout :: Int,
+                         showhelp :: Bool,
+                        quietmode :: Bool,
+                       frameconds :: [Form],
+                         filename :: Maybe FilePath,
+                              log :: Bool}
+
+defaultParams :: Params
+defaultParams = Params { expandmode = Extend,
+                         maxtimeout = 0,
+                           showhelp = False,
+                         frameconds = [],
+                           filename = Nothing,
+                          quietmode = False,
+                                log = False }
+
+type ParamsModifier   = Params -> Either ParsingErrMsg Params
+type ParsingErrMsg = String
+
+parseCmds :: [String] -> Params -> Either ParsingErrMsg Params
+parseCmds argv par = case getOpt RequireOrder options argv of
+                       (clpMods, [],  []) -> thread clpMods par
+                       (      _,unk,  []) -> fail $ "Unknown option: " ++
+                                                   unwords unk
+                       (     _,   _,errs) -> fail $ unlines errs
+
+
+thread :: Monad m => [a -> m a] -> a -> m a
+thread = foldr (\f g ->    ->a -> f a >>= g) return
+
+options :: [OptDescr ParamsModifier]
+options =
+  [Option ['h','?']
+          ["help"]
+          (NoArg $ \p -> return p{showhelp = True})
+          "display this help and exit",
+   Option ['f']
+          ["input-file"]
+          (ReqArg ((not . null) ?-> \s p -> return p{filename = Just s}) "file")
+          "obtain input formulas from file instead of stdin",
+   Option ['t']
+          ["timeout"]
+          (ReqArg ((not . null) ?-> \s p -> return p{maxtimeout = read s}) "T")
+          "run for at most T seconds",
+   Option ['q']
+          ["quiet", "silent"]
+          (NoArg $ \p -> return p{quietmode = True})
+          "suppress all normal output",
+   Option []
+          ["min"]
+          (NoArg $ \p -> return p{expandmode = Try})
+          "search minimal model",
+   Option ['v']
+          ["verbose"]
+          (NoArg $ \p -> return p{log = True})
+          "log tableau calculus"
+  ] ++
+  map genAxiomOptions
+             [(["trans","k4"], trans, "transitivity (k4) axiom"),
+              (["intrans"], intrans, "intransitivity axiom"),
+              (["refl","kt"],refl, "reflexivity axiom"),
+              (["irrefl"], irrefl, "irreflexivity axiom"),
+              (["symm","kb"], symm, "symmetry axiom"),
+              (["asymm"], asymm,  "asymmetry axiom"),
+              (["s4","kt4"], s4, "s4 axiom"),
+              (["s5"], s5, "s5 axiom"),
+              (["serial","kd"], serial, "serial (kd) axiom"),
+              (["euclid","k5"], euclid, "euclid (k5) axiom"),
+              (["kdb"], kdb, "kdb axiom"),
+              (["kd4"], kd4, "kd4 axiom"),
+              (["kd5"], kd5, "kd5 axiom"),
+              (["k45"], k45, "k45 axiom"),
+              (["kd45"], kd45, "kd45 axiom"),
+              (["kb4"], kb4, "kb4 axiom"),
+              (["ktb"], ktb, "ktb axiom"),
+              (["antisymm"], antisymm, "antisymmetry axiom")]
+
+genAxiomOptions :: ([String],Form,String) -> OptDescr ParamsModifier
+genAxiomOptions (flags, form, description)
+  = Option []
+           flags
+           (NoArg $ \p -> return p{frameconds = form:frameconds p})
+           description
+
+(?->) :: (String -> Bool) -> (String -> ParamsModifier) -> String -> ParamsModifier
+p ?-> m = \s -> if not (null s) && p s
+                  then m s
+                  else \_ -> throwError ("Invalid argument: '" ++ s ++ "'")
+
+getParams :: IO (Either ParsingErrMsg Params)
+getParams =
+    do cmdline_args <- getArgs
+       return $ parseCmds cmdline_args defaultParams
+
+usage :: String -> String
+usage hdr = usageInfo hdr options
+
+showInfo :: IO ()
+showInfo = putStrLn ("HyLoTab 1.2.0: no input file.\n" ++
+             "Usage: `--help' option gives basic information.\n")
+
+header :: String
+header = unlines ["Hylotab 1.2.0",
+                  "J. van Eijck, G. Hoffmann. (c) 2002-2010."]
+
+gplTag :: String
+gplTag = unlines [
+    "This program is distributed in the hope that it will be useful,",
+    "but WITHOUT ANY WARRANTY; without even the implied warranty of",
+    "MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the",
+    "GNU General Public License for more details."]
+
+
+</pre>
