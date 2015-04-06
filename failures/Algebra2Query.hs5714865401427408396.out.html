@@ -1,0 +1,92 @@
+<a href="Algebra.hs14587779232007237709.out.html">prev</a></br><a href="failures.html">home</a></br><a href="Algorithms.hs152607844784559590.out.html">next</a></br></br><pre>29c29
+<     lookupNode n = maybe $impossible SqlCode $ lookup n nodeToQuery
+---
+>     lookupNode n = maybe impossible SqlCode $ lookup n nodeToQuery
+42a43
+> 
+</pre></br><h2>original</h2></br><pre>{-# LANGUAGE TemplateHaskell #-}
+
+module Database.DSH.Translate.Algebra2Query
+    ( generateSqlQueries
+    ) where
+
+import           Database.DSH.Impossible
+
+import           Database.Algebra.Dag
+import           Database.Algebra.SQL.Compatibility
+import           Database.Algebra.SQL.Materialization.CTE
+import           Database.Algebra.SQL.Util
+import           Database.Algebra.Table.Lang
+
+import           Database.DSH.Common.QueryPlan
+import           Database.DSH.Execute.Sql
+import           Database.DSH.VL.Vector
+
+-- | In a query shape, render each root node for the algebraic plan
+-- into a separate SQL query.
+
+-- FIXME use materialization "prelude"
+generateSqlQueries :: QueryPlan TableAlgebra NDVec -> Shape (BackendCode SqlBackend)
+generateSqlQueries taPlan = renderQueryCode $ queryShape taPlan
+  where
+    roots = rootNodes $ queryDag taPlan
+    (_sqlShared, sqlQueries) = renderOutputDSHWith PostgreSQL materialize (queryDag taPlan)
+    nodeToQuery  = zip roots sqlQueries
+    lookupNode n = maybe $impossible SqlCode $ lookup n nodeToQuery
+
+    renderQueryCode :: Shape NDVec -> Shape (BackendCode SqlBackend)
+    renderQueryCode shape =
+        case shape of
+            SShape (ADVec r _) lyt -> SShape (lookupNode r) (convertLayout lyt)
+            VShape (ADVec r _) lyt -> VShape (lookupNode r) (convertLayout lyt)
+
+    convertLayout :: Layout NDVec -> Layout (BackendCode SqlBackend)
+    convertLayout lyt =
+        case lyt of
+            LCol i                 -> LCol i
+            LNest (ADVec r _) clyt -> LNest (lookupNode r) (convertLayout clyt)
+            LTuple lyts            -> LTuple $ map convertLayout lyts
+</pre></br><h2>printed</h2></br><pre>{-# LANGUAGE TemplateHaskell #-}
+
+module Database.DSH.Translate.Algebra2Query
+    ( generateSqlQueries
+    ) where
+
+import           Database.DSH.Impossible
+
+import           Database.Algebra.Dag
+import           Database.Algebra.SQL.Compatibility
+import           Database.Algebra.SQL.Materialization.CTE
+import           Database.Algebra.SQL.Util
+import           Database.Algebra.Table.Lang
+
+import           Database.DSH.Common.QueryPlan
+import           Database.DSH.Execute.Sql
+import           Database.DSH.VL.Vector
+
+-- | In a query shape, render each root node for the algebraic plan
+-- into a separate SQL query.
+
+-- FIXME use materialization "prelude"
+generateSqlQueries :: QueryPlan TableAlgebra NDVec -> Shape (BackendCode SqlBackend)
+generateSqlQueries taPlan = renderQueryCode $ queryShape taPlan
+  where
+    roots = rootNodes $ queryDag taPlan
+    (_sqlShared, sqlQueries) = renderOutputDSHWith PostgreSQL materialize (queryDag taPlan)
+    nodeToQuery  = zip roots sqlQueries
+    lookupNode n = maybe impossible SqlCode $ lookup n nodeToQuery
+
+    renderQueryCode :: Shape NDVec -> Shape (BackendCode SqlBackend)
+    renderQueryCode shape =
+        case shape of
+            SShape (ADVec r _) lyt -> SShape (lookupNode r) (convertLayout lyt)
+            VShape (ADVec r _) lyt -> VShape (lookupNode r) (convertLayout lyt)
+
+    convertLayout :: Layout NDVec -> Layout (BackendCode SqlBackend)
+    convertLayout lyt =
+        case lyt of
+            LCol i                 -> LCol i
+            LNest (ADVec r _) clyt -> LNest (lookupNode r) (convertLayout clyt)
+            LTuple lyts            -> LTuple $ map convertLayout lyts
+
+</pre>
