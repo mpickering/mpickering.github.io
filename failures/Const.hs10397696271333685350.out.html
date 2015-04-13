@@ -1,0 +1,342 @@
+<a href="Const.hs1023031201421620240.out.html">prev</a></br><a href="failures.html">home</a></br><a href="Const.hs2683171582038299453.out.html">next</a></br></br><pre>25c25
+< {-# LINE 28 "src/ehc/CodeGen/Const.chs" #-}
+---
+> 
+25a26
+> 
+25a27
+> 
+43c45
+< {-# LINE 47 "src/ehc/CodeGen/Const.chs" #-}
+---
+> 
+43a46
+> 
+49c52
+< {-# LINE 54 "src/ehc/CodeGen/Const.chs" #-}
+---
+> 
+49a53
+> 
+67c71
+< {-# LINE 73 "src/ehc/CodeGen/Const.chs" #-}
+---
+> 
+67a72
+> 
+74c79
+< {-# LINE 81 "src/ehc/CodeGen/Const.chs" #-}
+---
+> 
+74a80
+> 
+82c88
+< {-# LINE 95 "src/ehc/CodeGen/Const.chs" #-}
+---
+> 
+82a89
+> 
+82a90
+> 
+82a91
+> 
+82a92
+> 
+82a93
+> 
+82a94
+> 
+91c103
+< {-# LINE 109 "src/ehc/CodeGen/Const.chs" #-}
+---
+> 
+91a104
+> 
+91a105
+> 
+91a106
+> 
+91a107
+> 
+91a108
+> 
+114c131
+< {-# LINE 133 "src/ehc/CodeGen/Const.chs" #-}
+---
+> 
+114a132
+> 
+126a145
+> 
+</pre></br><h2>original</h2></br><pre>module UHC.Light.Compiler.CodeGen.Const
+( module UHC.Light.Compiler.CodeGen.BasicAnnot
+, CFld, ConstRef (..)
+, cfldGlobInx
+, Const (..)
+, isFFIConst
+, ConstSt (..), emptyConstSt
+, add
+, addStr, addNm, addFFIFun, addFFICallEncWrapper )
+where
+import UHC.Light.Compiler.Base.Common
+import UHC.Light.Compiler.Base.HsName.Builtin
+import UHC.Light.Compiler.CodeGen.RefGenerator
+import UHC.Util.Utils
+import UHC.Util.Pretty as Pretty
+import Data.Bits
+import Data.Maybe
+import qualified UHC.Util.FastSeq as Seq
+import qualified Data.Map as Map
+import qualified Data.Set as Set
+import Control.Monad
+import Control.Monad.State
+import UHC.Light.Compiler.CodeGen.BasicAnnot
+
+{-# LINE 28 "src/ehc/CodeGen/Const.chs" #-}
+-- | Ref as Fld for Const, made up of 2 indices, global for all constants, and per category
+data ConstRef = ConstRef
+  { constrefGlobal      :: !Int
+  , constrefInCateg     :: !Int
+  }
+
+instance Show ConstRef where
+  show r = "CRef_" ++ show (constrefGlobal r) ++ "_" ++ show (constrefInCateg r)
+
+type CFld = Fld' ConstRef
+
+instance RefOfFld CFld Int where
+  refOfFld = constrefGlobal . fromJust . _fldInx
+
+instance RefOfFld CFld HsName where
+  refOfFld = fromJust . _fldNm
+
+{-# LINE 47 "src/ehc/CodeGen/Const.chs" #-}
+-- | Global index of CFld
+cfldGlobInx :: CFld -> Int
+cfldGlobInx = refOfFld
+{-# INLINE cfldGlobInx #-}
+
+{-# LINE 54 "src/ehc/CodeGen/Const.chs" #-}
+-- | Representation of constant info to be stored globally, if a further codegen phase chooses to.
+--   Later reference than is via a CFld.
+data Const
+  = Const_FFIFunction
+      { constFFIFunNm       :: !String
+      }
+  | Const_FFICallEncWrapper
+      { constFFIArgSizes    :: ![BasicSize]
+      }
+  | Const_String
+      { constString         :: !String
+      }
+  | Const_Nm
+      { constNm             :: !HsName
+      }
+  deriving(Eq,Ord,Show)
+
+{-# LINE 73 "src/ehc/CodeGen/Const.chs" #-}
+-- | Is FFI related Const?
+isFFIConst :: Const -> Bool
+isFFIConst (Const_FFIFunction           {}) = True
+isFFIConst (Const_FFICallEncWrapper     {}) = True
+isFFIConst _                                = False
+
+{-# LINE 81 "src/ehc/CodeGen/Const.chs" #-}
+-- | String representation of const category, to be used for counting and name gen
+categ :: Const -> String
+categ (Const_FFIFunction        {}) = "funffi"
+categ (Const_FFICallEncWrapper  {}) = "encffi"
+categ (Const_String             {}) = "str"
+categ (Const_Nm                 {}) = "nm"
+
+{-# LINE 95 "src/ehc/CodeGen/Const.chs" #-}
+data ConstSt = ConstSt
+  { conststMp           :: !(Map.Map Const CFld)
+  , conststGlobalCnt    :: !Int
+  , conststInCategCntMp :: !(Map.Map String Int)
+  }
+
+emptyConstSt = ConstSt Map.empty 0 Map.empty
+
+{-# LINE 109 "src/ehc/CodeGen/Const.chs" #-}
+-- | Add a Const, reusing if already exists, monadically
+addM :: Const -> State ConstSt CFld
+addM c = do
+  st <- get
+  case Map.lookup c (conststMp st) of
+    Just r -> return r
+    _      -> do put $ st
+                   { conststMp              = Map.insert c ref (conststMp st)
+                   , conststGlobalCnt       = ginx+1
+                   , conststInCategCntMp    = Map.insert cat (cinx+1) (conststInCategCntMp st)
+                   }
+                 return ref
+      where ginx = conststGlobalCnt st
+            cat  = categ c
+            cinx = Map.findWithDefault 0 cat $ conststInCategCntMp st
+            ref  = Fld (Just $ mkHNm $ cat ++ show cinx) (Just $ ConstRef ginx cinx)
+
+-- | Add a Const, reusing if already exists
+add :: Const -> ConstSt -> (CFld,ConstSt)
+add c = runState $ addM c
+
+
+{-# LINE 133 "src/ehc/CodeGen/Const.chs" #-}
+addStr :: String -> ConstSt -> (CFld,ConstSt)
+addStr s = add (Const_String s)
+
+addNm :: HsName -> ConstSt -> (CFld,ConstSt)
+addNm nm = add (Const_Nm nm)
+
+addFFIFun :: String -> ConstSt -> (CFld,ConstSt)
+addFFIFun nm = add (Const_FFIFunction nm)
+
+addFFICallEncWrapper :: [BasicSize] -> ConstSt -> (CFld,ConstSt)
+addFFICallEncWrapper szs = add (Const_FFICallEncWrapper szs)
+
+</pre></br><h2>printed</h2></br><pre>module UHC.Light.Compiler.CodeGen.Const
+( module UHC.Light.Compiler.CodeGen.BasicAnnot
+, CFld, ConstRef (..)
+, cfldGlobInx
+, Const (..)
+, isFFIConst
+, ConstSt (..), emptyConstSt
+, add
+, addStr, addNm, addFFIFun, addFFICallEncWrapper )
+where
+import UHC.Light.Compiler.Base.Common
+import UHC.Light.Compiler.Base.HsName.Builtin
+import UHC.Light.Compiler.CodeGen.RefGenerator
+import UHC.Util.Utils
+import UHC.Util.Pretty as Pretty
+import Data.Bits
+import Data.Maybe
+import qualified UHC.Util.FastSeq as Seq
+import qualified Data.Map as Map
+import qualified Data.Set as Set
+import Control.Monad
+import Control.Monad.State
+import UHC.Light.Compiler.CodeGen.BasicAnnot
+
+
+
+
+-- | Ref as Fld for Const, made up of 2 indices, global for all constants, and per category
+data ConstRef = ConstRef
+  { constrefGlobal      :: !Int
+  , constrefInCateg     :: !Int
+  }
+
+instance Show ConstRef where
+  show r = "CRef_" ++ show (constrefGlobal r) ++ "_" ++ show (constrefInCateg r)
+
+type CFld = Fld' ConstRef
+
+instance RefOfFld CFld Int where
+  refOfFld = constrefGlobal . fromJust . _fldInx
+
+instance RefOfFld CFld HsName where
+  refOfFld = fromJust . _fldNm
+
+
+
+-- | Global index of CFld
+cfldGlobInx :: CFld -> Int
+cfldGlobInx = refOfFld
+{-# INLINE cfldGlobInx #-}
+
+
+
+-- | Representation of constant info to be stored globally, if a further codegen phase chooses to.
+--   Later reference than is via a CFld.
+data Const
+  = Const_FFIFunction
+      { constFFIFunNm       :: !String
+      }
+  | Const_FFICallEncWrapper
+      { constFFIArgSizes    :: ![BasicSize]
+      }
+  | Const_String
+      { constString         :: !String
+      }
+  | Const_Nm
+      { constNm             :: !HsName
+      }
+  deriving(Eq,Ord,Show)
+
+
+
+-- | Is FFI related Const?
+isFFIConst :: Const -> Bool
+isFFIConst (Const_FFIFunction           {}) = True
+isFFIConst (Const_FFICallEncWrapper     {}) = True
+isFFIConst _                                = False
+
+
+
+-- | String representation of const category, to be used for counting and name gen
+categ :: Const -> String
+categ (Const_FFIFunction        {}) = "funffi"
+categ (Const_FFICallEncWrapper  {}) = "encffi"
+categ (Const_String             {}) = "str"
+categ (Const_Nm                 {}) = "nm"
+
+
+
+
+
+
+
+
+data ConstSt = ConstSt
+  { conststMp           :: !(Map.Map Const CFld)
+  , conststGlobalCnt    :: !Int
+  , conststInCategCntMp :: !(Map.Map String Int)
+  }
+
+emptyConstSt = ConstSt Map.empty 0 Map.empty
+
+
+
+
+
+
+
+-- | Add a Const, reusing if already exists, monadically
+addM :: Const -> State ConstSt CFld
+addM c = do
+  st <- get
+  case Map.lookup c (conststMp st) of
+    Just r -> return r
+    _      -> do put $ st
+                   { conststMp              = Map.insert c ref (conststMp st)
+                   , conststGlobalCnt       = ginx+1
+                   , conststInCategCntMp    = Map.insert cat (cinx+1) (conststInCategCntMp st)
+                   }
+                 return ref
+      where ginx = conststGlobalCnt st
+            cat  = categ c
+            cinx = Map.findWithDefault 0 cat $ conststInCategCntMp st
+            ref  = Fld (Just $ mkHNm $ cat ++ show cinx) (Just $ ConstRef ginx cinx)
+
+-- | Add a Const, reusing if already exists
+add :: Const -> ConstSt -> (CFld,ConstSt)
+add c = runState $ addM c
+
+
+
+
+addStr :: String -> ConstSt -> (CFld,ConstSt)
+addStr s = add (Const_String s)
+
+addNm :: HsName -> ConstSt -> (CFld,ConstSt)
+addNm nm = add (Const_Nm nm)
+
+addFFIFun :: String -> ConstSt -> (CFld,ConstSt)
+addFFIFun nm = add (Const_FFIFunction nm)
+
+addFFICallEncWrapper :: [BasicSize] -> ConstSt -> (CFld,ConstSt)
+addFFICallEncWrapper szs = add (Const_FFICallEncWrapper szs)
+
+
+</pre>

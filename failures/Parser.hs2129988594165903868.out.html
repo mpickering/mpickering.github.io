@@ -1,0 +1,274 @@
+<a href="Parser.hs2018639011849905494.out.html">prev</a></br><a href="failures.html">home</a></br><a href="Parser.hs2576913561691587940.out.html">next</a></br></br><pre>16c16
+< {-# LINE 44 "src/ehc/Foreign/Parser.chs" #-}
+---
+> 
+16a17
+> 
+16a18
+> 
+16a19
+> 
+16a20
+> 
+16a21
+> 
+16a22
+> 
+16a23
+> 
+16a24
+> 
+16a25
+> 
+16a26
+> 
+16a27
+> 
+16a28
+> 
+16a29
+> 
+16a30
+> 
+16a31
+> 
+16a32
+> 
+16a33
+> 
+16a34
+> 
+16a35
+> 
+16a36
+> 
+16a37
+> 
+16a38
+> 
+16a39
+> 
+16a40
+> 
+16a41
+> 
+16a42
+> 
+16a43
+> 
+24c51
+< {-# LINE 60 "src/ehc/Foreign/Parser.chs" #-}
+---
+> 
+24a52
+> 
+24a53
+> 
+24a54
+> 
+24a55
+> 
+24a56
+> 
+24a57
+> 
+24a58
+> 
+24a59
+> 
+27c62
+< {-# LINE 64 "src/ehc/Foreign/Parser.chs" #-}
+---
+> 
+27a63
+> 
+75a112
+> 
+</pre></br><h2>original</h2></br><pre>module UHC.Light.Compiler.Foreign.Parser
+( parseForeignEnt )
+where
+import UU.Scanner.GenToken
+import UHC.Light.Compiler.Base.HsName.Builtin
+import UHC.Light.Compiler.Base.Common
+import UHC.Light.Compiler.Scanner.Common
+import UHC.Light.Compiler.Foreign
+import UHC.Util.ParseUtils
+import UU.Parsing
+import UHC.Util.Utils
+import UHC.Light.Compiler.Error
+import UHC.Light.Compiler.Error.Pretty
+import UHC.Light.Compiler.Base.Target
+
+{-# LINE 44 "src/ehc/Foreign/Parser.chs" #-}
+parseForeignEnt :: ForeignDirection -> FFIWay -> Maybe String -> String -> (ForeignEnt,ErrL)
+parseForeignEnt dir way dfltNm s
+  = (res,errs)
+  where tokens     = scan (foreignEntScanOpts way) (initPos s) s
+        (res,msgs) = parseToResMsgs (pForeignEnt dir way dfltNm) tokens
+        errs       = map (rngLift emptyRange mkPPErr) msgs
+
+{-# LINE 60 "src/ehc/Foreign/Parser.chs" #-}
+type ForeignParser        ep    =    PlainParser Token ep
+
+{-# LINE 64 "src/ehc/Foreign/Parser.chs" #-}
+pForeignEnt :: ForeignDirection -> FFIWay -> Maybe String -> ForeignParser ForeignEnt
+pForeignEnt dir way dfltNm
+  = case (dir,way) of
+      (_                      ,FFIWay_CCall         ) -> ForeignEnt_CCall           <$> pCCall       dfltNm
+      (_                      ,FFIWay_Prim          ) -> ForeignEnt_PrimCall        <$> pPrimCall    dfltNm
+      _                                               -> ForeignEnt_PlainCall       <$> pPlainCall   dfltNm
+
+pCCall :: Maybe String -> ForeignParser CCall
+pCCall dfltNm
+  =   (True <$ pSTATIC) <**> pAfterStatic
+  <|> ($ False) <$> pAfterStatic
+  <|> CCall_Dynamic <$ pDYNAMIC
+  <|> CCall_Wrapper <$ pWRAPPER
+  where nm = maybe "" id dfltNm
+        pPtrForeignVar
+          = pAMPERSAND
+            <**> (     const <$> pForeignVar
+                 `opt` (const nm)
+                 )
+        pAfterStatic
+          = pForeignVar
+                <**> (     (pDOT <* pH)
+                           <**> (     (\nm _ incl st -> CCall_Id st (mkincl incl) True  nm) <$> pPtrForeignVar
+                                <|>   (\nm _ incl st -> CCall_Id st (mkincl incl) False nm) <$> pForeignVar
+                                `opt` (\_ incl st -> CCall_Id st (mkincl incl) False nm)
+                                )
+                     `opt` (\nm st -> CCall_Id st Nothing False nm)
+                     )
+          <|>   (\nm st -> CCall_Id st Nothing True nm) <$> pPtrForeignVar
+          `opt` (\st -> CCall_Id st Nothing False nm)
+          where mkincl i = Just (i ++ ".h")
+
+pPlainCall :: Maybe String -> ForeignParser PlainCall
+pPlainCall dfltNm
+  =     PlainCall_Id <$> pForeignVar
+  `opt` PlainCall_Id nm
+  where nm = maybe "" id dfltNm
+
+pPrimCall :: Maybe String -> ForeignParser PrimCall
+pPrimCall dfltNm
+  = PrimCall_Id <$> (pForeignVar `opt` nm) <*> pKnownPrim
+  where nm = maybe "" id dfltNm
+        pKnownPrim = pMb (pAnyFromMap pKeyTk allKnownPrimMp)
+
+pForeignVar :: ForeignParser String
+pForeignVar = tokGetVal <$> (pVARID <|> pCONID)
+
+
+</pre></br><h2>printed</h2></br><pre>module UHC.Light.Compiler.Foreign.Parser
+( parseForeignEnt )
+where
+import UU.Scanner.GenToken
+import UHC.Light.Compiler.Base.HsName.Builtin
+import UHC.Light.Compiler.Base.Common
+import UHC.Light.Compiler.Scanner.Common
+import UHC.Light.Compiler.Foreign
+import UHC.Util.ParseUtils
+import UU.Parsing
+import UHC.Util.Utils
+import UHC.Light.Compiler.Error
+import UHC.Light.Compiler.Error.Pretty
+import UHC.Light.Compiler.Base.Target
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+parseForeignEnt :: ForeignDirection -> FFIWay -> Maybe String -> String -> (ForeignEnt,ErrL)
+parseForeignEnt dir way dfltNm s
+  = (res,errs)
+  where tokens     = scan (foreignEntScanOpts way) (initPos s) s
+        (res,msgs) = parseToResMsgs (pForeignEnt dir way dfltNm) tokens
+        errs       = map (rngLift emptyRange mkPPErr) msgs
+
+
+
+
+
+
+
+
+
+
+type ForeignParser        ep    =    PlainParser Token ep
+
+
+
+pForeignEnt :: ForeignDirection -> FFIWay -> Maybe String -> ForeignParser ForeignEnt
+pForeignEnt dir way dfltNm
+  = case (dir,way) of
+      (_                      ,FFIWay_CCall         ) -> ForeignEnt_CCall           <$> pCCall       dfltNm
+      (_                      ,FFIWay_Prim          ) -> ForeignEnt_PrimCall        <$> pPrimCall    dfltNm
+      _                                               -> ForeignEnt_PlainCall       <$> pPlainCall   dfltNm
+
+pCCall :: Maybe String -> ForeignParser CCall
+pCCall dfltNm
+  =   (True <$ pSTATIC) <**> pAfterStatic
+  <|> ($ False) <$> pAfterStatic
+  <|> CCall_Dynamic <$ pDYNAMIC
+  <|> CCall_Wrapper <$ pWRAPPER
+  where nm = maybe "" id dfltNm
+        pPtrForeignVar
+          = pAMPERSAND
+            <**> (     const <$> pForeignVar
+                 `opt` (const nm)
+                 )
+        pAfterStatic
+          = pForeignVar
+                <**> (     (pDOT <* pH)
+                           <**> (     (\nm _ incl st -> CCall_Id st (mkincl incl) True  nm) <$> pPtrForeignVar
+                                <|>   (\nm _ incl st -> CCall_Id st (mkincl incl) False nm) <$> pForeignVar
+                                `opt` (\_ incl st -> CCall_Id st (mkincl incl) False nm)
+                                )
+                     `opt` (\nm st -> CCall_Id st Nothing False nm)
+                     )
+          <|>   (\nm st -> CCall_Id st Nothing True nm) <$> pPtrForeignVar
+          `opt` (\st -> CCall_Id st Nothing False nm)
+          where mkincl i = Just (i ++ ".h")
+
+pPlainCall :: Maybe String -> ForeignParser PlainCall
+pPlainCall dfltNm
+  =     PlainCall_Id <$> pForeignVar
+  `opt` PlainCall_Id nm
+  where nm = maybe "" id dfltNm
+
+pPrimCall :: Maybe String -> ForeignParser PrimCall
+pPrimCall dfltNm
+  = PrimCall_Id <$> (pForeignVar `opt` nm) <*> pKnownPrim
+  where nm = maybe "" id dfltNm
+        pKnownPrim = pMb (pAnyFromMap pKeyTk allKnownPrimMp)
+
+pForeignVar :: ForeignParser String
+pForeignVar = tokGetVal <$> (pVARID <|> pCONID)
+
+
+
+</pre>

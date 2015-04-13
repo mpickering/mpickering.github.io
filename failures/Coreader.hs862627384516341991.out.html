@@ -1,0 +1,78 @@
+<a href="Coreader.hs1158577467977260520.out.html">prev</a></br><a href="failures.html">home</a></br><a href="CoreToAlgebra.hs178425210905333258.out.html">next</a></br></br><pre>16c16
+<     type Unit IxCoreader = '[]
+---
+>     type Unit IxCoreader = 
+31c31
+< ask :: Var v -> IxCoreader '[v :-> a] b -> a
+---
+> ask :: Var v -> IxCoreader  '[v :-> a] b -> a
+33a34
+> 
+</pre></br><h2>original</h2></br><pre>{-# LANGUAGE TypeFamilies, MultiParamTypeClasses, FlexibleInstances, GADTs,
+             ConstraintKinds, TypeOperators, DataKinds, UndecidableInstances #-}
+
+module Control.Coeffect.Coreader where
+
+import Control.Coeffect
+import Data.Type.Set
+
+{-| Provides 'reader monad'-like behaviour but as a comonad, using an indexed
+    version of the product comonad -}
+data IxCoreader s a = IxR { runCoreader :: (a, Set s) }
+
+instance Coeffect IxCoreader where
+    type Inv IxCoreader s t = (Unionable s t, Split s t (Union s t))
+
+    type Unit IxCoreader = '[]
+    type Plus IxCoreader s t = Union s t
+
+    extract (IxR (x, Empty)) = x
+    extend k (IxR (x, st)) = let (s, t) = split st
+                             in IxR (k (IxR (x, t)), s)
+
+instance CoeffectZip IxCoreader where
+    type Meet IxCoreader s t    = Union s t
+    type CzipInv IxCoreader s t = (Unionable s t)
+
+    czip (IxR (a, s)) (IxR (b, t)) = IxR ((a, b), union s t)
+
+
+{-| 'ask' for the value of variable 'v', e.g., 'ask (Var::(Var "x"))' -}
+ask :: Var v -> IxCoreader '[v :-> a] b -> a
+ask _ = \(IxR (_, Ext (Var :-> a) Empty)) -> a
+
+</pre></br><h2>printed</h2></br><pre>{-# LANGUAGE TypeFamilies, MultiParamTypeClasses, FlexibleInstances, GADTs,
+             ConstraintKinds, TypeOperators, DataKinds, UndecidableInstances #-}
+
+module Control.Coeffect.Coreader where
+
+import Control.Coeffect
+import Data.Type.Set
+
+{-| Provides 'reader monad'-like behaviour but as a comonad, using an indexed
+    version of the product comonad -}
+data IxCoreader s a = IxR { runCoreader :: (a, Set s) }
+
+instance Coeffect IxCoreader where
+    type Inv IxCoreader s t = (Unionable s t, Split s t (Union s t))
+
+    type Unit IxCoreader = 
+    type Plus IxCoreader s t = Union s t
+
+    extract (IxR (x, Empty)) = x
+    extend k (IxR (x, st)) = let (s, t) = split st
+                             in IxR (k (IxR (x, t)), s)
+
+instance CoeffectZip IxCoreader where
+    type Meet IxCoreader s t    = Union s t
+    type CzipInv IxCoreader s t = (Unionable s t)
+
+    czip (IxR (a, s)) (IxR (b, t)) = IxR ((a, b), union s t)
+
+
+{-| 'ask' for the value of variable 'v', e.g., 'ask (Var::(Var "x"))' -}
+ask :: Var v -> IxCoreader  '[v :-> a] b -> a
+ask _ = \(IxR (_, Ext (Var :-> a) Empty)) -> a
+
+
+</pre>

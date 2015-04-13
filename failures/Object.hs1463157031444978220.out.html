@@ -1,0 +1,1506 @@
+<a href="Object.hs12341571042081384202.out.html">prev</a></br><a href="failures.html">home</a></br><a href="ObjectPath.hs12108846861783878630.out.html">next</a></br></br><pre>253c253
+<   let v' :: [(Int,String)] = map (\x -> case x of [a,b] -> (fromSql a, fromSql b)
+---
+>   let v'    [(Int,String)] = map (\x -> case x of [a,b] -> (fromSql a, fromSql b)
+749a750
+> 
+</pre></br><h2>original</h2></br><pre>{-# LANGUAGE ScopedTypeVariables, FlexibleContexts #-}
+module Bein.Web.Pages.Object where
+
+import Control.Monad.Writer
+import qualified Data.ByteString.Lazy.UTF8 as LU (toString)
+import Data.Convertible
+import Data.List (intersperse)
+import System.Posix.Files
+import qualified Data.ByteString.Lazy as B
+import System.FilePath
+import Prelude hiding (catch)
+import Control.Exception
+import Control.Monad.Reader
+import System.IO
+import Network
+import Data.Maybe
+import qualified Data.Map as M
+import Data.List (delete, find)
+import Bein.Web.Types
+import Bein.Web.Commands
+import Bein.Web.Pages.Common
+import Bein.Web.Elements
+import Bein.Web.Pages.Login
+import Happstack.Server
+import Data.Time
+import Database.HDBC
+import System.Locale
+import qualified Text.XHtml as X (method)
+
+object :: BeinServerPart Response
+object = do
+  obj <- asksObject
+  let pageTitle = Just $ "Editing " ++ (if (immutable (objHeader obj)) then "Immutable " else "") ++
+                     show (objType (objHeader obj)) ++ " " ++ show (objId obj)
+  authenticated $ page pageTitle HideNone objectBody (noHtml,noHtml,noHtml)
+
+objectBody :: (Html,Html,Html) -> BeinFormPart (Html,Html,Html) Html
+objectBody (msg,inpAdd,outpAdd) = lift hasReadPermissions >> mconcatM [ runAndDeleteButtons, return msg, objectHeader, objectTypeBody inpAdd outpAdd ]
+
+runAndDeleteButtons :: BeinFormPart (Html,Html,Html) Html
+runAndDeleteButtons = lift asksObject >>= \obj -> paragraphM =<<: [
+  objectFormTo "delete" deleteObject =<<
+      submitM "delete" "Delete" <!> ([thestyle "float: right;"] ++ if immutable (objHeader obj) then [disabled] else []),
+  case objType (objHeader obj) of
+    File -> objectFormTo "downloadfile" downloadFile =<<
+      submitM "download" "Download" <!> if objBody obj == Nothing then [disabled] else []
+    Program -> objectFormTo "downloadscript" downloadScript =<<
+      submitM "download" "Download" <!> if objBody obj == Nothing then [disabled] else []
+    Execution -> displayRunButtons
+    ]
+
+data Button = Run | Reset | Abort | NotRunnable deriving (Eq,Show,Read)
+
+runButtons :: Button -> BeinFormPart (Html,Html,Html) Html
+runButtons b = lift asksObject >>= \obj -> mconcatM [
+  if b == NotRunnable then submitM "" "Not runnable" <!> [disabled] else noHtmlM,
+  objectFormTo "run" runExecution =<< if b == Run then submitM "run" "Run" else noHtmlM,
+  objectFormTo "reset" resetExecution =<< if b == Reset then submitM "reset" "Reset" <!>
+                                                       (if immutable (objHeader obj) then [disabled] else [])
+                                    else noHtmlM,
+  objectFormTo "abort" abortExecution =<< if b == Abort then submitM "abort" "Abort" else noHtmlM ]
+
+displayRunButtons :: BeinFormPart (Html,Html,Html) Html
+displayRunButtons = do
+  k <- lift asksObject >>= \obj -> case objBody obj of
+    Nothing -> return NotRunnable
+    Just b  -> let scr = program b >>= objBody >>= Just . script
+               in if scr == Nothing || scr == Just "" || M.filter nullInput (executionInputs b) /= M.empty
+                  then return NotRunnable
+                  else case status b of
+                    Waiting -> do r <- lift $ lift $ maybeRowQuery
+                                       "select status from current_jobs where id=?" [toSql (objId obj)]
+                                  case fmap (fromSql . head) r of
+                                    Nothing -> return Run
+                                    Just "dependency_failed" -> return Reset
+                                    Just _ -> return Abort
+                    Running -> return Abort
+                    _ -> return Reset
+  runButtons k
+
+resetExecution :: BeinServerPart (FormResponse (Html,Html,Html))
+resetExecution = do
+  hasWritePermissions
+  obj <- asksObject
+  if immutable (objHeader obj)
+    then return (ContinuePage (redParagraph "Execution is immutable; cannot reset.",noHtml,noHtml))
+    else do lift $ update "update executions set status = 'waiting' where id = ?" [toSql (objId obj)]
+            return (ContinuePageWithWrapper (greenParagraph "Execution reset.",noHtml,noHtml) rereadObject)
+
+deleteObject :: BeinServerPart (FormResponse (Html,Html,Html))
+deleteObject = do
+  hasWritePermissions
+  obj <- asksObject
+  if immutable (objHeader obj)
+    then return (ContinuePage (greenParagraph "Object is immutable; cannot delete.",noHtml,noHtml))
+    else lift $ (do update "delete from headers where id = ?" [toSql (objId obj)]
+                    return (RedirectTo "/")) `catchR`
+                (\e -> return $ ContinuePage (redParagraph $ "Failed to delete object: " ++ show e,noHtml,noHtml))
+
+downloadFile :: BeinServerPart (FormResponse (Html,Html,Html))
+downloadFile = asksObject >>= \obj -> do
+  hasReadPermissions
+  guard (objType (objHeader obj) == File)
+  r <- lift $ maybeRowQuery "select content_type,in_repository(stored_as) from files where id = ?" [toSql (objId obj)]
+  case r of
+    Nothing -> return (ContinuePage (redParagraph "File is not yet created or uploaded; cannot download.",noHtml,noHtml))
+    Just [rct,rfn] -> do setHeaderM "Content-Type" (fromSql rct)
+                         liftM NewResponse $ fileServe [] (fromSql rfn)
+    Just q -> error $ "Invalid response from database in downloadFile: " ++ show q
+
+downloadScript :: BeinServerPart (FormResponse (Html,Html,Html))
+downloadScript = asksObject >>= \obj -> do
+  hasReadPermissions
+  guard (objType (objHeader obj) == Program)
+  r <- lift $ maybeRowQuery "select script from programs where id = ?" [toSql (objId obj)]
+  case r of
+    Nothing -> return (ContinuePage (redParagraph "No program defined; cannot download.",noHtml,noHtml))
+    Just [rscr] -> do setHeaderM "Content-Type" "text/plain; charset=utf-8"
+                      return $ NewResponse $ toResponse $ (fromSql rscr :: String)
+    Just q -> error $ "Invalid response from database in downloadScript: " ++ show q
+
+
+nullInput :: ExecutionInput -> Bool
+nullInput (ExecutionStringInput v) = isNothing v
+nullInput (ExecutionNumberInput v) = isNothing v
+nullInput (ExecutionObjectInput v) = isNothing v
+
+runExecution :: BeinServerPart (FormResponse (Html,Html,Html))
+runExecution = asksObject >>= \obj -> do
+  hasWritePermissions
+  guard (objType (objHeader obj) == Execution)
+  portName <- lift $ configField daemon_port
+  st <- ask
+  liftIO $ (do h <- connectTo "" (UnixSocket portName)
+               hSetBuffering h LineBuffering
+               hPutStr h $ "run\n" ++ show (objId obj) ++ "\n.\n"
+               r <- getCommandBlock h
+               r' <- mconcatM [ html "Started job. Daemon responded: ", brM, preM << r ]
+               return $ ContinuePageWithWrapper (greenParagraph r',noHtml,noHtml) rereadObject)
+    `catch` (\(_ :: IOException) -> do
+                runReaderT (update "select run(?)" [toSql (objId obj)]) st
+                return $ ContinuePageWithWrapper (greenParagraph "Daemon unreachable; job pending its return.",noHtml,noHtml) rereadObject)
+
+abortExecution :: BeinServerPart (FormResponse (Html,Html,Html))
+abortExecution = asksObject >>= \obj -> do
+  hasWritePermissions
+  guard (objType (objHeader obj) == Execution)
+  portName <- lift $ configField daemon_port
+  liftIO $ (do h <- connectTo "" (UnixSocket portName)
+               hSetBuffering h LineBuffering
+               hPutStr h $ "kill\n" ++ show (objId obj) ++ "\n.\n"
+               r <- getCommandBlock h
+               r' <- mconcatM [ html "Killed job. Daemon responded:", brM, preM << r ]
+               return $ ContinuePageWithWrapper (greenParagraph r',noHtml,noHtml) rereadObject)
+    `catch` (\(e :: IOException) -> return $ ContinuePageWithWrapper (redParagraph $ "Daemon unreacahble, failed to kill job: " ++
+                                                                      show e,noHtml,noHtml) rereadObject)
+
+
+objectHeader :: BeinFormPart (Html,Html,Html) Html
+objectHeader = do
+  user <- lift $ asksUser
+  BeinObject { objHeader = h } <- lift $ asksObject
+  objectFormTo "header" updateObjectHeader =<< thedivM <! [identifier "object-header"] =<<: [
+    h2M << "Header",
+    paragraphM =<<: [ alignedLabelM "Label", textfieldM "label" <!> [value (label h)] ],
+    paragraphM =<<: [ alignedLabelM "Last modified", html (formatTime defaultTimeLocale "%F %R" (lastModified h)) ],
+    paragraphM =<<: [ alignedLabelM "Created", html (formatTime defaultTimeLocale "%F %R" (created h)) ],
+    paragraphM =<<: [ alignedLabelM "Owner", html (userName $ owner h) ],
+    paragraphM =<<: [ alignedLabelM "Group", groupBox "group" ([group h] ++ delete (group h) (groups user)) (group h) ],
+    paragraphM =<<: [ alignedLabelM "Permissions", permissionBoxes (gr h) (gw h) (wr h) (ww h) ],
+    paragraphM =<<: [ alignedLabelM "Notes", textareaM <! [name "notes", identifier "notes", rows "7", cols "80"] << notes h ],
+    paragraphM =<<: [ submitM "Save" "Save" <!> [thestyle "float: right;"], html " " ]
+    ]
+
+permissionBoxes :: Bool -> Bool -> Bool -> Bool -> BeinFormPart (Html,Html,Html) Html
+permissionBoxes currentGR currentGW currentWR currentWW = mconcatM [
+    html "Group can ",
+    labelM <! [for "gr"] << "Read", checkboxM "gr" "gr" currentGR,
+    labelM <! [for "gw"] << "Write", checkboxM "gw" "gw" currentGW,
+    html " / World can ",
+    labelM <! [for "wr"] << "Read", checkboxM "wr" "wr" currentWR,
+    labelM <! [for "ww"] << "Write", checkboxM "ww" "ww" currentWW ]
+
+updateObjectHeader :: BeinServerPart (FormResponse (Html,Html,Html))
+updateObjectHeader = do
+  hasWritePermissions
+  user <- asksUser
+  BeinObject { objId = oid, objHeader = h } <- asksObject
+  withDataFn (readObjectHeader user h) (f oid) `mplus` return (ContinuePage (redParagraph "Invalid form entry.",noHtml,noHtml))
+    where f oid h = updateObject "update headers set label=?, gid=?,gr=?,gw=?,wr=?,ww=?, notes=? where id=?"
+                  [toSql (label h), toSql (gid (group h)), toSql (gr h), toSql (gw h), toSql (wr h), toSql (ww h), toSql (notes h), toSql oid]
+                  "Failed to update header."
+
+readObjectHeader :: User -> ObjectHeader -> RqData ObjectHeader
+readObjectHeader user h = do
+  newLbl <- look "label"
+  newGid <- lookRead "group"
+  newGroup <- case find (\q -> gid q == newGid) ([group h] ++ delete (group h) (groups user)) of
+    Nothing -> fail ""
+    Just g  -> return g
+  ngr <- lookCheckbox "gr"
+  ngw <- lookCheckbox "gw"
+  nwr <- lookCheckbox "wr"
+  nww <- lookCheckbox "ww"
+  newNotes <- look "notes"
+  return $ h { label = newLbl, group = newGroup, gr = ngr, gw = ngw, wr = nwr, ww = nww, notes = newNotes }
+
+updateObject :: String -> [SqlValue] -> String -> BeinServerPart (FormResponse (Html,Html,Html))
+updateObject cmd args errMsg = do
+  hasWritePermissions
+  lift $ (update cmd args >> return (ContinuePageWithWrapper (noHtml,noHtml,noHtml) rereadObject))
+    `catchR` (\e -> return $ ContinuePage (redParagraph $ errMsg ++ " " ++ show e,noHtml,noHtml))
+
+
+objectTypeBody :: Html -> Html -> BeinFormPart (Html,Html,Html) Html
+objectTypeBody inpAdd outpAdd = lift asksObject >>= \obj -> case objType (objHeader obj) of
+  File -> fileBody
+  Program -> programBody inpAdd outpAdd
+  Execution -> executionBody
+
+data ObjectState = Future | Mutable | Immutable deriving (Eq,Show,Read)
+
+fileBody :: BeinFormPart (Html,Html,Html) Html
+fileBody = lift asksObject >>= \obj -> do
+  dep <- lift $ lift $ f $ maybeRowQuery dependsQuery [toSql (objId obj)]
+  let st  = objectState obj
+  fileBody' obj dep st
+    where f :: Monad m => m (Maybe [SqlValue]) -> m (Maybe Int)
+          f = liftM $ fmap (fromSql . head)
+          dependsQuery :: String
+          dependsQuery = "select depends_on from dependencies where object = ? and dependency_Type = 'created_by'"
+
+objectState :: BeinObject -> ObjectState
+objectState obj | objBody obj == Nothing = Future
+                | immutable (objHeader obj) = Immutable
+                | True = Mutable
+
+fileBody' :: BeinObject -> Maybe Int -> ObjectState -> BeinFormPart (Html,Html,Html) Html
+fileBody' _ Nothing Future = mconcatM [
+  h2M << "File",
+  paragraphM << "You have not yet uploaded a file.",
+  paragraphM =<< multipartFormTo "upload" uploadFile =<< mconcatM [ afileM "file", submitM "upload" "Upload" ]
+  ]
+fileBody' obj Nothing Mutable = mconcatM [
+  fileHeader obj,
+  h3M << "Replace file",
+  paragraphM =<< multipartFormTo "replace" replaceFile =<< mconcatM [ afileM "file", submitM "upload" "Upload" ]
+  ]
+fileBody' obj Nothing Immutable = do
+  baseUrl <- lift $ lift $ configField http_base_url
+  v <- lift $ lift $ query ("select execution_id,execution_label from " ++
+       "executions_forcing_immutability where file_id = ?") [toSql (objId obj)]
+  let v' :: [(Int,String)] = map (\x -> case x of [a,b] -> (fromSql a, fromSql b)
+                                                  _ -> error "Invalid fields from database in fileBody' Nothing Immutable") v
+  let f (a::Int,b::String) = anchorM <! [href (joinURL baseUrl ("/" ++ show a))] =<<: [
+        html (show a ++ " "),
+        if b == "" then italicsM << "(no label)" else html ("'" ++ b ++ "'") ]
+      v'' = intersperse brM $ map f v'
+  mconcatM [
+    fileHeader obj,
+    paragraphM << "File is immutable because it is an input to the executions:",
+    paragraphM =<<: v''
+    ]
+fileBody' _ (Just exId) Future = do
+  baseUrl <- lift $ lift $ configField http_base_url
+  mconcatM [
+    h2M << "File",
+    paragraphM =<<: [ html "File to be created when execution ", anchorM <! [href (joinURL baseUrl ("/" ++ show exId))] << show exId,
+                      html " is run." ] ]
+fileBody' obj (Just exId) _ = do
+  baseUrl <- lift $ lift $ configField http_base_url
+  mconcatM [
+    fileHeader obj,
+    paragraphM =<<: [ html "File created as output of execution ", anchorM <! [href (joinURL baseUrl ("/" ++ show exId))] << show exId,
+                      html "." ] ]
+
+fileHeader :: BeinObject -> BeinFormPart (Html,Html,Html) Html
+fileHeader obj = do
+  let b = fromJust $ objBody obj
+  filePath <- lift $ lift $ configField file_repository
+  thisFileSize <- liftIO $ getFileSize $ joinPath [filePath, storedAs b]
+  mconcatM [
+    h2M << "File",
+    paragraphM =<<: [ alignedLabelM "Filename:", html (userFilename b) ],
+    paragraphM =<<: [ alignedLabelM "Content-Type:", html (contentType b) ],
+    paragraphM =<<: [ alignedLabelM "File size:", html (prettyPrintFileSize thisFileSize) ] ]
+
+getFileSize :: FilePath -> IO Integer
+getFileSize f = getFileStatus f >>= return . toInteger . fileSize
+
+prettyPrintFileSize :: Integer -> String
+prettyPrintFileSize s | s < kb = show s ++ " bytes"
+                      | s < mb = show (s `div` kb) ++ "kb"
+                      | s < gb = show (s `div` mb) ++ "Mb"
+                      | True     = show (s `div` gb) ++ "Gb"
+                          where kb :: Integer
+                                kb = 1024 -- 2^10
+                                mb :: Integer
+                                mb = 1048576 -- 2^20
+                                gb :: Integer
+                                gb = 1073741824 -- 2^30
+
+uploadFile :: BeinServerPart (FormResponse (Html,Html,Html))
+uploadFile = withDataFn (lookInput "file") f `mplus` return (ContinuePage (redParagraph "Invalid field entry.",noHtml,noHtml))
+  where f inp = do
+          hasWritePermissions
+          obj <- asksObject
+          filePath <- lift $ configField file_repository
+          lift (maybeRowQuery "select unique_name(in_repository(''),50)" []) >>= \r -> case r of
+            Just [targetName] -> do let targetName' = fromSql targetName
+                                        targetFullPath = joinPath [filePath, targetName']
+                                    liftIO $ B.writeFile targetFullPath (inputValue inp)
+                                    lift $ update "insert into files (id,user_filename,stored_as,content_type) values (?,?,?,?)"
+                                      [toSql (objId obj), toSql (inputFilename inp), toSql targetName',
+                                       toSql (showContentType (inputContentType inp)) ]
+                                    return $ ContinuePageWithWrapper (greenParagraph "Successfully uploaded file.",noHtml,noHtml) rereadObject
+            _ -> error "Did not receive a name from the database in uploadFile."
+
+replaceFile :: BeinServerPart (FormResponse (Html,Html,Html))
+replaceFile = f `mplus` return (ContinuePage (redParagraph "Invalid field entry.",noHtml,noHtml))
+  where f = do
+          hasWritePermissions
+          obj <- asksObject
+          lift $ update "delete from files where id = ?" [toSql (objId obj)]
+          uploadFile
+
+
+showContentType :: ContentType -> String
+showContentType (ContentType { ctType = t, ctSubtype = st, ctParameters = p }) =
+  t ++ "/" ++ st ++ parameterString
+    where parameterString = concatMap (\(k,v) -> "; " ++ k ++ "=" ++ v) p
+
+programBody :: Html -> Html -> BeinFormPart (Html,Html,Html) Html
+programBody inpAdd outpAdd = do
+  obj <- lift asksObject
+  b <- case objBody obj of
+    Nothing -> do lift $ lift $ update "insert into programs(id) values (?)" [toSql (objId obj)]
+                  lift $ lift $ liftM (fromJust . objBody . fromJust) $ getObject (objId obj)
+    Just b -> return b
+  case immutable (objHeader obj) of
+    True -> programImmutableBody b
+    False -> programBodyForm b inpAdd outpAdd
+
+programImmutableBody :: ObjectBody -> BeinFormPart (Html,Html,Html) Html
+programImmutableBody b = do
+  mconcatM [
+    h2M << "Program",
+    paragraphM =<<: [ alignedLabelM "Language:", html $ show $ language b ],
+    paragraphM =<<: [ alignedLabelM "Script:", brM, preM << script b ],
+    h3M << "Inputs",
+    mconcatM $ map showProgramInput $ M.toList (programInputs b),
+    h3M << "Outputs",
+    mconcatM $ map showProgramOutput $ M.toList (programOutputs b),
+    showResourceSpecification (resourceSpec b)
+    ]
+
+programInputToString :: ProgramInput -> String
+programInputToString p = case p of
+  InputSequence -> "sequence"
+  InputFile -> "file"
+  InputString -> "string"
+  InputNumber -> "number"
+
+showProgramInput :: (String,ProgramInput) -> BeinFormPart (Html,Html,Html) Html
+showProgramInput (lbl,ty) = mconcatM [ alignedLabelM lbl, html $ "(" ++ programInputToString ty ++ ")" ]
+
+showProgramOutput :: (String,ProgramOutput) -> BeinFormPart (Html,Html,Html) Html
+showProgramOutput (lbl,_) = mconcatM [ alignedLabelM lbl, html "(file)" ]
+
+programBodyForm :: ObjectBody -> Html -> Html -> BeinFormPart (Html,Html,Html) Html
+programBodyForm b inpAdd outpAdd = do
+  tell [("input",updateInput),("output",updateOutput)]
+  mconcatM [
+    h2M << "Program",
+    objectFormTo "script" updateLanguageAndScript =<< mconcatM [
+      paragraphM =<<: [ alignedLabelM "Language:", radioM "language" "Perl" <!> (if language b == Perl then [checked] else []),
+                        html "Perl", radioM "language" "R" <!> (if language b == R then [checked] else []), html "R" ],
+      paragraphM =<<: [ alignedLabelM "Script:", brM, textareaM <! [name "script", identifier "script", cols "80", rows "25"] << script b ],
+      paragraphM =<< submitM "save" "Save"
+      ],
+    h3M << "Inputs",
+    thedivM <! [identifier "inputs"] =<<: [ mconcatM $ map programInputForm $ M.toList (programInputs b), return inpAdd ],
+    objectFormTo "addinput" addInput =<< submitM "addinput" "Add input",
+    h3M << "Outputs",
+    thedivM <! [identifier "outputs"] =<<: [ mconcatM $ map programOutputForm $ M.toList (programOutputs b), return outpAdd ],
+    objectFormTo "addoutput" addOutput =<< submitM "addoutput" "Add output",
+    resourceSpecificationForm (resourceSpec b)
+    ]
+
+addInput :: BeinServerPart (FormResponse (Html,Html,Html))
+addInput = do
+  obj <- asksObject
+  u <- fullUrl $ show (objId obj) ++ "/input"
+  frm <- formM <! [X.method "post", action u] =<< programInputFormBody "" InputString
+  return $ ContinuePage (noHtml,frm,noHtml)
+
+addOutput :: BeinServerPart (FormResponse (Html,Html,Html))
+addOutput = do
+  obj <- asksObject
+  u <- fullUrl $ show (objId obj) ++ "/output"
+  frm <- formM <! [X.method "post", action u] =<< programOutputFormBody "" OutputFile
+  return $ ContinuePage (noHtml,noHtml,frm)
+
+programInputForm :: (String,ProgramInput) -> BeinFormPart (Html,Html,Html) Html
+programInputForm (lbl,ty) = paragraphM =<<: [ objectFormTo "input" updateInput =<< programInputFormBody lbl ty ]
+
+programInputFormBody :: Monad m => String -> ProgramInput -> m Html
+programInputFormBody lbl ty = mconcatM [
+  hiddenM "previouslabel" lbl,
+  textfieldM "newlabel" <!> [value lbl],
+  html "Type:",
+  selectM <! [identifier "type", name "type"] =<<: [
+    typeOption InputFile ty,
+    typeOption InputNumber ty,
+    typeOption InputString ty ],
+  submitM "delete" "Delete",
+  submitM "update" "Update"
+  ]
+  where typeOption t c = optionM <! attrs t c << programInputToString t
+        attrs t c | t == c = [value (show t), selected]
+                  | True   = [value (show t)]
+
+data ProgramInputAction = DeleteProgramInput { oldLabel :: String } | UpdateProgramInput { oldLabel :: String, newLabel :: String, inputType :: ProgramInput }
+                        deriving (Eq,Show,Read)
+
+updateInput :: BeinServerPart (FormResponse (Html,Html,Html))
+updateInput = do
+  hasWritePermissions
+  mconcat [ withDataFn readInputForm f, return $ ContinuePage (redParagraph $ "Invalid arguments to POST.",noHtml,noHtml) ]
+  where readInputForm :: RqData ProgramInputAction
+        readInputForm = readOneOf ["update","delete"] >>= \r -> case r of
+          "Delete" -> do ol <- look "previouslabel"
+                         return $ DeleteProgramInput ol
+          "Update" -> do ol <- look "previouslabel"
+                         nl <- look "newlabel"
+                         ty <- lookRead "type"
+                         return $ UpdateProgramInput ol nl ty
+          _ -> fail "unknown command to updateInput"
+        f (DeleteProgramInput "") = return $ ContinuePageWithWrapper (greenParagraph $ "Deleted input.",noHtml,noHtml) rereadObject
+        f (DeleteProgramInput ol) = do
+          obj <- asksObject
+          lift $ (do update "delete from program_inputs where id=? and label=?" [toSql (objId obj), toSql ol]
+                     return $ ContinuePageWithWrapper (greenParagraph "Deleted input.",noHtml,noHtml) rereadObject
+                  `catchR` (\e -> return $ ContinuePageWithWrapper (redParagraph $ "Failed to delete input: " ++ show e,noHtml,noHtml) rereadObject))
+        f (UpdateProgramInput "" "" _) = return $ ContinuePageWithWrapper (redParagraph $ "Cannot create input with empty label.",noHtml,noHtml)
+                                         rereadObject
+        f (UpdateProgramInput "" nl ty) = do
+          obj <- asksObject
+          lift $ (do update "insert into program_inputs(id,label,type) values(?,?,?)"
+                       [toSql (objId obj), toSql nl, toSql (programInputToString ty)]
+                     return $ ContinuePageWithWrapper (greenParagraph "Updated program input.",noHtml,noHtml) rereadObject
+                  `catchR` (\e -> return $ ContinuePageWithWrapper
+                                  (redParagraph $ "Failed to update input: " ++ show e,noHtml,noHtml) rereadObject))
+        f (UpdateProgramInput ol nl ty) = do
+          obj <- asksObject
+          lift $ (do update "update program_inputs set label=?,type=? where id=? and label=?"
+                       [toSql nl, toSql (programInputToString ty), toSql (objId obj), toSql ol]
+                     return $ ContinuePageWithWrapper (greenParagraph "Updated program input.",noHtml,noHtml) rereadObject
+                  `catchR` (\e -> return $ ContinuePageWithWrapper (redParagraph $ "Failed to update input: " ++ show e,noHtml,noHtml) rereadObject))
+
+data ProgramOutputAction = DeleteProgramOutput { oldOutputLabel :: String }
+                         | UpdateProgramOutput { oldOutputLabel :: String, newOutputLabel :: String }
+                         deriving (Eq,Show,Read)
+
+updateOutput :: BeinServerPart (FormResponse (Html,Html,Html))
+updateOutput = do
+  hasWritePermissions
+  withDataFn readOutputForm f
+  where readOutputForm :: RqData ProgramOutputAction
+        readOutputForm = readOneOf ["update","delete"] >>= \r -> case r of
+          "Delete" -> look "previouslabel" >>= return . DeleteProgramOutput
+          "Update" -> do
+            ol <- look "previouslabel"
+            nl <- look "newlabel"
+            return $ UpdateProgramOutput ol nl
+          _ -> fail "Invalid command to updateOutput."
+        f :: ProgramOutputAction -> BeinServerPart (FormResponse (Html,Html,Html))
+        f (DeleteProgramOutput "") = return $ ContinuePageWithWrapper (greenParagraph "Deleted output.",noHtml,noHtml) rereadObject
+        f (DeleteProgramOutput ol) = do
+          obj <- asksObject
+          lift (do update "delete from program_outputs where id=? and label=?" [toSql (objId obj), toSql ol]
+                   return $ ContinuePageWithWrapper (greenParagraph "Deleted output.",noHtml,noHtml) rereadObject
+                `catchR` (\e -> return $ ContinuePageWithWrapper (redParagraph $ "Failed to delete output: " ++ show e,noHtml,noHtml) rereadObject))
+        f (UpdateProgramOutput "" "") = return $ ContinuePageWithWrapper (redParagraph $ "Output label cannot be empty.",noHtml,noHtml) rereadObject
+        f (UpdateProgramOutput "" nl) = do
+          obj <- asksObject
+          lift (do update "insert into program_outputs(id,label,type) values (?,?,'file')" [toSql (objId obj), toSql nl]
+                   return $ ContinuePageWithWrapper (greenParagraph "Updated output.",noHtml,noHtml) rereadObject
+                `catchR` (\e -> return $ ContinuePageWithWrapper (redParagraph $ "Failed to update output: " ++ show e,noHtml,noHtml) rereadObject))
+        f (UpdateProgramOutput ol nl) = do
+          obj <- asksObject
+          lift (do update "update program_outputs set label=? where id=? and label=?" [toSql nl, toSql (objId obj), toSql ol]
+                   return $ ContinuePageWithWrapper (greenParagraph "Updated output.",noHtml,noHtml) rereadObject
+                `catchR` (\e -> return $ ContinuePageWithWrapper (redParagraph $ "Failed to update output: " ++ show e,noHtml,noHtml) rereadObject))
+
+
+readOneOf :: [String] -> RqData String
+readOneOf vs = asks fst >>= readOneOf' vs
+  where readOneOf' :: [String] -> [(String,Input)] -> RqData String
+        readOneOf' [] _ = fail "none of inputs found"
+        readOneOf' (q:qs) inps = case lookup q inps of
+          Nothing -> readOneOf' qs inps
+          Just i -> return $ LU.toString $ inputValue $ i
+
+programOutputForm :: (String,ProgramOutput) -> BeinFormPart (Html,Html,Html) Html
+programOutputForm (lbl,ty) = paragraphM =<<: [ objectFormTo "output" updateOutput =<< programOutputFormBody lbl ty ]
+
+programOutputFormBody :: Monad m => String -> ProgramOutput -> m Html
+programOutputFormBody lbl _ = mconcatM [
+  hiddenM "previouslabel" lbl,
+  textfieldM "newlabel" <!> [value lbl],
+  html "Type: file",
+  submitM "delete" "Delete",
+  submitM "update" "Update" ]
+
+
+updateLanguageAndScript :: BeinServerPart (FormResponse (Html,Html,Html))
+updateLanguageAndScript = do
+  hasWritePermissions
+  withDataFn readLanguageAndScript f
+    where readLanguageAndScript :: RqData (ProgramLanguage,String)
+          readLanguageAndScript = do
+            l <- lookRead "language"
+            scr <- look "script"
+            return (l,scr)
+          f :: (ProgramLanguage,String) -> BeinServerPart (FormResponse (Html,Html,Html))
+          f (l,scr) = do obj <- asksObject
+                         lift $ (do update "update programs set language = ?, script = ? where id = ?"
+                                      [toSql (if l == Perl then "perl" else "r"), toSql scr, toSql (objId obj)]
+                                    return $ ContinuePageWithWrapper (greenParagraph "Successful.",noHtml,noHtml) rereadObject
+                                 `catchR` (\e -> return $ ContinuePageWithWrapper
+                                                 (redParagraph $ "Error updating language and script: " ++ show e,noHtml,noHtml)
+                                                 rereadObject))
+
+
+executionBody :: BeinFormPart (Html,Html,Html) Html
+executionBody = do
+  obj <- lift $ asksObject
+  q <- lift $ lift $ maybeRowQuery "select id from current_jobs where id=?" [toSql (objId obj)]
+  if immutable (objHeader obj) || (fmap status (objBody obj) /= Just Waiting && fmap status (objBody obj) /= Nothing) || q /= Nothing
+    then showExecutionBody
+    else executionBodyForm
+
+executionBodyForm :: BeinFormPart (Html,Html,Html) Html
+executionBodyForm = do
+  obj <- lift $ asksObject
+  b <- case objBody obj of
+    Nothing -> do lift $ lift $ update "insert into executions(id) values (?)" [toSql (objId obj)]
+                  lift $ lift $ liftM (fromJust . objBody . fromJust) $ getObject (objId obj)
+    Just b -> return b
+  baseUrl <- lift $ lift $ configField http_base_url
+  mconcatM [
+    h2M << "Execution",
+    paragraphM =<<: [ alignedLabelM "Status:", html (show (status b)) ],
+    paragraphM =<<: [ alignedLabelM "Program:",
+                      case program b of
+                        Just p -> anchorM <! [href (joinURL baseUrl ("/" ++ show (objId p)))] << objectTag p
+                        Nothing -> html "No program defined." ],
+    objectFormTo "program" setProgram =<< paragraphM =<<: [ html "Change program to:", brM, typeList Program, submitM "change" "Change program" ],
+    h3M << "Inputs",
+    mconcatM $ map showInput (M.toList (executionInputs b)),
+    h3M << "Outputs",
+    mconcatM $ map showOutput (M.toList (executionOutputs b)),
+    resourceSpecificationForm (resourceSpec b),
+    h3M << "Execution log",
+    mconcatM $ map showExecutionLog (executionLog b)
+    ]
+
+showExecutionBody :: BeinFormPart (Html,Html,Html) Html
+showExecutionBody = do
+  obj <- lift $ asksObject
+  let b = fromJust $ objBody obj
+  baseUrl <- lift $ lift $ configField http_base_url
+  mconcatM [
+    h2M << "Execution",
+    paragraphM =<<: [ alignedLabelM "Status:", html (show (status b)) ],
+    paragraphM =<<: [ alignedLabelM "Program:", case program b of
+                         Just p -> anchorM <! [href (joinURL baseUrl ("/" ++ show (objId p)))] << objectTag p
+                         Nothing -> html "No program defined.  How did you get this to be immutable?" ],
+    h3M << "Inputs",
+    mconcatM $ map displayInput (M.toList (executionInputs b)),
+    h3M << "Outputs",
+    mconcatM $ map displayOutput (M.toList (executionOutputs b)),
+    showResourceSpecification (resourceSpec b),
+    h3M << "Excution log",
+    mconcatM $ map showExecutionLog (executionLog b)
+    ]
+
+showInput :: (String,ExecutionInput) -> BeinFormPart (Html,Html,Html) Html
+showInput (lbl,ExecutionStringInput v) = objectFormTo "setstringinput" setStringInput =<< paragraphM =<<: [
+  alignedLabelM lbl, hiddenM "label" lbl, textfieldM "value" <!> [value (fromMaybe "" v)], submitM "update" "Update" ]
+showInput (lbl,ExecutionNumberInput v) = objectFormTo "setnumberinput" setNumberInput =<< paragraphM =<<: [
+  alignedLabelM lbl, hiddenM "label" lbl, textfieldM "value" <!> [value (fromMaybe "" (fmap show v))], submitM "update" "Update" ]
+showInput (lbl,ExecutionObjectInput v) = objectFormTo "setobjectinput" setObjectInput =<< paragraphM =<<: [                                         alignedLabelM lbl, hiddenM "label" lbl, html $ maybe "(unspecified)" objectTag v, html "Change to:", typeList File, submitM "update" "Update" ]
+
+displayInput :: (String,ExecutionInput) -> BeinFormPart (Html,Html,Html) Html
+displayInput (lbl,ExecutionStringInput v) =
+  paragraphM =<<: [ alignedLabelM lbl, html $ fromMaybe "(undefined)" v ]
+displayInput (lbl,ExecutionNumberInput v) =
+  paragraphM =<<: [ alignedLabelM lbl, html $ fromMaybe "(undefined)" (fmap show v) ]
+displayInput (lbl,ExecutionObjectInput v) = do
+  paragraphM =<<: [ alignedLabelM lbl,
+                    case v of
+                      Nothing -> html "(unspecified)"
+                      Just obj -> do inputUrl <- lift $ fullUrl ("/" ++ show (objId obj))
+                                     anchorM <! [href inputUrl] << objectTag obj
+                  ]
+
+setNumberInput :: BeinServerPart (FormResponse (Html,Html,Html))
+setNumberInput = do
+  hasWritePermissions
+  withDataFn lookLabelNumber f `mplus` return (ContinuePage (redParagraph "Invalid field entry.",noHtml,noHtml))
+    where lookLabelNumber :: RqData (String,Double)
+          lookLabelNumber = do l <- look "label"
+                               v <- lookRead "value"
+                               return (l,v)
+          f :: (String,Double) -> BeinServerPart (FormResponse (Html,Html,Html))
+          f (lbl,n) = do obj <- asksObject
+                         lift $ (do update "update execution_number_inputs set value = ? where id = ? and label = ?"
+                                      [toSql n, toSql (objId obj), toSql lbl]
+                                    return $ ContinuePageWithWrapper (greenParagraph "Input set successfully.",noHtml,noHtml) rereadObject
+                                 `catchR` (\e -> return $ ContinuePageWithWrapper
+                                                 (redParagraph $ "Failed to set number input: " ++ show e,noHtml,noHtml) rereadObject))
+
+setObjectInput :: BeinServerPart (FormResponse (Html,Html,Html))
+setObjectInput = do
+  hasWritePermissions
+  withDataFn lookLabelObjId f `mplus` return (ContinuePage (redParagraph "Invalid field entry.",noHtml,noHtml))
+    where lookLabelObjId :: RqData (String,Int)
+          lookLabelObjId = do l <- look "label"
+                              v <- lookRead "file"
+                              return (l,v)
+          f :: (String,Int) -> BeinServerPart (FormResponse (Html,Html,Html))
+          f (lbl,oid) = do obj <- asksObject
+                           lift $ (do update "update execution_object_inputs set value = ? where id = ? and label = ?"
+                                        [toSql oid, toSql (objId obj), toSql lbl]
+                                      return $ ContinuePageWithWrapper (greenParagraph "Input set successfully.",noHtml,noHtml) rereadObject
+                                   `catchR` (\e -> return $ ContinuePageWithWrapper
+                                                   (redParagraph $ "Failed to set object input: " ++ show e,noHtml,noHtml) rereadObject))
+
+setStringInput :: BeinServerPart (FormResponse (Html,Html,Html))
+setStringInput = hasWritePermissions >> (withDataFn lookLabelValue f `mplus` return (ContinuePage (redParagraph "Invalid field entry.",noHtml,noHtml)))
+  where f :: (String,String) -> BeinServerPart (FormResponse (Html,Html,Html))
+        f (l,v) = do obj <- asksObject
+                     lift $ (do update "update execution_string_inputs set value = ? where id = ? and label = ?"
+                                  [toSql v, toSql (objId obj), toSql l]
+                                return $ ContinuePageWithWrapper (greenParagraph "Input set successfully.",noHtml,noHtml) rereadObject
+                             `catchR` (\e -> return $ ContinuePageWithWrapper
+                                             (redParagraph $ "Failed to set string input: " ++ show e,noHtml,noHtml) rereadObject))
+        lookLabelValue :: RqData (String,String)
+        lookLabelValue = do l <- look "label"
+                            v <- look "value"
+                            return (l,v)
+
+showOutput :: (String,ExecutionOutput) -> BeinFormPart (Html,Html,Html) Html
+showOutput (lbl,ExecutionFileOutput outObj) = do
+  outputUrl <- lift $ fullUrl ("/" ++ show (objId outObj))
+  paragraphM =<<: [ alignedLabelM lbl, anchorM <! [href outputUrl] << objectTag outObj ]
+
+displayOutput :: (String,ExecutionOutput) -> BeinFormPart (Html,Html,Html) Html
+displayOutput (lbl,ExecutionFileOutput outObj) = do
+  outputUrl <- lift $ fullUrl ("/" ++ show (objId outObj))
+  paragraphM =<<: [ alignedLabelM lbl, anchorM <! [href outputUrl] << objectTag outObj ]
+
+resourceSpecificationForm :: ResourceSpec -> BeinFormPart (Html,Html,Html) Html
+resourceSpecificationForm rspec = objectFormTo "updateresourcespec" updateResourceSpec =<< mconcatM [
+  h3M << "Resource Specification",
+  fieldPara "Resource string" "resreq" resReq,
+  fieldPara "Max CPU" "maxcpu" (maybe "" show . maxCpu),
+  fieldPara "Max file size" "maxfilesize" (maybe "" show . maxFileSize),
+  fieldPara "Max RAM" "maxram" (maybe "" show . maxRam),
+  fieldPara "Max swap" "maxswap" (maybe "" show . maxSwap),
+  fieldPara "Max processes" "maxprocs" (maybe "" show . maxProcs),
+  submitM "save" "Save" ]
+  where fieldPara a b c = paragraphM =<<: [ alignedLabelM a, textfieldM b <!> [value (c rspec)] ]
+
+nonempty :: String -> (a -> String) -> a -> String
+nonempty d f v = case f v of
+  "" -> d
+  r  -> r
+
+showResourceSpecification :: ResourceSpec -> BeinFormPart (Html,Html,Html) Html
+showResourceSpecification rspec = mconcatM [
+  h3M << "Resource Specification",
+  fieldPara "Resource string" (nonempty "(no request)" resReq),
+  fieldPara "Max CPU" (maybe "(unlimited)" show . maxCpu),
+  fieldPara "Max file size" (maybe "(unlimited)" show . maxFileSize),
+  fieldPara "Max RAM" (maybe "(unlimited)" show . maxRam),
+  fieldPara "Max swap" (maybe "(unlimited)" show . maxSwap),
+  fieldPara "Max processes" (maybe "(unlimited)" show . maxProcs)
+  ]
+  where fieldPara :: String -> (ResourceSpec -> String) -> BeinFormPart (Html,Html,Html) Html
+        fieldPara a c = paragraphM =<<: [ alignedLabelM a, html (c rspec) ]
+
+
+updateResourceSpec :: BeinServerPart (FormResponse (Html,Html,Html))
+updateResourceSpec = hasWritePermissions >> withDataFn lookRspec f `mplus` return (ContinuePage (redParagraph "Invalid field entry.",noHtml,noHtml))
+  where lookRspec :: RqData ResourceSpec
+        lookRspec = do rreq <- look "resreq"
+                       rcpu <- lookMaybeRead "maxcpu"
+                       rfilesize <- lookMaybeRead "maxfilesize"
+                       rram <- lookMaybeRead "maxram"
+                       rswap <- lookMaybeRead "maxswap"
+                       rprocs <- lookMaybeRead "maxprocs"
+                       return $ ResourceSpec { resReq = rreq, maxCpu = rcpu,
+                                               maxFileSize = rfilesize, maxRam = rram,
+                                               maxSwap = rswap, maxProcs = rprocs }
+        f rspec = asksObject >>= \obj ->
+          lift $ (do update "update resource_specification set resreq=?,maxcpu=?,maxfilesize=?,maxram=?,maxswap=?,maxprocs=? where id=?"
+                       [toSql (resReq rspec), maybeToSql (maxCpu rspec), maybeToSql (maxFileSize rspec),
+                        maybeToSql (maxRam rspec), maybeToSql (maxSwap rspec), maybeToSql (maxProcs rspec), toSql (objId obj)]
+                     return $ ContinuePageWithWrapper (greenParagraph "Resource specification successfully updated.",noHtml,noHtml) rereadObject
+                  `catchR` (\e -> return $ ContinuePageWithWrapper (redParagraph $ "Failed to update resource specification: " ++ show e,noHtml,noHtml) rereadObject))
+
+maybeToSql :: Convertible a SqlValue => Maybe a -> SqlValue
+maybeToSql Nothing = SqlNull
+maybeToSql (Just a)  = toSql a
+
+lookMaybeRead :: Read a => String -> RqData (Maybe a)
+lookMaybeRead f = look f >>= \r -> case r of
+  "" -> return Nothing
+  _  -> case reads r of
+    [(v,"")] -> return (Just v)
+    _ -> fail ""
+
+showExecutionLog :: (LocalTime,String) -> BeinFormPart (Html,Html,Html) Html
+showExecutionLog (t,v) = paragraphM =<<: [ alignedLabelM (formatTime defaultTimeLocale "%F %R" t), html v ]
+
+
+typeList :: ObjectType -> BeinFormPart (Html,Html,Html) Html
+typeList t = programs >>= \p -> selectM <! [identifier typeStr, name typeStr] =<<: map programToOption p
+  where programs :: BeinFormPart (Html,Html,Html) [BeinObject]
+        programs = do user <- lift $ asksUser
+                      rids <- lift $ lift $ query ("select id from headers where type=? and (uid=? or array[gid] <@ array" ++ (show $ map gid $ groups user) ++ ") order by last_modified desc") [toSql typeStr, toSql (uid user)]
+                      let ids = map (fromSql . head) rids
+                      lift $ lift $ mapM ((liftM fromJust) . getObject) ids
+        programToOption o = optionM <! [value (show $ objId o)] << objectTag o
+        typeStr = case t of File -> "file"; Execution -> "execution"; Program -> "program"
+
+setProgram :: BeinServerPart (FormResponse (Html,Html,Html))
+setProgram = do
+  hasWritePermissions
+  withDataFn (lookRead "program") f `mplus` return (ContinuePage (redParagraph "Invalid field entry.",noHtml,noHtml))
+  where f :: Int -> BeinServerPart (FormResponse (Html,Html,Html))
+        f progId = do obj <- asksObject
+                      lift $ (do update "update executions set program = ? where id = ?" [toSql progId, toSql (objId obj)]
+                                 return (ContinuePageWithWrapper (greenParagraph "Set program.",noHtml,noHtml) rereadObject)
+                              `catchR` (\e -> return (ContinuePageWithWrapper (redParagraph $ "Failed to set program: " ++ show e,noHtml,noHtml)
+                                                      rereadObject)))
+</pre></br><h2>printed</h2></br><pre>{-# LANGUAGE ScopedTypeVariables, FlexibleContexts #-}
+module Bein.Web.Pages.Object where
+
+import Control.Monad.Writer
+import qualified Data.ByteString.Lazy.UTF8 as LU (toString)
+import Data.Convertible
+import Data.List (intersperse)
+import System.Posix.Files
+import qualified Data.ByteString.Lazy as B
+import System.FilePath
+import Prelude hiding (catch)
+import Control.Exception
+import Control.Monad.Reader
+import System.IO
+import Network
+import Data.Maybe
+import qualified Data.Map as M
+import Data.List (delete, find)
+import Bein.Web.Types
+import Bein.Web.Commands
+import Bein.Web.Pages.Common
+import Bein.Web.Elements
+import Bein.Web.Pages.Login
+import Happstack.Server
+import Data.Time
+import Database.HDBC
+import System.Locale
+import qualified Text.XHtml as X (method)
+
+object :: BeinServerPart Response
+object = do
+  obj <- asksObject
+  let pageTitle = Just $ "Editing " ++ (if (immutable (objHeader obj)) then "Immutable " else "") ++
+                     show (objType (objHeader obj)) ++ " " ++ show (objId obj)
+  authenticated $ page pageTitle HideNone objectBody (noHtml,noHtml,noHtml)
+
+objectBody :: (Html,Html,Html) -> BeinFormPart (Html,Html,Html) Html
+objectBody (msg,inpAdd,outpAdd) = lift hasReadPermissions >> mconcatM [ runAndDeleteButtons, return msg, objectHeader, objectTypeBody inpAdd outpAdd ]
+
+runAndDeleteButtons :: BeinFormPart (Html,Html,Html) Html
+runAndDeleteButtons = lift asksObject >>= \obj -> paragraphM =<<: [
+  objectFormTo "delete" deleteObject =<<
+      submitM "delete" "Delete" <!> ([thestyle "float: right;"] ++ if immutable (objHeader obj) then [disabled] else []),
+  case objType (objHeader obj) of
+    File -> objectFormTo "downloadfile" downloadFile =<<
+      submitM "download" "Download" <!> if objBody obj == Nothing then [disabled] else []
+    Program -> objectFormTo "downloadscript" downloadScript =<<
+      submitM "download" "Download" <!> if objBody obj == Nothing then [disabled] else []
+    Execution -> displayRunButtons
+    ]
+
+data Button = Run | Reset | Abort | NotRunnable deriving (Eq,Show,Read)
+
+runButtons :: Button -> BeinFormPart (Html,Html,Html) Html
+runButtons b = lift asksObject >>= \obj -> mconcatM [
+  if b == NotRunnable then submitM "" "Not runnable" <!> [disabled] else noHtmlM,
+  objectFormTo "run" runExecution =<< if b == Run then submitM "run" "Run" else noHtmlM,
+  objectFormTo "reset" resetExecution =<< if b == Reset then submitM "reset" "Reset" <!>
+                                                       (if immutable (objHeader obj) then [disabled] else [])
+                                    else noHtmlM,
+  objectFormTo "abort" abortExecution =<< if b == Abort then submitM "abort" "Abort" else noHtmlM ]
+
+displayRunButtons :: BeinFormPart (Html,Html,Html) Html
+displayRunButtons = do
+  k <- lift asksObject >>= \obj -> case objBody obj of
+    Nothing -> return NotRunnable
+    Just b  -> let scr = program b >>= objBody >>= Just . script
+               in if scr == Nothing || scr == Just "" || M.filter nullInput (executionInputs b) /= M.empty
+                  then return NotRunnable
+                  else case status b of
+                    Waiting -> do r <- lift $ lift $ maybeRowQuery
+                                       "select status from current_jobs where id=?" [toSql (objId obj)]
+                                  case fmap (fromSql . head) r of
+                                    Nothing -> return Run
+                                    Just "dependency_failed" -> return Reset
+                                    Just _ -> return Abort
+                    Running -> return Abort
+                    _ -> return Reset
+  runButtons k
+
+resetExecution :: BeinServerPart (FormResponse (Html,Html,Html))
+resetExecution = do
+  hasWritePermissions
+  obj <- asksObject
+  if immutable (objHeader obj)
+    then return (ContinuePage (redParagraph "Execution is immutable; cannot reset.",noHtml,noHtml))
+    else do lift $ update "update executions set status = 'waiting' where id = ?" [toSql (objId obj)]
+            return (ContinuePageWithWrapper (greenParagraph "Execution reset.",noHtml,noHtml) rereadObject)
+
+deleteObject :: BeinServerPart (FormResponse (Html,Html,Html))
+deleteObject = do
+  hasWritePermissions
+  obj <- asksObject
+  if immutable (objHeader obj)
+    then return (ContinuePage (greenParagraph "Object is immutable; cannot delete.",noHtml,noHtml))
+    else lift $ (do update "delete from headers where id = ?" [toSql (objId obj)]
+                    return (RedirectTo "/")) `catchR`
+                (\e -> return $ ContinuePage (redParagraph $ "Failed to delete object: " ++ show e,noHtml,noHtml))
+
+downloadFile :: BeinServerPart (FormResponse (Html,Html,Html))
+downloadFile = asksObject >>= \obj -> do
+  hasReadPermissions
+  guard (objType (objHeader obj) == File)
+  r <- lift $ maybeRowQuery "select content_type,in_repository(stored_as) from files where id = ?" [toSql (objId obj)]
+  case r of
+    Nothing -> return (ContinuePage (redParagraph "File is not yet created or uploaded; cannot download.",noHtml,noHtml))
+    Just [rct,rfn] -> do setHeaderM "Content-Type" (fromSql rct)
+                         liftM NewResponse $ fileServe [] (fromSql rfn)
+    Just q -> error $ "Invalid response from database in downloadFile: " ++ show q
+
+downloadScript :: BeinServerPart (FormResponse (Html,Html,Html))
+downloadScript = asksObject >>= \obj -> do
+  hasReadPermissions
+  guard (objType (objHeader obj) == Program)
+  r <- lift $ maybeRowQuery "select script from programs where id = ?" [toSql (objId obj)]
+  case r of
+    Nothing -> return (ContinuePage (redParagraph "No program defined; cannot download.",noHtml,noHtml))
+    Just [rscr] -> do setHeaderM "Content-Type" "text/plain; charset=utf-8"
+                      return $ NewResponse $ toResponse $ (fromSql rscr :: String)
+    Just q -> error $ "Invalid response from database in downloadScript: " ++ show q
+
+
+nullInput :: ExecutionInput -> Bool
+nullInput (ExecutionStringInput v) = isNothing v
+nullInput (ExecutionNumberInput v) = isNothing v
+nullInput (ExecutionObjectInput v) = isNothing v
+
+runExecution :: BeinServerPart (FormResponse (Html,Html,Html))
+runExecution = asksObject >>= \obj -> do
+  hasWritePermissions
+  guard (objType (objHeader obj) == Execution)
+  portName <- lift $ configField daemon_port
+  st <- ask
+  liftIO $ (do h <- connectTo "" (UnixSocket portName)
+               hSetBuffering h LineBuffering
+               hPutStr h $ "run\n" ++ show (objId obj) ++ "\n.\n"
+               r <- getCommandBlock h
+               r' <- mconcatM [ html "Started job. Daemon responded: ", brM, preM << r ]
+               return $ ContinuePageWithWrapper (greenParagraph r',noHtml,noHtml) rereadObject)
+    `catch` (\(_ :: IOException) -> do
+                runReaderT (update "select run(?)" [toSql (objId obj)]) st
+                return $ ContinuePageWithWrapper (greenParagraph "Daemon unreachable; job pending its return.",noHtml,noHtml) rereadObject)
+
+abortExecution :: BeinServerPart (FormResponse (Html,Html,Html))
+abortExecution = asksObject >>= \obj -> do
+  hasWritePermissions
+  guard (objType (objHeader obj) == Execution)
+  portName <- lift $ configField daemon_port
+  liftIO $ (do h <- connectTo "" (UnixSocket portName)
+               hSetBuffering h LineBuffering
+               hPutStr h $ "kill\n" ++ show (objId obj) ++ "\n.\n"
+               r <- getCommandBlock h
+               r' <- mconcatM [ html "Killed job. Daemon responded:", brM, preM << r ]
+               return $ ContinuePageWithWrapper (greenParagraph r',noHtml,noHtml) rereadObject)
+    `catch` (\(e :: IOException) -> return $ ContinuePageWithWrapper (redParagraph $ "Daemon unreacahble, failed to kill job: " ++
+                                                                      show e,noHtml,noHtml) rereadObject)
+
+
+objectHeader :: BeinFormPart (Html,Html,Html) Html
+objectHeader = do
+  user <- lift $ asksUser
+  BeinObject { objHeader = h } <- lift $ asksObject
+  objectFormTo "header" updateObjectHeader =<< thedivM <! [identifier "object-header"] =<<: [
+    h2M << "Header",
+    paragraphM =<<: [ alignedLabelM "Label", textfieldM "label" <!> [value (label h)] ],
+    paragraphM =<<: [ alignedLabelM "Last modified", html (formatTime defaultTimeLocale "%F %R" (lastModified h)) ],
+    paragraphM =<<: [ alignedLabelM "Created", html (formatTime defaultTimeLocale "%F %R" (created h)) ],
+    paragraphM =<<: [ alignedLabelM "Owner", html (userName $ owner h) ],
+    paragraphM =<<: [ alignedLabelM "Group", groupBox "group" ([group h] ++ delete (group h) (groups user)) (group h) ],
+    paragraphM =<<: [ alignedLabelM "Permissions", permissionBoxes (gr h) (gw h) (wr h) (ww h) ],
+    paragraphM =<<: [ alignedLabelM "Notes", textareaM <! [name "notes", identifier "notes", rows "7", cols "80"] << notes h ],
+    paragraphM =<<: [ submitM "Save" "Save" <!> [thestyle "float: right;"], html " " ]
+    ]
+
+permissionBoxes :: Bool -> Bool -> Bool -> Bool -> BeinFormPart (Html,Html,Html) Html
+permissionBoxes currentGR currentGW currentWR currentWW = mconcatM [
+    html "Group can ",
+    labelM <! [for "gr"] << "Read", checkboxM "gr" "gr" currentGR,
+    labelM <! [for "gw"] << "Write", checkboxM "gw" "gw" currentGW,
+    html " / World can ",
+    labelM <! [for "wr"] << "Read", checkboxM "wr" "wr" currentWR,
+    labelM <! [for "ww"] << "Write", checkboxM "ww" "ww" currentWW ]
+
+updateObjectHeader :: BeinServerPart (FormResponse (Html,Html,Html))
+updateObjectHeader = do
+  hasWritePermissions
+  user <- asksUser
+  BeinObject { objId = oid, objHeader = h } <- asksObject
+  withDataFn (readObjectHeader user h) (f oid) `mplus` return (ContinuePage (redParagraph "Invalid form entry.",noHtml,noHtml))
+    where f oid h = updateObject "update headers set label=?, gid=?,gr=?,gw=?,wr=?,ww=?, notes=? where id=?"
+                  [toSql (label h), toSql (gid (group h)), toSql (gr h), toSql (gw h), toSql (wr h), toSql (ww h), toSql (notes h), toSql oid]
+                  "Failed to update header."
+
+readObjectHeader :: User -> ObjectHeader -> RqData ObjectHeader
+readObjectHeader user h = do
+  newLbl <- look "label"
+  newGid <- lookRead "group"
+  newGroup <- case find (\q -> gid q == newGid) ([group h] ++ delete (group h) (groups user)) of
+    Nothing -> fail ""
+    Just g  -> return g
+  ngr <- lookCheckbox "gr"
+  ngw <- lookCheckbox "gw"
+  nwr <- lookCheckbox "wr"
+  nww <- lookCheckbox "ww"
+  newNotes <- look "notes"
+  return $ h { label = newLbl, group = newGroup, gr = ngr, gw = ngw, wr = nwr, ww = nww, notes = newNotes }
+
+updateObject :: String -> [SqlValue] -> String -> BeinServerPart (FormResponse (Html,Html,Html))
+updateObject cmd args errMsg = do
+  hasWritePermissions
+  lift $ (update cmd args >> return (ContinuePageWithWrapper (noHtml,noHtml,noHtml) rereadObject))
+    `catchR` (\e -> return $ ContinuePage (redParagraph $ errMsg ++ " " ++ show e,noHtml,noHtml))
+
+
+objectTypeBody :: Html -> Html -> BeinFormPart (Html,Html,Html) Html
+objectTypeBody inpAdd outpAdd = lift asksObject >>= \obj -> case objType (objHeader obj) of
+  File -> fileBody
+  Program -> programBody inpAdd outpAdd
+  Execution -> executionBody
+
+data ObjectState = Future | Mutable | Immutable deriving (Eq,Show,Read)
+
+fileBody :: BeinFormPart (Html,Html,Html) Html
+fileBody = lift asksObject >>= \obj -> do
+  dep <- lift $ lift $ f $ maybeRowQuery dependsQuery [toSql (objId obj)]
+  let st  = objectState obj
+  fileBody' obj dep st
+    where f :: Monad m => m (Maybe [SqlValue]) -> m (Maybe Int)
+          f = liftM $ fmap (fromSql . head)
+          dependsQuery :: String
+          dependsQuery = "select depends_on from dependencies where object = ? and dependency_Type = 'created_by'"
+
+objectState :: BeinObject -> ObjectState
+objectState obj | objBody obj == Nothing = Future
+                | immutable (objHeader obj) = Immutable
+                | True = Mutable
+
+fileBody' :: BeinObject -> Maybe Int -> ObjectState -> BeinFormPart (Html,Html,Html) Html
+fileBody' _ Nothing Future = mconcatM [
+  h2M << "File",
+  paragraphM << "You have not yet uploaded a file.",
+  paragraphM =<< multipartFormTo "upload" uploadFile =<< mconcatM [ afileM "file", submitM "upload" "Upload" ]
+  ]
+fileBody' obj Nothing Mutable = mconcatM [
+  fileHeader obj,
+  h3M << "Replace file",
+  paragraphM =<< multipartFormTo "replace" replaceFile =<< mconcatM [ afileM "file", submitM "upload" "Upload" ]
+  ]
+fileBody' obj Nothing Immutable = do
+  baseUrl <- lift $ lift $ configField http_base_url
+  v <- lift $ lift $ query ("select execution_id,execution_label from " ++
+       "executions_forcing_immutability where file_id = ?") [toSql (objId obj)]
+  let v'    [(Int,String)] = map (\x -> case x of [a,b] -> (fromSql a, fromSql b)
+                                                  _ -> error "Invalid fields from database in fileBody' Nothing Immutable") v
+  let f (a::Int,b::String) = anchorM <! [href (joinURL baseUrl ("/" ++ show a))] =<<: [
+        html (show a ++ " "),
+        if b == "" then italicsM << "(no label)" else html ("'" ++ b ++ "'") ]
+      v'' = intersperse brM $ map f v'
+  mconcatM [
+    fileHeader obj,
+    paragraphM << "File is immutable because it is an input to the executions:",
+    paragraphM =<<: v''
+    ]
+fileBody' _ (Just exId) Future = do
+  baseUrl <- lift $ lift $ configField http_base_url
+  mconcatM [
+    h2M << "File",
+    paragraphM =<<: [ html "File to be created when execution ", anchorM <! [href (joinURL baseUrl ("/" ++ show exId))] << show exId,
+                      html " is run." ] ]
+fileBody' obj (Just exId) _ = do
+  baseUrl <- lift $ lift $ configField http_base_url
+  mconcatM [
+    fileHeader obj,
+    paragraphM =<<: [ html "File created as output of execution ", anchorM <! [href (joinURL baseUrl ("/" ++ show exId))] << show exId,
+                      html "." ] ]
+
+fileHeader :: BeinObject -> BeinFormPart (Html,Html,Html) Html
+fileHeader obj = do
+  let b = fromJust $ objBody obj
+  filePath <- lift $ lift $ configField file_repository
+  thisFileSize <- liftIO $ getFileSize $ joinPath [filePath, storedAs b]
+  mconcatM [
+    h2M << "File",
+    paragraphM =<<: [ alignedLabelM "Filename:", html (userFilename b) ],
+    paragraphM =<<: [ alignedLabelM "Content-Type:", html (contentType b) ],
+    paragraphM =<<: [ alignedLabelM "File size:", html (prettyPrintFileSize thisFileSize) ] ]
+
+getFileSize :: FilePath -> IO Integer
+getFileSize f = getFileStatus f >>= return . toInteger . fileSize
+
+prettyPrintFileSize :: Integer -> String
+prettyPrintFileSize s | s < kb = show s ++ " bytes"
+                      | s < mb = show (s `div` kb) ++ "kb"
+                      | s < gb = show (s `div` mb) ++ "Mb"
+                      | True     = show (s `div` gb) ++ "Gb"
+                          where kb :: Integer
+                                kb = 1024 -- 2^10
+                                mb :: Integer
+                                mb = 1048576 -- 2^20
+                                gb :: Integer
+                                gb = 1073741824 -- 2^30
+
+uploadFile :: BeinServerPart (FormResponse (Html,Html,Html))
+uploadFile = withDataFn (lookInput "file") f `mplus` return (ContinuePage (redParagraph "Invalid field entry.",noHtml,noHtml))
+  where f inp = do
+          hasWritePermissions
+          obj <- asksObject
+          filePath <- lift $ configField file_repository
+          lift (maybeRowQuery "select unique_name(in_repository(''),50)" []) >>= \r -> case r of
+            Just [targetName] -> do let targetName' = fromSql targetName
+                                        targetFullPath = joinPath [filePath, targetName']
+                                    liftIO $ B.writeFile targetFullPath (inputValue inp)
+                                    lift $ update "insert into files (id,user_filename,stored_as,content_type) values (?,?,?,?)"
+                                      [toSql (objId obj), toSql (inputFilename inp), toSql targetName',
+                                       toSql (showContentType (inputContentType inp)) ]
+                                    return $ ContinuePageWithWrapper (greenParagraph "Successfully uploaded file.",noHtml,noHtml) rereadObject
+            _ -> error "Did not receive a name from the database in uploadFile."
+
+replaceFile :: BeinServerPart (FormResponse (Html,Html,Html))
+replaceFile = f `mplus` return (ContinuePage (redParagraph "Invalid field entry.",noHtml,noHtml))
+  where f = do
+          hasWritePermissions
+          obj <- asksObject
+          lift $ update "delete from files where id = ?" [toSql (objId obj)]
+          uploadFile
+
+
+showContentType :: ContentType -> String
+showContentType (ContentType { ctType = t, ctSubtype = st, ctParameters = p }) =
+  t ++ "/" ++ st ++ parameterString
+    where parameterString = concatMap (\(k,v) -> "; " ++ k ++ "=" ++ v) p
+
+programBody :: Html -> Html -> BeinFormPart (Html,Html,Html) Html
+programBody inpAdd outpAdd = do
+  obj <- lift asksObject
+  b <- case objBody obj of
+    Nothing -> do lift $ lift $ update "insert into programs(id) values (?)" [toSql (objId obj)]
+                  lift $ lift $ liftM (fromJust . objBody . fromJust) $ getObject (objId obj)
+    Just b -> return b
+  case immutable (objHeader obj) of
+    True -> programImmutableBody b
+    False -> programBodyForm b inpAdd outpAdd
+
+programImmutableBody :: ObjectBody -> BeinFormPart (Html,Html,Html) Html
+programImmutableBody b = do
+  mconcatM [
+    h2M << "Program",
+    paragraphM =<<: [ alignedLabelM "Language:", html $ show $ language b ],
+    paragraphM =<<: [ alignedLabelM "Script:", brM, preM << script b ],
+    h3M << "Inputs",
+    mconcatM $ map showProgramInput $ M.toList (programInputs b),
+    h3M << "Outputs",
+    mconcatM $ map showProgramOutput $ M.toList (programOutputs b),
+    showResourceSpecification (resourceSpec b)
+    ]
+
+programInputToString :: ProgramInput -> String
+programInputToString p = case p of
+  InputSequence -> "sequence"
+  InputFile -> "file"
+  InputString -> "string"
+  InputNumber -> "number"
+
+showProgramInput :: (String,ProgramInput) -> BeinFormPart (Html,Html,Html) Html
+showProgramInput (lbl,ty) = mconcatM [ alignedLabelM lbl, html $ "(" ++ programInputToString ty ++ ")" ]
+
+showProgramOutput :: (String,ProgramOutput) -> BeinFormPart (Html,Html,Html) Html
+showProgramOutput (lbl,_) = mconcatM [ alignedLabelM lbl, html "(file)" ]
+
+programBodyForm :: ObjectBody -> Html -> Html -> BeinFormPart (Html,Html,Html) Html
+programBodyForm b inpAdd outpAdd = do
+  tell [("input",updateInput),("output",updateOutput)]
+  mconcatM [
+    h2M << "Program",
+    objectFormTo "script" updateLanguageAndScript =<< mconcatM [
+      paragraphM =<<: [ alignedLabelM "Language:", radioM "language" "Perl" <!> (if language b == Perl then [checked] else []),
+                        html "Perl", radioM "language" "R" <!> (if language b == R then [checked] else []), html "R" ],
+      paragraphM =<<: [ alignedLabelM "Script:", brM, textareaM <! [name "script", identifier "script", cols "80", rows "25"] << script b ],
+      paragraphM =<< submitM "save" "Save"
+      ],
+    h3M << "Inputs",
+    thedivM <! [identifier "inputs"] =<<: [ mconcatM $ map programInputForm $ M.toList (programInputs b), return inpAdd ],
+    objectFormTo "addinput" addInput =<< submitM "addinput" "Add input",
+    h3M << "Outputs",
+    thedivM <! [identifier "outputs"] =<<: [ mconcatM $ map programOutputForm $ M.toList (programOutputs b), return outpAdd ],
+    objectFormTo "addoutput" addOutput =<< submitM "addoutput" "Add output",
+    resourceSpecificationForm (resourceSpec b)
+    ]
+
+addInput :: BeinServerPart (FormResponse (Html,Html,Html))
+addInput = do
+  obj <- asksObject
+  u <- fullUrl $ show (objId obj) ++ "/input"
+  frm <- formM <! [X.method "post", action u] =<< programInputFormBody "" InputString
+  return $ ContinuePage (noHtml,frm,noHtml)
+
+addOutput :: BeinServerPart (FormResponse (Html,Html,Html))
+addOutput = do
+  obj <- asksObject
+  u <- fullUrl $ show (objId obj) ++ "/output"
+  frm <- formM <! [X.method "post", action u] =<< programOutputFormBody "" OutputFile
+  return $ ContinuePage (noHtml,noHtml,frm)
+
+programInputForm :: (String,ProgramInput) -> BeinFormPart (Html,Html,Html) Html
+programInputForm (lbl,ty) = paragraphM =<<: [ objectFormTo "input" updateInput =<< programInputFormBody lbl ty ]
+
+programInputFormBody :: Monad m => String -> ProgramInput -> m Html
+programInputFormBody lbl ty = mconcatM [
+  hiddenM "previouslabel" lbl,
+  textfieldM "newlabel" <!> [value lbl],
+  html "Type:",
+  selectM <! [identifier "type", name "type"] =<<: [
+    typeOption InputFile ty,
+    typeOption InputNumber ty,
+    typeOption InputString ty ],
+  submitM "delete" "Delete",
+  submitM "update" "Update"
+  ]
+  where typeOption t c = optionM <! attrs t c << programInputToString t
+        attrs t c | t == c = [value (show t), selected]
+                  | True   = [value (show t)]
+
+data ProgramInputAction = DeleteProgramInput { oldLabel :: String } | UpdateProgramInput { oldLabel :: String, newLabel :: String, inputType :: ProgramInput }
+                        deriving (Eq,Show,Read)
+
+updateInput :: BeinServerPart (FormResponse (Html,Html,Html))
+updateInput = do
+  hasWritePermissions
+  mconcat [ withDataFn readInputForm f, return $ ContinuePage (redParagraph $ "Invalid arguments to POST.",noHtml,noHtml) ]
+  where readInputForm :: RqData ProgramInputAction
+        readInputForm = readOneOf ["update","delete"] >>= \r -> case r of
+          "Delete" -> do ol <- look "previouslabel"
+                         return $ DeleteProgramInput ol
+          "Update" -> do ol <- look "previouslabel"
+                         nl <- look "newlabel"
+                         ty <- lookRead "type"
+                         return $ UpdateProgramInput ol nl ty
+          _ -> fail "unknown command to updateInput"
+        f (DeleteProgramInput "") = return $ ContinuePageWithWrapper (greenParagraph $ "Deleted input.",noHtml,noHtml) rereadObject
+        f (DeleteProgramInput ol) = do
+          obj <- asksObject
+          lift $ (do update "delete from program_inputs where id=? and label=?" [toSql (objId obj), toSql ol]
+                     return $ ContinuePageWithWrapper (greenParagraph "Deleted input.",noHtml,noHtml) rereadObject
+                  `catchR` (\e -> return $ ContinuePageWithWrapper (redParagraph $ "Failed to delete input: " ++ show e,noHtml,noHtml) rereadObject))
+        f (UpdateProgramInput "" "" _) = return $ ContinuePageWithWrapper (redParagraph $ "Cannot create input with empty label.",noHtml,noHtml)
+                                         rereadObject
+        f (UpdateProgramInput "" nl ty) = do
+          obj <- asksObject
+          lift $ (do update "insert into program_inputs(id,label,type) values(?,?,?)"
+                       [toSql (objId obj), toSql nl, toSql (programInputToString ty)]
+                     return $ ContinuePageWithWrapper (greenParagraph "Updated program input.",noHtml,noHtml) rereadObject
+                  `catchR` (\e -> return $ ContinuePageWithWrapper
+                                  (redParagraph $ "Failed to update input: " ++ show e,noHtml,noHtml) rereadObject))
+        f (UpdateProgramInput ol nl ty) = do
+          obj <- asksObject
+          lift $ (do update "update program_inputs set label=?,type=? where id=? and label=?"
+                       [toSql nl, toSql (programInputToString ty), toSql (objId obj), toSql ol]
+                     return $ ContinuePageWithWrapper (greenParagraph "Updated program input.",noHtml,noHtml) rereadObject
+                  `catchR` (\e -> return $ ContinuePageWithWrapper (redParagraph $ "Failed to update input: " ++ show e,noHtml,noHtml) rereadObject))
+
+data ProgramOutputAction = DeleteProgramOutput { oldOutputLabel :: String }
+                         | UpdateProgramOutput { oldOutputLabel :: String, newOutputLabel :: String }
+                         deriving (Eq,Show,Read)
+
+updateOutput :: BeinServerPart (FormResponse (Html,Html,Html))
+updateOutput = do
+  hasWritePermissions
+  withDataFn readOutputForm f
+  where readOutputForm :: RqData ProgramOutputAction
+        readOutputForm = readOneOf ["update","delete"] >>= \r -> case r of
+          "Delete" -> look "previouslabel" >>= return . DeleteProgramOutput
+          "Update" -> do
+            ol <- look "previouslabel"
+            nl <- look "newlabel"
+            return $ UpdateProgramOutput ol nl
+          _ -> fail "Invalid command to updateOutput."
+        f :: ProgramOutputAction -> BeinServerPart (FormResponse (Html,Html,Html))
+        f (DeleteProgramOutput "") = return $ ContinuePageWithWrapper (greenParagraph "Deleted output.",noHtml,noHtml) rereadObject
+        f (DeleteProgramOutput ol) = do
+          obj <- asksObject
+          lift (do update "delete from program_outputs where id=? and label=?" [toSql (objId obj), toSql ol]
+                   return $ ContinuePageWithWrapper (greenParagraph "Deleted output.",noHtml,noHtml) rereadObject
+                `catchR` (\e -> return $ ContinuePageWithWrapper (redParagraph $ "Failed to delete output: " ++ show e,noHtml,noHtml) rereadObject))
+        f (UpdateProgramOutput "" "") = return $ ContinuePageWithWrapper (redParagraph $ "Output label cannot be empty.",noHtml,noHtml) rereadObject
+        f (UpdateProgramOutput "" nl) = do
+          obj <- asksObject
+          lift (do update "insert into program_outputs(id,label,type) values (?,?,'file')" [toSql (objId obj), toSql nl]
+                   return $ ContinuePageWithWrapper (greenParagraph "Updated output.",noHtml,noHtml) rereadObject
+                `catchR` (\e -> return $ ContinuePageWithWrapper (redParagraph $ "Failed to update output: " ++ show e,noHtml,noHtml) rereadObject))
+        f (UpdateProgramOutput ol nl) = do
+          obj <- asksObject
+          lift (do update "update program_outputs set label=? where id=? and label=?" [toSql nl, toSql (objId obj), toSql ol]
+                   return $ ContinuePageWithWrapper (greenParagraph "Updated output.",noHtml,noHtml) rereadObject
+                `catchR` (\e -> return $ ContinuePageWithWrapper (redParagraph $ "Failed to update output: " ++ show e,noHtml,noHtml) rereadObject))
+
+
+readOneOf :: [String] -> RqData String
+readOneOf vs = asks fst >>= readOneOf' vs
+  where readOneOf' :: [String] -> [(String,Input)] -> RqData String
+        readOneOf' [] _ = fail "none of inputs found"
+        readOneOf' (q:qs) inps = case lookup q inps of
+          Nothing -> readOneOf' qs inps
+          Just i -> return $ LU.toString $ inputValue $ i
+
+programOutputForm :: (String,ProgramOutput) -> BeinFormPart (Html,Html,Html) Html
+programOutputForm (lbl,ty) = paragraphM =<<: [ objectFormTo "output" updateOutput =<< programOutputFormBody lbl ty ]
+
+programOutputFormBody :: Monad m => String -> ProgramOutput -> m Html
+programOutputFormBody lbl _ = mconcatM [
+  hiddenM "previouslabel" lbl,
+  textfieldM "newlabel" <!> [value lbl],
+  html "Type: file",
+  submitM "delete" "Delete",
+  submitM "update" "Update" ]
+
+
+updateLanguageAndScript :: BeinServerPart (FormResponse (Html,Html,Html))
+updateLanguageAndScript = do
+  hasWritePermissions
+  withDataFn readLanguageAndScript f
+    where readLanguageAndScript :: RqData (ProgramLanguage,String)
+          readLanguageAndScript = do
+            l <- lookRead "language"
+            scr <- look "script"
+            return (l,scr)
+          f :: (ProgramLanguage,String) -> BeinServerPart (FormResponse (Html,Html,Html))
+          f (l,scr) = do obj <- asksObject
+                         lift $ (do update "update programs set language = ?, script = ? where id = ?"
+                                      [toSql (if l == Perl then "perl" else "r"), toSql scr, toSql (objId obj)]
+                                    return $ ContinuePageWithWrapper (greenParagraph "Successful.",noHtml,noHtml) rereadObject
+                                 `catchR` (\e -> return $ ContinuePageWithWrapper
+                                                 (redParagraph $ "Error updating language and script: " ++ show e,noHtml,noHtml)
+                                                 rereadObject))
+
+
+executionBody :: BeinFormPart (Html,Html,Html) Html
+executionBody = do
+  obj <- lift $ asksObject
+  q <- lift $ lift $ maybeRowQuery "select id from current_jobs where id=?" [toSql (objId obj)]
+  if immutable (objHeader obj) || (fmap status (objBody obj) /= Just Waiting && fmap status (objBody obj) /= Nothing) || q /= Nothing
+    then showExecutionBody
+    else executionBodyForm
+
+executionBodyForm :: BeinFormPart (Html,Html,Html) Html
+executionBodyForm = do
+  obj <- lift $ asksObject
+  b <- case objBody obj of
+    Nothing -> do lift $ lift $ update "insert into executions(id) values (?)" [toSql (objId obj)]
+                  lift $ lift $ liftM (fromJust . objBody . fromJust) $ getObject (objId obj)
+    Just b -> return b
+  baseUrl <- lift $ lift $ configField http_base_url
+  mconcatM [
+    h2M << "Execution",
+    paragraphM =<<: [ alignedLabelM "Status:", html (show (status b)) ],
+    paragraphM =<<: [ alignedLabelM "Program:",
+                      case program b of
+                        Just p -> anchorM <! [href (joinURL baseUrl ("/" ++ show (objId p)))] << objectTag p
+                        Nothing -> html "No program defined." ],
+    objectFormTo "program" setProgram =<< paragraphM =<<: [ html "Change program to:", brM, typeList Program, submitM "change" "Change program" ],
+    h3M << "Inputs",
+    mconcatM $ map showInput (M.toList (executionInputs b)),
+    h3M << "Outputs",
+    mconcatM $ map showOutput (M.toList (executionOutputs b)),
+    resourceSpecificationForm (resourceSpec b),
+    h3M << "Execution log",
+    mconcatM $ map showExecutionLog (executionLog b)
+    ]
+
+showExecutionBody :: BeinFormPart (Html,Html,Html) Html
+showExecutionBody = do
+  obj <- lift $ asksObject
+  let b = fromJust $ objBody obj
+  baseUrl <- lift $ lift $ configField http_base_url
+  mconcatM [
+    h2M << "Execution",
+    paragraphM =<<: [ alignedLabelM "Status:", html (show (status b)) ],
+    paragraphM =<<: [ alignedLabelM "Program:", case program b of
+                         Just p -> anchorM <! [href (joinURL baseUrl ("/" ++ show (objId p)))] << objectTag p
+                         Nothing -> html "No program defined.  How did you get this to be immutable?" ],
+    h3M << "Inputs",
+    mconcatM $ map displayInput (M.toList (executionInputs b)),
+    h3M << "Outputs",
+    mconcatM $ map displayOutput (M.toList (executionOutputs b)),
+    showResourceSpecification (resourceSpec b),
+    h3M << "Excution log",
+    mconcatM $ map showExecutionLog (executionLog b)
+    ]
+
+showInput :: (String,ExecutionInput) -> BeinFormPart (Html,Html,Html) Html
+showInput (lbl,ExecutionStringInput v) = objectFormTo "setstringinput" setStringInput =<< paragraphM =<<: [
+  alignedLabelM lbl, hiddenM "label" lbl, textfieldM "value" <!> [value (fromMaybe "" v)], submitM "update" "Update" ]
+showInput (lbl,ExecutionNumberInput v) = objectFormTo "setnumberinput" setNumberInput =<< paragraphM =<<: [
+  alignedLabelM lbl, hiddenM "label" lbl, textfieldM "value" <!> [value (fromMaybe "" (fmap show v))], submitM "update" "Update" ]
+showInput (lbl,ExecutionObjectInput v) = objectFormTo "setobjectinput" setObjectInput =<< paragraphM =<<: [                                         alignedLabelM lbl, hiddenM "label" lbl, html $ maybe "(unspecified)" objectTag v, html "Change to:", typeList File, submitM "update" "Update" ]
+
+displayInput :: (String,ExecutionInput) -> BeinFormPart (Html,Html,Html) Html
+displayInput (lbl,ExecutionStringInput v) =
+  paragraphM =<<: [ alignedLabelM lbl, html $ fromMaybe "(undefined)" v ]
+displayInput (lbl,ExecutionNumberInput v) =
+  paragraphM =<<: [ alignedLabelM lbl, html $ fromMaybe "(undefined)" (fmap show v) ]
+displayInput (lbl,ExecutionObjectInput v) = do
+  paragraphM =<<: [ alignedLabelM lbl,
+                    case v of
+                      Nothing -> html "(unspecified)"
+                      Just obj -> do inputUrl <- lift $ fullUrl ("/" ++ show (objId obj))
+                                     anchorM <! [href inputUrl] << objectTag obj
+                  ]
+
+setNumberInput :: BeinServerPart (FormResponse (Html,Html,Html))
+setNumberInput = do
+  hasWritePermissions
+  withDataFn lookLabelNumber f `mplus` return (ContinuePage (redParagraph "Invalid field entry.",noHtml,noHtml))
+    where lookLabelNumber :: RqData (String,Double)
+          lookLabelNumber = do l <- look "label"
+                               v <- lookRead "value"
+                               return (l,v)
+          f :: (String,Double) -> BeinServerPart (FormResponse (Html,Html,Html))
+          f (lbl,n) = do obj <- asksObject
+                         lift $ (do update "update execution_number_inputs set value = ? where id = ? and label = ?"
+                                      [toSql n, toSql (objId obj), toSql lbl]
+                                    return $ ContinuePageWithWrapper (greenParagraph "Input set successfully.",noHtml,noHtml) rereadObject
+                                 `catchR` (\e -> return $ ContinuePageWithWrapper
+                                                 (redParagraph $ "Failed to set number input: " ++ show e,noHtml,noHtml) rereadObject))
+
+setObjectInput :: BeinServerPart (FormResponse (Html,Html,Html))
+setObjectInput = do
+  hasWritePermissions
+  withDataFn lookLabelObjId f `mplus` return (ContinuePage (redParagraph "Invalid field entry.",noHtml,noHtml))
+    where lookLabelObjId :: RqData (String,Int)
+          lookLabelObjId = do l <- look "label"
+                              v <- lookRead "file"
+                              return (l,v)
+          f :: (String,Int) -> BeinServerPart (FormResponse (Html,Html,Html))
+          f (lbl,oid) = do obj <- asksObject
+                           lift $ (do update "update execution_object_inputs set value = ? where id = ? and label = ?"
+                                        [toSql oid, toSql (objId obj), toSql lbl]
+                                      return $ ContinuePageWithWrapper (greenParagraph "Input set successfully.",noHtml,noHtml) rereadObject
+                                   `catchR` (\e -> return $ ContinuePageWithWrapper
+                                                   (redParagraph $ "Failed to set object input: " ++ show e,noHtml,noHtml) rereadObject))
+
+setStringInput :: BeinServerPart (FormResponse (Html,Html,Html))
+setStringInput = hasWritePermissions >> (withDataFn lookLabelValue f `mplus` return (ContinuePage (redParagraph "Invalid field entry.",noHtml,noHtml)))
+  where f :: (String,String) -> BeinServerPart (FormResponse (Html,Html,Html))
+        f (l,v) = do obj <- asksObject
+                     lift $ (do update "update execution_string_inputs set value = ? where id = ? and label = ?"
+                                  [toSql v, toSql (objId obj), toSql l]
+                                return $ ContinuePageWithWrapper (greenParagraph "Input set successfully.",noHtml,noHtml) rereadObject
+                             `catchR` (\e -> return $ ContinuePageWithWrapper
+                                             (redParagraph $ "Failed to set string input: " ++ show e,noHtml,noHtml) rereadObject))
+        lookLabelValue :: RqData (String,String)
+        lookLabelValue = do l <- look "label"
+                            v <- look "value"
+                            return (l,v)
+
+showOutput :: (String,ExecutionOutput) -> BeinFormPart (Html,Html,Html) Html
+showOutput (lbl,ExecutionFileOutput outObj) = do
+  outputUrl <- lift $ fullUrl ("/" ++ show (objId outObj))
+  paragraphM =<<: [ alignedLabelM lbl, anchorM <! [href outputUrl] << objectTag outObj ]
+
+displayOutput :: (String,ExecutionOutput) -> BeinFormPart (Html,Html,Html) Html
+displayOutput (lbl,ExecutionFileOutput outObj) = do
+  outputUrl <- lift $ fullUrl ("/" ++ show (objId outObj))
+  paragraphM =<<: [ alignedLabelM lbl, anchorM <! [href outputUrl] << objectTag outObj ]
+
+resourceSpecificationForm :: ResourceSpec -> BeinFormPart (Html,Html,Html) Html
+resourceSpecificationForm rspec = objectFormTo "updateresourcespec" updateResourceSpec =<< mconcatM [
+  h3M << "Resource Specification",
+  fieldPara "Resource string" "resreq" resReq,
+  fieldPara "Max CPU" "maxcpu" (maybe "" show . maxCpu),
+  fieldPara "Max file size" "maxfilesize" (maybe "" show . maxFileSize),
+  fieldPara "Max RAM" "maxram" (maybe "" show . maxRam),
+  fieldPara "Max swap" "maxswap" (maybe "" show . maxSwap),
+  fieldPara "Max processes" "maxprocs" (maybe "" show . maxProcs),
+  submitM "save" "Save" ]
+  where fieldPara a b c = paragraphM =<<: [ alignedLabelM a, textfieldM b <!> [value (c rspec)] ]
+
+nonempty :: String -> (a -> String) -> a -> String
+nonempty d f v = case f v of
+  "" -> d
+  r  -> r
+
+showResourceSpecification :: ResourceSpec -> BeinFormPart (Html,Html,Html) Html
+showResourceSpecification rspec = mconcatM [
+  h3M << "Resource Specification",
+  fieldPara "Resource string" (nonempty "(no request)" resReq),
+  fieldPara "Max CPU" (maybe "(unlimited)" show . maxCpu),
+  fieldPara "Max file size" (maybe "(unlimited)" show . maxFileSize),
+  fieldPara "Max RAM" (maybe "(unlimited)" show . maxRam),
+  fieldPara "Max swap" (maybe "(unlimited)" show . maxSwap),
+  fieldPara "Max processes" (maybe "(unlimited)" show . maxProcs)
+  ]
+  where fieldPara :: String -> (ResourceSpec -> String) -> BeinFormPart (Html,Html,Html) Html
+        fieldPara a c = paragraphM =<<: [ alignedLabelM a, html (c rspec) ]
+
+
+updateResourceSpec :: BeinServerPart (FormResponse (Html,Html,Html))
+updateResourceSpec = hasWritePermissions >> withDataFn lookRspec f `mplus` return (ContinuePage (redParagraph "Invalid field entry.",noHtml,noHtml))
+  where lookRspec :: RqData ResourceSpec
+        lookRspec = do rreq <- look "resreq"
+                       rcpu <- lookMaybeRead "maxcpu"
+                       rfilesize <- lookMaybeRead "maxfilesize"
+                       rram <- lookMaybeRead "maxram"
+                       rswap <- lookMaybeRead "maxswap"
+                       rprocs <- lookMaybeRead "maxprocs"
+                       return $ ResourceSpec { resReq = rreq, maxCpu = rcpu,
+                                               maxFileSize = rfilesize, maxRam = rram,
+                                               maxSwap = rswap, maxProcs = rprocs }
+        f rspec = asksObject >>= \obj ->
+          lift $ (do update "update resource_specification set resreq=?,maxcpu=?,maxfilesize=?,maxram=?,maxswap=?,maxprocs=? where id=?"
+                       [toSql (resReq rspec), maybeToSql (maxCpu rspec), maybeToSql (maxFileSize rspec),
+                        maybeToSql (maxRam rspec), maybeToSql (maxSwap rspec), maybeToSql (maxProcs rspec), toSql (objId obj)]
+                     return $ ContinuePageWithWrapper (greenParagraph "Resource specification successfully updated.",noHtml,noHtml) rereadObject
+                  `catchR` (\e -> return $ ContinuePageWithWrapper (redParagraph $ "Failed to update resource specification: " ++ show e,noHtml,noHtml) rereadObject))
+
+maybeToSql :: Convertible a SqlValue => Maybe a -> SqlValue
+maybeToSql Nothing = SqlNull
+maybeToSql (Just a)  = toSql a
+
+lookMaybeRead :: Read a => String -> RqData (Maybe a)
+lookMaybeRead f = look f >>= \r -> case r of
+  "" -> return Nothing
+  _  -> case reads r of
+    [(v,"")] -> return (Just v)
+    _ -> fail ""
+
+showExecutionLog :: (LocalTime,String) -> BeinFormPart (Html,Html,Html) Html
+showExecutionLog (t,v) = paragraphM =<<: [ alignedLabelM (formatTime defaultTimeLocale "%F %R" t), html v ]
+
+
+typeList :: ObjectType -> BeinFormPart (Html,Html,Html) Html
+typeList t = programs >>= \p -> selectM <! [identifier typeStr, name typeStr] =<<: map programToOption p
+  where programs :: BeinFormPart (Html,Html,Html) [BeinObject]
+        programs = do user <- lift $ asksUser
+                      rids <- lift $ lift $ query ("select id from headers where type=? and (uid=? or array[gid] <@ array" ++ (show $ map gid $ groups user) ++ ") order by last_modified desc") [toSql typeStr, toSql (uid user)]
+                      let ids = map (fromSql . head) rids
+                      lift $ lift $ mapM ((liftM fromJust) . getObject) ids
+        programToOption o = optionM <! [value (show $ objId o)] << objectTag o
+        typeStr = case t of File -> "file"; Execution -> "execution"; Program -> "program"
+
+setProgram :: BeinServerPart (FormResponse (Html,Html,Html))
+setProgram = do
+  hasWritePermissions
+  withDataFn (lookRead "program") f `mplus` return (ContinuePage (redParagraph "Invalid field entry.",noHtml,noHtml))
+  where f :: Int -> BeinServerPart (FormResponse (Html,Html,Html))
+        f progId = do obj <- asksObject
+                      lift $ (do update "update executions set program = ? where id = ?" [toSql progId, toSql (objId obj)]
+                                 return (ContinuePageWithWrapper (greenParagraph "Set program.",noHtml,noHtml) rereadObject)
+                              `catchR` (\e -> return (ContinuePageWithWrapper (redParagraph $ "Failed to set program: " ++ show e,noHtml,noHtml)
+                                                      rereadObject)))
+
+</pre>

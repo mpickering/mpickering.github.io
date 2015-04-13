@@ -1,0 +1,186 @@
+<a href="Query.hs1112419897448578097.out.html">prev</a></br><a href="failures.html">home</a></br><a href="Query.hs8228137561383594059.out.html">next</a></br></br><pre>70c70
+<     (\inputrow -> [ inputrow !! i | i <- indices ])
+---
+>     (\inputrow ->                 | inputrow !! i | i <- indices ])
+89a90
+> 
+</pre></br><h2>original</h2></br><pre>{-
+  Query
+-}
+
+module Query where
+
+-- DBlimited imports
+import Schema
+import qualified Utils as U
+
+-- Package imports
+import Data.Char
+import System.IO
+import qualified Text.ParserCombinators.Parsec as P
+import qualified Data.Map as M
+
+data Clause = All |
+              And Clause Clause |
+              Or Clause Clause |
+              Equals {getTarget :: String, getTest :: String}
+              deriving (Show)
+
+type Row = [String]
+
+data Query = InvalidQuery |
+             Query {getSelect :: [Column], getFrom :: Table, getWhere :: Clause}
+             deriving (Show)
+
+-- build a query
+getQuery :: Schema -> String -> IO Query
+getQuery schema queryString = case (P.parse (parseQuery schema) "" queryString) of
+                                Left err       -> return InvalidQuery
+                                Right (Just q) -> return q
+
+parseQuery :: Schema -> P.Parser (Maybe Query)
+parseQuery schema = do
+  parseChars "SELECT "
+  cols <- U.csv -- re-used from Schema
+  parseChars " FROM "
+  maybeTable <- (parseTable schema)
+  P.char ';'
+  return $ case maybeTable of
+             Nothing      -> Nothing
+             (Just table) -> Just (Query cols table All)
+  P.<?> "SELECT a,b,c FROM tablename;"
+
+parseTable :: Schema -> P.Parser (Maybe Table)
+parseTable schema = do
+  tablename <- U.object
+  return (M.lookup tablename schema)
+
+parseChars :: [Char] -> P.Parser String
+parseChars [] = return ""
+parseChars (c:cs) = do
+  pc <- P.char (toUpper c) P.<|> P.char (toLower c)
+  pcs <- parseChars cs
+  return (toLower pc : pcs)
+  P.<?> (c:cs)
+
+-- use the schema to look up and load the table
+loadTable :: Table -> IO [Row]
+loadTable table = do
+  handle <- openFile (getPath table) ReadMode
+  raw <- hGetContents handle
+  return . (map.(U.split).getDlmt$table) . lines $ raw
+
+-- given a initial list of columns and a subset, return the corresponding subset from a given row
+evalSelect :: [Column] -> [Column] -> (Row -> Row)
+evalSelect sourceCols pickedCols =
+    (\inputrow -> [ inputrow !! i | i <- indices ])
+    where
+      indices = U.selector sourceCols pickedCols
+
+-- given an initial list of columns and a test, determine if a given line passes the test
+evalWhere :: [Column] -> Clause -> (Row -> Bool)
+evalWhere _cols All              = (\r -> True)
+evalWhere cols (And c1 c2)       = (\r -> (evalWhere cols c1 r && evalWhere cols c2 r))
+evalWhere cols (Or  c1 c2)       = (\r -> (evalWhere cols c1 r || evalWhere cols c2 r))
+evalWhere cols (Equals target f) = undefined
+
+-- given a query and some rows, return the resulting rows
+evalQuery :: Query -> IO ()
+evalQuery InvalidQuery              = putStrLn "Error in query"
+evalQuery (Query cols table clause) = do
+  inputRows <- loadTable table
+  putStrLn . show .
+               (map $ evalSelect (getCols table) cols) .
+               (filter $ evalWhere (getCols table) clause) $
+               inputRows
+</pre></br><h2>printed</h2></br><pre>{-
+  Query
+-}
+
+module Query where
+
+-- DBlimited imports
+import Schema
+import qualified Utils as U
+
+-- Package imports
+import Data.Char
+import System.IO
+import qualified Text.ParserCombinators.Parsec as P
+import qualified Data.Map as M
+
+data Clause = All |
+              And Clause Clause |
+              Or Clause Clause |
+              Equals {getTarget :: String, getTest :: String}
+              deriving (Show)
+
+type Row = [String]
+
+data Query = InvalidQuery |
+             Query {getSelect :: [Column], getFrom :: Table, getWhere :: Clause}
+             deriving (Show)
+
+-- build a query
+getQuery :: Schema -> String -> IO Query
+getQuery schema queryString = case (P.parse (parseQuery schema) "" queryString) of
+                                Left err       -> return InvalidQuery
+                                Right (Just q) -> return q
+
+parseQuery :: Schema -> P.Parser (Maybe Query)
+parseQuery schema = do
+  parseChars "SELECT "
+  cols <- U.csv -- re-used from Schema
+  parseChars " FROM "
+  maybeTable <- (parseTable schema)
+  P.char ';'
+  return $ case maybeTable of
+             Nothing      -> Nothing
+             (Just table) -> Just (Query cols table All)
+  P.<?> "SELECT a,b,c FROM tablename;"
+
+parseTable :: Schema -> P.Parser (Maybe Table)
+parseTable schema = do
+  tablename <- U.object
+  return (M.lookup tablename schema)
+
+parseChars :: [Char] -> P.Parser String
+parseChars [] = return ""
+parseChars (c:cs) = do
+  pc <- P.char (toUpper c) P.<|> P.char (toLower c)
+  pcs <- parseChars cs
+  return (toLower pc : pcs)
+  P.<?> (c:cs)
+
+-- use the schema to look up and load the table
+loadTable :: Table -> IO [Row]
+loadTable table = do
+  handle <- openFile (getPath table) ReadMode
+  raw <- hGetContents handle
+  return . (map.(U.split).getDlmt$table) . lines $ raw
+
+-- given a initial list of columns and a subset, return the corresponding subset from a given row
+evalSelect :: [Column] -> [Column] -> (Row -> Row)
+evalSelect sourceCols pickedCols =
+    (\inputrow ->                 | inputrow !! i | i <- indices ])
+    where
+      indices = U.selector sourceCols pickedCols
+
+-- given an initial list of columns and a test, determine if a given line passes the test
+evalWhere :: [Column] -> Clause -> (Row -> Bool)
+evalWhere _cols All              = (\r -> True)
+evalWhere cols (And c1 c2)       = (\r -> (evalWhere cols c1 r && evalWhere cols c2 r))
+evalWhere cols (Or  c1 c2)       = (\r -> (evalWhere cols c1 r || evalWhere cols c2 r))
+evalWhere cols (Equals target f) = undefined
+
+-- given a query and some rows, return the resulting rows
+evalQuery :: Query -> IO ()
+evalQuery InvalidQuery              = putStrLn "Error in query"
+evalQuery (Query cols table clause) = do
+  inputRows <- loadTable table
+  putStrLn . show .
+               (map $ evalSelect (getCols table) cols) .
+               (filter $ evalWhere (getCols table) clause) $
+               inputRows
+
+</pre>

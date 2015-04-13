@@ -1,0 +1,610 @@
+<a href="Query.hs15844753091479295563.out.html">prev</a></br><a href="failures.html">home</a></br><a href="QueryResults.hs1078676899265693519.out.html">next</a></br></br><pre>242c242
+< (f >>> g) t =  concat [g t' | t' <- f t]
+---
+>    >>>     g  t =  concat [g t' | t' <- f t]
+246c246
+< (f <+> g) t =  f t ++ g t
+---
+>    <+>     g  t =  f t ++ g t
+299a300
+> 
+</pre></br><h2>original</h2></br><pre>module Text.HJson.Query
+(
+-- * Types
+      Jsons
+     ,JFilter
+-- * Building
+    ,emptyObj
+    ,(-->)
+    ,(<>)
+    ,(<.>)
+    ,merges
+    ,mergesRec
+-- * Filtering
+    ,isObj
+    ,isArr
+    ,isStr
+    ,isStrBy
+    ,isNum
+    ,isNumBy
+    ,isBool
+    ,isNull
+    ,isPrimitive
+    ,getFromKeys
+    ,getFromObj
+    ,getFromArr
+    ,getFromIndex
+    ,getFromIndexes
+    ,getChildern
+    ,getFromKey
+-- * Filter Combinators
+    ,(>>>)
+    ,(<+>)
+    ,orElse
+    ,when
+    ,guards
+    ,deepObj
+    ,deepArr
+    ,deep
+)
+where
+import qualified Data.Map as M (empty, singleton, unionWith, elems, union, lookup)
+import qualified Data.Maybe as Mb (catMaybes)
+import qualified Data.List as L (nub)
+import qualified Text.HJson.Pretty as PP (toString)
+import Text.HJson
+
+type Jsons = [Json]
+type JFilter = Json -> Jsons
+
+infixl 1 >>>
+infixr 2 <+>
+infixr 3 <>
+infixr 3 <.>
+infixr 4 -->
+
+-- Building
+
+-- | Create empty JSON object.
+emptyObj :: Json
+emptyObj = JObject (M.empty)
+
+-- | Create single JSON object.
+(-->) :: String -> Json -> Json
+key --> val = JObject (M.singleton key val)
+
+-- | Merge two JSON Objects.
+(<>) :: Json -> Json -> Json
+(JObject x ) <> (JObject y)  = JObject $ M.union x y
+(<>) x  _ = x
+
+
+-- | Recursive merge two JSON Objects.
+(<.>) :: Json -> Json -> Json
+(JObject x) <.> (JObject y) = JObject $ M.unionWith (\m n ->  m <.> n) x y
+(<.>) x  _  = x
+
+-- | Merge list JSON Objects.
+merges :: [Json] -> Json
+merges [] = emptyObj
+merges js = foldl1 (<>) js
+
+-- | recursive merge lists JSON Objects
+--
+-- Example:
+--
+-- > j1 = jParse "{\"Europa\": {\"Ukraine\": [\"Kiyv\", \"Gitomir\", \"Lviv\"]}}"
+-- > j2 = jParse "{\"Asia\": {\"Japan\": [\"Tokyo\"]}}"
+-- > j3 = jParse "{\"Europa\": {\"UnitedKingdom\": [\"London\", \"Glasgow\"]}}"
+-- > j4 = jParse "{\"Europa\": {\"Germany\": [\"Berlin\", \"Bonn\"]}}"
+-- > j5 = jParse "{\"Africa\": {}}"
+-- > j6 = jParse"{\"America\": {\"USA\": [], \"Canada\": [\"Toronto\"]}}"
+-- > j7 = jParse "{\"Australia\": [\"Melburn\", \"Adelaida\"]}"
+-- > merg = mergsRec [j1, j2, j3, j4, j5, j6, j7]
+-- > ex0 = pputJson merg
+--
+-- Result:
+--
+-- >{
+-- >   "Africa": {
+-- >   },
+-- >   "America": {
+-- >      "Canada": ["Toronto"],
+-- >      "USA": []
+-- >   },
+-- >   "Asia": {
+-- >      "Japan": ["Tokyo"]
+-- >   },
+-- >   "Australia": ["Melburn", "Adelaida"],
+-- >   "Europa": {
+-- >      "Germany": ["Berlin", "Bonn"],
+-- >      "Ukraine": ["Kiyv", "Gitomir", "Lviv"],
+-- >      "UnitedKingdom": ["London", "Glasgow"]
+-- >   }
+-- >}
+mergesRec :: [Json] -> Json
+mergesRec js = foldl (<.>) emptyObj js
+
+-- Fitering
+
+-- | Filter JSON objects .
+isObj :: JFilter
+isObj (JObject o) = [JObject o]
+isObj _              = []
+
+-- | Filter JSON arrays.
+isArr :: JFilter
+isArr (JArray a)  = [JArray a]
+isArr _              = []
+
+-- | Filter JSON strings.
+isStr :: JFilter
+isStr (JString s)  = [JString s]
+isStr _            = []
+
+-- | Predicative filter JSON strings.
+isStrBy :: (String -> Bool) -> JFilter
+isStrBy p (JString s)  = if p s then [JString s] else []
+isStrBy _ _           = []
+
+-- | Filter JSON numbers.
+isNum :: JFilter
+isNum (JNumber n) = [JNumber n]
+isNum _           = []
+
+
+-- | Predicative filter JSON numbers.
+isNumBy :: Fractional a => (a -> Bool) -> JFilter
+isNumBy p (JNumber n) = if p (fromRational n) then [JNumber n] else []
+isNumBy _ _          = []
+
+-- | Filter JSON Bool.
+isBool :: JFilter
+isBool (JBool p)   = [JBool p]
+isBool _           = []
+
+-- | Filter JSON null.
+isNull :: JFilter
+isNull JNull = [JNull]
+isNull _ = []
+
+-- | Filter primitive types.
+isPrimitive :: JFilter
+isPrimitive (JString s)  = [JString s]
+isPrimitive (JNumber n)  = [JNumber n]
+isPrimitive (JBool p)    = [JBool p]
+isPrimitive JNull        = [JNull]
+isPrimitive _            = []
+
+
+-- | Get elements from object with key.
+getFromKey :: String -> JFilter
+getFromKey k (JObject m) = Mb.catMaybes  [(M.lookup k m)]
+getFromKey _ _                = []
+
+-- | Get elements from object with keys.
+--
+--  Example:
+--
+-- > query1 = getFromKeys ["Europa", "America", "Africa"]
+-- > json1 = query1 merg
+-- > ex1 = pputJsons json1
+--
+-- Result:
+--
+-- > {
+-- >    "Germany": ["Berlin", "Bonn"],
+-- >    "Ukraine": ["Kiyv", "Gitomir", "Lviv"],
+-- >    "UnitedKingdom": ["London", "Glasgow"]
+-- > }
+-- > {
+-- >    "Canada": ["Toronto"],
+-- >    "USA": []
+-- > }
+-- > {
+-- >
+-- > }
+getFromKeys :: [String] -> JFilter
+getFromKeys ks (JObject m) = Mb.catMaybes $ map (\k -> (M.lookup k m)) (L.nub ks)
+getFromKeys _ _            = []
+
+-- | Get all elements from object.
+getFromObj :: JFilter
+getFromObj (JObject o) = M.elems o
+getFromObj _              = []
+
+-- | Get all elements from array.
+getFromArr :: JFilter
+getFromArr (JArray a)  = a
+getFromArr _           = []
+
+-- | Get element from array with index.
+getFromIndex :: Int -> JFilter
+getFromIndex i (JArray a) = if i < length a  then [a !! i] else []
+getFromIndex _ _          = []
+
+-- | Get elements from array with indexes.
+getFromIndexes :: [Int] -> JFilter
+getFromIndexes is ja        = concat [getFromIndex i ja | i <- is]
+
+-- | Get all elements from object and array.
+getChildern :: JFilter
+getChildern (JObject o) = M.elems o
+getChildern (JArray a)  = a
+getChildern _              = []
+
+-- | @(f >>> g)@  - Apply filter f, later filter g .
+--
+--   Example:
+--
+-- > query2 = query1 >>> getFromObj
+-- > json2 = query2 merg
+-- > ex2 = pputJsons json2
+--
+--  Result:
+--
+-- > ["Berlin", "Bonn"]
+-- > ["Kiyv", "Gitomir", "Lviv"]
+-- > ["London", "Glasgow"]
+-- > ["Toronto"]
+-- > []
+(>>>)       :: JFilter -> JFilter -> JFilter
+(f >>> g) t =  concat [g t' | t' <- f t]
+
+-- | Concat result two filters.
+(<+>)       :: JFilter -> JFilter -> JFilter
+(f <+> g) t =  f t ++ g t
+
+-- |  @(f `orElse` g)@ - Apply f, if @f@ returned @null@ apply @g@.
+orElse  :: JFilter -> JFilter -> JFilter
+orElse f g t
+  | null res1 = g t
+  | otherwise = res1
+  where
+  res1 = f t
+
+-- | @(f `when` g)@ - When @g@ returned @not null@, apply @f@.
+when    :: JFilter -> JFilter -> JFilter
+when f g t
+  | null (g t) = [t]
+  | otherwise  = f t
+
+-- |  @(f `guards` g )@ - If @f@ returned null then @null@ else apply @g@.
+guards  :: JFilter -> JFilter -> JFilter
+guards g f t
+  | null (g t) = []
+  | otherwise  = f t
+
+-- | Tree traversal filter for object.
+deepObj :: JFilter -> JFilter
+deepObj f  = f `orElse` (getFromObj >>> deepObj f)
+
+-- | Tree traversal filter for array.
+deepArr :: JFilter -> JFilter
+deepArr f  = f `orElse` (getFromArr >>> deepArr f)
+
+-- | Tree traversal filter for objects and arrays.
+--
+-- Example:
+--
+-- > -- Qwery:  All city Europa, America, Australia and Africa
+-- > -- q31, q32, q33 is equal
+-- >
+-- > q31 = getFromKeys ["Europa", "America", "Africa", "Australia"]
+-- >   >>> (getFromArr `orElse`  getFromObj)
+-- >   >>> (isStr `orElse` getFromArr)
+-- >
+-- > q32 = getFromKeys ["Europa", "America", "Africa", "Australia"]
+-- >   >>> (getFromObj `when` isObj)
+-- >   >>> getFromArr
+-- >
+-- > q33 = getFromKeys ["Europa", "America", "Africa", "Australia"]
+-- >   >>>
+-- > deep getFromArr
+-- >
+--
+-- See also: <http://www.haskell.org/haskellwiki/HXT#The_concept_of_filters>
+
+deep    :: JFilter -> JFilter
+deep f  = f `orElse` (getChildern >>> deep f)
+</pre></br><h2>printed</h2></br><pre>module Text.HJson.Query
+(
+-- * Types
+      Jsons
+     ,JFilter
+-- * Building
+    ,emptyObj
+    ,(-->)
+    ,(<>)
+    ,(<.>)
+    ,merges
+    ,mergesRec
+-- * Filtering
+    ,isObj
+    ,isArr
+    ,isStr
+    ,isStrBy
+    ,isNum
+    ,isNumBy
+    ,isBool
+    ,isNull
+    ,isPrimitive
+    ,getFromKeys
+    ,getFromObj
+    ,getFromArr
+    ,getFromIndex
+    ,getFromIndexes
+    ,getChildern
+    ,getFromKey
+-- * Filter Combinators
+    ,(>>>)
+    ,(<+>)
+    ,orElse
+    ,when
+    ,guards
+    ,deepObj
+    ,deepArr
+    ,deep
+)
+where
+import qualified Data.Map as M (empty, singleton, unionWith, elems, union, lookup)
+import qualified Data.Maybe as Mb (catMaybes)
+import qualified Data.List as L (nub)
+import qualified Text.HJson.Pretty as PP (toString)
+import Text.HJson
+
+type Jsons = [Json]
+type JFilter = Json -> Jsons
+
+infixl 1 >>>
+infixr 2 <+>
+infixr 3 <>
+infixr 3 <.>
+infixr 4 -->
+
+-- Building
+
+-- | Create empty JSON object.
+emptyObj :: Json
+emptyObj = JObject (M.empty)
+
+-- | Create single JSON object.
+(-->) :: String -> Json -> Json
+key --> val = JObject (M.singleton key val)
+
+-- | Merge two JSON Objects.
+(<>) :: Json -> Json -> Json
+(JObject x ) <> (JObject y)  = JObject $ M.union x y
+(<>) x  _ = x
+
+
+-- | Recursive merge two JSON Objects.
+(<.>) :: Json -> Json -> Json
+(JObject x) <.> (JObject y) = JObject $ M.unionWith (\m n ->  m <.> n) x y
+(<.>) x  _  = x
+
+-- | Merge list JSON Objects.
+merges :: [Json] -> Json
+merges [] = emptyObj
+merges js = foldl1 (<>) js
+
+-- | recursive merge lists JSON Objects
+--
+-- Example:
+--
+-- > j1 = jParse "{\"Europa\": {\"Ukraine\": [\"Kiyv\", \"Gitomir\", \"Lviv\"]}}"
+-- > j2 = jParse "{\"Asia\": {\"Japan\": [\"Tokyo\"]}}"
+-- > j3 = jParse "{\"Europa\": {\"UnitedKingdom\": [\"London\", \"Glasgow\"]}}"
+-- > j4 = jParse "{\"Europa\": {\"Germany\": [\"Berlin\", \"Bonn\"]}}"
+-- > j5 = jParse "{\"Africa\": {}}"
+-- > j6 = jParse"{\"America\": {\"USA\": [], \"Canada\": [\"Toronto\"]}}"
+-- > j7 = jParse "{\"Australia\": [\"Melburn\", \"Adelaida\"]}"
+-- > merg = mergsRec [j1, j2, j3, j4, j5, j6, j7]
+-- > ex0 = pputJson merg
+--
+-- Result:
+--
+-- >{
+-- >   "Africa": {
+-- >   },
+-- >   "America": {
+-- >      "Canada": ["Toronto"],
+-- >      "USA": []
+-- >   },
+-- >   "Asia": {
+-- >      "Japan": ["Tokyo"]
+-- >   },
+-- >   "Australia": ["Melburn", "Adelaida"],
+-- >   "Europa": {
+-- >      "Germany": ["Berlin", "Bonn"],
+-- >      "Ukraine": ["Kiyv", "Gitomir", "Lviv"],
+-- >      "UnitedKingdom": ["London", "Glasgow"]
+-- >   }
+-- >}
+mergesRec :: [Json] -> Json
+mergesRec js = foldl (<.>) emptyObj js
+
+-- Fitering
+
+-- | Filter JSON objects .
+isObj :: JFilter
+isObj (JObject o) = [JObject o]
+isObj _              = []
+
+-- | Filter JSON arrays.
+isArr :: JFilter
+isArr (JArray a)  = [JArray a]
+isArr _              = []
+
+-- | Filter JSON strings.
+isStr :: JFilter
+isStr (JString s)  = [JString s]
+isStr _            = []
+
+-- | Predicative filter JSON strings.
+isStrBy :: (String -> Bool) -> JFilter
+isStrBy p (JString s)  = if p s then [JString s] else []
+isStrBy _ _           = []
+
+-- | Filter JSON numbers.
+isNum :: JFilter
+isNum (JNumber n) = [JNumber n]
+isNum _           = []
+
+
+-- | Predicative filter JSON numbers.
+isNumBy :: Fractional a => (a -> Bool) -> JFilter
+isNumBy p (JNumber n) = if p (fromRational n) then [JNumber n] else []
+isNumBy _ _          = []
+
+-- | Filter JSON Bool.
+isBool :: JFilter
+isBool (JBool p)   = [JBool p]
+isBool _           = []
+
+-- | Filter JSON null.
+isNull :: JFilter
+isNull JNull = [JNull]
+isNull _ = []
+
+-- | Filter primitive types.
+isPrimitive :: JFilter
+isPrimitive (JString s)  = [JString s]
+isPrimitive (JNumber n)  = [JNumber n]
+isPrimitive (JBool p)    = [JBool p]
+isPrimitive JNull        = [JNull]
+isPrimitive _            = []
+
+
+-- | Get elements from object with key.
+getFromKey :: String -> JFilter
+getFromKey k (JObject m) = Mb.catMaybes  [(M.lookup k m)]
+getFromKey _ _                = []
+
+-- | Get elements from object with keys.
+--
+--  Example:
+--
+-- > query1 = getFromKeys ["Europa", "America", "Africa"]
+-- > json1 = query1 merg
+-- > ex1 = pputJsons json1
+--
+-- Result:
+--
+-- > {
+-- >    "Germany": ["Berlin", "Bonn"],
+-- >    "Ukraine": ["Kiyv", "Gitomir", "Lviv"],
+-- >    "UnitedKingdom": ["London", "Glasgow"]
+-- > }
+-- > {
+-- >    "Canada": ["Toronto"],
+-- >    "USA": []
+-- > }
+-- > {
+-- >
+-- > }
+getFromKeys :: [String] -> JFilter
+getFromKeys ks (JObject m) = Mb.catMaybes $ map (\k -> (M.lookup k m)) (L.nub ks)
+getFromKeys _ _            = []
+
+-- | Get all elements from object.
+getFromObj :: JFilter
+getFromObj (JObject o) = M.elems o
+getFromObj _              = []
+
+-- | Get all elements from array.
+getFromArr :: JFilter
+getFromArr (JArray a)  = a
+getFromArr _           = []
+
+-- | Get element from array with index.
+getFromIndex :: Int -> JFilter
+getFromIndex i (JArray a) = if i < length a  then [a !! i] else []
+getFromIndex _ _          = []
+
+-- | Get elements from array with indexes.
+getFromIndexes :: [Int] -> JFilter
+getFromIndexes is ja        = concat [getFromIndex i ja | i <- is]
+
+-- | Get all elements from object and array.
+getChildern :: JFilter
+getChildern (JObject o) = M.elems o
+getChildern (JArray a)  = a
+getChildern _              = []
+
+-- | @(f >>> g)@  - Apply filter f, later filter g .
+--
+--   Example:
+--
+-- > query2 = query1 >>> getFromObj
+-- > json2 = query2 merg
+-- > ex2 = pputJsons json2
+--
+--  Result:
+--
+-- > ["Berlin", "Bonn"]
+-- > ["Kiyv", "Gitomir", "Lviv"]
+-- > ["London", "Glasgow"]
+-- > ["Toronto"]
+-- > []
+(>>>)       :: JFilter -> JFilter -> JFilter
+   >>>     g  t =  concat [g t' | t' <- f t]
+
+-- | Concat result two filters.
+(<+>)       :: JFilter -> JFilter -> JFilter
+   <+>     g  t =  f t ++ g t
+
+-- |  @(f `orElse` g)@ - Apply f, if @f@ returned @null@ apply @g@.
+orElse  :: JFilter -> JFilter -> JFilter
+orElse f g t
+  | null res1 = g t
+  | otherwise = res1
+  where
+  res1 = f t
+
+-- | @(f `when` g)@ - When @g@ returned @not null@, apply @f@.
+when    :: JFilter -> JFilter -> JFilter
+when f g t
+  | null (g t) = [t]
+  | otherwise  = f t
+
+-- |  @(f `guards` g )@ - If @f@ returned null then @null@ else apply @g@.
+guards  :: JFilter -> JFilter -> JFilter
+guards g f t
+  | null (g t) = []
+  | otherwise  = f t
+
+-- | Tree traversal filter for object.
+deepObj :: JFilter -> JFilter
+deepObj f  = f `orElse` (getFromObj >>> deepObj f)
+
+-- | Tree traversal filter for array.
+deepArr :: JFilter -> JFilter
+deepArr f  = f `orElse` (getFromArr >>> deepArr f)
+
+-- | Tree traversal filter for objects and arrays.
+--
+-- Example:
+--
+-- > -- Qwery:  All city Europa, America, Australia and Africa
+-- > -- q31, q32, q33 is equal
+-- >
+-- > q31 = getFromKeys ["Europa", "America", "Africa", "Australia"]
+-- >   >>> (getFromArr `orElse`  getFromObj)
+-- >   >>> (isStr `orElse` getFromArr)
+-- >
+-- > q32 = getFromKeys ["Europa", "America", "Africa", "Australia"]
+-- >   >>> (getFromObj `when` isObj)
+-- >   >>> getFromArr
+-- >
+-- > q33 = getFromKeys ["Europa", "America", "Africa", "Australia"]
+-- >   >>>
+-- > deep getFromArr
+-- >
+--
+-- See also: <http://www.haskell.org/haskellwiki/HXT#The_concept_of_filters>
+
+deep    :: JFilter -> JFilter
+deep f  = f `orElse` (getChildern >>> deep f)
+
+</pre>

@@ -1,0 +1,349 @@
+<a href="Pointfree.hs419251295462669258.out.html">prev</a></br><a href="failures.html">home</a></br><a href="Poly.hs1633863443469492312.out.html">next</a></br></br><pre>27c27
+< {-# LINE 37 "src/ehc/Gam/PolGam.chs" #-}
+---
+> 
+27a28
+> 
+27a29
+> 
+27a30
+> 
+27a31
+> 
+27a32
+> 
+27a33
+> 
+27a34
+> 
+27a35
+> 
+27a36
+> 
+44c53
+< {-# LINE 55 "src/ehc/Gam/PolGam.chs" #-}
+---
+> 
+44a54
+> 
+48c58
+< {-# LINE 60 "src/ehc/Gam/PolGam.chs" #-}
+---
+> 
+48a59
+> 
+58c69
+< {-# LINE 75 "src/ehc/Gam/PolGam.chs" #-}
+---
+> 
+58a70
+> 
+58a71
+> 
+58a72
+> 
+58a73
+> 
+58a74
+> 
+84c100
+< {-# LINE 114 "src/ehc/Gam/PolGam.chs" #-}
+---
+> 
+84a101
+> 
+84a102
+> 
+84a103
+> 
+84a104
+> 
+84a105
+> 
+84a106
+> 
+84a107
+> 
+84a108
+> 
+84a109
+> 
+84a110
+> 
+84a111
+> 
+84a112
+> 
+84a113
+> 
+92c121
+< {-# LINE 123 "src/ehc/Gam/PolGam.chs" #-}
+---
+> 
+92a122
+> 
+96c126
+< {-# LINE 136 "src/ehc/Gam/PolGam.chs" #-}
+---
+> 
+96a127
+> 
+96a128
+> 
+96a129
+> 
+96a130
+> 
+96a131
+> 
+96a132
+> 
+96a133
+> 
+96a134
+> 
+96a135
+> 
+100a140
+> 
+</pre></br><h2>original</h2></br><pre>module UHC.Light.Compiler.Gam.PolGam
+( PolGamInfo (..), PolGam, mapPolGam, mkPGI
+, polGamLookup, polGamLookupErr
+, initPolGam )
+where
+import UHC.Util.Pretty
+import UHC.Util.Utils
+import UHC.Light.Compiler.Base.Common
+import UHC.Light.Compiler.Base.TermLike
+import UHC.Light.Compiler.Base.HsName.Builtin
+import UHC.Light.Compiler.Ty
+import UHC.Light.Compiler.Ty.Pretty
+import UHC.Light.Compiler.Gam
+import UHC.Light.Compiler.Error
+import qualified Data.Set as Set
+import UHC.Light.Compiler.VarMp
+import UHC.Light.Compiler.Substitutable
+import Control.Monad
+import UHC.Util.Binary
+import UHC.Util.Serialize
+
+
+
+
+
+
+{-# LINE 37 "src/ehc/Gam/PolGam.chs" #-}
+-- If this changes, also change {%{EH}ConfigInternalVersions}
+data PolGamInfo = PolGamInfo { pgiPol :: Polarity } deriving Show
+
+mkPGI :: Ty -> PolGamInfo
+mkPGI t = PolGamInfo t
+
+emptyPGI :: PolGamInfo
+emptyPGI = mkPGI Ty_Any
+
+type PolGam = Gam HsName PolGamInfo
+
+
+mapPolGam :: (Ty -> Ty) -> PolGam -> PolGam
+mapPolGam f
+  = fst . gamMapThr (\(nm, PolGamInfo ty) thr -> ((nm, PolGamInfo $ f ty), thr)) ()
+
+{-# LINE 55 "src/ehc/Gam/PolGam.chs" #-}
+deriving instance Typeable PolGamInfo
+deriving instance Data PolGamInfo
+
+{-# LINE 60 "src/ehc/Gam/PolGam.chs" #-}
+polGamLookup :: HsName -> PolGam -> Maybe PolGamInfo
+polGamLookup = gamLookup
+
+polGamLookupErr :: HsName -> PolGam -> (PolGamInfo,ErrL)
+polGamLookupErr n g
+  = case polGamLookup n g of
+      Nothing  -> (emptyPGI,[rngLift emptyRange mkErr_NamesNotIntrod "polarity" [n]])
+      Just i   -> (i,[])
+
+{-# LINE 75 "src/ehc/Gam/PolGam.chs" #-}
+initPolGam :: PolGam
+initPolGam
+  = assocLToGam
+      [ (hsnArrow           , mkPGI $ quant $ [mkPolNegate var, var] `appArr` var)
+      , (hsnInt             , mkPGI   quantvar)
+      , (hsnChar            , mkPGI   quantvar)
+      , (hsnRec             , mkPGI $ quant $ [var] `appArr` var)
+      , (hsnInteger         , mkPGI quantvar)
+      , (hsnInt8Unboxed     , mkPGI quantvar)
+      , (hsnInt16Unboxed    , mkPGI quantvar)
+      , (hsnInt32Unboxed    , mkPGI quantvar)
+      , (hsnInt64Unboxed    , mkPGI quantvar)
+      , (hsnWordUnboxed     , mkPGI quantvar)
+      , (hsnWord8Unboxed    , mkPGI quantvar)
+      , (hsnWord16Unboxed   , mkPGI quantvar)
+      , (hsnWord32Unboxed   , mkPGI quantvar)
+      , (hsnWord64Unboxed   , mkPGI quantvar)
+      , (hsnAddrUnboxed     , mkPGI quantvar)
+      ]
+  where
+    u     = uidStart
+    quant = mkTyQu tyQu_Forall [(u,kiStar)] -- TBD
+    var   = mkPolVar u
+    quantvar = quant var
+
+{-# LINE 114 "src/ehc/Gam/PolGam.chs" #-}
+instance VarUpdatable PolGamInfo VarMp where
+  s `varUpd` pgi  = pgi { pgiPol = s `varUpd` pgiPol pgi }
+  s `varUpdCyc` pgi = substLift pgiPol (\i x -> i {pgiPol = x}) varUpdCyc s pgi
+
+instance VarExtractable PolGamInfo TyVarId where
+  varFreeSet pgi = varFreeSet (pgiPol pgi)
+
+{-# LINE 123 "src/ehc/Gam/PolGam.chs" #-}
+instance PP PolGamInfo where
+  pp i = ppTy (pgiPol i)
+
+{-# LINE 136 "src/ehc/Gam/PolGam.chs" #-}
+instance Serialize PolGamInfo where
+  sput (PolGamInfo a) = sput a
+  sget = liftM PolGamInfo sget
+
+</pre></br><h2>printed</h2></br><pre>module UHC.Light.Compiler.Gam.PolGam
+( PolGamInfo (..), PolGam, mapPolGam, mkPGI
+, polGamLookup, polGamLookupErr
+, initPolGam )
+where
+import UHC.Util.Pretty
+import UHC.Util.Utils
+import UHC.Light.Compiler.Base.Common
+import UHC.Light.Compiler.Base.TermLike
+import UHC.Light.Compiler.Base.HsName.Builtin
+import UHC.Light.Compiler.Ty
+import UHC.Light.Compiler.Ty.Pretty
+import UHC.Light.Compiler.Gam
+import UHC.Light.Compiler.Error
+import qualified Data.Set as Set
+import UHC.Light.Compiler.VarMp
+import UHC.Light.Compiler.Substitutable
+import Control.Monad
+import UHC.Util.Binary
+import UHC.Util.Serialize
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+-- If this changes, also change {%{EH}ConfigInternalVersions}
+data PolGamInfo = PolGamInfo { pgiPol :: Polarity } deriving Show
+
+mkPGI :: Ty -> PolGamInfo
+mkPGI t = PolGamInfo t
+
+emptyPGI :: PolGamInfo
+emptyPGI = mkPGI Ty_Any
+
+type PolGam = Gam HsName PolGamInfo
+
+
+mapPolGam :: (Ty -> Ty) -> PolGam -> PolGam
+mapPolGam f
+  = fst . gamMapThr (\(nm, PolGamInfo ty) thr -> ((nm, PolGamInfo $ f ty), thr)) ()
+
+
+
+deriving instance Typeable PolGamInfo
+deriving instance Data PolGamInfo
+
+
+
+polGamLookup :: HsName -> PolGam -> Maybe PolGamInfo
+polGamLookup = gamLookup
+
+polGamLookupErr :: HsName -> PolGam -> (PolGamInfo,ErrL)
+polGamLookupErr n g
+  = case polGamLookup n g of
+      Nothing  -> (emptyPGI,[rngLift emptyRange mkErr_NamesNotIntrod "polarity" [n]])
+      Just i   -> (i,[])
+
+
+
+
+
+
+
+initPolGam :: PolGam
+initPolGam
+  = assocLToGam
+      [ (hsnArrow           , mkPGI $ quant $ [mkPolNegate var, var] `appArr` var)
+      , (hsnInt             , mkPGI   quantvar)
+      , (hsnChar            , mkPGI   quantvar)
+      , (hsnRec             , mkPGI $ quant $ [var] `appArr` var)
+      , (hsnInteger         , mkPGI quantvar)
+      , (hsnInt8Unboxed     , mkPGI quantvar)
+      , (hsnInt16Unboxed    , mkPGI quantvar)
+      , (hsnInt32Unboxed    , mkPGI quantvar)
+      , (hsnInt64Unboxed    , mkPGI quantvar)
+      , (hsnWordUnboxed     , mkPGI quantvar)
+      , (hsnWord8Unboxed    , mkPGI quantvar)
+      , (hsnWord16Unboxed   , mkPGI quantvar)
+      , (hsnWord32Unboxed   , mkPGI quantvar)
+      , (hsnWord64Unboxed   , mkPGI quantvar)
+      , (hsnAddrUnboxed     , mkPGI quantvar)
+      ]
+  where
+    u     = uidStart
+    quant = mkTyQu tyQu_Forall [(u,kiStar)] -- TBD
+    var   = mkPolVar u
+    quantvar = quant var
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+instance VarUpdatable PolGamInfo VarMp where
+  s `varUpd` pgi  = pgi { pgiPol = s `varUpd` pgiPol pgi }
+  s `varUpdCyc` pgi = substLift pgiPol (\i x -> i {pgiPol = x}) varUpdCyc s pgi
+
+instance VarExtractable PolGamInfo TyVarId where
+  varFreeSet pgi = varFreeSet (pgiPol pgi)
+
+
+
+instance PP PolGamInfo where
+  pp i = ppTy (pgiPol i)
+
+
+
+
+
+
+
+
+
+
+
+instance Serialize PolGamInfo where
+  sput (PolGamInfo a) = sput a
+  sget = liftM PolGamInfo sget
+
+
+</pre>

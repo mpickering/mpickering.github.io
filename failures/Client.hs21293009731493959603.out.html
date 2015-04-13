@@ -1,0 +1,88 @@
+<a href="CLI.hs12507398241614285132.out.html">prev</a></br><a href="failures.html">home</a></br><a href="Clock.hs6002468971618907920.out.html">next</a></br></br><pre>28c28
+<                 mapM (\(Bin a)-> hSerialize h a) toSer >> hFlush h >> hDeserialize h) $exprs|]
+---
+>                 mapM (\(Bin a)-> hSerialize h a) toSer >> hFlush h >> hDeserialize h) exprs|]
+40a41
+> 
+</pre></br><h2>original</h2></br><pre>{-# LANGUAGE TemplateHaskell #-}
+
+module Network.RPC.Client (fetch, Address(..)) where
+import Network.Fancy
+import Data.Serialize.Send
+import Control.Monad
+import Language.Haskell.TH
+import System.IO (hFlush)
+import Network.RPC.Types
+
+-- |Splices in rpc calls to a given IP.  Function names and types will remain the same as
+-- on the server side, with the result encapsulated in the IO monad.  Usage:
+--
+-- >    $(fetch (IP "127.0.0.1" 9000))
+fetch :: Address -> Q [Dec]
+fetch a = runIO $ withStream a $ \h-> do
+    hSerialize h GetTypes >> hFlush h
+    xs <- hDeserialize h :: IO [FuncSpec]
+    let funcs = map (\(FuncSpec n _)-> mkName n) xs
+    runQ $ liftM (++ (zipWith addType funcs xs)) (zipWithM (makeFunc a) funcs xs)
+
+makeFunc :: Address -> Name -> FuncSpec -> Q Dec
+makeFunc a n (FuncSpec f t) = do
+    args <- replicateM (walkApps t 0) (newName "x")
+    let pats = map varP args
+    let exprs = return $ ListE $ map (AppE (ConE 'Bin) . VarE) args
+    let e = [|(\toSer-> withStream a $ \h-> hSerialize h (CallFunc f) >>
+                mapM (\(Bin a)-> hSerialize h a) toSer >> hFlush h >> hDeserialize h) $exprs|]
+    funD n [clause pats (normalB e)[]]
+
+addType :: Name -> FuncSpec -> Dec
+addType n (FuncSpec _ t) = SigD n (addIO (specToType t))
+
+addIO (AppT a b) = (AppT a (addIO b))
+addIO (ForallT ns c t) = (ForallT ns c (addIO t))
+addIO a = (AppT (ConT ''IO) a)
+
+walkApps :: TypeSpec -> Int -> Int
+walkApps (SAppT _ a) n = walkApps a (n+1)
+walkApps b n = n
+</pre></br><h2>printed</h2></br><pre>{-# LANGUAGE TemplateHaskell #-}
+
+module Network.RPC.Client (fetch, Address(..)) where
+import Network.Fancy
+import Data.Serialize.Send
+import Control.Monad
+import Language.Haskell.TH
+import System.IO (hFlush)
+import Network.RPC.Types
+
+-- |Splices in rpc calls to a given IP.  Function names and types will remain the same as
+-- on the server side, with the result encapsulated in the IO monad.  Usage:
+--
+-- >    $(fetch (IP "127.0.0.1" 9000))
+fetch :: Address -> Q [Dec]
+fetch a = runIO $ withStream a $ \h-> do
+    hSerialize h GetTypes >> hFlush h
+    xs <- hDeserialize h :: IO [FuncSpec]
+    let funcs = map (\(FuncSpec n _)-> mkName n) xs
+    runQ $ liftM (++ (zipWith addType funcs xs)) (zipWithM (makeFunc a) funcs xs)
+
+makeFunc :: Address -> Name -> FuncSpec -> Q Dec
+makeFunc a n (FuncSpec f t) = do
+    args <- replicateM (walkApps t 0) (newName "x")
+    let pats = map varP args
+    let exprs = return $ ListE $ map (AppE (ConE 'Bin) . VarE) args
+    let e = [|(\toSer-> withStream a $ \h-> hSerialize h (CallFunc f) >>
+                mapM (\(Bin a)-> hSerialize h a) toSer >> hFlush h >> hDeserialize h) exprs|]
+    funD n [clause pats (normalB e)[]]
+
+addType :: Name -> FuncSpec -> Dec
+addType n (FuncSpec _ t) = SigD n (addIO (specToType t))
+
+addIO (AppT a b) = (AppT a (addIO b))
+addIO (ForallT ns c t) = (ForallT ns c (addIO t))
+addIO a = (AppT (ConT ''IO) a)
+
+walkApps :: TypeSpec -> Int -> Int
+walkApps (SAppT _ a) n = walkApps a (n+1)
+walkApps b n = n
+
+</pre>

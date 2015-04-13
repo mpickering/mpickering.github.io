@@ -1,0 +1,328 @@
+<a href="S24.hs1861180938621222764.out.html">prev</a></br><a href="failures.html">home</a></br><a href="Safe.hs16044045501422600118.out.html">next</a></br></br><pre>35c35
+<   v= (,__,,__)
+---
+>   v= (,__, __)
+160a161
+> 
+</pre></br><h2>original</h2></br><pre>
+  {- # LANGUAGE FreeSections #-}  -- with GHC's -F you cannot...
+
+  -- Might as well test interaction with the pre-existing
+  -- tuple section generalisation.  (GHC knows about this one.)
+  {-# LANGUAGE TupleSections #-}
+  {- # LANGUAGE ParallelListComp #-}  -- broken; see comment below
+
+  module S25 where
+
+  -- Tests of each of the Exp contexts.
+  --
+  -- This module won't compile, but you can examine the preprocessed code.
+
+
+  -- InfixApp Exp QOp Exp         -- infix application
+  v= __ + 2
+  -- App Exp Exp                  -- ordinary application
+  v= f __
+  v= __ x
+  -- NegApp Exp
+  v= - __
+  -- Lambda SrcLoc [Pat] Exp      -- lambda expression
+  v= \ x -> __ x
+  -- Let Binds Exp                -- local declarations with let ... in ...
+  v= let x=2 in __ x
+  -- If Exp Exp Exp               -- conditional expression
+  v= if __ then __ else __
+  -- Case Exp [Alt]               -- case expression
+  v= case __ of _ -> 2
+  -- Tuple [Exp]                  -- tuple expression
+  v= (__,2,__,4,5,__,7)
+  -- TupleSection [Maybe Exp]     -- tuple section expression, e.g. (,,3)
+  v= (,,__)
+  v= (,__,,__)
+  -- List [Exp]                   -- list expression
+  v= [__,2,__,4,5,__,7]
+  -- FSContext Exp                -- free section context
+  v= a _[ __ c __ ]_ e
+  -- Paren Exp                    -- parenthesised expression
+  v= (__)
+  v= ( __ b __ )
+  -- LeftSection Exp QOp          -- left section @(@/exp/ /qop/@)@
+  v= (__ +)
+  -- RightSection QOp Exp         -- right section @(@/qop/ /exp/@)@
+  v= (+ __)
+  -- RecUpdate Exp [FieldUpdate]  -- record update expression
+  v= (__ { f3 = 2 }) Ctor
+  v= __ { f3 = 2 } $ Ctor
+  v= (Ctor { f3 = __ }) 2
+  v= Ctor { f3 = __ } $ 2
+  -- EnumFrom Exp                 -- unbounded arithmetic sequence
+  v= [__..]
+  v= [__..] 3
+  -- EnumFromTo Exp Exp           -- bounded arithmetic sequence
+  v= [__..__] 3 5
+  -- EnumFromThen Exp Exp         -- unbounded arithmetic sequence with stride
+  v= [__,__..] 3 5
+  -- EnumFromThenTo Exp Exp Exp   -- bounded arithmetic sequence with stride
+  v= [__,__..__] 3 5 8
+  -- ListComp Exp [QualStmt]      -- ordinary list comprehension
+  v= [f __ x|x<-[1..3]] 2
+{- still not working
+  v= [f  2 x|x<-  __  ] [1..3]
+  v= [f __ x|x<-  __  ] 2 [1..3]
+-}
+{- Doesn't work; HSE inserts a , before the 2nd | resulting in syntax error.
+  -- ParComp  Exp [[QualStmt]]    -- parallel list comprehension
+  v= [f __ x y | x<-[1..3] | y<-[4..6]] 2
+-}
+  -- ExpTypeSig SrcLoc Exp Type   -- expression with explicit type signature
+--v= __ :: Int->Int $ 2
+  v= (__ :: Int->Int) 2
+
+  -- Arrows
+  -- Proc SrcLoc     Pat Exp   -- arrows proc: proc /pat/ -> /exp/
+  -- LeftArrApp      Exp Exp   -- arrow application (from left): /exp/ -< /exp/
+  -- RightArrApp     Exp Exp   -- arrow application (from right): /exp/ >- /exp/
+  -- LeftArrHighApp  Exp Exp   -- higher-order arrow application (from left): /exp/ -<< /exp/
+  -- RightArrHighApp Exp Exp   -- higher-order arrow application (from right): /exp/ >>- /exp/
+
+
+{-
+-- Haskell expressions.
+-- Those which contain Exp in their productions are tested here.
+-- This doesn't mean that there is an immediate Exp child in every
+-- case (some are wrapped in List or Maybe); and it doesn't mean
+-- that FreeSect won't perform rewriting in the branches of any
+-- of the non-*'d alternates either -- a Stmt, for instance, may
+-- contain Exp's.
+data Exp
+    = Var QName                 -- ^ variable
+    | FreeSectSlot                     -- ^ FreeSect placeholder: @__@
+    | IPVar IPName              -- ^ implicit parameter variable
+    | Con QName                 -- ^ data constructor
+    | Lit Literal               -- ^ literal constant
+ *  | InfixApp Exp QOp Exp      -- ^ infix application
+ *  | App Exp Exp               -- ^ ordinary application
+ *  | NegApp Exp                -- ^ negation expression @-/exp/@ (unary minus)
+ *  | Lambda SrcLoc [Pat] Exp   -- ^ lambda expression
+ *  | Let Binds Exp             -- ^ local declarations with @let@ ... @in@ ...
+ *  | If Exp Exp Exp            -- ^ @if@ /exp/ @then@ /exp/ @else@ /exp/
+ *  | Case Exp [Alt]            -- ^ @case@ /exp/ @of@ /alts/
+    | Do [Stmt]                 -- ^ @do@-expression:
+                                --   the last statement in the list
+                                --   should be an expression.
+    | MDo [Stmt]                -- ^ @mdo@-expression
+ *  | Tuple [Exp]               -- ^ tuple expression
+ *  | TupleSection [Maybe Exp]  -- ^ tuple section expression, e.g. @(,,3)@
+ *  | List [Exp]                -- ^ list expression
+ *  | FSContext Exp                 -- ^ FreeSect context
+ *  | Paren Exp                 -- ^ parenthesised expression
+ *  | LeftSection Exp QOp       -- ^ left section @(@/exp/ /qop/@)@
+ *  | RightSection QOp Exp      -- ^ right section @(@/qop/ /exp/@)@
+    | RecConstr QName [FieldUpdate]
+                                -- ^ record construction expression
+ *  | RecUpdate Exp [FieldUpdate]
+                                -- ^ record update expression
+ *  | EnumFrom Exp              -- ^ unbounded arithmetic sequence,
+                                --   incrementing by 1: @[from ..]@
+ *  | EnumFromTo Exp Exp        -- ^ bounded arithmetic sequence,
+                                --   incrementing by 1 @[from .. to]@
+ *  | EnumFromThen Exp Exp      -- ^ unbounded arithmetic sequence,
+                                --   with first two elements given @[from, then ..]@
+ *  | EnumFromThenTo Exp Exp Exp
+                                -- ^ bounded arithmetic sequence,
+                                --   with first two elements given @[from, then .. to]@
+ *  | ListComp Exp  [QualStmt]    -- ^ ordinary list comprehension
+ *  | ParComp  Exp [[QualStmt]]   -- ^ parallel list comprehension
+ *  | ExpTypeSig SrcLoc Exp Type  -- ^ expression with explicit type signature
+
+    | VarQuote QName            -- ^ @'x@ for template haskell reifying of expressions
+    | TypQuote QName            -- ^ @''T@ for template haskell reifying of types
+    | BracketExp Bracket        -- ^ template haskell bracket expression
+    | SpliceExp Splice          -- ^ template haskell splice expression
+    | QuasiQuote String String  -- ^ quasi-quotaion: @[$/name/| /string/ |]@
+
+-- Hsx
+ *  | XTag SrcLoc XName [XAttr] (Maybe Exp) [Exp]
+                                -- ^ xml element, with attributes and children
+ *  | XETag SrcLoc XName [XAttr] (Maybe Exp)
+                                -- ^ empty xml element, with attributes
+    | XPcdata String            -- ^ PCDATA child element
+ *  | XExpTag Exp               -- ^ escaped haskell expression inside xml
+ *  | XChildTag SrcLoc [Exp]    -- ^ children of an xml element
+
+-- Pragmas
+ *  | CorePragma        String Exp      -- ^ CORE pragma
+ *  | SCCPragma         String Exp      -- ^ SCC pragma
+ *  | GenPragma         String (Int, Int) (Int, Int) Exp
+                                        -- ^ GENERATED pragma
+
+-- Arrows
+ *  | Proc SrcLoc     Pat Exp   -- ^ arrows proc: @proc@ /pat/ @->@ /exp/
+ *  | LeftArrApp      Exp Exp   -- ^ arrow application (from left): /exp/ @-<@ /exp/
+ *  | RightArrApp     Exp Exp   -- ^ arrow application (from right): /exp/ @>-@ /exp/
+ *  | LeftArrHighApp  Exp Exp   -- ^ higher-order arrow application (from left): /exp/ @-<<@ /exp/
+ *  | RightArrHighApp Exp Exp   -- ^ higher-order arrow application (from right): /exp/ @>>-@ /exp/
+-}
+
+</pre></br><h2>printed</h2></br><pre>
+  {- # LANGUAGE FreeSections #-}  -- with GHC's -F you cannot...
+
+  -- Might as well test interaction with the pre-existing
+  -- tuple section generalisation.  (GHC knows about this one.)
+  {-# LANGUAGE TupleSections #-}
+  {- # LANGUAGE ParallelListComp #-}  -- broken; see comment below
+
+  module S25 where
+
+  -- Tests of each of the Exp contexts.
+  --
+  -- This module won't compile, but you can examine the preprocessed code.
+
+
+  -- InfixApp Exp QOp Exp         -- infix application
+  v= __ + 2
+  -- App Exp Exp                  -- ordinary application
+  v= f __
+  v= __ x
+  -- NegApp Exp
+  v= - __
+  -- Lambda SrcLoc [Pat] Exp      -- lambda expression
+  v= \ x -> __ x
+  -- Let Binds Exp                -- local declarations with let ... in ...
+  v= let x=2 in __ x
+  -- If Exp Exp Exp               -- conditional expression
+  v= if __ then __ else __
+  -- Case Exp [Alt]               -- case expression
+  v= case __ of _ -> 2
+  -- Tuple [Exp]                  -- tuple expression
+  v= (__,2,__,4,5,__,7)
+  -- TupleSection [Maybe Exp]     -- tuple section expression, e.g. (,,3)
+  v= (,,__)
+  v= (,__, __)
+  -- List [Exp]                   -- list expression
+  v= [__,2,__,4,5,__,7]
+  -- FSContext Exp                -- free section context
+  v= a _[ __ c __ ]_ e
+  -- Paren Exp                    -- parenthesised expression
+  v= (__)
+  v= ( __ b __ )
+  -- LeftSection Exp QOp          -- left section @(@/exp/ /qop/@)@
+  v= (__ +)
+  -- RightSection QOp Exp         -- right section @(@/qop/ /exp/@)@
+  v= (+ __)
+  -- RecUpdate Exp [FieldUpdate]  -- record update expression
+  v= (__ { f3 = 2 }) Ctor
+  v= __ { f3 = 2 } $ Ctor
+  v= (Ctor { f3 = __ }) 2
+  v= Ctor { f3 = __ } $ 2
+  -- EnumFrom Exp                 -- unbounded arithmetic sequence
+  v= [__..]
+  v= [__..] 3
+  -- EnumFromTo Exp Exp           -- bounded arithmetic sequence
+  v= [__..__] 3 5
+  -- EnumFromThen Exp Exp         -- unbounded arithmetic sequence with stride
+  v= [__,__..] 3 5
+  -- EnumFromThenTo Exp Exp Exp   -- bounded arithmetic sequence with stride
+  v= [__,__..__] 3 5 8
+  -- ListComp Exp [QualStmt]      -- ordinary list comprehension
+  v= [f __ x|x<-[1..3]] 2
+{- still not working
+  v= [f  2 x|x<-  __  ] [1..3]
+  v= [f __ x|x<-  __  ] 2 [1..3]
+-}
+{- Doesn't work; HSE inserts a , before the 2nd | resulting in syntax error.
+  -- ParComp  Exp [[QualStmt]]    -- parallel list comprehension
+  v= [f __ x y | x<-[1..3] | y<-[4..6]] 2
+-}
+  -- ExpTypeSig SrcLoc Exp Type   -- expression with explicit type signature
+--v= __ :: Int->Int $ 2
+  v= (__ :: Int->Int) 2
+
+  -- Arrows
+  -- Proc SrcLoc     Pat Exp   -- arrows proc: proc /pat/ -> /exp/
+  -- LeftArrApp      Exp Exp   -- arrow application (from left): /exp/ -< /exp/
+  -- RightArrApp     Exp Exp   -- arrow application (from right): /exp/ >- /exp/
+  -- LeftArrHighApp  Exp Exp   -- higher-order arrow application (from left): /exp/ -<< /exp/
+  -- RightArrHighApp Exp Exp   -- higher-order arrow application (from right): /exp/ >>- /exp/
+
+
+{-
+-- Haskell expressions.
+-- Those which contain Exp in their productions are tested here.
+-- This doesn't mean that there is an immediate Exp child in every
+-- case (some are wrapped in List or Maybe); and it doesn't mean
+-- that FreeSect won't perform rewriting in the branches of any
+-- of the non-*'d alternates either -- a Stmt, for instance, may
+-- contain Exp's.
+data Exp
+    = Var QName                 -- ^ variable
+    | FreeSectSlot                     -- ^ FreeSect placeholder: @__@
+    | IPVar IPName              -- ^ implicit parameter variable
+    | Con QName                 -- ^ data constructor
+    | Lit Literal               -- ^ literal constant
+ *  | InfixApp Exp QOp Exp      -- ^ infix application
+ *  | App Exp Exp               -- ^ ordinary application
+ *  | NegApp Exp                -- ^ negation expression @-/exp/@ (unary minus)
+ *  | Lambda SrcLoc [Pat] Exp   -- ^ lambda expression
+ *  | Let Binds Exp             -- ^ local declarations with @let@ ... @in@ ...
+ *  | If Exp Exp Exp            -- ^ @if@ /exp/ @then@ /exp/ @else@ /exp/
+ *  | Case Exp [Alt]            -- ^ @case@ /exp/ @of@ /alts/
+    | Do [Stmt]                 -- ^ @do@-expression:
+                                --   the last statement in the list
+                                --   should be an expression.
+    | MDo [Stmt]                -- ^ @mdo@-expression
+ *  | Tuple [Exp]               -- ^ tuple expression
+ *  | TupleSection [Maybe Exp]  -- ^ tuple section expression, e.g. @(,,3)@
+ *  | List [Exp]                -- ^ list expression
+ *  | FSContext Exp                 -- ^ FreeSect context
+ *  | Paren Exp                 -- ^ parenthesised expression
+ *  | LeftSection Exp QOp       -- ^ left section @(@/exp/ /qop/@)@
+ *  | RightSection QOp Exp      -- ^ right section @(@/qop/ /exp/@)@
+    | RecConstr QName [FieldUpdate]
+                                -- ^ record construction expression
+ *  | RecUpdate Exp [FieldUpdate]
+                                -- ^ record update expression
+ *  | EnumFrom Exp              -- ^ unbounded arithmetic sequence,
+                                --   incrementing by 1: @[from ..]@
+ *  | EnumFromTo Exp Exp        -- ^ bounded arithmetic sequence,
+                                --   incrementing by 1 @[from .. to]@
+ *  | EnumFromThen Exp Exp      -- ^ unbounded arithmetic sequence,
+                                --   with first two elements given @[from, then ..]@
+ *  | EnumFromThenTo Exp Exp Exp
+                                -- ^ bounded arithmetic sequence,
+                                --   with first two elements given @[from, then .. to]@
+ *  | ListComp Exp  [QualStmt]    -- ^ ordinary list comprehension
+ *  | ParComp  Exp [[QualStmt]]   -- ^ parallel list comprehension
+ *  | ExpTypeSig SrcLoc Exp Type  -- ^ expression with explicit type signature
+
+    | VarQuote QName            -- ^ @'x@ for template haskell reifying of expressions
+    | TypQuote QName            -- ^ @''T@ for template haskell reifying of types
+    | BracketExp Bracket        -- ^ template haskell bracket expression
+    | SpliceExp Splice          -- ^ template haskell splice expression
+    | QuasiQuote String String  -- ^ quasi-quotaion: @[$/name/| /string/ |]@
+
+-- Hsx
+ *  | XTag SrcLoc XName [XAttr] (Maybe Exp) [Exp]
+                                -- ^ xml element, with attributes and children
+ *  | XETag SrcLoc XName [XAttr] (Maybe Exp)
+                                -- ^ empty xml element, with attributes
+    | XPcdata String            -- ^ PCDATA child element
+ *  | XExpTag Exp               -- ^ escaped haskell expression inside xml
+ *  | XChildTag SrcLoc [Exp]    -- ^ children of an xml element
+
+-- Pragmas
+ *  | CorePragma        String Exp      -- ^ CORE pragma
+ *  | SCCPragma         String Exp      -- ^ SCC pragma
+ *  | GenPragma         String (Int, Int) (Int, Int) Exp
+                                        -- ^ GENERATED pragma
+
+-- Arrows
+ *  | Proc SrcLoc     Pat Exp   -- ^ arrows proc: @proc@ /pat/ @->@ /exp/
+ *  | LeftArrApp      Exp Exp   -- ^ arrow application (from left): /exp/ @-<@ /exp/
+ *  | RightArrApp     Exp Exp   -- ^ arrow application (from right): /exp/ @>-@ /exp/
+ *  | LeftArrHighApp  Exp Exp   -- ^ higher-order arrow application (from left): /exp/ @-<<@ /exp/
+ *  | RightArrHighApp Exp Exp   -- ^ higher-order arrow application (from right): /exp/ @>>-@ /exp/
+-}
+
+
+</pre>

@@ -1,0 +1,872 @@
+<a href="Internal.hs21252253631714659037.out.html">prev</a></br><a href="failures.html">home</a></br><a href="Internal.hs540506265432969045.out.html">next</a></br></br><pre>109c109
+<                                             (outputRecord `asTypeOf` Record $sampOutput2) :: IO () |]
+---
+>                                             (outputRecord `asTypeOf` Record sampOutput2) :: IO () |]
+137d136
+<                 fixTy x = x `asTypeOf` Record $sampOutput
+138c137
+<                 fixTy2 x = x `asTypeOf` Record $sampOutput2
+---
+>                 fixTy x = x `asTypeOf` Record sampOutput
+138a138
+>                 fixTy2 x = x `asTypeOf` Record sampOutput2
+176c176
+<                         ((undefined :: HList a -> IO (Chan (Record a))) $sampOutput2) |])
+---
+>                         ((undefined :: HList a -> IO (Chan (Record a))) sampOutput2) |])
+191c191
+<                     withOutputFn <- $writeChanInput
+---
+>                     withOutputFn <- writeChanInput
+205c205
+<                                 output <- $readOutputFile
+---
+>                                 output <- readOutputFile
+227c227
+<         $writeInputFile
+---
+>         writeInputFile
+229c229
+<                 $runRNoChan
+---
+>                 runRNoChan
+285c285
+< mkHList = foldl (\ b a -> [| $a .*. $b |]) [| HNil |]
+---
+> mkHList = foldl (\ b a -> [| a .*. b |]) [| HNil |]
+416a417
+> 
+</pre></br><h2>original</h2></br><pre>{-# LANGUAGE TemplateHaskell #-}
+module RlangQQ.Internal where
+
+import System.IO.Temp
+import System.IO
+
+import Control.Applicative
+import Data.List
+import Data.Maybe
+import Data.Monoid
+import Data.Tree
+import Language.Haskell.TH
+import Language.Haskell.TH.Quote
+import qualified Data.Foldable as F
+import System.Directory
+import System.Process
+import Text.Printf
+import Text.Trifecta
+
+import qualified Data.ByteString.Lazy.UTF8 as B
+import qualified Data.ByteString.Lazy as B
+import qualified Data.ByteString.Lazy
+import qualified Data.ByteString.Lazy.Char8 as B8
+
+import Control.Monad.State
+import Control.Monad.Trans.Maybe
+import Data.Generics
+import qualified Data.Traversable as T
+import qualified Data.Map as M
+import Data.Foldable (foldMap)
+
+import System.FilePath
+
+import Paths_Rlang_QQ
+
+import RlangQQ.Binary
+import RlangQQ.Antiquote
+import RlangQQ.FN
+-- import RlangQQ.ParseKnitted
+
+import Control.Concurrent.Chan
+import Control.Concurrent.MVar
+import Control.Concurrent
+
+import System.IO.Unsafe
+import Data.IORef
+
+-- * the main quoter
+
+-- | going via binary serialization (classes from "RlangQQ.Binary"). This is used in 'RlangQQ.r'
+quoteRExpression2 i returnChan str0 = do
+    let rawFile, mdFile, rmdFile, inputFile, inputFile2, outputFile, figPath :: String
+        rawFile    = printf "Rtmp/raw%d.R" (i :: Int)
+        rmdFile    = printf "Rtmp/raw%d.Rmd" i
+        rmdFile2   = printf "Rtmp/raw%d_.Rmd" i
+        mdFile     = printf "Rtmp/raw%d.md" i
+        figPath    = printf "Rtmp/fig%d/" i
+        inputFile  = printf "Rtmp/%d_hs.rdx" i
+        inputFile2 = printf "Rtmp/%d_hs2.rdx" i
+        outputFile = printf "Rtmp/%d_r.rdx" i
+
+        -- the print('') is to fix a bug that somehow drops the first
+        -- expression sent to R
+        (knitrHdr, withRawFile -> (("setwd('../');"++) -> str, addAntiquotes))
+            = splitKnitrHdr str0
+    let inRmdChunk s = unlines ["```{r " ++ knitrHdr ++ "}", s, "```"]
+
+    variables <- runIO $ do
+        t <- getDataFileName "Tree.R"
+        createDirectoryIfMissing False "Rtmp"
+        writeFile rawFile str
+        writeFile rmdFile (inRmdChunk str)
+        rt <- readProcess "R" ["--no-save","--quiet"]
+            $ printf "source('%s'); rlangQQ_toTree(parse('%s'))" t rawFile
+        case parseString parseTree mempty rt of
+            Success a -> return $ hsClassify a
+            Failure a -> do
+                print a
+                error "parse failure"
+
+    -- reify doesn't work well enough
+    -- (chanVars, mVars, M.fromList -> variables) <- classifyByConT (M.toList variables)
+
+    (variables, chanVars) <- return $ M.partitionWithKey (\k _ -> "hs_" `isPrefixOf` k) variables
+
+    let
+        writeInputFile' :: FilePath -> M.Map String Intent -> ExpQ
+        writeInputFile' inputFile vars = [|
+            B.writeFile inputFile $
+                $(appE [| toRDA . Record |] $
+                  mkHList
+                   [ [| $(label x) .=. ($(label' x) .=. $(var x)) |]
+                    | (x, intent) <- M.toList vars, notOut intent ])
+                |]
+
+        writeChanInput :: ExpQ
+        writeChanInput
+         | M.size chanVars == 0 = [| return () |]
+         | otherwise = do
+            (withOutputs, binds) <- fmap unzip $ sequence [ do
+                withOutput <- newName "writer"
+                return (withOutput, bindS (tupP [varP (mkName (dropHS x)),
+                                            varP withOutput]) [| readChan $(var x) |] )
+                    | (x, intent) <- M.toList chanVars, notOut intent ]
+            let write = doE $ binds ++ [  noBindS (writeInputFile' inputFile2 chanVars),
+                        noBindS [|
+                           return $ \outputRecord -> $(doE
+                            [ noBindS [| $(varE oi)
+                                            (outputRecord `asTypeOf` Record $sampOutput2) :: IO () |]
+                                    | oi <- withOutputs ] )
+                           |] ]
+            write
+
+        writeInputFile :: ExpQ
+        writeInputFile = writeInputFile' inputFile variables
+
+        -- a record containing variables which were sent
+        -- into R (intent InOut), or undefined for intent Out
+        -- which will aid in type inference.
+        sampOutput' :: (String -> ExpQ) -> ExpQ
+        sampOutput' addLabels = mkHList
+                [ [| $(addLabels x) $(case intent of
+                                    Out -> [| undefined |] -- no input value whose
+                                                           -- type should unify with
+                                    _ -> var x ) |]
+
+                    | (x, intent) <- M.toList variables, notIn intent ]
+
+        sampOutput, sampOutput2 :: ExpQ
+        sampOutput  = sampOutput' $ \x -> [| \ y -> $(label x) .=.  ($(label' x) .=. y) |]
+        sampOutput2 = sampOutput' $ \x -> [| \ y -> $(label x) .=.  (                y) |]
+
+
+        readOutputFile :: ExpQ
+        readOutputFile = [|
+            let mapSnd (Record x) = Record (hMap FN x)
+                fixTy x = x `asTypeOf` Record $sampOutput
+                fixTy2 x = x `asTypeOf` Record $sampOutput2
+            in do
+              cts <- B.readFile outputFile
+              -- lazy IO makes for confusings: possibly better to switch
+              -- over to strict BS instead of this
+              Data.ByteString.Lazy.length cts `seq` return ()
+              return . fixTy2 . mapSnd . fixTy $ fromRDA cts  |]
+
+        outVars :: [String]
+        outVars = [ s  | (s, intent) <- M.toList variables
+                        ++ M.toList chanVars {- necessary? -}, notIn intent ]
+
+        saveRVars :: String
+        saveRVars
+            | [] <- outVars = ""
+            | otherwise = printf "save(%s, file='%s', compress='gzip');"
+                                    (intercalate "," $ reverse outVars)
+                                    (takeFileName outputFile)
+        rmd2Content :: String
+        rmd2Content = inRmdChunk str ++ inRmdChunk saveRVars
+
+        runRNoChan :: ExpQ
+        runRNoChan  = do
+            [| readProcess "R" ["--no-save", "--quiet"] $ concat
+                    [ $(stringE (printf "library(knitr);\
+                                       \opts_chunk$set(fig.path='%s',tidy=F);\
+                                       \load('%s');" figPath inputFile)),
+                      $(stringE (printf "knit('%s', output='%s', quiet=TRUE);" rmdFile2 mdFile))]
+                    |]
+
+
+        whenOutVars :: ExpQ -> ExpQ
+        whenOutVars e = unlessQ (null outVars) e
+
+        runRChan :: ExpQ
+        runRChan = do
+          [| do
+            chOut <- $(unlessQ (null outVars && not returnChan) [| newChan `asTypeOf`
+                        ((undefined :: HList a -> IO (Chan (Record a))) $sampOutput2) |])
+
+            outVar <- $(whenOutVars [| newEmptyMVar |])
+
+            forkIO $ void $ do
+                -- binary/text IO instead?
+                (i,o,err,pid) <- runInteractiveProcess "R" ["--no-save", "--quiet"] Nothing Nothing
+                forkIO $ putStr =<< hGetContents err
+                hPutStrLn i $ printf "library(knitr);\
+                                     \opts_chunk$set(fig.path='%s');\
+                                     \load('%s');" figPath inputFile
+                hFlush i
+                let uniqueDoneString = "\"done calculating signaled by a very unique\
+                                        \ string that will never happen by chance\""
+                forkIO $ forever $ do
+                    withOutputFn <- $writeChanInput
+                    hPutStrLn i $ printf "load('%s'); knit('%s', output='%s', quiet=TRUE); %s"
+                                        inputFile2 rmdFile2 mdFile
+                                        uniqueDoneString
+                    hFlush i
+                    $(whenOutVars [|  putMVar outVar withOutputFn |] )
+
+                forkIO $ forever $ do
+                    oEOF <- hIsEOF o -- is this ok?
+                    when oEOF (killThread =<< myThreadId)
+                    o <- hGetLine o
+                    when (o == ("[1] "++uniqueDoneString))
+                        $(whenOutVars [| do
+                                ov <- takeMVar outVar
+                                output <- $readOutputFile
+
+                                ov output
+                                $(whenQ returnChan
+                                    ([| (`writeChan` output) |] `appE` [| chOut |])
+                                    -- should be   writeChan chOut output
+                                    -- but that doesn't typecheck here...
+                                    )
+                                |])
+            return chOut
+           |]
+
+    runIO $ writeFile rmdFile2 rmd2Content
+
+    addAntiquotes [| do
+        {- already done, but Rtmp could have moved
+           since compile time -}
+        createDirectoryIfMissing False "Rtmp"
+        do
+            f <- doesFileExist rmdFile2
+            unless f $ writeFile rmdFile2 rmd2Content
+
+        $writeInputFile
+        $(if M.size chanVars == 0 then [| do
+                $runRNoChan
+                $( whenOutVars readOutputFile) |]
+            else runRChan)
+
+        |]
+
+unlessQ, whenQ :: Bool -> ExpQ -> ExpQ
+unlessQ b e | b = [| return () |]  | otherwise = e
+whenQ b e = unlessQ (not b) e
+
+
+splitKnitrHdr :: String -> (String,String)
+splitKnitrHdr ('{' : xs) = case f [] xs of (acc,ys) -> (reverse acc, ys)
+    where
+    f acc (stripPrefix "\\}" -> Just xs) = f ('}':acc) xs
+    f acc ('}':xs) = (acc, xs)
+splitKnitrHdr xs = ([], xs)
+
+withRawFile :: String -> (String, ExpQ -> ExpQ)
+withRawFile str =
+    case parseString extractAntiquotes mempty str of
+        Failure msg -> (str, \xp -> do
+                    reportWarning (show msg)
+                    xp)
+        Success parsed ->
+            (\(a,b,c) -> (a,b)) $
+            foldr (\ chunk ~( str, ef, i) ->
+                case chunk of
+                    Left x ->
+                        let v = "hs_interp" ++  show i in
+                        ( concat [v, " ", str],
+                                    \e0 ->  caseE (return x)
+                                        [ match
+                                                (mkName (dropHS v) `asP` varP (mkName v))
+                                                (normalB (ef e0))
+                                                [] ],
+                          i+1)
+                    Right s -> (s ++ str, ef, i))
+                ("", id, 1)
+                parsed
+
+
+-- ** utility functions
+-- | go from the variable name used on the R-side to the one in the haskell side
+dropHS x = fromMaybe x (foldMap stripPrefix prefixes x)
+
+
+prefixes = ["hs_","ch_"]
+
+-- | HList label
+label x = [| Label :: Label $(litT (strTyLit (dropHS x))) |]
+label' x = [| Label :: Label $(litT (strTyLit x)) |]
+
+var x = varE (mkName (dropHS x))
+
+mkHList :: [ExpQ] -> ExpQ
+mkHList = foldl (\ b a -> [| $a .*. $b |]) [| HNil |]
+
+notOut Out = False
+notOut _ = True
+
+notIn In = False
+notIn _ = True
+
+
+
+
+
+
+-- * converting R\'s AST
+
+parseTree' =  do
+    symbol "Node"
+    nl <- stringLiteral'
+    children <- brackets $ commaSep parseTree'
+    return (Node nl children)
+
+parseTree = do
+    manyTill anyChar (try (string "[1]"))
+    manyTill (noneOf "\n") space
+    between (oneOf "\"") (oneOf "\"") parseTree'
+
+
+-- | gets variables like @abc@ provided the R file contained @hs_abc@
+hsVars :: Tree String -> [String]
+hsVars =  mapMaybe (foldMap stripPrefix prefixes) . F.toList
+
+
+
+labelTree :: Tree String -> Tree (String, Int)
+labelTree t = flip evalState 0 $ T.forM t $ \x -> do
+                n <- get
+                put (n+1)
+                return (x, n)
+
+-- | what is the usage of a @hs_@ variable on the R side?
+data Intent = In -- ^ only read
+    | Out -- ^ only assigned to
+    | InOut -- ^ both
+    deriving (Show, Eq)
+
+
+
+classifyExp :: Tree String -> Maybe (String, Intent)
+classifyExp (Node oper (a: _))
+    | oper `elem` ["<-", "="],
+      [r] <- filter (\x -> any (`isPrefixOf` x) prefixes) $ leftmosts a = Just (r, Out)
+
+      where
+    leftmosts (Node a []) = [a]
+    leftmosts (Node n (a:_)) = n : leftmosts a
+
+classifyExp (Node n _) | any (`isPrefixOf` n) prefixes = Just (n, In)
+classifyExp _ = Nothing
+
+
+hsClassify :: Tree String -> M.Map String Intent
+hsClassify
+    = M.fromListWith (flip merge)
+    . mapMaybe classifyExp
+    . toList
+
+    where
+    merge Out _ = Out
+    merge In Out = InOut
+    merge InOut _ = InOut
+    merge _ InOut = InOut
+    merge In In = In
+
+    -- all Node being viewed
+    toList :: Tree a -> [Tree a]
+    toList a = a : concatMap toList (subForest a)
+
+-- | this reify fails most of the time, since the type isn't
+-- available in a quasiquote (run in the renamer) for things
+-- declared in the same file.
+getConTOf:: String -> Q (Maybe Name)
+getConTOf x = runMaybeT $ do
+    n <- MaybeT $ lookupValueName (dropHS x)
+    VarI _ (AppT (ConT n) _) _ _ <- MaybeT $ (Just `fmap` reify n) `recover` return Nothing
+    return n
+
+classifyByConT =
+    foldr (\ el lists -> do
+            ~(x,y,z) <- lists
+            ct <- getConTOf (fst el)
+            case ct of
+                Just ty | ty == ''MVar -> return (x, el : y, z)
+                        | ty == ''Chan -> return (el : x, y, z)
+                _ -> return (x,y, el : z)
+                )
+        (return ([],[],[]))
+
+
+-- ** tests
+
+parseTreeTest2 = parseTreeTest =<< getDataFileName "parseTreeExample.R"
+
+parseTreeTest3 contents = withSystemTempFile "RlangQQ.tmp" $ \fn h -> do
+    System.IO.hPutStrLn h contents
+    hFlush h
+    parseTreeTest fn
+
+parseTreeTest inputFile = do
+    t <- getDataFileName "Tree.R"
+    rt <- readProcess "R" ["--no-save","--quiet"] $ "source('"++ t ++ "'); rlangQQ_toTree(parse('"++ inputFile ++ "'))"
+    print rt
+    let r = parseString parseTree mempty rt :: Result (Tree String)
+
+    print (fmap hsClassify r)
+    -- print (fmap (hsAssignedFirstVars True) r)
+    -- print (fmap (hsAssignedFirstVars False) r)
+    -- print (zipper r & withins root)
+
+
+
+
+-- * global variable quote index
+
+getRlangQQ_n :: Q Int
+getRlangQQ_n = runIO $ do
+    n <- readIORef rlangQQ_n
+    writeIORef rlangQQ_n (n+1)
+    return n
+
+{-# NOINLINE rlangQQ_n #-}
+rlangQQ_n :: IORef Int
+rlangQQ_n = unsafePerformIO (newIORef 1)
+</pre></br><h2>printed</h2></br><pre>{-# LANGUAGE TemplateHaskell #-}
+module RlangQQ.Internal where
+
+import System.IO.Temp
+import System.IO
+
+import Control.Applicative
+import Data.List
+import Data.Maybe
+import Data.Monoid
+import Data.Tree
+import Language.Haskell.TH
+import Language.Haskell.TH.Quote
+import qualified Data.Foldable as F
+import System.Directory
+import System.Process
+import Text.Printf
+import Text.Trifecta
+
+import qualified Data.ByteString.Lazy.UTF8 as B
+import qualified Data.ByteString.Lazy as B
+import qualified Data.ByteString.Lazy
+import qualified Data.ByteString.Lazy.Char8 as B8
+
+import Control.Monad.State
+import Control.Monad.Trans.Maybe
+import Data.Generics
+import qualified Data.Traversable as T
+import qualified Data.Map as M
+import Data.Foldable (foldMap)
+
+import System.FilePath
+
+import Paths_Rlang_QQ
+
+import RlangQQ.Binary
+import RlangQQ.Antiquote
+import RlangQQ.FN
+-- import RlangQQ.ParseKnitted
+
+import Control.Concurrent.Chan
+import Control.Concurrent.MVar
+import Control.Concurrent
+
+import System.IO.Unsafe
+import Data.IORef
+
+-- * the main quoter
+
+-- | going via binary serialization (classes from "RlangQQ.Binary"). This is used in 'RlangQQ.r'
+quoteRExpression2 i returnChan str0 = do
+    let rawFile, mdFile, rmdFile, inputFile, inputFile2, outputFile, figPath :: String
+        rawFile    = printf "Rtmp/raw%d.R" (i :: Int)
+        rmdFile    = printf "Rtmp/raw%d.Rmd" i
+        rmdFile2   = printf "Rtmp/raw%d_.Rmd" i
+        mdFile     = printf "Rtmp/raw%d.md" i
+        figPath    = printf "Rtmp/fig%d/" i
+        inputFile  = printf "Rtmp/%d_hs.rdx" i
+        inputFile2 = printf "Rtmp/%d_hs2.rdx" i
+        outputFile = printf "Rtmp/%d_r.rdx" i
+
+        -- the print('') is to fix a bug that somehow drops the first
+        -- expression sent to R
+        (knitrHdr, withRawFile -> (("setwd('../');"++) -> str, addAntiquotes))
+            = splitKnitrHdr str0
+    let inRmdChunk s = unlines ["```{r " ++ knitrHdr ++ "}", s, "```"]
+
+    variables <- runIO $ do
+        t <- getDataFileName "Tree.R"
+        createDirectoryIfMissing False "Rtmp"
+        writeFile rawFile str
+        writeFile rmdFile (inRmdChunk str)
+        rt <- readProcess "R" ["--no-save","--quiet"]
+            $ printf "source('%s'); rlangQQ_toTree(parse('%s'))" t rawFile
+        case parseString parseTree mempty rt of
+            Success a -> return $ hsClassify a
+            Failure a -> do
+                print a
+                error "parse failure"
+
+    -- reify doesn't work well enough
+    -- (chanVars, mVars, M.fromList -> variables) <- classifyByConT (M.toList variables)
+
+    (variables, chanVars) <- return $ M.partitionWithKey (\k _ -> "hs_" `isPrefixOf` k) variables
+
+    let
+        writeInputFile' :: FilePath -> M.Map String Intent -> ExpQ
+        writeInputFile' inputFile vars = [|
+            B.writeFile inputFile $
+                $(appE [| toRDA . Record |] $
+                  mkHList
+                   [ [| $(label x) .=. ($(label' x) .=. $(var x)) |]
+                    | (x, intent) <- M.toList vars, notOut intent ])
+                |]
+
+        writeChanInput :: ExpQ
+        writeChanInput
+         | M.size chanVars == 0 = [| return () |]
+         | otherwise = do
+            (withOutputs, binds) <- fmap unzip $ sequence [ do
+                withOutput <- newName "writer"
+                return (withOutput, bindS (tupP [varP (mkName (dropHS x)),
+                                            varP withOutput]) [| readChan $(var x) |] )
+                    | (x, intent) <- M.toList chanVars, notOut intent ]
+            let write = doE $ binds ++ [  noBindS (writeInputFile' inputFile2 chanVars),
+                        noBindS [|
+                           return $ \outputRecord -> $(doE
+                            [ noBindS [| $(varE oi)
+                                            (outputRecord `asTypeOf` Record sampOutput2) :: IO () |]
+                                    | oi <- withOutputs ] )
+                           |] ]
+            write
+
+        writeInputFile :: ExpQ
+        writeInputFile = writeInputFile' inputFile variables
+
+        -- a record containing variables which were sent
+        -- into R (intent InOut), or undefined for intent Out
+        -- which will aid in type inference.
+        sampOutput' :: (String -> ExpQ) -> ExpQ
+        sampOutput' addLabels = mkHList
+                [ [| $(addLabels x) $(case intent of
+                                    Out -> [| undefined |] -- no input value whose
+                                                           -- type should unify with
+                                    _ -> var x ) |]
+
+                    | (x, intent) <- M.toList variables, notIn intent ]
+
+        sampOutput, sampOutput2 :: ExpQ
+        sampOutput  = sampOutput' $ \x -> [| \ y -> $(label x) .=.  ($(label' x) .=. y) |]
+        sampOutput2 = sampOutput' $ \x -> [| \ y -> $(label x) .=.  (                y) |]
+
+
+        readOutputFile :: ExpQ
+        readOutputFile = [|
+            let mapSnd (Record x) = Record (hMap FN x)
+                fixTy x = x `asTypeOf` Record sampOutput
+                fixTy2 x = x `asTypeOf` Record sampOutput2
+            in do
+              cts <- B.readFile outputFile
+              -- lazy IO makes for confusings: possibly better to switch
+              -- over to strict BS instead of this
+              Data.ByteString.Lazy.length cts `seq` return ()
+              return . fixTy2 . mapSnd . fixTy $ fromRDA cts  |]
+
+        outVars :: [String]
+        outVars = [ s  | (s, intent) <- M.toList variables
+                        ++ M.toList chanVars {- necessary? -}, notIn intent ]
+
+        saveRVars :: String
+        saveRVars
+            | [] <- outVars = ""
+            | otherwise = printf "save(%s, file='%s', compress='gzip');"
+                                    (intercalate "," $ reverse outVars)
+                                    (takeFileName outputFile)
+        rmd2Content :: String
+        rmd2Content = inRmdChunk str ++ inRmdChunk saveRVars
+
+        runRNoChan :: ExpQ
+        runRNoChan  = do
+            [| readProcess "R" ["--no-save", "--quiet"] $ concat
+                    [ $(stringE (printf "library(knitr);\
+                                       \opts_chunk$set(fig.path='%s',tidy=F);\
+                                       \load('%s');" figPath inputFile)),
+                      $(stringE (printf "knit('%s', output='%s', quiet=TRUE);" rmdFile2 mdFile))]
+                    |]
+
+
+        whenOutVars :: ExpQ -> ExpQ
+        whenOutVars e = unlessQ (null outVars) e
+
+        runRChan :: ExpQ
+        runRChan = do
+          [| do
+            chOut <- $(unlessQ (null outVars && not returnChan) [| newChan `asTypeOf`
+                        ((undefined :: HList a -> IO (Chan (Record a))) sampOutput2) |])
+
+            outVar <- $(whenOutVars [| newEmptyMVar |])
+
+            forkIO $ void $ do
+                -- binary/text IO instead?
+                (i,o,err,pid) <- runInteractiveProcess "R" ["--no-save", "--quiet"] Nothing Nothing
+                forkIO $ putStr =<< hGetContents err
+                hPutStrLn i $ printf "library(knitr);\
+                                     \opts_chunk$set(fig.path='%s');\
+                                     \load('%s');" figPath inputFile
+                hFlush i
+                let uniqueDoneString = "\"done calculating signaled by a very unique\
+                                        \ string that will never happen by chance\""
+                forkIO $ forever $ do
+                    withOutputFn <- writeChanInput
+                    hPutStrLn i $ printf "load('%s'); knit('%s', output='%s', quiet=TRUE); %s"
+                                        inputFile2 rmdFile2 mdFile
+                                        uniqueDoneString
+                    hFlush i
+                    $(whenOutVars [|  putMVar outVar withOutputFn |] )
+
+                forkIO $ forever $ do
+                    oEOF <- hIsEOF o -- is this ok?
+                    when oEOF (killThread =<< myThreadId)
+                    o <- hGetLine o
+                    when (o == ("[1] "++uniqueDoneString))
+                        $(whenOutVars [| do
+                                ov <- takeMVar outVar
+                                output <- readOutputFile
+
+                                ov output
+                                $(whenQ returnChan
+                                    ([| (`writeChan` output) |] `appE` [| chOut |])
+                                    -- should be   writeChan chOut output
+                                    -- but that doesn't typecheck here...
+                                    )
+                                |])
+            return chOut
+           |]
+
+    runIO $ writeFile rmdFile2 rmd2Content
+
+    addAntiquotes [| do
+        {- already done, but Rtmp could have moved
+           since compile time -}
+        createDirectoryIfMissing False "Rtmp"
+        do
+            f <- doesFileExist rmdFile2
+            unless f $ writeFile rmdFile2 rmd2Content
+
+        writeInputFile
+        $(if M.size chanVars == 0 then [| do
+                runRNoChan
+                $( whenOutVars readOutputFile) |]
+            else runRChan)
+
+        |]
+
+unlessQ, whenQ :: Bool -> ExpQ -> ExpQ
+unlessQ b e | b = [| return () |]  | otherwise = e
+whenQ b e = unlessQ (not b) e
+
+
+splitKnitrHdr :: String -> (String,String)
+splitKnitrHdr ('{' : xs) = case f [] xs of (acc,ys) -> (reverse acc, ys)
+    where
+    f acc (stripPrefix "\\}" -> Just xs) = f ('}':acc) xs
+    f acc ('}':xs) = (acc, xs)
+splitKnitrHdr xs = ([], xs)
+
+withRawFile :: String -> (String, ExpQ -> ExpQ)
+withRawFile str =
+    case parseString extractAntiquotes mempty str of
+        Failure msg -> (str, \xp -> do
+                    reportWarning (show msg)
+                    xp)
+        Success parsed ->
+            (\(a,b,c) -> (a,b)) $
+            foldr (\ chunk ~( str, ef, i) ->
+                case chunk of
+                    Left x ->
+                        let v = "hs_interp" ++  show i in
+                        ( concat [v, " ", str],
+                                    \e0 ->  caseE (return x)
+                                        [ match
+                                                (mkName (dropHS v) `asP` varP (mkName v))
+                                                (normalB (ef e0))
+                                                [] ],
+                          i+1)
+                    Right s -> (s ++ str, ef, i))
+                ("", id, 1)
+                parsed
+
+
+-- ** utility functions
+-- | go from the variable name used on the R-side to the one in the haskell side
+dropHS x = fromMaybe x (foldMap stripPrefix prefixes x)
+
+
+prefixes = ["hs_","ch_"]
+
+-- | HList label
+label x = [| Label :: Label $(litT (strTyLit (dropHS x))) |]
+label' x = [| Label :: Label $(litT (strTyLit x)) |]
+
+var x = varE (mkName (dropHS x))
+
+mkHList :: [ExpQ] -> ExpQ
+mkHList = foldl (\ b a -> [| a .*. b |]) [| HNil |]
+
+notOut Out = False
+notOut _ = True
+
+notIn In = False
+notIn _ = True
+
+
+
+
+
+
+-- * converting R\'s AST
+
+parseTree' =  do
+    symbol "Node"
+    nl <- stringLiteral'
+    children <- brackets $ commaSep parseTree'
+    return (Node nl children)
+
+parseTree = do
+    manyTill anyChar (try (string "[1]"))
+    manyTill (noneOf "\n") space
+    between (oneOf "\"") (oneOf "\"") parseTree'
+
+
+-- | gets variables like @abc@ provided the R file contained @hs_abc@
+hsVars :: Tree String -> [String]
+hsVars =  mapMaybe (foldMap stripPrefix prefixes) . F.toList
+
+
+
+labelTree :: Tree String -> Tree (String, Int)
+labelTree t = flip evalState 0 $ T.forM t $ \x -> do
+                n <- get
+                put (n+1)
+                return (x, n)
+
+-- | what is the usage of a @hs_@ variable on the R side?
+data Intent = In -- ^ only read
+    | Out -- ^ only assigned to
+    | InOut -- ^ both
+    deriving (Show, Eq)
+
+
+
+classifyExp :: Tree String -> Maybe (String, Intent)
+classifyExp (Node oper (a: _))
+    | oper `elem` ["<-", "="],
+      [r] <- filter (\x -> any (`isPrefixOf` x) prefixes) $ leftmosts a = Just (r, Out)
+
+      where
+    leftmosts (Node a []) = [a]
+    leftmosts (Node n (a:_)) = n : leftmosts a
+
+classifyExp (Node n _) | any (`isPrefixOf` n) prefixes = Just (n, In)
+classifyExp _ = Nothing
+
+
+hsClassify :: Tree String -> M.Map String Intent
+hsClassify
+    = M.fromListWith (flip merge)
+    . mapMaybe classifyExp
+    . toList
+
+    where
+    merge Out _ = Out
+    merge In Out = InOut
+    merge InOut _ = InOut
+    merge _ InOut = InOut
+    merge In In = In
+
+    -- all Node being viewed
+    toList :: Tree a -> [Tree a]
+    toList a = a : concatMap toList (subForest a)
+
+-- | this reify fails most of the time, since the type isn't
+-- available in a quasiquote (run in the renamer) for things
+-- declared in the same file.
+getConTOf:: String -> Q (Maybe Name)
+getConTOf x = runMaybeT $ do
+    n <- MaybeT $ lookupValueName (dropHS x)
+    VarI _ (AppT (ConT n) _) _ _ <- MaybeT $ (Just `fmap` reify n) `recover` return Nothing
+    return n
+
+classifyByConT =
+    foldr (\ el lists -> do
+            ~(x,y,z) <- lists
+            ct <- getConTOf (fst el)
+            case ct of
+                Just ty | ty == ''MVar -> return (x, el : y, z)
+                        | ty == ''Chan -> return (el : x, y, z)
+                _ -> return (x,y, el : z)
+                )
+        (return ([],[],[]))
+
+
+-- ** tests
+
+parseTreeTest2 = parseTreeTest =<< getDataFileName "parseTreeExample.R"
+
+parseTreeTest3 contents = withSystemTempFile "RlangQQ.tmp" $ \fn h -> do
+    System.IO.hPutStrLn h contents
+    hFlush h
+    parseTreeTest fn
+
+parseTreeTest inputFile = do
+    t <- getDataFileName "Tree.R"
+    rt <- readProcess "R" ["--no-save","--quiet"] $ "source('"++ t ++ "'); rlangQQ_toTree(parse('"++ inputFile ++ "'))"
+    print rt
+    let r = parseString parseTree mempty rt :: Result (Tree String)
+
+    print (fmap hsClassify r)
+    -- print (fmap (hsAssignedFirstVars True) r)
+    -- print (fmap (hsAssignedFirstVars False) r)
+    -- print (zipper r & withins root)
+
+
+
+
+-- * global variable quote index
+
+getRlangQQ_n :: Q Int
+getRlangQQ_n = runIO $ do
+    n <- readIORef rlangQQ_n
+    writeIORef rlangQQ_n (n+1)
+    return n
+
+{-# NOINLINE rlangQQ_n #-}
+rlangQQ_n :: IORef Int
+rlangQQ_n = unsafePerformIO (newIORef 1)
+
+</pre>

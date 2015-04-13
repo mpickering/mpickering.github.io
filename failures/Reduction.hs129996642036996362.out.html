@@ -1,0 +1,2880 @@
+<a href="RedGraph.hs265509301712365581.out.html">prev</a></br><a href="failures.html">home</a></br><a href="Redundant.hs11750821511346094045.out.html">next</a></br></br><pre>112c112
+<   = CUTranslSkel foldAll [cunit|
+---
+>   = CUTranslSkel foldAll 
+114d113
+<     $esc:("#include <accelerate_cuda.h>")
+115d113
+<     $edecls:texIn
+117d114
+<     extern "C" __global__ void
+118d114
+<     $id:foldAll
+119d114
+<     (
+120d114
+<         $params:argIn,
+121d114
+<         $params:argOut,
+122d114
+<         $params:argRec
+123d114
+<     )
+124d114
+<     {
+125d114
+<         $decls:smem
+126d114
+<         $decls:declx
+127d114
+<         $decls:decly
+128d114
+<         $decls:declz
+130d115
+<         $items:(sh .=. shIn)
+132d116
+<         const int shapeSize     = $exp:(csize sh);
+133d116
+<         const int gridSize      = $exp:(gridSize dev);
+134d116
+<               int ix            = $exp:(threadIdx dev);
+136d117
+<         /*
+137d117
+<          * Reduce multiple elements per thread. The number is determined by the
+138d117
+<          * number of active thread blocks (via gridDim). More blocks will result in
+139d117
+<          * a larger `gridSize', and hence fewer elements per thread
+140d117
+<          *
+141d117
+<          * The loop stride of `gridSize' is used to maintain coalescing.
+142d117
+<          *
+143d117
+<          * Note that we can't simply kill threads that won't participate in the
+144d117
+<          * reduction, as exclusive reductions of empty arrays then won't be
+145d117
+<          * initialised with their seed element.
+146d117
+<          */
+147d117
+<         if ( ix < shapeSize )
+148d117
+<         {
+149d117
+<             /*
+150d117
+<              * Initialise the local sum, then ...
+151d117
+<              */
+152d117
+<             $items:(y .=. get ix)
+154d118
+<             /*
+155d118
+<              * ... continue striding the array, reading new values into 'x' and
+156d118
+<              * combining into the local accumulator 'y'. The non-idiomatic
+157d118
+<              * structure of the loop below is because we have already
+158d118
+<              * initialised 'y' above.
+159d118
+<              */
+160d118
+<             for ( ix += gridSize; ix < shapeSize; ix += gridSize )
+161d118
+<             {
+162d118
+<                 $items:(x .=. get ix)
+163d118
+<                 $items:(z .=. combine y x)
+164d118
+<                 $items:(y .=. z)
+165d118
+<             }
+166d118
+<         }
+168d119
+<         /*
+169d119
+<          * Each thread puts its local sum into shared memory, then threads
+170d119
+<          * cooperatively reduce the shared array to a single value.
+171d119
+<          */
+172d119
+<         $items:(sdata "threadIdx.x" .=. y)
+174d120
+<         ix = min(shapeSize - blockIdx.x * blockDim.x, blockDim.x);
+175d120
+<         $items:(reduceBlock dev fun x y z sdata (cvar "ix"))
+177d121
+<         /*
+178d121
+<          * Write the results of this block back to global memory. If we are the last
+179d121
+<          * phase of a recursive multi-block reduction, include the seed element.
+180d121
+<          */
+181d121
+<         if ( threadIdx.x == 0 )
+182d121
+<         {
+183d121
+<             $items:(maybe inclusive_finish exclusive_finish mseed)
+184d121
+<         }
+185d121
+<     }
+186c122
+<   |]
+---
+> 
+186a123
+> 
+186a124
+> 
+186a125
+> 
+186a126
+> 
+186a127
+> 
+186a128
+> 
+186a129
+> 
+186a130
+> 
+186a131
+> 
+186a132
+> 
+186a133
+> 
+186a134
+> 
+186a135
+> 
+186a136
+> 
+186a137
+> 
+186a138
+> 
+186a139
+> 
+186a140
+> 
+186a141
+> 
+186a142
+> 
+186a143
+> 
+186a144
+> 
+186a145
+> 
+186a146
+> 
+186a147
+> 
+186a148
+> 
+186a149
+> 
+186a150
+> 
+186a151
+> 
+186a152
+> 
+186a153
+> 
+186a154
+> 
+186a155
+> 
+186a156
+> 
+186a157
+> 
+186a158
+> 
+186a159
+> 
+186a160
+> 
+186a161
+> 
+186a162
+> 
+186a163
+> 
+186a164
+> 
+186a165
+> 
+186a166
+> 
+186a167
+> 
+186a168
+> 
+186a169
+> 
+186a170
+> 
+186a171
+> 
+186a172
+> 
+186a173
+> 
+186a174
+> 
+186a175
+> 
+186a176
+> 
+186a177
+> 
+186a178
+> 
+186a179
+> 
+186a180
+> 
+186a181
+> 
+186a182
+> 
+186a183
+> 
+186a184
+> 
+186a185
+> 
+186a186
+> 
+200c200
+<     (smem, sdata)               = shared (undefined :: e) "sdata" [cexp| blockDim.x |] Nothing
+---
+>     (smem, sdata)               = shared (undefined :: e) "sdata"                      Nothing
+203d202
+<     exclusive_finish (CUExp seed)       = [[citem|
+204d202
+<       if ( shapeSize > 0 ) {
+205d202
+<           if ( gridDim.x == 1 ) {
+206d202
+<               $items:(x .=. seed)
+207d202
+<               $items:(z .=. combine y x)
+208d202
+<               $items:(y .=. z)
+209d202
+<           }
+210d202
+<           $items:(setOut "blockIdx.x" .=. y)
+211d202
+<       }
+212d202
+<       else {
+213d202
+<           $items:(setOut "blockIdx.x" .=. seed)
+214d202
+<       }
+215c203
+<     |]]
+---
+>     exclusive_finish (CUExp seed)       = [
+217a206
+> 
+217a207
+> 
+217a208
+> 
+217a209
+> 
+217a210
+> 
+217a211
+> 
+217a212
+> 
+217a213
+> 
+217a214
+> 
+217a215
+>       ]
+217a216
+> 
+217a217
+> 
+231c231
+<   $ CUTranslSkel fold [cunit|
+---
+>   $ CUTranslSkel fold 
+233d232
+<     $esc:("#include <accelerate_cuda.h>")
+234d232
+<     $edecls:texIn
+236d233
+<     extern "C" __global__ void
+237d233
+<     $id:fold
+238d233
+<     (
+239d233
+<         $params:argIn,
+240d233
+<         $params:argOut
+241d233
+<     )
+242d233
+<     {
+243d233
+<         $decls:smem
+244d233
+<         $decls:declx
+245d233
+<         $decls:decly
+246d233
+<         $decls:declz
+248d234
+<         $items:(sh .=. shIn)
+250d235
+<         const int numIntervals  = $exp:(csize (cindexTail sh));
+251d235
+<         const int intervalSize  = $exp:(cindexHead sh);
+252d235
+<               int ix;
+253d235
+<               int seg;
+255d236
+<         /*
+256d236
+<          * If the intervals of an exclusive fold are empty, use all threads to
+257d236
+<          * map the seed value to the output array and exit.
+258d236
+<          */
+259d236
+<         $items:(maybe [] mapseed mseed)
+261d237
+<         /*
+262d237
+<          * Threads in a block cooperatively reduce all elements in an interval.
+263d237
+<          */
+264d237
+<         for ( seg = blockIdx.x
+265d237
+<             ; seg < numIntervals
+266d237
+<             ; seg += gridDim.x )
+267d237
+<         {
+268d237
+<             const int start = seg * intervalSize;
+269d237
+<             const int end   = start + intervalSize;
+270d237
+<             const int n     = min(end - start, blockDim.x);
+272d238
+<             /*
+273d238
+<              * Kill threads that will not participate to avoid invalid reads.
+274d238
+<              * Take advantage of the fact that the array is rectangular.
+275d238
+<              */
+276d238
+<             if ( threadIdx.x >= n )
+277d238
+<                return;
+279d239
+<             /*
+280d239
+<              * Ensure aligned access to global memory, and that each thread
+281d239
+<              * initialises its local sum
+282d239
+<              */
+283d239
+<             ix = start - (start & (warpSize - 1));
+285d240
+<             if ( ix == start || intervalSize > blockDim.x)
+286d240
+<             {
+287d240
+<                 ix += threadIdx.x;
+289d241
+<                 if ( ix >= start )
+290d241
+<                 {
+291d241
+<                     $items:(y .=. get ix)
+292d241
+<                 }
+294d242
+<                 if ( ix + blockDim.x < end )
+295d242
+<                 {
+296d242
+<                     $items:(x .=. get [cvar "ix + blockDim.x"])
+298d243
+<                     if ( ix >= start ) {
+299d243
+<                         $items:(z .=. combine y x)
+300d243
+<                         $items:(y .=. z)
+301d243
+<                     }
+302d243
+<                     else {
+303d243
+<                         $items:(y .=. x)
+304d243
+<                     }
+305d243
+<                 }
+307d244
+<                 /*
+308d244
+<                  * Now, iterate collecting a local sum
+309d244
+<                  */
+310d244
+<                 for ( ix += 2 * blockDim.x; ix < end; ix += blockDim.x )
+311d244
+<                 {
+312d244
+<                     $items:(x .=. get ix)
+313d244
+<                     $items:(z .=. combine y x)
+314d244
+<                     $items:(y .=. z)
+315d244
+<                 }
+316d244
+<             }
+317d244
+<             else
+318d244
+<             {
+319d244
+<                 $items:(y .=. get [cvar "start + threadIdx.x"])
+320d244
+<             }
+322d245
+<             /*
+323d245
+<              * Each thread puts its local sum into shared memory, and
+324d245
+<              * cooperatively reduces this to a single value.
+325d245
+<              */
+326d245
+<             $items:(sdata "threadIdx.x" .=. y)
+327d245
+<             $items:(reduceBlock dev fun x y z sdata (cvar "n"))
+329d246
+<             /*
+330d246
+<              * Finally, the first thread writes the result for this segment. For
+331d246
+<              * exclusive reductions, we also combine with the seed element here.
+332d246
+<              */
+333d246
+<             if ( threadIdx.x == 0 ) {
+334d246
+<                 $items:(maybe [] exclusive_finish mseed)
+335d246
+<                 $items:(setOut "seg" .=. y)
+336d246
+<             }
+337d246
+<         }
+338d246
+<     }
+339c247
+<   |]
+---
+> 
+339a248
+> 
+339a249
+> 
+339a250
+> 
+339a251
+> 
+339a252
+> 
+339a253
+> 
+339a254
+> 
+339a255
+> 
+339a256
+> 
+339a257
+> 
+339a258
+> 
+339a259
+> 
+339a260
+> 
+339a261
+> 
+339a262
+> 
+339a263
+> 
+339a264
+> 
+339a265
+> 
+339a266
+> 
+339a267
+> 
+339a268
+> 
+339a269
+> 
+339a270
+> 
+339a271
+> 
+339a272
+> 
+339a273
+> 
+339a274
+> 
+339a275
+> 
+339a276
+> 
+339a277
+> 
+339a278
+> 
+339a279
+> 
+339a280
+> 
+339a281
+> 
+339a282
+> 
+339a283
+> 
+339a284
+> 
+339a285
+> 
+339a286
+> 
+339a287
+> 
+339a288
+> 
+339a289
+> 
+339a290
+> 
+339a291
+> 
+339a292
+> 
+339a293
+> 
+339a294
+> 
+339a295
+> 
+339a296
+> 
+339a297
+> 
+339a298
+> 
+339a299
+> 
+339a300
+> 
+339a301
+> 
+339a302
+> 
+339a303
+> 
+339a304
+> 
+339a305
+> 
+339a306
+> 
+339a307
+> 
+339a308
+> 
+339a309
+> 
+339a310
+> 
+339a311
+> 
+339a312
+> 
+339a313
+> 
+339a314
+> 
+339a315
+> 
+339a316
+> 
+339a317
+> 
+339a318
+> 
+339a319
+> 
+339a320
+> 
+339a321
+> 
+339a322
+> 
+339a323
+> 
+339a324
+> 
+339a325
+> 
+339a326
+> 
+339a327
+> 
+339a328
+> 
+339a329
+> 
+339a330
+> 
+339a331
+> 
+339a332
+> 
+339a333
+> 
+339a334
+> 
+339a335
+> 
+339a336
+> 
+339a337
+> 
+339a338
+> 
+339a339
+> 
+349c349
+<     (smem, sdata)               = shared (undefined :: e) "sdata" [cexp| blockDim.x |] Nothing
+---
+>     (smem, sdata)               = shared (undefined :: e) "sdata"                      Nothing
+352d351
+<       = [citem|  if ( intervalSize == 0 || numIntervals == 0 ) {
+353c352
+<                      const int gridSize  = $exp:(gridSize dev);
+---
+>       = 
+355d353
+<                      for ( ix = $exp:(threadIdx dev)
+356d353
+<                          ; ix < $exp:(csize shOut)
+357d353
+<                          ; ix += gridSize )
+358d353
+<                      {
+359d353
+<                          $items:(setOut "ix" .=. seed)
+360d353
+<                      }
+361d353
+<                      return;
+362c354
+<                  } |] :[]
+---
+> 
+362a355
+> 
+362a356
+> 
+362a357
+> 
+362a358
+> 
+362a359
+> 
+362a360
+> 
+362a361
+> 
+362a362
+>                       :[]
+433c433
+<   = CUTranslSkel foldSeg [cunit|
+---
+>   = CUTranslSkel foldSeg 
+435d434
+<     $esc:("#include <accelerate_cuda.h>")
+436d434
+<     $edecls:texIn
+438d435
+<     extern "C"
+439d435
+<     __global__ void
+440d435
+<     $id:foldSeg
+441d435
+<     (
+442d435
+<         $params:argIn,
+443d435
+<         $params:argOut
+444d435
+<     )
+445d435
+<     {
+446d435
+<         const int vectors_per_block     = blockDim.x / warpSize;
+447d435
+<         const int num_vectors           = $exp:(umul24 dev vectors_per_block gridDim);
+448d435
+<         const int thread_id             = $exp:(threadIdx dev);
+449d435
+<         const int vector_id             = thread_id / warpSize;
+450d435
+<         const int thread_lane           = threadIdx.x & (warpSize - 1);
+451d435
+<         const int vector_lane           = threadIdx.x / warpSize;
+453d436
+<         const int num_segments          = $exp:(cindexHead shOut);
+454d436
+<         const int total_segments        = $exp:(csize shOut);
+455d436
+<               int seg;
+456d436
+<               int ix;
+458d437
+<         extern volatile __shared__ int s_ptrs[][2];
+460d438
+<         $decls:smem
+461d438
+<         $decls:declx
+462d438
+<         $decls:decly
+463d438
+<         $decls:declz
+464d438
+<         $items:(sh .=. shIn)
+466d439
+<         /*
+467d439
+<          * Threads in a warp cooperatively reduce a segment
+468d439
+<          */
+469d439
+<         for ( seg = vector_id
+470d439
+<             ; seg < total_segments
+471d439
+<             ; seg += num_vectors )
+472d439
+<         {
+473d439
+<             const int s    =  seg % num_segments;
+474d439
+<             const int base = (seg / num_segments) * $exp:(cindexHead sh);
+476d440
+<             /*
+477d440
+<              * Use two threads to fetch the indices of the start and end of this
+478d440
+<              * segment. This results in single coalesced global read.
+479d440
+<              */
+480d440
+<             if ( thread_lane < 2 ) {
+481d440
+<                 $items:([cvar "s_ptrs[vector_lane][thread_lane]"] .=. offset [cvar "s + thread_lane"])
+482d440
+<             }
+484d441
+<             const int start             = base + s_ptrs[vector_lane][0];
+485d441
+<             const int end               = base + s_ptrs[vector_lane][1];
+486d441
+<             const int num_elements      = end  - start;
+488d442
+<             /*
+489d442
+<              * Each thread reads in values of this segment, accumulating a local sum
+490d442
+<              */
+491d442
+<             if ( num_elements > warpSize )
+492d442
+<             {
+493d442
+<                 /*
+494d442
+<                  * Ensure aligned access to global memory
+495d442
+<                  */
+496d442
+<                 ix = start - (start & (warpSize - 1)) + thread_lane;
+498d443
+<                 if ( ix >= start )
+499d443
+<                 {
+500d443
+<                     $items:(y .=. get ix)
+501d443
+<                 }
+503d444
+<                 /*
+504d444
+<                  * Subsequent reads to global memory are aligned, but make sure all
+505d444
+<                  * threads have initialised their local sum.
+506d444
+<                  */
+507d444
+<                 if ( ix + warpSize < end )
+508d444
+<                 {
+509d444
+<                     $items:(x .=. get [cvar "ix + warpSize"])
+511d445
+<                     if ( ix >= start ) {
+512d445
+<                         $items:(z .=. combine y x)
+513d445
+<                         $items:(y .=. z)
+514d445
+<                     }
+515d445
+<                     else {
+516d445
+<                         $items:(y .=. x)
+517d445
+<                     }
+518d445
+<                 }
+520d446
+<                 /*
+521d446
+<                  * Now, iterate along the inner-most dimension collecting a local sum
+522d446
+<                  */
+523d446
+<                 for ( ix += 2 * warpSize; ix < end; ix += warpSize )
+524d446
+<                 {
+525d446
+<                     $items:(x .=. get ix)
+526d446
+<                     $items:(z .=. combine y x)
+527d446
+<                     $items:(y .=. z)
+528d446
+<                 }
+529d446
+<             }
+530d446
+<             else if ( start + thread_lane < end )
+531d446
+<             {
+532d446
+<                 $items:(y .=. get [cvar "start + thread_lane"])
+533d446
+<             }
+535d447
+<             /*
+536d447
+<              * Store local sums into shared memory and reduce to a single value
+537d447
+<              */
+538d447
+<             ix = min(num_elements, warpSize);
+539d447
+<             $items:(sdata "threadIdx.x" .=. y)
+540d447
+<             $items:(reduceWarp dev fun x y z sdata (cvar "ix") (cvar "thread_lane"))
+542d448
+<             /*
+543d448
+<              * Finally, the first thread writes the result for this segment
+544d448
+<              */
+545d448
+<             if ( thread_lane == 0 )
+546d448
+<             {
+547d448
+<                 $items:(maybe [] exclusive_finish mseed)
+548d448
+<                 $items:(setOut "seg" .=. y)
+549d448
+<             }
+550d448
+<         }
+551d448
+<     }
+552c449
+<   |]
+---
+> 
+552a450
+> 
+552a451
+> 
+552a452
+> 
+552a453
+> 
+552a454
+> 
+552a455
+> 
+552a456
+> 
+552a457
+> 
+552a458
+> 
+552a459
+> 
+552a460
+> 
+552a461
+> 
+552a462
+> 
+552a463
+> 
+552a464
+> 
+552a465
+> 
+552a466
+> 
+552a467
+> 
+552a468
+> 
+552a469
+> 
+552a470
+> 
+552a471
+> 
+552a472
+> 
+552a473
+> 
+552a474
+> 
+552a475
+> 
+552a476
+> 
+552a477
+> 
+552a478
+> 
+552a479
+> 
+552a480
+> 
+552a481
+> 
+552a482
+> 
+552a483
+> 
+552a484
+> 
+552a485
+> 
+552a486
+> 
+552a487
+> 
+552a488
+> 
+552a489
+> 
+552a490
+> 
+552a491
+> 
+552a492
+> 
+552a493
+> 
+552a494
+> 
+552a495
+> 
+552a496
+> 
+552a497
+> 
+552a498
+> 
+552a499
+> 
+552a500
+> 
+552a501
+> 
+552a502
+> 
+552a503
+> 
+552a504
+> 
+552a505
+> 
+552a506
+> 
+552a507
+> 
+552a508
+> 
+552a509
+> 
+552a510
+> 
+552a511
+> 
+552a512
+> 
+552a513
+> 
+552a514
+> 
+552a515
+> 
+552a516
+> 
+552a517
+> 
+552a518
+> 
+552a519
+> 
+552a520
+> 
+552a521
+> 
+552a522
+> 
+552a523
+> 
+552a524
+> 
+552a525
+> 
+552a526
+> 
+552a527
+> 
+552a528
+> 
+552a529
+> 
+552a530
+> 
+552a531
+> 
+552a532
+> 
+552a533
+> 
+552a534
+> 
+552a535
+> 
+552a536
+> 
+552a537
+> 
+552a538
+> 
+552a539
+> 
+552a540
+> 
+552a541
+> 
+552a542
+> 
+552a543
+> 
+552a544
+> 
+552a545
+> 
+552a546
+> 
+552a547
+> 
+552a548
+> 
+552a549
+> 
+552a550
+> 
+552a551
+> 
+552a552
+> 
+561c561
+<     (smem, sdata)               = shared (undefined :: e) "sdata" [cexp| blockDim.x |] (Just $ [cexp| &s_ptrs[vectors_per_block][2] |])
+---
+>     (smem, sdata)               = shared (undefined :: e) "sdata"                      (Just $                                        )
+568d567
+<       = [[citem| if ( num_elements > 0 ) {
+569d567
+<                      $items:(x .=. seed)
+570d567
+<                      $items:(z .=. combine y x)
+571d567
+<                      $items:(y .=. z)
+572d567
+<                  } else {
+573d567
+<                      $items:(y .=. seed)
+574c568
+<                  } |]]
+---
+>       = [
+576a571
+> 
+576a572
+> 
+576a573
+> 
+576a574
+>                      ]
+576a575
+> 
+576a576
+> 
+635d634
+<       = [citem| if ( $exp:tid < $exp:n ) {
+636d634
+<                     $items:(x0 .=. sdata "threadIdx.x + 1")
+637d634
+<                     $items:(x2 .=. f x1 x0)
+638d634
+<                     $items:(x1 .=. x2)
+639c635
+<                 } |]
+---
+>       = 
+639a636
+> 
+639a637
+> 
+639a638
+> 
+639a639
+> 
+641d640
+<       = [citem| if ( $exp:tid + $int:i < $exp:n ) {
+642d640
+<                     $items:(x0 .=. sdata ("threadIdx.x + " ++ show i))
+643d640
+<                     $items:(x2 .=. f x1 x0)
+644d640
+<                     $items:(x1 .=. x2)
+645d640
+<                     $items:(sdata "threadIdx.x" .=. x1)
+646c641
+<                 } |]
+---
+>       = 
+647a643
+> 
+647a644
+> 
+647a645
+> 
+647a646
+> 
+647a647
+> 
+680d679
+<       = [citem| __syncthreads(); |]
+681d679
+<       : [citem| if ( threadIdx.x + $int:i < $exp:n ) {
+682d679
+<                     $items:(x0 .=. sdata ("threadIdx.x + " ++ show i))
+683d679
+<                     $items:(x2 .=. f x1 x0)
+684d679
+<                     $items:(x1 .=. x2)
+685d679
+<                 } |]
+686c680
+<       : [citem| __syncthreads(); |]
+---
+>       = 
+686a681
+>       : 
+686a682
+> 
+686a683
+> 
+686a684
+> 
+686a685
+> 
+686a686
+>       : 
+695d694
+<       = [citem| __syncthreads(); |]
+696d694
+<       : [citem| if ( threadIdx.x < $int:(warpSize dev) ) {
+697d694
+<                     $items:(reduceWarpTree dev fun x0 x1 x2 sdata n (cvar "threadIdx.x"))
+698c695
+<                 } |]
+---
+>       = 
+698a696
+>       : 
+698a697
+> 
+698a698
+> 
+725d724
+<   = [citem| for ( int z = warpSize/2; z >= 1; z /= 2 ) {
+726c725
+<                 $items:(x0 .=. shfl_xor x1)
+---
+>   = 
+728d726
+<                 if ( $exp:tid + z < $exp:n ) {
+729d726
+<                     $items:(x1 .=. f x1 x0)
+730d726
+<                 }
+731c727
+<             } |]
+---
+> 
+731a728
+> 
+731a729
+> 
+731a730
+> 
+731a731
+> 
+738c738
+<         shfl _  = $internalError "shfl_xor" "I only know about 32- and 64-bit types"
+---
+>         shfl _  = internalError "shfl_xor" "I only know about 32- and 64-bit types"
+756d755
+<   : [citem|  if ( (threadIdx.x & warpSize - 1) == 0 ) {
+757d755
+<                  $items:(sdata "threadIdx.x / warpSize" .=. x1)
+758d755
+<              } |]
+759d755
+<   : [citem|  __syncthreads(); |]
+760d755
+<   : [citem|  if ( threadIdx.x < warpSize ) {
+761d755
+<                  $items:(x1 .=. sdata "threadIdx.x")
+762d755
+<                  $exp:n = ($exp:n + warpSize - 1) / warpSize;
+763d755
+<                  $item:(reduceWarpShfl dev fun x0 x1 n (cvar "threadIdx.x"))
+764c756
+<              } |]
+---
+>   : 
+764a757
+> 
+764a758
+> 
+764a759
+>   : 
+764a760
+>   : 
+764a761
+> 
+764a762
+> 
+764a763
+> 
+764a764
+> 
+766a767
+> 
+</pre></br><h2>original</h2></br><pre>{-# LANGUAGE GADTs               #-}
+{-# LANGUAGE ImpredicativeTypes  #-}
+{-# LANGUAGE QuasiQuotes         #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TemplateHaskell     #-}
+{-# LANGUAGE TypeOperators       #-}
+-- |
+-- Module      : Data.Array.Accelerate.CUDA.CodeGen.Reduction
+-- Copyright   : [2008..2014] Manuel M T Chakravarty, Gabriele Keller
+--               [2009..2014] Trevor L. McDonell
+-- License     : BSD3
+--
+-- Maintainer  : Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>
+-- Stability   : experimental
+-- Portability : non-portable (GHC extensions)
+--
+
+module Data.Array.Accelerate.CUDA.CodeGen.Reduction (
+
+  mkFold, mkFold1, mkFoldSeg, mkFold1Seg,
+
+) where
+
+import Foreign.CUDA.Analysis
+import Language.C.Quote.CUDA
+import qualified Language.C.Syntax                      as C
+
+import Data.Array.Accelerate.Analysis.Shape
+import Data.Array.Accelerate.Array.Sugar                ( Array, Shape, Elt, Z(..), (:.)(..) )
+import Data.Array.Accelerate.Error                      ( internalError )
+import Data.Array.Accelerate.Type                       ( IsIntegral )
+import Data.Array.Accelerate.CUDA.AST
+import Data.Array.Accelerate.CUDA.CodeGen.Base
+import Data.Array.Accelerate.CUDA.CodeGen.Type
+
+
+-- Reduce an array along the innermost dimension. The function must be
+-- associative to enable efficient parallel implementation.
+--
+-- fold :: (Shape ix, Elt a)
+--      => (Exp a -> Exp a -> Exp a)
+--      -> Exp a
+--      -> Acc (Array (ix :. Int) a)
+--      -> Acc (Array ix a)
+--
+-- fold1 :: (Shape ix, Elt a)
+--       => (Exp a -> Exp a -> Exp a)
+--       -> Acc (Array (ix :. Int) a)
+--       -> Acc (Array ix a)
+--
+-- If this is collapsing an array to a single value, we use a multi-pass
+-- algorithm that splits the input data over several thread blocks. The first
+-- kernel is executed once, and then the second recursively until a single value
+-- is produced.
+--
+mkFold :: forall aenv sh e. (Shape sh, Elt e)
+       => DeviceProperties
+       -> Gamma aenv
+       -> CUFun2 aenv (e -> e -> e)
+       -> CUExp aenv e
+       -> CUDelayedAcc aenv (sh :. Int) e
+       -> [CUTranslSkel aenv (Array sh e)]
+mkFold dev aenv f z a
+  | expDim (undefined :: Exp aenv sh) > 0 = mkFoldDim dev aenv f (Just z) a
+  | otherwise                             = mkFoldAll dev aenv f (Just z) a
+
+mkFold1 :: forall aenv sh e. (Shape sh, Elt e)
+        => DeviceProperties
+        -> Gamma aenv
+        -> CUFun2 aenv (e -> e -> e)
+        -> CUDelayedAcc aenv (sh :. Int) e
+        -> [ CUTranslSkel aenv (Array sh e) ]
+mkFold1 dev aenv f a
+  | expDim (undefined :: Exp aenv sh) > 0 = mkFoldDim dev aenv f Nothing a
+  | otherwise                             = mkFoldAll dev aenv f Nothing a
+
+
+-- Reduction of an array of arbitrary rank to a single scalar value. Each thread
+-- computes multiple elements sequentially. This reduces the overall cost of the
+-- algorithm while keeping the work complexity O(n) and the step complexity
+-- O(log n). c.f. Brent's Theorem optimisation.
+--
+-- Since the reduction occurs over multiple blocks, there are two phases. The
+-- first pass incorporates any fused/embedded input arrays, while the second
+-- recurses over a manifest array to produce a single value.
+--
+mkFoldAll
+    :: forall aenv sh e. (Shape sh, Elt e)
+    => DeviceProperties
+    -> Gamma aenv
+    -> CUFun2 aenv (e -> e -> e)
+    -> Maybe (CUExp aenv e)
+    -> CUDelayedAcc aenv (sh :. Int) e
+    -> [ CUTranslSkel aenv (Array sh e) ]
+mkFoldAll dev aenv f z a
+  = let (_, rec) = readArray "Rec" (undefined :: Array (sh:.Int) e)
+    in
+    [ mkFoldAll' False dev aenv f z a
+    , mkFoldAll' True  dev aenv f z rec ]
+
+
+mkFoldAll'
+    :: forall aenv sh e. (Shape sh, Elt e)
+    => Bool
+    -> DeviceProperties
+    -> Gamma aenv
+    -> CUFun2 aenv (e -> e -> e)
+    -> Maybe (CUExp aenv e)
+    -> CUDelayedAcc aenv (sh :. Int) e
+    -> CUTranslSkel aenv (Array sh e)
+mkFoldAll' recursive dev aenv fun@(CUFun2 _ _ combine) mseed (CUDelayed (CUExp shIn) _ (CUFun1 _ get))
+  = CUTranslSkel foldAll [cunit|
+
+    $esc:("#include <accelerate_cuda.h>")
+    $edecls:texIn
+
+    extern "C" __global__ void
+    $id:foldAll
+    (
+        $params:argIn,
+        $params:argOut,
+        $params:argRec
+    )
+    {
+        $decls:smem
+        $decls:declx
+        $decls:decly
+        $decls:declz
+
+        $items:(sh .=. shIn)
+
+        const int shapeSize     = $exp:(csize sh);
+        const int gridSize      = $exp:(gridSize dev);
+              int ix            = $exp:(threadIdx dev);
+
+        /*
+         * Reduce multiple elements per thread. The number is determined by the
+         * number of active thread blocks (via gridDim). More blocks will result in
+         * a larger `gridSize', and hence fewer elements per thread
+         *
+         * The loop stride of `gridSize' is used to maintain coalescing.
+         *
+         * Note that we can't simply kill threads that won't participate in the
+         * reduction, as exclusive reductions of empty arrays then won't be
+         * initialised with their seed element.
+         */
+        if ( ix < shapeSize )
+        {
+            /*
+             * Initialise the local sum, then ...
+             */
+            $items:(y .=. get ix)
+
+            /*
+             * ... continue striding the array, reading new values into 'x' and
+             * combining into the local accumulator 'y'. The non-idiomatic
+             * structure of the loop below is because we have already
+             * initialised 'y' above.
+             */
+            for ( ix += gridSize; ix < shapeSize; ix += gridSize )
+            {
+                $items:(x .=. get ix)
+                $items:(z .=. combine y x)
+                $items:(y .=. z)
+            }
+        }
+
+        /*
+         * Each thread puts its local sum into shared memory, then threads
+         * cooperatively reduce the shared array to a single value.
+         */
+        $items:(sdata "threadIdx.x" .=. y)
+
+        ix = min(shapeSize - blockIdx.x * blockDim.x, blockDim.x);
+        $items:(reduceBlock dev fun x y z sdata (cvar "ix"))
+
+        /*
+         * Write the results of this block back to global memory. If we are the last
+         * phase of a recursive multi-block reduction, include the seed element.
+         */
+        if ( threadIdx.x == 0 )
+        {
+            $items:(maybe inclusive_finish exclusive_finish mseed)
+        }
+    }
+  |]
+  where
+    foldAll                     = maybe "fold1All" (const "foldAll") mseed
+    (texIn, argIn)              = environment dev aenv
+    (argOut, _, setOut)         = writeArray "Out" (undefined :: Array (sh :. Int) e)
+    (argRec, _)
+      | recursive               = readArray "Rec" (undefined :: Array (sh :. Int) e)
+      | otherwise               = ([], undefined)
+
+    (_, x, declx)               = locals "x" (undefined :: e)
+    (_, y, decly)               = locals "y" (undefined :: e)
+    (_, z, declz)               = locals "z" (undefined :: e)
+    (sh, _, _)                  = locals "sh" (undefined :: sh :. Int)
+    ix                          = [cvar "ix"]
+    (smem, sdata)               = shared (undefined :: e) "sdata" [cexp| blockDim.x |] Nothing
+    --
+    inclusive_finish                    = setOut "blockIdx.x" .=. y
+    exclusive_finish (CUExp seed)       = [[citem|
+      if ( shapeSize > 0 ) {
+          if ( gridDim.x == 1 ) {
+              $items:(x .=. seed)
+              $items:(z .=. combine y x)
+              $items:(y .=. z)
+          }
+          $items:(setOut "blockIdx.x" .=. y)
+      }
+      else {
+          $items:(setOut "blockIdx.x" .=. seed)
+      }
+    |]]
+
+
+-- Reduction of the innermost dimension of an array of arbitrary rank. Each
+-- thread block reduces along one innermost dimension index.
+--
+mkFoldDim
+    :: forall aenv sh e. (Shape sh, Elt e)
+    => DeviceProperties
+    -> Gamma aenv
+    -> CUFun2 aenv (e -> e -> e)
+    -> Maybe (CUExp aenv e)
+    -> CUDelayedAcc aenv (sh :. Int) e
+    -> [ CUTranslSkel aenv (Array sh e) ]
+mkFoldDim dev aenv fun@(CUFun2 _ _ combine) mseed (CUDelayed (CUExp shIn) _ (CUFun1 _ get))
+  = return
+  $ CUTranslSkel fold [cunit|
+
+    $esc:("#include <accelerate_cuda.h>")
+    $edecls:texIn
+
+    extern "C" __global__ void
+    $id:fold
+    (
+        $params:argIn,
+        $params:argOut
+    )
+    {
+        $decls:smem
+        $decls:declx
+        $decls:decly
+        $decls:declz
+
+        $items:(sh .=. shIn)
+
+        const int numIntervals  = $exp:(csize (cindexTail sh));
+        const int intervalSize  = $exp:(cindexHead sh);
+              int ix;
+              int seg;
+
+        /*
+         * If the intervals of an exclusive fold are empty, use all threads to
+         * map the seed value to the output array and exit.
+         */
+        $items:(maybe [] mapseed mseed)
+
+        /*
+         * Threads in a block cooperatively reduce all elements in an interval.
+         */
+        for ( seg = blockIdx.x
+            ; seg < numIntervals
+            ; seg += gridDim.x )
+        {
+            const int start = seg * intervalSize;
+            const int end   = start + intervalSize;
+            const int n     = min(end - start, blockDim.x);
+
+            /*
+             * Kill threads that will not participate to avoid invalid reads.
+             * Take advantage of the fact that the array is rectangular.
+             */
+            if ( threadIdx.x >= n )
+               return;
+
+            /*
+             * Ensure aligned access to global memory, and that each thread
+             * initialises its local sum
+             */
+            ix = start - (start & (warpSize - 1));
+
+            if ( ix == start || intervalSize > blockDim.x)
+            {
+                ix += threadIdx.x;
+
+                if ( ix >= start )
+                {
+                    $items:(y .=. get ix)
+                }
+
+                if ( ix + blockDim.x < end )
+                {
+                    $items:(x .=. get [cvar "ix + blockDim.x"])
+
+                    if ( ix >= start ) {
+                        $items:(z .=. combine y x)
+                        $items:(y .=. z)
+                    }
+                    else {
+                        $items:(y .=. x)
+                    }
+                }
+
+                /*
+                 * Now, iterate collecting a local sum
+                 */
+                for ( ix += 2 * blockDim.x; ix < end; ix += blockDim.x )
+                {
+                    $items:(x .=. get ix)
+                    $items:(z .=. combine y x)
+                    $items:(y .=. z)
+                }
+            }
+            else
+            {
+                $items:(y .=. get [cvar "start + threadIdx.x"])
+            }
+
+            /*
+             * Each thread puts its local sum into shared memory, and
+             * cooperatively reduces this to a single value.
+             */
+            $items:(sdata "threadIdx.x" .=. y)
+            $items:(reduceBlock dev fun x y z sdata (cvar "n"))
+
+            /*
+             * Finally, the first thread writes the result for this segment. For
+             * exclusive reductions, we also combine with the seed element here.
+             */
+            if ( threadIdx.x == 0 ) {
+                $items:(maybe [] exclusive_finish mseed)
+                $items:(setOut "seg" .=. y)
+            }
+        }
+    }
+  |]
+  where
+    fold                        = maybe "fold1" (const "fold") mseed
+    (texIn, argIn)              = environment dev aenv
+    (argOut, shOut, setOut)     = writeArray "Out" (undefined :: Array sh e)
+    (_, x, declx)               = locals "x" (undefined :: e)
+    (_, y, decly)               = locals "y" (undefined :: e)
+    (_, z, declz)               = locals "z" (undefined :: e)
+    (sh, _, _)                  = locals "sh" (undefined :: sh :. Int)
+    ix                          = [cvar "ix"]
+    (smem, sdata)               = shared (undefined :: e) "sdata" [cexp| blockDim.x |] Nothing
+    --
+    mapseed (CUExp seed)
+      = [citem|  if ( intervalSize == 0 || numIntervals == 0 ) {
+                     const int gridSize  = $exp:(gridSize dev);
+
+                     for ( ix = $exp:(threadIdx dev)
+                         ; ix < $exp:(csize shOut)
+                         ; ix += gridSize )
+                     {
+                         $items:(setOut "ix" .=. seed)
+                     }
+                     return;
+                 } |] :[]
+    --
+    exclusive_finish (CUExp seed)
+      = concat [ x .=. seed
+               , z .=. combine y x
+               , y .=. z ]
+
+
+-- Segmented reduction along the innermost dimension of an array. Performs one
+-- individual reduction per segment of the source array. These reductions
+-- proceed in parallel.
+--
+-- foldSeg :: (Shape ix, Elt a)
+--         => (Exp a -> Exp a -> Exp a)
+--         -> Exp a
+--         -> Acc (Array (ix :. Int) a)
+--         -> Acc Segments
+--         -> Acc (Array (ix :. Int) a)
+--
+-- fold1Seg :: (Shape ix, Elt a)
+--          => (Exp a -> Exp a -> Exp a)
+--          -> Acc (Array (ix :. Int) a)
+--          -> Acc Segments
+--          -> Acc (Array (ix :. Int) a)
+--
+-- Each segment of the vector is assigned to a warp, which computes the
+-- reduction of the i-th section, in parallel. Care is taken to ensure that data
+-- array access is aligned to a warp boundary.
+--
+-- Since an entire 32-thread warp is assigned for each segment, many threads
+-- will remain idle when the segments are very small. This code relies on
+-- implicit synchronisation among threads in a warp.
+--
+-- The offset array contains the starting index for each segment in the input
+-- array. The i-th warp reduces values in the input array at indices
+-- [d_offset[i], d_offset[i+1]).
+--
+mkFoldSeg
+    :: (Shape sh, Elt e, Elt i, IsIntegral i)
+    => DeviceProperties
+    -> Gamma aenv
+    -> CUFun2 aenv (e -> e -> e)
+    -> CUExp aenv e
+    -> CUDelayedAcc aenv (sh :. Int) e
+    -> CUDelayedAcc aenv (Z  :. Int) i
+    -> [CUTranslSkel aenv (Array (sh :. Int) e)]
+mkFoldSeg dev aenv f z a s = [ mkFoldSeg' dev aenv f (Just z) a s ]
+
+mkFold1Seg
+    :: (Shape sh, Elt e, Elt i, IsIntegral i)
+    => DeviceProperties
+    -> Gamma aenv
+    -> CUFun2 aenv (e -> e -> e)
+    -> CUDelayedAcc aenv (sh :. Int) e
+    -> CUDelayedAcc aenv (Z  :. Int) i
+    -> [CUTranslSkel aenv (Array (sh :. Int) e)]
+mkFold1Seg dev aenv f a s = [ mkFoldSeg' dev aenv f Nothing a s ]
+
+
+mkFoldSeg'
+    :: forall aenv sh e i. (Shape sh, Elt e, Elt i, IsIntegral i)
+    => DeviceProperties
+    -> Gamma aenv
+    -> CUFun2 aenv (e -> e -> e)
+    -> Maybe (CUExp aenv e)
+    -> CUDelayedAcc aenv (sh :. Int) e
+    -> CUDelayedAcc aenv (Z  :. Int) i
+    -> CUTranslSkel aenv (Array (sh :. Int) e)
+mkFoldSeg' dev aenv fun@(CUFun2 _ _ combine) mseed
+  (CUDelayed (CUExp shIn) _ (CUFun1 _ get))
+  (CUDelayed _            _ (CUFun1 _ offset))
+  = CUTranslSkel foldSeg [cunit|
+
+    $esc:("#include <accelerate_cuda.h>")
+    $edecls:texIn
+
+    extern "C"
+    __global__ void
+    $id:foldSeg
+    (
+        $params:argIn,
+        $params:argOut
+    )
+    {
+        const int vectors_per_block     = blockDim.x / warpSize;
+        const int num_vectors           = $exp:(umul24 dev vectors_per_block gridDim);
+        const int thread_id             = $exp:(threadIdx dev);
+        const int vector_id             = thread_id / warpSize;
+        const int thread_lane           = threadIdx.x & (warpSize - 1);
+        const int vector_lane           = threadIdx.x / warpSize;
+
+        const int num_segments          = $exp:(cindexHead shOut);
+        const int total_segments        = $exp:(csize shOut);
+              int seg;
+              int ix;
+
+        extern volatile __shared__ int s_ptrs[][2];
+
+        $decls:smem
+        $decls:declx
+        $decls:decly
+        $decls:declz
+        $items:(sh .=. shIn)
+
+        /*
+         * Threads in a warp cooperatively reduce a segment
+         */
+        for ( seg = vector_id
+            ; seg < total_segments
+            ; seg += num_vectors )
+        {
+            const int s    =  seg % num_segments;
+            const int base = (seg / num_segments) * $exp:(cindexHead sh);
+
+            /*
+             * Use two threads to fetch the indices of the start and end of this
+             * segment. This results in single coalesced global read.
+             */
+            if ( thread_lane < 2 ) {
+                $items:([cvar "s_ptrs[vector_lane][thread_lane]"] .=. offset [cvar "s + thread_lane"])
+            }
+
+            const int start             = base + s_ptrs[vector_lane][0];
+            const int end               = base + s_ptrs[vector_lane][1];
+            const int num_elements      = end  - start;
+
+            /*
+             * Each thread reads in values of this segment, accumulating a local sum
+             */
+            if ( num_elements > warpSize )
+            {
+                /*
+                 * Ensure aligned access to global memory
+                 */
+                ix = start - (start & (warpSize - 1)) + thread_lane;
+
+                if ( ix >= start )
+                {
+                    $items:(y .=. get ix)
+                }
+
+                /*
+                 * Subsequent reads to global memory are aligned, but make sure all
+                 * threads have initialised their local sum.
+                 */
+                if ( ix + warpSize < end )
+                {
+                    $items:(x .=. get [cvar "ix + warpSize"])
+
+                    if ( ix >= start ) {
+                        $items:(z .=. combine y x)
+                        $items:(y .=. z)
+                    }
+                    else {
+                        $items:(y .=. x)
+                    }
+                }
+
+                /*
+                 * Now, iterate along the inner-most dimension collecting a local sum
+                 */
+                for ( ix += 2 * warpSize; ix < end; ix += warpSize )
+                {
+                    $items:(x .=. get ix)
+                    $items:(z .=. combine y x)
+                    $items:(y .=. z)
+                }
+            }
+            else if ( start + thread_lane < end )
+            {
+                $items:(y .=. get [cvar "start + thread_lane"])
+            }
+
+            /*
+             * Store local sums into shared memory and reduce to a single value
+             */
+            ix = min(num_elements, warpSize);
+            $items:(sdata "threadIdx.x" .=. y)
+            $items:(reduceWarp dev fun x y z sdata (cvar "ix") (cvar "thread_lane"))
+
+            /*
+             * Finally, the first thread writes the result for this segment
+             */
+            if ( thread_lane == 0 )
+            {
+                $items:(maybe [] exclusive_finish mseed)
+                $items:(setOut "seg" .=. y)
+            }
+        }
+    }
+  |]
+  where
+    foldSeg                     = maybe "fold1Seg" (const "foldSeg") mseed
+    (texIn, argIn)              = environment dev aenv
+    (argOut, shOut, setOut)     = writeArray "Out" (undefined :: Array (sh :. Int) e)
+    (_, x, declx)               = locals "x" (undefined :: e)
+    (_, y, decly)               = locals "y" (undefined :: e)
+    (_, z, declz)               = locals "z" (undefined :: e)
+    (sh, _, _)                  = locals "sh" (undefined :: sh :. Int)
+    (smem, sdata)               = shared (undefined :: e) "sdata" [cexp| blockDim.x |] (Just $ [cexp| &s_ptrs[vectors_per_block][2] |])
+    --
+    ix                          = [cvar "ix"]
+    vectors_per_block           = cvar "vectors_per_block"
+    gridDim                     = cvar "gridDim.x"
+    --
+    exclusive_finish (CUExp seed)
+      = [[citem| if ( num_elements > 0 ) {
+                     $items:(x .=. seed)
+                     $items:(z .=. combine y x)
+                     $items:(y .=. z)
+                 } else {
+                     $items:(y .=. seed)
+                 } |]]
+
+
+-- Reducers
+-- --------
+
+-- Reductions of values stored in shared memory.
+--
+-- Two local (mutable) variables are also required to do the reduction. The
+-- final result is stored in the second of these.
+--
+reduceWarp
+    :: forall aenv e. Elt e
+    => DeviceProperties
+    -> CUFun2 aenv (e -> e -> e)
+    -> [C.Exp] -> [C.Exp] -> [C.Exp]    -- input variables x0 and x1, plus a temporary to store the intermediate result
+    -> (Name -> [C.Exp])                -- index elements from shared memory
+    -> C.Exp                            -- number of elements
+    -> C.Exp                            -- thread identifier: usually lane or thread ID
+    -> [C.BlockItem]
+reduceWarp dev fun x0 x1 x2 sdata n tid
+  | shflOK dev (undefined :: e) = return
+                                $ reduceWarpShfl dev fun x0 x1          n tid
+  | otherwise                   = reduceWarpTree dev fun x0 x1 x2 sdata n tid
+
+
+reduceBlock
+    :: forall aenv e. Elt e
+    => DeviceProperties
+    -> CUFun2 aenv (e -> e -> e)
+    -> [C.Exp] -> [C.Exp] -> [C.Exp]    -- input variables x0 and x1, plus a temporary to store the intermediate result
+    -> (Name -> [C.Exp])                -- index elements from shared memory
+    -> C.Exp                            -- number of elements
+    -> [C.BlockItem]
+reduceBlock dev fun x0 x1 x2 sdata n
+  | shflOK dev (undefined :: e) = reduceBlockShfl dev fun x0 x1    sdata n
+  | otherwise                   = reduceBlockTree dev fun x0 x1 x2 sdata n
+
+
+-- Tree reduction
+-- --------------
+
+reduceWarpTree
+    :: Elt e
+    => DeviceProperties
+    -> CUFun2 aenv (e -> e -> e)
+    -> [C.Exp] -> [C.Exp] -> [C.Exp]    -- input variables x0 and x1, plus a temporary to store the intermediate result
+    -> (Name -> [C.Exp])                -- index elements from shared memory
+    -> C.Exp                            -- number of elements
+    -> C.Exp                            -- thread identifier: usually lane or thread ID
+    -> [C.BlockItem]
+reduceWarpTree dev (CUFun2 _ _ f) x0 x1 x2 sdata n tid
+  = map (reduce . pow2) [v, v-1 .. 0]
+  where
+    v = floor (logBase 2 (fromIntegral $ warpSize dev :: Double))
+
+    pow2 :: Int -> Int
+    pow2 x = 2 ^ x
+
+    reduce :: Int -> C.BlockItem
+    reduce 0
+      = [citem| if ( $exp:tid < $exp:n ) {
+                    $items:(x0 .=. sdata "threadIdx.x + 1")
+                    $items:(x2 .=. f x1 x0)
+                    $items:(x1 .=. x2)
+                } |]
+    reduce i
+      = [citem| if ( $exp:tid + $int:i < $exp:n ) {
+                    $items:(x0 .=. sdata ("threadIdx.x + " ++ show i))
+                    $items:(x2 .=. f x1 x0)
+                    $items:(x1 .=. x2)
+                    $items:(sdata "threadIdx.x" .=. x1)
+                } |]
+
+reduceBlockTree
+    :: Elt e
+    => DeviceProperties
+    -> CUFun2 aenv (e -> e -> e)
+    -> [C.Exp] -> [C.Exp] -> [C.Exp]    -- input variables x0 and x1, plus a temporary to store the intermediate result
+    -> (Name -> [C.Exp])                -- index elements from shared memory
+    -> C.Exp                            -- number of elements
+    -> [C.BlockItem]
+reduceBlockTree dev fun@(CUFun2 _ _ f) x0 x1 x2 sdata n
+  = flip (foldr1 (.)) []
+  $ map (reduce . pow2) [u-1, u-2 .. v]
+
+  where
+    u = floor (logBase 2 (fromIntegral $ maxThreadsPerBlock dev :: Double))
+    v = floor (logBase 2 (fromIntegral $ warpSize dev           :: Double))
+
+    pow2 :: Int -> Int
+    pow2 x = 2 ^ x
+
+    reduce :: Int -> [C.BlockItem] -> [C.BlockItem]
+    reduce i rest
+      -- Ensure that threads synchronise before reading from or writing to
+      -- shared memory. Synchronising after each reduction step is not enough,
+      -- because one warp could update the partial results before a different
+      -- warp has read in their data for this step.
+      --
+      -- Additionally, note that all threads of a warp must participate in the
+      -- synchronisation. Thus, this must go outside of the test against the
+      -- bounds of the array. We do a bit of extra work here, with all threads
+      -- writing into shared memory whether they updated their value or not.
+      --
+      | i > warpSize dev
+      = [citem| __syncthreads(); |]
+      : [citem| if ( threadIdx.x + $int:i < $exp:n ) {
+                    $items:(x0 .=. sdata ("threadIdx.x + " ++ show i))
+                    $items:(x2 .=. f x1 x0)
+                    $items:(x1 .=. x2)
+                } |]
+      : [citem| __syncthreads(); |]
+      : (sdata "threadIdx.x" .=. x1)
+      ++ rest
+
+      -- The threads of a warp execute in lockstep, so it is only necessary to
+      -- synchronise at the top, to ensure all threads have written their
+      -- results into shared memory.
+      --
+      | otherwise
+      = [citem| __syncthreads(); |]
+      : [citem| if ( threadIdx.x < $int:(warpSize dev) ) {
+                    $items:(reduceWarpTree dev fun x0 x1 x2 sdata n (cvar "threadIdx.x"))
+                } |]
+      : rest
+
+
+-- Butterfly reduction
+-- -------------------
+
+shflOK :: Elt e => DeviceProperties -> e -> Bool
+shflOK _dev _ = False
+-- shflOK dev dummy
+--   = computeCapability dev >= Compute 3 0 && all (`elem` [4,8]) (eltSizeOf dummy)
+
+
+-- Reduction using the __shfl_xor() operation for exchanging variables between
+-- threads of a without use of shared memory. The exchange occurs simultaneously
+-- for all active threads within the wrap, moving 4 bytes of data per thread.
+-- 8-byte quantities are broken into two separate transfers.
+--
+reduceWarpShfl
+    :: forall aenv e. Elt e
+    => DeviceProperties
+    -> CUFun2 aenv (e -> e -> e)
+    -> [C.Exp] -> [C.Exp]
+    -> C.Exp
+    -> C.Exp
+    -> C.BlockItem
+reduceWarpShfl _dev (CUFun2 _ _ f) x0 x1 n tid
+  = [citem| for ( int z = warpSize/2; z >= 1; z /= 2 ) {
+                $items:(x0 .=. shfl_xor x1)
+
+                if ( $exp:tid + z < $exp:n ) {
+                    $items:(x1 .=. f x1 x0)
+                }
+            } |]
+  where
+    sizeof      = eltSizeOf (undefined :: e)
+    shfl_xor    = zipWith (\s x -> ccall (shfl s) [ x, cvar "z" ]) sizeof
+      where
+        shfl 4  = "shfl_xor32"
+        shfl 8  = "shfl_xor64"
+        shfl _  = $internalError "shfl_xor" "I only know about 32- and 64-bit types"
+
+
+-- Reduce a block of values in butterfly fashion using __shfl_xor(). Each warp
+-- calculates a local reduction, and the first thread of a warp writes its
+-- result into shared memory. The first warp then reduces these values to the
+-- final result.
+--
+reduceBlockShfl
+    :: forall aenv e. Elt e
+    => DeviceProperties
+    -> CUFun2 aenv (e -> e -> e)
+    -> [C.Exp] -> [C.Exp]
+    -> (Name -> [C.Exp])
+    -> C.Exp
+    -> [C.BlockItem]
+reduceBlockShfl dev fun x0 x1 sdata n
+  = reduceWarpShfl dev fun x0 x1 n (cvar "threadIdx.x")
+  : [citem|  if ( (threadIdx.x & warpSize - 1) == 0 ) {
+                 $items:(sdata "threadIdx.x / warpSize" .=. x1)
+             } |]
+  : [citem|  __syncthreads(); |]
+  : [citem|  if ( threadIdx.x < warpSize ) {
+                 $items:(x1 .=. sdata "threadIdx.x")
+                 $exp:n = ($exp:n + warpSize - 1) / warpSize;
+                 $item:(reduceWarpShfl dev fun x0 x1 n (cvar "threadIdx.x"))
+             } |]
+  : []
+
+</pre></br><h2>printed</h2></br><pre>{-# LANGUAGE GADTs               #-}
+{-# LANGUAGE ImpredicativeTypes  #-}
+{-# LANGUAGE QuasiQuotes         #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TemplateHaskell     #-}
+{-# LANGUAGE TypeOperators       #-}
+-- |
+-- Module      : Data.Array.Accelerate.CUDA.CodeGen.Reduction
+-- Copyright   : [2008..2014] Manuel M T Chakravarty, Gabriele Keller
+--               [2009..2014] Trevor L. McDonell
+-- License     : BSD3
+--
+-- Maintainer  : Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>
+-- Stability   : experimental
+-- Portability : non-portable (GHC extensions)
+--
+
+module Data.Array.Accelerate.CUDA.CodeGen.Reduction (
+
+  mkFold, mkFold1, mkFoldSeg, mkFold1Seg,
+
+) where
+
+import Foreign.CUDA.Analysis
+import Language.C.Quote.CUDA
+import qualified Language.C.Syntax                      as C
+
+import Data.Array.Accelerate.Analysis.Shape
+import Data.Array.Accelerate.Array.Sugar                ( Array, Shape, Elt, Z(..), (:.)(..) )
+import Data.Array.Accelerate.Error                      ( internalError )
+import Data.Array.Accelerate.Type                       ( IsIntegral )
+import Data.Array.Accelerate.CUDA.AST
+import Data.Array.Accelerate.CUDA.CodeGen.Base
+import Data.Array.Accelerate.CUDA.CodeGen.Type
+
+
+-- Reduce an array along the innermost dimension. The function must be
+-- associative to enable efficient parallel implementation.
+--
+-- fold :: (Shape ix, Elt a)
+--      => (Exp a -> Exp a -> Exp a)
+--      -> Exp a
+--      -> Acc (Array (ix :. Int) a)
+--      -> Acc (Array ix a)
+--
+-- fold1 :: (Shape ix, Elt a)
+--       => (Exp a -> Exp a -> Exp a)
+--       -> Acc (Array (ix :. Int) a)
+--       -> Acc (Array ix a)
+--
+-- If this is collapsing an array to a single value, we use a multi-pass
+-- algorithm that splits the input data over several thread blocks. The first
+-- kernel is executed once, and then the second recursively until a single value
+-- is produced.
+--
+mkFold :: forall aenv sh e. (Shape sh, Elt e)
+       => DeviceProperties
+       -> Gamma aenv
+       -> CUFun2 aenv (e -> e -> e)
+       -> CUExp aenv e
+       -> CUDelayedAcc aenv (sh :. Int) e
+       -> [CUTranslSkel aenv (Array sh e)]
+mkFold dev aenv f z a
+  | expDim (undefined :: Exp aenv sh) > 0 = mkFoldDim dev aenv f (Just z) a
+  | otherwise                             = mkFoldAll dev aenv f (Just z) a
+
+mkFold1 :: forall aenv sh e. (Shape sh, Elt e)
+        => DeviceProperties
+        -> Gamma aenv
+        -> CUFun2 aenv (e -> e -> e)
+        -> CUDelayedAcc aenv (sh :. Int) e
+        -> [ CUTranslSkel aenv (Array sh e) ]
+mkFold1 dev aenv f a
+  | expDim (undefined :: Exp aenv sh) > 0 = mkFoldDim dev aenv f Nothing a
+  | otherwise                             = mkFoldAll dev aenv f Nothing a
+
+
+-- Reduction of an array of arbitrary rank to a single scalar value. Each thread
+-- computes multiple elements sequentially. This reduces the overall cost of the
+-- algorithm while keeping the work complexity O(n) and the step complexity
+-- O(log n). c.f. Brent's Theorem optimisation.
+--
+-- Since the reduction occurs over multiple blocks, there are two phases. The
+-- first pass incorporates any fused/embedded input arrays, while the second
+-- recurses over a manifest array to produce a single value.
+--
+mkFoldAll
+    :: forall aenv sh e. (Shape sh, Elt e)
+    => DeviceProperties
+    -> Gamma aenv
+    -> CUFun2 aenv (e -> e -> e)
+    -> Maybe (CUExp aenv e)
+    -> CUDelayedAcc aenv (sh :. Int) e
+    -> [ CUTranslSkel aenv (Array sh e) ]
+mkFoldAll dev aenv f z a
+  = let (_, rec) = readArray "Rec" (undefined :: Array (sh:.Int) e)
+    in
+    [ mkFoldAll' False dev aenv f z a
+    , mkFoldAll' True  dev aenv f z rec ]
+
+
+mkFoldAll'
+    :: forall aenv sh e. (Shape sh, Elt e)
+    => Bool
+    -> DeviceProperties
+    -> Gamma aenv
+    -> CUFun2 aenv (e -> e -> e)
+    -> Maybe (CUExp aenv e)
+    -> CUDelayedAcc aenv (sh :. Int) e
+    -> CUTranslSkel aenv (Array sh e)
+mkFoldAll' recursive dev aenv fun@(CUFun2 _ _ combine) mseed (CUDelayed (CUExp shIn) _ (CUFun1 _ get))
+  = CUTranslSkel foldAll 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  where
+    foldAll                     = maybe "fold1All" (const "foldAll") mseed
+    (texIn, argIn)              = environment dev aenv
+    (argOut, _, setOut)         = writeArray "Out" (undefined :: Array (sh :. Int) e)
+    (argRec, _)
+      | recursive               = readArray "Rec" (undefined :: Array (sh :. Int) e)
+      | otherwise               = ([], undefined)
+
+    (_, x, declx)               = locals "x" (undefined :: e)
+    (_, y, decly)               = locals "y" (undefined :: e)
+    (_, z, declz)               = locals "z" (undefined :: e)
+    (sh, _, _)                  = locals "sh" (undefined :: sh :. Int)
+    ix                          = [cvar "ix"]
+    (smem, sdata)               = shared (undefined :: e) "sdata"                      Nothing
+    --
+    inclusive_finish                    = setOut "blockIdx.x" .=. y
+    exclusive_finish (CUExp seed)       = [
+
+
+
+
+
+
+
+
+
+
+
+      ]
+
+
+-- Reduction of the innermost dimension of an array of arbitrary rank. Each
+-- thread block reduces along one innermost dimension index.
+--
+mkFoldDim
+    :: forall aenv sh e. (Shape sh, Elt e)
+    => DeviceProperties
+    -> Gamma aenv
+    -> CUFun2 aenv (e -> e -> e)
+    -> Maybe (CUExp aenv e)
+    -> CUDelayedAcc aenv (sh :. Int) e
+    -> [ CUTranslSkel aenv (Array sh e) ]
+mkFoldDim dev aenv fun@(CUFun2 _ _ combine) mseed (CUDelayed (CUExp shIn) _ (CUFun1 _ get))
+  = return
+  $ CUTranslSkel fold 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  where
+    fold                        = maybe "fold1" (const "fold") mseed
+    (texIn, argIn)              = environment dev aenv
+    (argOut, shOut, setOut)     = writeArray "Out" (undefined :: Array sh e)
+    (_, x, declx)               = locals "x" (undefined :: e)
+    (_, y, decly)               = locals "y" (undefined :: e)
+    (_, z, declz)               = locals "z" (undefined :: e)
+    (sh, _, _)                  = locals "sh" (undefined :: sh :. Int)
+    ix                          = [cvar "ix"]
+    (smem, sdata)               = shared (undefined :: e) "sdata"                      Nothing
+    --
+    mapseed (CUExp seed)
+      = 
+
+
+
+
+
+
+
+
+
+                      :[]
+    --
+    exclusive_finish (CUExp seed)
+      = concat [ x .=. seed
+               , z .=. combine y x
+               , y .=. z ]
+
+
+-- Segmented reduction along the innermost dimension of an array. Performs one
+-- individual reduction per segment of the source array. These reductions
+-- proceed in parallel.
+--
+-- foldSeg :: (Shape ix, Elt a)
+--         => (Exp a -> Exp a -> Exp a)
+--         -> Exp a
+--         -> Acc (Array (ix :. Int) a)
+--         -> Acc Segments
+--         -> Acc (Array (ix :. Int) a)
+--
+-- fold1Seg :: (Shape ix, Elt a)
+--          => (Exp a -> Exp a -> Exp a)
+--          -> Acc (Array (ix :. Int) a)
+--          -> Acc Segments
+--          -> Acc (Array (ix :. Int) a)
+--
+-- Each segment of the vector is assigned to a warp, which computes the
+-- reduction of the i-th section, in parallel. Care is taken to ensure that data
+-- array access is aligned to a warp boundary.
+--
+-- Since an entire 32-thread warp is assigned for each segment, many threads
+-- will remain idle when the segments are very small. This code relies on
+-- implicit synchronisation among threads in a warp.
+--
+-- The offset array contains the starting index for each segment in the input
+-- array. The i-th warp reduces values in the input array at indices
+-- [d_offset[i], d_offset[i+1]).
+--
+mkFoldSeg
+    :: (Shape sh, Elt e, Elt i, IsIntegral i)
+    => DeviceProperties
+    -> Gamma aenv
+    -> CUFun2 aenv (e -> e -> e)
+    -> CUExp aenv e
+    -> CUDelayedAcc aenv (sh :. Int) e
+    -> CUDelayedAcc aenv (Z  :. Int) i
+    -> [CUTranslSkel aenv (Array (sh :. Int) e)]
+mkFoldSeg dev aenv f z a s = [ mkFoldSeg' dev aenv f (Just z) a s ]
+
+mkFold1Seg
+    :: (Shape sh, Elt e, Elt i, IsIntegral i)
+    => DeviceProperties
+    -> Gamma aenv
+    -> CUFun2 aenv (e -> e -> e)
+    -> CUDelayedAcc aenv (sh :. Int) e
+    -> CUDelayedAcc aenv (Z  :. Int) i
+    -> [CUTranslSkel aenv (Array (sh :. Int) e)]
+mkFold1Seg dev aenv f a s = [ mkFoldSeg' dev aenv f Nothing a s ]
+
+
+mkFoldSeg'
+    :: forall aenv sh e i. (Shape sh, Elt e, Elt i, IsIntegral i)
+    => DeviceProperties
+    -> Gamma aenv
+    -> CUFun2 aenv (e -> e -> e)
+    -> Maybe (CUExp aenv e)
+    -> CUDelayedAcc aenv (sh :. Int) e
+    -> CUDelayedAcc aenv (Z  :. Int) i
+    -> CUTranslSkel aenv (Array (sh :. Int) e)
+mkFoldSeg' dev aenv fun@(CUFun2 _ _ combine) mseed
+  (CUDelayed (CUExp shIn) _ (CUFun1 _ get))
+  (CUDelayed _            _ (CUFun1 _ offset))
+  = CUTranslSkel foldSeg 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  where
+    foldSeg                     = maybe "fold1Seg" (const "foldSeg") mseed
+    (texIn, argIn)              = environment dev aenv
+    (argOut, shOut, setOut)     = writeArray "Out" (undefined :: Array (sh :. Int) e)
+    (_, x, declx)               = locals "x" (undefined :: e)
+    (_, y, decly)               = locals "y" (undefined :: e)
+    (_, z, declz)               = locals "z" (undefined :: e)
+    (sh, _, _)                  = locals "sh" (undefined :: sh :. Int)
+    (smem, sdata)               = shared (undefined :: e) "sdata"                      (Just $                                        )
+    --
+    ix                          = [cvar "ix"]
+    vectors_per_block           = cvar "vectors_per_block"
+    gridDim                     = cvar "gridDim.x"
+    --
+    exclusive_finish (CUExp seed)
+      = [
+
+
+
+
+
+                     ]
+
+
+-- Reducers
+-- --------
+
+-- Reductions of values stored in shared memory.
+--
+-- Two local (mutable) variables are also required to do the reduction. The
+-- final result is stored in the second of these.
+--
+reduceWarp
+    :: forall aenv e. Elt e
+    => DeviceProperties
+    -> CUFun2 aenv (e -> e -> e)
+    -> [C.Exp] -> [C.Exp] -> [C.Exp]    -- input variables x0 and x1, plus a temporary to store the intermediate result
+    -> (Name -> [C.Exp])                -- index elements from shared memory
+    -> C.Exp                            -- number of elements
+    -> C.Exp                            -- thread identifier: usually lane or thread ID
+    -> [C.BlockItem]
+reduceWarp dev fun x0 x1 x2 sdata n tid
+  | shflOK dev (undefined :: e) = return
+                                $ reduceWarpShfl dev fun x0 x1          n tid
+  | otherwise                   = reduceWarpTree dev fun x0 x1 x2 sdata n tid
+
+
+reduceBlock
+    :: forall aenv e. Elt e
+    => DeviceProperties
+    -> CUFun2 aenv (e -> e -> e)
+    -> [C.Exp] -> [C.Exp] -> [C.Exp]    -- input variables x0 and x1, plus a temporary to store the intermediate result
+    -> (Name -> [C.Exp])                -- index elements from shared memory
+    -> C.Exp                            -- number of elements
+    -> [C.BlockItem]
+reduceBlock dev fun x0 x1 x2 sdata n
+  | shflOK dev (undefined :: e) = reduceBlockShfl dev fun x0 x1    sdata n
+  | otherwise                   = reduceBlockTree dev fun x0 x1 x2 sdata n
+
+
+-- Tree reduction
+-- --------------
+
+reduceWarpTree
+    :: Elt e
+    => DeviceProperties
+    -> CUFun2 aenv (e -> e -> e)
+    -> [C.Exp] -> [C.Exp] -> [C.Exp]    -- input variables x0 and x1, plus a temporary to store the intermediate result
+    -> (Name -> [C.Exp])                -- index elements from shared memory
+    -> C.Exp                            -- number of elements
+    -> C.Exp                            -- thread identifier: usually lane or thread ID
+    -> [C.BlockItem]
+reduceWarpTree dev (CUFun2 _ _ f) x0 x1 x2 sdata n tid
+  = map (reduce . pow2) [v, v-1 .. 0]
+  where
+    v = floor (logBase 2 (fromIntegral $ warpSize dev :: Double))
+
+    pow2 :: Int -> Int
+    pow2 x = 2 ^ x
+
+    reduce :: Int -> C.BlockItem
+    reduce 0
+      = 
+
+
+
+
+    reduce i
+      = 
+
+
+
+
+
+
+reduceBlockTree
+    :: Elt e
+    => DeviceProperties
+    -> CUFun2 aenv (e -> e -> e)
+    -> [C.Exp] -> [C.Exp] -> [C.Exp]    -- input variables x0 and x1, plus a temporary to store the intermediate result
+    -> (Name -> [C.Exp])                -- index elements from shared memory
+    -> C.Exp                            -- number of elements
+    -> [C.BlockItem]
+reduceBlockTree dev fun@(CUFun2 _ _ f) x0 x1 x2 sdata n
+  = flip (foldr1 (.)) []
+  $ map (reduce . pow2) [u-1, u-2 .. v]
+
+  where
+    u = floor (logBase 2 (fromIntegral $ maxThreadsPerBlock dev :: Double))
+    v = floor (logBase 2 (fromIntegral $ warpSize dev           :: Double))
+
+    pow2 :: Int -> Int
+    pow2 x = 2 ^ x
+
+    reduce :: Int -> [C.BlockItem] -> [C.BlockItem]
+    reduce i rest
+      -- Ensure that threads synchronise before reading from or writing to
+      -- shared memory. Synchronising after each reduction step is not enough,
+      -- because one warp could update the partial results before a different
+      -- warp has read in their data for this step.
+      --
+      -- Additionally, note that all threads of a warp must participate in the
+      -- synchronisation. Thus, this must go outside of the test against the
+      -- bounds of the array. We do a bit of extra work here, with all threads
+      -- writing into shared memory whether they updated their value or not.
+      --
+      | i > warpSize dev
+      = 
+      : 
+
+
+
+
+      : 
+      : (sdata "threadIdx.x" .=. x1)
+      ++ rest
+
+      -- The threads of a warp execute in lockstep, so it is only necessary to
+      -- synchronise at the top, to ensure all threads have written their
+      -- results into shared memory.
+      --
+      | otherwise
+      = 
+      : 
+
+
+      : rest
+
+
+-- Butterfly reduction
+-- -------------------
+
+shflOK :: Elt e => DeviceProperties -> e -> Bool
+shflOK _dev _ = False
+-- shflOK dev dummy
+--   = computeCapability dev >= Compute 3 0 && all (`elem` [4,8]) (eltSizeOf dummy)
+
+
+-- Reduction using the __shfl_xor() operation for exchanging variables between
+-- threads of a without use of shared memory. The exchange occurs simultaneously
+-- for all active threads within the wrap, moving 4 bytes of data per thread.
+-- 8-byte quantities are broken into two separate transfers.
+--
+reduceWarpShfl
+    :: forall aenv e. Elt e
+    => DeviceProperties
+    -> CUFun2 aenv (e -> e -> e)
+    -> [C.Exp] -> [C.Exp]
+    -> C.Exp
+    -> C.Exp
+    -> C.BlockItem
+reduceWarpShfl _dev (CUFun2 _ _ f) x0 x1 n tid
+  = 
+
+
+
+
+
+
+  where
+    sizeof      = eltSizeOf (undefined :: e)
+    shfl_xor    = zipWith (\s x -> ccall (shfl s) [ x, cvar "z" ]) sizeof
+      where
+        shfl 4  = "shfl_xor32"
+        shfl 8  = "shfl_xor64"
+        shfl _  = internalError "shfl_xor" "I only know about 32- and 64-bit types"
+
+
+-- Reduce a block of values in butterfly fashion using __shfl_xor(). Each warp
+-- calculates a local reduction, and the first thread of a warp writes its
+-- result into shared memory. The first warp then reduces these values to the
+-- final result.
+--
+reduceBlockShfl
+    :: forall aenv e. Elt e
+    => DeviceProperties
+    -> CUFun2 aenv (e -> e -> e)
+    -> [C.Exp] -> [C.Exp]
+    -> (Name -> [C.Exp])
+    -> C.Exp
+    -> [C.BlockItem]
+reduceBlockShfl dev fun x0 x1 sdata n
+  = reduceWarpShfl dev fun x0 x1 n (cvar "threadIdx.x")
+  : 
+
+
+  : 
+  : 
+
+
+
+
+  : []
+
+
+</pre>

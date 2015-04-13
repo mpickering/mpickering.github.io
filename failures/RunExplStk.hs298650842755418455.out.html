@@ -1,0 +1,966 @@
+<a href="run_tests.hs1062852927600168343.out.html">prev</a></br><a href="failures.html">home</a></br><a href="RunGenerator.hs3946521211488695711.out.html">next</a></br></br><pre>26c26
+< {-# LINE 42 "src/ehc/CoreRun/Run/Val/RunExplStk.chs" #-}
+---
+> 
+26a27
+> 
+26a28
+> 
+26a29
+> 
+26a30
+> 
+26a31
+> 
+26a32
+> 
+26a33
+> 
+26a34
+> 
+26a35
+> 
+26a36
+> 
+26a37
+> 
+26a38
+> 
+26a39
+> 
+26a40
+> 
+26a41
+> 
+53c68
+< {-# LINE 70 "src/ehc/CoreRun/Run/Val/RunExplStk.chs" #-}
+---
+> 
+53a69
+> 
+124c140
+< {-# LINE 146 "src/ehc/CoreRun/Run/Val/RunExplStk.chs" #-}
+---
+> 
+124a141
+> 
+124a142
+> 
+124a143
+> 
+124a144
+> 
+124a145
+> 
+133c154
+< {-# LINE 164 "src/ehc/CoreRun/Run/Val/RunExplStk.chs" #-}
+---
+> 
+133a155
+> 
+133a156
+> 
+133a157
+> 
+133a158
+> 
+133a159
+> 
+133a160
+> 
+133a161
+> 
+133a162
+> 
+133a163
+> 
+160c190
+< {-# LINE 192 "src/ehc/CoreRun/Run/Val/RunExplStk.chs" #-}
+---
+> 
+160a191
+> 
+184c215
+< {-# LINE 217 "src/ehc/CoreRun/Run/Val/RunExplStk.chs" #-}
+---
+> 
+184a216
+> 
+250c282
+< {-# LINE 294 "src/ehc/CoreRun/Run/Val/RunExplStk.chs" #-}
+---
+> 
+250a283
+> 
+250a284
+> 
+250a285
+> 
+250a286
+> 
+250a287
+> 
+250a288
+> 
+250a289
+> 
+250a290
+> 
+250a291
+> 
+250a292
+> 
+250a293
+> 
+281c324
+< {-# LINE 326 "src/ehc/CoreRun/Run/Val/RunExplStk.chs" #-}
+---
+> 
+281a325
+> 
+399a444
+> 
+</pre></br><h2>original</h2></br><pre>-- {-# LANGUAGE MagicHash #-}
+-- {-# OPTIONS_GHC -O2 #-}
+-- {-# OPTIONS_GHC -O3 #-}
+
+module UHC.Light.Compiler.CoreRun.Run.Val.RunExplStk
+( cmodRun )
+where
+import UHC.Light.Compiler.Base.HsName.Builtin
+import UHC.Light.Compiler.Base.Common
+import UHC.Light.Compiler.Opts
+import UHC.Light.Compiler.Ty
+import UHC.Light.Compiler.Error
+import UHC.Light.Compiler.Gam
+import UHC.Light.Compiler.Gam.DataGam
+import UHC.Light.Compiler.CoreRun
+import UHC.Light.Compiler.CoreRun.Run
+import UHC.Light.Compiler.CoreRun.Run.Val
+import UHC.Light.Compiler.CoreRun.Run.Val.Prim
+import UHC.Light.Compiler.CoreRun.Pretty
+import UHC.Util.Pretty
+import qualified Data.Vector as V
+import qualified Data.Vector.Mutable as MV
+import Data.List
+import qualified Data.ByteString.Char8 as BSC8
+
+{-# LINE 42 "src/ehc/CoreRun/Run/Val/RunExplStk.chs" #-}
+-- | Arguments to a function, which may come from an RVal_App or from the stack
+data ExplArgs = ExplArgs
+  { eaVec       :: !RValV       -- ^ the accumulated part from RVal_App
+  , eaStk       :: !Int         -- ^ the size of the part still on the stack
+  }
+
+emptyExplArgs = ExplArgs V.empty 0
+-- {-# INLINE emptyExplArgs #-}
+
+-- | The total nr of args
+eaNrArgs :: ExplArgs -> Int
+eaNrArgs (ExplArgs {eaVec=v, eaStk=na}) = V.length v + na
+{-# INLINE eaNrArgs #-}
+
+-- | Set total nr of args, taking into account what is in the vector part
+eaSetNrArgs :: ExplArgs -> Int -> ExplArgs
+eaSetNrArgs ea@(ExplArgs {eaVec=v}) n = ea {eaStk = n - V.length v}
+{-# INLINE eaSetNrArgs #-}
+
+-- | Pop from the ExplArgs partly embedded in the top frame and partly explicitly available
+renvFrStkEaPopMV :: RunSem RValCxt RValEnv RVal m x => ExplArgs -> RValT m RValMV
+renvFrStkEaPopMV ea@(ExplArgs {eaVec=v}) = (liftIO $ mvecAlloc eaLen) >>= \vs -> liftIO (mvecFillFromV 0 vs v) >> renvFrStkReversePopInMV vLen (eaLen-vLen) vs >> return vs
+  where vLen  = V.length v
+        eaLen = eaNrArgs ea
+{-# INLINE renvFrStkEaPopMV #-}
+
+{-# LINE 70 "src/ehc/CoreRun/Run/Val/RunExplStk.chs" #-}
+-- | Allocate a new frame
+explStkAllocFrameM
+  :: (RunSem RValCxt RValEnv RVal m x)
+  => Ref2Nm                 -- ^ ref <-> name mapping
+  -> RCxt                   -- ^ context
+  -> Int                    -- ^ size
+  -> ExplArgs               -- ^ arguments
+  -> RValT m HpPtr
+explStkAllocFrameM r2n cx sz as@(ExplArgs {eaVec=vsArgs, eaStk=nrArgs}) = do
+  a <- liftIO $ mvecAllocInit sz -- (sz+3)      -- TBD: stack overflow somewhere...
+  let vsLen = V.length vsArgs
+  when (vsLen  > 0) $ liftIO $ mvecFillFromV 0 a vsArgs
+  when (nrArgs > 0) $ renvFrStkReversePopInMV vsLen nrArgs a
+  spref <- liftIO $ newIORef (eaNrArgs as)
+  p <- heapAllocM $ RVal_Frame r2n cx a spref
+  return p
+
+-- | Push a new stack frame
+explStkPushFrameM :: (RunSem RValCxt RValEnv RVal m x) => HpPtr -> RValT m ()
+explStkPushFrameM frptr = do
+  (RValEnv {renvStack=st, renvTopFrame=tfref}) <- get
+  liftIO $ do
+    tf <- readIORef tfref
+    unless (isNullPtr tf) $ modifyIORef st (tf:)
+    writeIORef tfref frptr
+{-# INLINE explStkPushFrameM #-}
+
+-- | Allocate and push a new stack frame
+explStkPushAllocFrameM
+  :: (RunSem RValCxt RValEnv RVal m x)
+  => Ref2Nm                 -- ^ ref <-> name mapping
+  -> RCxt                   -- ^ context
+  -> Int                    -- ^ size
+  -> ExplArgs               -- ^ arguments
+  -> RValT m HpPtr
+explStkPushAllocFrameM r2n cx sz as = do
+  p <- explStkAllocFrameM r2n cx sz as
+  explStkPushFrameM p
+  return p
+{-# INLINE explStkPushAllocFrameM #-}
+
+-- | Allocate and replace top stack frame
+explStkReplaceAllocFrameM
+  :: (RunSem RValCxt RValEnv RVal m x)
+  => Ref2Nm                 -- ^ ref <-> name mapping
+  -> RCxt                   -- ^ context
+  -> Int                    -- ^ size
+  -> ExplArgs               -- ^ arguments
+  -> RValT m ()
+explStkReplaceAllocFrameM r2n cx sz as = do
+  p <- explStkAllocFrameM r2n cx sz as
+  (RValEnv {renvTopFrame=tf}) <- get
+  liftIO $ writeIORef tf p
+{-# INLINE explStkReplaceAllocFrameM #-}
+
+-- | Pop a stack frame, copying the top of the stack embedded in the frame
+explStkPopFrameM :: (RunSem RValCxt RValEnv RVal m x) => RValT m HpPtr
+explStkPopFrameM = do
+  (RValEnv {renvStack=stref, renvTopFrame=tfref}) <- get
+  liftIO $ do
+    tf  <- readIORef tfref
+    stk <- readIORef stref
+    case stk of
+      [] -> writeIORef tfref nullPtr
+      (h:t) -> do
+        writeIORef tfref h
+        writeIORef stref t
+    return tf
+{-# INLINE explStkPopFrameM #-}
+
+{-# LINE 146 "src/ehc/CoreRun/Run/Val/RunExplStk.chs" #-}
+cmodRun :: (RunSem RValCxt RValEnv RVal m ()) => EHCOpts -> Mod -> RValT m ()
+cmodRun opts (Mod_Mod {mbbody_Mod_Mod = Just e}) = do
+  -- dumpEnvM True
+  mustReturn $ rsemExp e
+  -- v <- renvFrStkPop1
+  -- return v
+cmodRun opts _ = return ()
+
+{-# LINE 164 "src/ehc/CoreRun/Run/Val/RunExplStk.chs" #-}
+-- | Apply Lam in context of static link with exact right amount of params, otherwise the continuation is used
+rvalExplStkAppLam :: RunSem RValCxt RValEnv RVal m () => RCxt -> Exp -> ExplArgs -> (Int -> RValT m ()) -> RValT m ()
+rvalExplStkAppLam cx f as failcont = do
+  let nrActualArgs = eaNrArgs as
+  case f of
+    Exp_Lam {{- lev_Exp_Lam=l, -} mbNm_Exp_Lam=mn, nrArgs_Exp_Lam=nrRequiredArgs, stkDepth_Exp_Lam=sz, ref2nm_Exp_Lam=r2n, body_Exp_Lam=b}
+      | nrActualArgs == nrRequiredArgs -> do
+           -- rsemTr $ ">V (" ++ show mn ++ ") app lam ==, na=" ++ show nrRequiredArgs ++ ", sz=" ++ show sz
+           needRet <- asks rcxtInRet
+           rvalTrEnterLam mn $
+             if needRet
+               then do
+                 explStkPushAllocFrameM r2n cx sz as
+                 rsemExp b
+                 v <- renvFrStkPop1
+                 explStkPopFrameM
+                 renvFrStkPush1 v
+               else do
+                 explStkReplaceAllocFrameM r2n cx sz as
+                 mustReturn $ rsemExp b
+           -- rsemTr $ "<V (" ++ show mn ++ ")"
+      | otherwise -> failcont nrRequiredArgs
+    _   -> err $ "CoreRun.Run.Val.rvalExplStkAppLam:" >#< f
+-- {-# SPECIALIZE rvalExplStkAppLam :: HpPtr -> Exp -> RValMV -> (Int -> RValT IO RVal) -> RValT IO RVal #-}
+-- {-# INLINE rvalExplStkAppLam #-}
+
+{-# LINE 192 "src/ehc/CoreRun/Run/Val/RunExplStk.chs" #-}
+-- | Apply. Assume: function 'f' is already evaluated (responsibility lies outside)
+rvalExplStkApp :: RunSem RValCxt RValEnv RVal m () => RVal -> ExplArgs -> RValT m ()
+rvalExplStkApp f as = do
+  -- rsemTr $ "V app f(" ++ show (MV.length as) ++ "): " ++ show (pp f)
+  let nrActualArgs = eaNrArgs as
+  case f of
+    RVal_Lam {rvalCx=rcx, rvalBody=b} -> do
+      -- sl <- liftIO $ readIORef (rcxtSlRef rcx)
+      rvalExplStkAppLam rcx b as $ \narg -> do
+        if nrActualArgs < narg
+          then do
+            renvFrStkEaPopMV as >>= \as -> heapAllocAsPtrM (RVal_App f as) >>= renvFrStkPush1
+          else do
+            ap <- mustReturn $ rvalExplStkApp f (eaSetNrArgs as narg) >>= rsemPop >>= rsemDeref >>= rsemPop
+            rvalExplStkApp ap (eaSetNrArgs emptyExplArgs (nrActualArgs - narg))
+    RVal_App appf appas
+      | nrActualArgs > 0 -> do
+           appas' <- liftIO $ V.freeze appas
+           rvalExplStkApp appf (as {eaVec=appas' V.++ eaVec as})
+    _   -> err $ "CoreRun.Run.Val.rvalExplStkApp:" >#< f
+-- {-# SPECIALIZE rvalExplStkApp :: RunSem RValCxt RValEnv RVal IO RVal => RVal -> RValMV -> RValT IO RVal #-}
+-- {-# INLINE rvalExplStkApp #-}
+
+{-# LINE 217 "src/ehc/CoreRun/Run/Val/RunExplStk.chs" #-}
+-- | rsemExp for RVal, without explicit use of expr stack, i.e. implicit stack via Haskell thereby preventing correct GC
+rvalExplStkExp :: RunSem RValCxt RValEnv RVal m () => Exp -> RValT m ()
+{-# SPECIALIZE rvalExplStkExp :: RunSem RValCxt RValEnv RVal IO () => Exp -> RValT IO () #-}
+-- {-# INLINE rvalExplStkExp #-}
+rvalExplStkExp e = do
+  rsemTr $ ">E:" >#< e
+  -- e' <- case e of
+  case e of
+    -- app, call
+    Exp_App f as -> do
+        vecReverseForM_ as rsemSExp
+        f' <- mustReturn $ rsemExp f
+        rsemPop f' >>= ptr2valM >>= \f' -> rvalExplStkApp f' (emptyExplArgs {eaStk=V.length as})
+
+    -- heap node
+    Exp_Tup t as -> do
+        V.forM_ as rsemSExp
+        renvFrStkPopMV (V.length as) >>= rsemNode t >>= rsemPush
+
+    -- lam as is, being a heap allocated thunk when 0 args are required
+    Exp_Lam {nrArgs_Exp_Lam=na, mbNm_Exp_Lam=mn}
+      | na == 0   -> mk heapAllocAsPtrM RVal_Thunk
+      | otherwise -> mk return          RVal_Lam
+      where mk alloc rv = do
+             (sl,fr) <- renvTopFramePtrAndFrameM
+             cx <- liftIO $ rcxtCloneWithNewFrame sl (rvalCx fr)
+             alloc (rv mn e cx) >>= rsemPush
+
+    -- let
+    Exp_Let {firstOff_Exp_Let=fillFrom, ref2nm_Exp_Let=r2n, binds_Exp_Let=bs, body_Exp_Let=b} -> do
+        mustReturn $ V.forM_ bs rsemExp
+        rsemExp b
+
+    -- case, scrutinee already evaluated
+    Exp_Case e as -> do
+      v <- ptr2valM =<< rsemPop =<< rsemSExp e
+      case v of
+        -- RVal_NodeMV {rvalTag=tg} -> rsemAlt $ as V.! tg
+        RVal_Int  tg           -> rsemAlt $ as V.! tg
+        _ -> err $ "CoreRun.Run.Val.RunExplStk.rvalExplStkExp.Case: scrutinee:" >#< v
+
+    -- force evaluation immediately
+    Exp_Force e -> rsemExp e >>= rsemPop >>= rsemEvl
+
+    -- setup for context requiring a return (TBD: should be done via CPS style, but is other issue)
+    -- Exp_Ret e -> mustReturn $ rsemExp e
+
+    -- setup for context requiring a return from case alternative
+    -- Exp_RetCase _ e -> rsemExp e
+
+    -- setup for context not requiring a return
+    Exp_Tail e -> needNotReturn $ rsemExp e
+
+    -- simple expressions
+    Exp_SExp se -> rsemSExp se
+
+    -- FFI
+    Exp_FFI pr as -> V.mapM_ rsemSExp as >> renvFrStkPopMV (V.length as) >>= (liftIO . V.freeze) >>= rsemPrim pr
+
+    -- necessary only when case is non-saturated w.r.t. alternatives of datatype Exp
+    -- e -> err $ "CoreRun.Run.Val.RunExplStk.rvalExplStkExp:" >#< e
+
+  rsemTr $ "<E:" >#< (e) -- >-< e')
+  -- return e'
+
+{-# LINE 294 "src/ehc/CoreRun/Run/Val/RunExplStk.chs" #-}
+-- | Add module
+rvalExplAddModule :: RunSem RValCxt RValEnv RVal m () => Mod -> RValT m HpPtr
+rvalExplAddModule mod@(Mod_Mod {moduleNm_Mod_Mod=nm, ref2nm_Mod_Mod=r2n, binds_Mod_Mod=bs, stkDepth_Mod_Mod=sz, imports_Mod_Mod=imports}) = do
+    -- add new entry
+    env@(RValEnv {renvModulesMV=mods}) <- get
+    mods' <- liftIO $ MV.grow mods 1
+    put $ env {renvModulesMV = mods'}
+    --
+    env@(RValEnv {renvModulesMV=mods, renvGlobalsMV=globs}) <- get
+    let nr = MV.length mods - 1
+    -- get import indirection table
+    imptbl <- renvResolveModNames [ nm | Import_Import {nm_Import_Import=nm} <- imports ]
+    -- construct context (module is patched in later)
+    cx <- liftIO $ mkRCxt nullPtr nullPtr
+    -- construct frame
+    f <- explStkPushAllocFrameM r2n cx sz emptyExplArgs
+    -- construct module, set the module entry
+    fr <- liftIO $ newIORef f
+    m <- heapAllocM $ RVal_Module nm (crarrayFromList imptbl) fr
+    liftIO $ do
+      -- fill global module entry
+      MV.write mods nr m
+      -- patch module ref in context
+      writeIORef (rcxtMdRef cx) m
+    -- compute module bindings into current frame
+    V.forM_ bs rsemExp
+    -- remove the frame
+    explStkPopFrameM
+  where
+
+{-# LINE 326 "src/ehc/CoreRun/Run/Val/RunExplStk.chs" #-}
+instance
+    ( Monad m, MonadIO m, Functor m
+    ) => RunSem RValCxt RValEnv RVal m ()
+  where
+    {-# SPECIALIZE instance RunSem RValCxt RValEnv RVal IO () #-}
+    rsemInitial = do
+      s <- liftIO $ newRValEnv 100000 -- 100000 --
+      return (emptyRValCxt, s, undefined)
+
+    rsemSetup opts modImpL mod@(Mod_Mod {moduleNr_Mod_Mod=mainModNr}) = do
+{-
+-}
+        let modAllL = modImpL ++ [mod]
+        modFrames <- forM modAllL $ \mod -> do
+          rvalExplAddModule mod
+        explStkPushFrameM (last modFrames)
+        rcxtUpdDatatypes modAllL
+{-
+        -- rsemSetTrace True
+        rsemGcEnterRootLevel
+        let modAllL = modImpL ++ [mod]
+        ms <- liftIO $ MV.new (maximum (map moduleNr_Mod_Mod modAllL) + 1)
+        modify $ \env -> env {renvGlobalsMV = ms}
+        forM_ modAllL $ \(Mod_Mod {ref2nm_Mod_Mod=r2n, moduleNr_Mod_Mod=nr, binds_Mod_Mod=bs, stkDepth_Mod_Mod=sz}) -> do
+          -- context (ignoring module stuff, TBD)
+          cx <- liftIO $ mkRCxtSl nullPtr
+          -- construct frame for each module
+          p <- explStkPushAllocFrameM r2n cx sz emptyExplArgs
+          -- and store the frame into the array holding module frames
+          (liftIO $ MV.write ms nr p >> newIORef p) >>= \r -> rsemGcPushRoot (RVal_Ptr r)
+          -- holding all local defs
+          V.forM_ bs rsemExp
+          -- p <-
+          explStkPopFrameM
+        -- use the main module's stackframe for evaluating 'main'
+        liftIO (MV.read ms mainModNr) >>= explStkPushFrameM
+        rsemGcLeaveRootLevel
+        rsemSetupTracing opts
+        rcxtUpdDatatypes modAllL
+-}
+
+    rsemSetTrace doTrace doExtensive = modify $ \env ->
+      env {renvDoTrace = doTrace, renvDoTraceExt = doExtensive}
+
+    rsemExp = rvalExplStkExp
+
+    rsemSExp se = do
+      case se of
+        SExp_Int    v -> rsemPush $ RVal_Int v
+        SExp_Char   v -> rsemPush $ RVal_Char v
+        SExp_Var    r -> do v <- ref2valM r
+                            -- rsemTr $ "R->V:" >#< v
+                            rsemPush v
+        SExp_String v -> rsemPush $ RVal_PackedString $ BSC8.pack v
+        _ -> rsemPush (RVal_Lit se)
+    {-# INLINE rsemSExp #-}
+
+    rsemEvl v = do
+        case v of
+          RVal_Ptr {rvalPtrRef=pref} -> do
+            rsemGcEnterRootLevel
+            rsemGcPushRoot v
+            liftIO (readIORef pref) >>= evlPtr pref
+            rsemGcLeaveRootLevel
+          RVal_BlackHole             -> err $ "CoreRun.Run.Val.rsemEvl.RVal_BlackHole:" >#< "Black hole"
+          _                          -> return () -- rsemPush v
+        rsemPush v
+      where
+        evlPtr pref p = do
+          hp <- gets renvHeap
+          v <- heapGetM' hp p
+          case v of
+            RVal_Thunk {rvalMbNm=mn, rvalCx=rcx, rvalBody=e} -> do
+              -- rsemGcPushRoot v
+              -- sl <- liftIO $ readIORef (rcxtSlRef rcx)
+              heapSetM' hp p RVal_BlackHole
+              v' <- rvalExplStkAppLam rcx e (emptyExplArgs {eaStk=0}) $ \_ -> err $ "CoreRun.Run.Val.rsemEvl.RVal_Thunk:" >#< e
+              hp <- gets renvHeap
+              p <- liftIO (readIORef pref)
+              v'' <- rsemPop v'
+              heapSetM' hp p v''
+              return v''
+            RVal_Ptr {rvalPtrRef=pref} -> do
+              v' <- evlPtr pref =<< liftIO (readIORef pref)
+              hp <- gets renvHeap
+              p <- liftIO (readIORef pref)
+              heapSetM' hp p v'
+              return v'
+            v -> do
+              return v
+
+    rsemDeref v = do
+      v' <- ptr2valM v
+      -- rsemTr $ "Deref:" >#< (v >-< v')
+      rsemPush v'
+    {-# INLINE rsemDeref #-}
+
+    -- apply a known primitive
+    rsemPrim = rvalPrim
+    {-# INLINE rsemPrim #-}
+
+    rsemPush = renvFrStkPush1
+    {-# INLINE rsemPush #-}
+    rsemPop  = \_ -> renvFrStkPop1
+    {-# INLINE rsemPop #-}
+    rsemNode t vs = {- heapAllocAsPtrM -} return $ RVal_NodeMV t vs
+    {-# INLINE rsemNode #-}
+
+
+    rsemGcEnterRootLevel = gets renvGcRootStack >>= \r -> liftIO $ modifyIORef r $ ([]:)
+    {-# INLINE rsemGcEnterRootLevel #-}
+
+    rsemGcPushRoot v = gets renvGcRootStack >>= \r -> liftIO $ modifyIORef r $ \(h:t) -> (v:h) : t
+    {-# INLINE rsemGcPushRoot #-}
+
+    rsemGcLeaveRootLevel = gets renvGcRootStack >>= \r -> liftIO $ modifyIORef r tail
+    {-# INLINE rsemGcLeaveRootLevel #-}
+
+</pre></br><h2>printed</h2></br><pre>-- {-# LANGUAGE MagicHash #-}
+-- {-# OPTIONS_GHC -O2 #-}
+-- {-# OPTIONS_GHC -O3 #-}
+
+module UHC.Light.Compiler.CoreRun.Run.Val.RunExplStk
+( cmodRun )
+where
+import UHC.Light.Compiler.Base.HsName.Builtin
+import UHC.Light.Compiler.Base.Common
+import UHC.Light.Compiler.Opts
+import UHC.Light.Compiler.Ty
+import UHC.Light.Compiler.Error
+import UHC.Light.Compiler.Gam
+import UHC.Light.Compiler.Gam.DataGam
+import UHC.Light.Compiler.CoreRun
+import UHC.Light.Compiler.CoreRun.Run
+import UHC.Light.Compiler.CoreRun.Run.Val
+import UHC.Light.Compiler.CoreRun.Run.Val.Prim
+import UHC.Light.Compiler.CoreRun.Pretty
+import UHC.Util.Pretty
+import qualified Data.Vector as V
+import qualified Data.Vector.Mutable as MV
+import Data.List
+import qualified Data.ByteString.Char8 as BSC8
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+-- | Arguments to a function, which may come from an RVal_App or from the stack
+data ExplArgs = ExplArgs
+  { eaVec       :: !RValV       -- ^ the accumulated part from RVal_App
+  , eaStk       :: !Int         -- ^ the size of the part still on the stack
+  }
+
+emptyExplArgs = ExplArgs V.empty 0
+-- {-# INLINE emptyExplArgs #-}
+
+-- | The total nr of args
+eaNrArgs :: ExplArgs -> Int
+eaNrArgs (ExplArgs {eaVec=v, eaStk=na}) = V.length v + na
+{-# INLINE eaNrArgs #-}
+
+-- | Set total nr of args, taking into account what is in the vector part
+eaSetNrArgs :: ExplArgs -> Int -> ExplArgs
+eaSetNrArgs ea@(ExplArgs {eaVec=v}) n = ea {eaStk = n - V.length v}
+{-# INLINE eaSetNrArgs #-}
+
+-- | Pop from the ExplArgs partly embedded in the top frame and partly explicitly available
+renvFrStkEaPopMV :: RunSem RValCxt RValEnv RVal m x => ExplArgs -> RValT m RValMV
+renvFrStkEaPopMV ea@(ExplArgs {eaVec=v}) = (liftIO $ mvecAlloc eaLen) >>= \vs -> liftIO (mvecFillFromV 0 vs v) >> renvFrStkReversePopInMV vLen (eaLen-vLen) vs >> return vs
+  where vLen  = V.length v
+        eaLen = eaNrArgs ea
+{-# INLINE renvFrStkEaPopMV #-}
+
+
+
+-- | Allocate a new frame
+explStkAllocFrameM
+  :: (RunSem RValCxt RValEnv RVal m x)
+  => Ref2Nm                 -- ^ ref <-> name mapping
+  -> RCxt                   -- ^ context
+  -> Int                    -- ^ size
+  -> ExplArgs               -- ^ arguments
+  -> RValT m HpPtr
+explStkAllocFrameM r2n cx sz as@(ExplArgs {eaVec=vsArgs, eaStk=nrArgs}) = do
+  a <- liftIO $ mvecAllocInit sz -- (sz+3)      -- TBD: stack overflow somewhere...
+  let vsLen = V.length vsArgs
+  when (vsLen  > 0) $ liftIO $ mvecFillFromV 0 a vsArgs
+  when (nrArgs > 0) $ renvFrStkReversePopInMV vsLen nrArgs a
+  spref <- liftIO $ newIORef (eaNrArgs as)
+  p <- heapAllocM $ RVal_Frame r2n cx a spref
+  return p
+
+-- | Push a new stack frame
+explStkPushFrameM :: (RunSem RValCxt RValEnv RVal m x) => HpPtr -> RValT m ()
+explStkPushFrameM frptr = do
+  (RValEnv {renvStack=st, renvTopFrame=tfref}) <- get
+  liftIO $ do
+    tf <- readIORef tfref
+    unless (isNullPtr tf) $ modifyIORef st (tf:)
+    writeIORef tfref frptr
+{-# INLINE explStkPushFrameM #-}
+
+-- | Allocate and push a new stack frame
+explStkPushAllocFrameM
+  :: (RunSem RValCxt RValEnv RVal m x)
+  => Ref2Nm                 -- ^ ref <-> name mapping
+  -> RCxt                   -- ^ context
+  -> Int                    -- ^ size
+  -> ExplArgs               -- ^ arguments
+  -> RValT m HpPtr
+explStkPushAllocFrameM r2n cx sz as = do
+  p <- explStkAllocFrameM r2n cx sz as
+  explStkPushFrameM p
+  return p
+{-# INLINE explStkPushAllocFrameM #-}
+
+-- | Allocate and replace top stack frame
+explStkReplaceAllocFrameM
+  :: (RunSem RValCxt RValEnv RVal m x)
+  => Ref2Nm                 -- ^ ref <-> name mapping
+  -> RCxt                   -- ^ context
+  -> Int                    -- ^ size
+  -> ExplArgs               -- ^ arguments
+  -> RValT m ()
+explStkReplaceAllocFrameM r2n cx sz as = do
+  p <- explStkAllocFrameM r2n cx sz as
+  (RValEnv {renvTopFrame=tf}) <- get
+  liftIO $ writeIORef tf p
+{-# INLINE explStkReplaceAllocFrameM #-}
+
+-- | Pop a stack frame, copying the top of the stack embedded in the frame
+explStkPopFrameM :: (RunSem RValCxt RValEnv RVal m x) => RValT m HpPtr
+explStkPopFrameM = do
+  (RValEnv {renvStack=stref, renvTopFrame=tfref}) <- get
+  liftIO $ do
+    tf  <- readIORef tfref
+    stk <- readIORef stref
+    case stk of
+      [] -> writeIORef tfref nullPtr
+      (h:t) -> do
+        writeIORef tfref h
+        writeIORef stref t
+    return tf
+{-# INLINE explStkPopFrameM #-}
+
+
+
+
+
+
+
+cmodRun :: (RunSem RValCxt RValEnv RVal m ()) => EHCOpts -> Mod -> RValT m ()
+cmodRun opts (Mod_Mod {mbbody_Mod_Mod = Just e}) = do
+  -- dumpEnvM True
+  mustReturn $ rsemExp e
+  -- v <- renvFrStkPop1
+  -- return v
+cmodRun opts _ = return ()
+
+
+
+
+
+
+
+
+
+
+
+-- | Apply Lam in context of static link with exact right amount of params, otherwise the continuation is used
+rvalExplStkAppLam :: RunSem RValCxt RValEnv RVal m () => RCxt -> Exp -> ExplArgs -> (Int -> RValT m ()) -> RValT m ()
+rvalExplStkAppLam cx f as failcont = do
+  let nrActualArgs = eaNrArgs as
+  case f of
+    Exp_Lam {{- lev_Exp_Lam=l, -} mbNm_Exp_Lam=mn, nrArgs_Exp_Lam=nrRequiredArgs, stkDepth_Exp_Lam=sz, ref2nm_Exp_Lam=r2n, body_Exp_Lam=b}
+      | nrActualArgs == nrRequiredArgs -> do
+           -- rsemTr $ ">V (" ++ show mn ++ ") app lam ==, na=" ++ show nrRequiredArgs ++ ", sz=" ++ show sz
+           needRet <- asks rcxtInRet
+           rvalTrEnterLam mn $
+             if needRet
+               then do
+                 explStkPushAllocFrameM r2n cx sz as
+                 rsemExp b
+                 v <- renvFrStkPop1
+                 explStkPopFrameM
+                 renvFrStkPush1 v
+               else do
+                 explStkReplaceAllocFrameM r2n cx sz as
+                 mustReturn $ rsemExp b
+           -- rsemTr $ "<V (" ++ show mn ++ ")"
+      | otherwise -> failcont nrRequiredArgs
+    _   -> err $ "CoreRun.Run.Val.rvalExplStkAppLam:" >#< f
+-- {-# SPECIALIZE rvalExplStkAppLam :: HpPtr -> Exp -> RValMV -> (Int -> RValT IO RVal) -> RValT IO RVal #-}
+-- {-# INLINE rvalExplStkAppLam #-}
+
+
+
+-- | Apply. Assume: function 'f' is already evaluated (responsibility lies outside)
+rvalExplStkApp :: RunSem RValCxt RValEnv RVal m () => RVal -> ExplArgs -> RValT m ()
+rvalExplStkApp f as = do
+  -- rsemTr $ "V app f(" ++ show (MV.length as) ++ "): " ++ show (pp f)
+  let nrActualArgs = eaNrArgs as
+  case f of
+    RVal_Lam {rvalCx=rcx, rvalBody=b} -> do
+      -- sl <- liftIO $ readIORef (rcxtSlRef rcx)
+      rvalExplStkAppLam rcx b as $ \narg -> do
+        if nrActualArgs < narg
+          then do
+            renvFrStkEaPopMV as >>= \as -> heapAllocAsPtrM (RVal_App f as) >>= renvFrStkPush1
+          else do
+            ap <- mustReturn $ rvalExplStkApp f (eaSetNrArgs as narg) >>= rsemPop >>= rsemDeref >>= rsemPop
+            rvalExplStkApp ap (eaSetNrArgs emptyExplArgs (nrActualArgs - narg))
+    RVal_App appf appas
+      | nrActualArgs > 0 -> do
+           appas' <- liftIO $ V.freeze appas
+           rvalExplStkApp appf (as {eaVec=appas' V.++ eaVec as})
+    _   -> err $ "CoreRun.Run.Val.rvalExplStkApp:" >#< f
+-- {-# SPECIALIZE rvalExplStkApp :: RunSem RValCxt RValEnv RVal IO RVal => RVal -> RValMV -> RValT IO RVal #-}
+-- {-# INLINE rvalExplStkApp #-}
+
+
+
+-- | rsemExp for RVal, without explicit use of expr stack, i.e. implicit stack via Haskell thereby preventing correct GC
+rvalExplStkExp :: RunSem RValCxt RValEnv RVal m () => Exp -> RValT m ()
+{-# SPECIALIZE rvalExplStkExp :: RunSem RValCxt RValEnv RVal IO () => Exp -> RValT IO () #-}
+-- {-# INLINE rvalExplStkExp #-}
+rvalExplStkExp e = do
+  rsemTr $ ">E:" >#< e
+  -- e' <- case e of
+  case e of
+    -- app, call
+    Exp_App f as -> do
+        vecReverseForM_ as rsemSExp
+        f' <- mustReturn $ rsemExp f
+        rsemPop f' >>= ptr2valM >>= \f' -> rvalExplStkApp f' (emptyExplArgs {eaStk=V.length as})
+
+    -- heap node
+    Exp_Tup t as -> do
+        V.forM_ as rsemSExp
+        renvFrStkPopMV (V.length as) >>= rsemNode t >>= rsemPush
+
+    -- lam as is, being a heap allocated thunk when 0 args are required
+    Exp_Lam {nrArgs_Exp_Lam=na, mbNm_Exp_Lam=mn}
+      | na == 0   -> mk heapAllocAsPtrM RVal_Thunk
+      | otherwise -> mk return          RVal_Lam
+      where mk alloc rv = do
+             (sl,fr) <- renvTopFramePtrAndFrameM
+             cx <- liftIO $ rcxtCloneWithNewFrame sl (rvalCx fr)
+             alloc (rv mn e cx) >>= rsemPush
+
+    -- let
+    Exp_Let {firstOff_Exp_Let=fillFrom, ref2nm_Exp_Let=r2n, binds_Exp_Let=bs, body_Exp_Let=b} -> do
+        mustReturn $ V.forM_ bs rsemExp
+        rsemExp b
+
+    -- case, scrutinee already evaluated
+    Exp_Case e as -> do
+      v <- ptr2valM =<< rsemPop =<< rsemSExp e
+      case v of
+        -- RVal_NodeMV {rvalTag=tg} -> rsemAlt $ as V.! tg
+        RVal_Int  tg           -> rsemAlt $ as V.! tg
+        _ -> err $ "CoreRun.Run.Val.RunExplStk.rvalExplStkExp.Case: scrutinee:" >#< v
+
+    -- force evaluation immediately
+    Exp_Force e -> rsemExp e >>= rsemPop >>= rsemEvl
+
+    -- setup for context requiring a return (TBD: should be done via CPS style, but is other issue)
+    -- Exp_Ret e -> mustReturn $ rsemExp e
+
+    -- setup for context requiring a return from case alternative
+    -- Exp_RetCase _ e -> rsemExp e
+
+    -- setup for context not requiring a return
+    Exp_Tail e -> needNotReturn $ rsemExp e
+
+    -- simple expressions
+    Exp_SExp se -> rsemSExp se
+
+    -- FFI
+    Exp_FFI pr as -> V.mapM_ rsemSExp as >> renvFrStkPopMV (V.length as) >>= (liftIO . V.freeze) >>= rsemPrim pr
+
+    -- necessary only when case is non-saturated w.r.t. alternatives of datatype Exp
+    -- e -> err $ "CoreRun.Run.Val.RunExplStk.rvalExplStkExp:" >#< e
+
+  rsemTr $ "<E:" >#< (e) -- >-< e')
+  -- return e'
+
+
+
+
+
+
+
+
+
+
+
+
+
+-- | Add module
+rvalExplAddModule :: RunSem RValCxt RValEnv RVal m () => Mod -> RValT m HpPtr
+rvalExplAddModule mod@(Mod_Mod {moduleNm_Mod_Mod=nm, ref2nm_Mod_Mod=r2n, binds_Mod_Mod=bs, stkDepth_Mod_Mod=sz, imports_Mod_Mod=imports}) = do
+    -- add new entry
+    env@(RValEnv {renvModulesMV=mods}) <- get
+    mods' <- liftIO $ MV.grow mods 1
+    put $ env {renvModulesMV = mods'}
+    --
+    env@(RValEnv {renvModulesMV=mods, renvGlobalsMV=globs}) <- get
+    let nr = MV.length mods - 1
+    -- get import indirection table
+    imptbl <- renvResolveModNames [ nm | Import_Import {nm_Import_Import=nm} <- imports ]
+    -- construct context (module is patched in later)
+    cx <- liftIO $ mkRCxt nullPtr nullPtr
+    -- construct frame
+    f <- explStkPushAllocFrameM r2n cx sz emptyExplArgs
+    -- construct module, set the module entry
+    fr <- liftIO $ newIORef f
+    m <- heapAllocM $ RVal_Module nm (crarrayFromList imptbl) fr
+    liftIO $ do
+      -- fill global module entry
+      MV.write mods nr m
+      -- patch module ref in context
+      writeIORef (rcxtMdRef cx) m
+    -- compute module bindings into current frame
+    V.forM_ bs rsemExp
+    -- remove the frame
+    explStkPopFrameM
+  where
+
+
+
+instance
+    ( Monad m, MonadIO m, Functor m
+    ) => RunSem RValCxt RValEnv RVal m ()
+  where
+    {-# SPECIALIZE instance RunSem RValCxt RValEnv RVal IO () #-}
+    rsemInitial = do
+      s <- liftIO $ newRValEnv 100000 -- 100000 --
+      return (emptyRValCxt, s, undefined)
+
+    rsemSetup opts modImpL mod@(Mod_Mod {moduleNr_Mod_Mod=mainModNr}) = do
+{-
+-}
+        let modAllL = modImpL ++ [mod]
+        modFrames <- forM modAllL $ \mod -> do
+          rvalExplAddModule mod
+        explStkPushFrameM (last modFrames)
+        rcxtUpdDatatypes modAllL
+{-
+        -- rsemSetTrace True
+        rsemGcEnterRootLevel
+        let modAllL = modImpL ++ [mod]
+        ms <- liftIO $ MV.new (maximum (map moduleNr_Mod_Mod modAllL) + 1)
+        modify $ \env -> env {renvGlobalsMV = ms}
+        forM_ modAllL $ \(Mod_Mod {ref2nm_Mod_Mod=r2n, moduleNr_Mod_Mod=nr, binds_Mod_Mod=bs, stkDepth_Mod_Mod=sz}) -> do
+          -- context (ignoring module stuff, TBD)
+          cx <- liftIO $ mkRCxtSl nullPtr
+          -- construct frame for each module
+          p <- explStkPushAllocFrameM r2n cx sz emptyExplArgs
+          -- and store the frame into the array holding module frames
+          (liftIO $ MV.write ms nr p >> newIORef p) >>= \r -> rsemGcPushRoot (RVal_Ptr r)
+          -- holding all local defs
+          V.forM_ bs rsemExp
+          -- p <-
+          explStkPopFrameM
+        -- use the main module's stackframe for evaluating 'main'
+        liftIO (MV.read ms mainModNr) >>= explStkPushFrameM
+        rsemGcLeaveRootLevel
+        rsemSetupTracing opts
+        rcxtUpdDatatypes modAllL
+-}
+
+    rsemSetTrace doTrace doExtensive = modify $ \env ->
+      env {renvDoTrace = doTrace, renvDoTraceExt = doExtensive}
+
+    rsemExp = rvalExplStkExp
+
+    rsemSExp se = do
+      case se of
+        SExp_Int    v -> rsemPush $ RVal_Int v
+        SExp_Char   v -> rsemPush $ RVal_Char v
+        SExp_Var    r -> do v <- ref2valM r
+                            -- rsemTr $ "R->V:" >#< v
+                            rsemPush v
+        SExp_String v -> rsemPush $ RVal_PackedString $ BSC8.pack v
+        _ -> rsemPush (RVal_Lit se)
+    {-# INLINE rsemSExp #-}
+
+    rsemEvl v = do
+        case v of
+          RVal_Ptr {rvalPtrRef=pref} -> do
+            rsemGcEnterRootLevel
+            rsemGcPushRoot v
+            liftIO (readIORef pref) >>= evlPtr pref
+            rsemGcLeaveRootLevel
+          RVal_BlackHole             -> err $ "CoreRun.Run.Val.rsemEvl.RVal_BlackHole:" >#< "Black hole"
+          _                          -> return () -- rsemPush v
+        rsemPush v
+      where
+        evlPtr pref p = do
+          hp <- gets renvHeap
+          v <- heapGetM' hp p
+          case v of
+            RVal_Thunk {rvalMbNm=mn, rvalCx=rcx, rvalBody=e} -> do
+              -- rsemGcPushRoot v
+              -- sl <- liftIO $ readIORef (rcxtSlRef rcx)
+              heapSetM' hp p RVal_BlackHole
+              v' <- rvalExplStkAppLam rcx e (emptyExplArgs {eaStk=0}) $ \_ -> err $ "CoreRun.Run.Val.rsemEvl.RVal_Thunk:" >#< e
+              hp <- gets renvHeap
+              p <- liftIO (readIORef pref)
+              v'' <- rsemPop v'
+              heapSetM' hp p v''
+              return v''
+            RVal_Ptr {rvalPtrRef=pref} -> do
+              v' <- evlPtr pref =<< liftIO (readIORef pref)
+              hp <- gets renvHeap
+              p <- liftIO (readIORef pref)
+              heapSetM' hp p v'
+              return v'
+            v -> do
+              return v
+
+    rsemDeref v = do
+      v' <- ptr2valM v
+      -- rsemTr $ "Deref:" >#< (v >-< v')
+      rsemPush v'
+    {-# INLINE rsemDeref #-}
+
+    -- apply a known primitive
+    rsemPrim = rvalPrim
+    {-# INLINE rsemPrim #-}
+
+    rsemPush = renvFrStkPush1
+    {-# INLINE rsemPush #-}
+    rsemPop  = \_ -> renvFrStkPop1
+    {-# INLINE rsemPop #-}
+    rsemNode t vs = {- heapAllocAsPtrM -} return $ RVal_NodeMV t vs
+    {-# INLINE rsemNode #-}
+
+
+    rsemGcEnterRootLevel = gets renvGcRootStack >>= \r -> liftIO $ modifyIORef r $ ([]:)
+    {-# INLINE rsemGcEnterRootLevel #-}
+
+    rsemGcPushRoot v = gets renvGcRootStack >>= \r -> liftIO $ modifyIORef r $ \(h:t) -> (v:h) : t
+    {-# INLINE rsemGcPushRoot #-}
+
+    rsemGcLeaveRootLevel = gets renvGcRootStack >>= \r -> liftIO $ modifyIORef r tail
+    {-# INLINE rsemGcLeaveRootLevel #-}
+
+
+</pre>

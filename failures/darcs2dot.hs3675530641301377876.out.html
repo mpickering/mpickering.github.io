@@ -1,0 +1,214 @@
+<a href="DAG.hs17090870112031615252.out.html">prev</a></br><a href="failures.html">home</a></br><a href="Data.hs137017237746232675.out.html">next</a></br></br><pre>1d0
+< #!/usr/bin/env runhaskell
+2a2
+> 
+103a104
+> 
+</pre></br><h2>original</h2></br><pre>#!/usr/bin/env runhaskell
+
+{-# language GADTs, TypeOperators, ViewPatterns, FlexibleContexts, ScopedTypeVariables #-}
+
+
+import Data.Graph.Wrapper
+import Data.Map (Map, (!))
+import qualified Data.Map as Map
+import Data.String.Conversions
+
+import Text.Printf
+
+import Control.Applicative
+
+import Darcs.Repository
+import Darcs.Witnesses.Ordered
+import Darcs.Patch.Named
+import Darcs.Patch.Info
+import Darcs.Patch.Choices
+import Darcs.Patch.Patchy
+
+
+main = withRepository [] $ RepoJob $ \ repo ->
+    putStr . toDot . dependencies . patchSetToPatches =<< readRepo repo
+
+
+dependencies :: Patchy (Named p) => FL (Named p) x y -> Graph Tag String
+dependencies fl =
+    let choices = patchChoices fl
+        tags = getNamedTags choices
+    in fromList $ flip map tags $ \ (name, tag) ->
+        let firsts = getFirsts $ forceFirst tag choices
+            depends = filter (\ (n, t) -> t /= tag) firsts
+        in (tag, name, map snd depends) :: (Tag, String, [Tag])
+
+
+type NamedTag = (String, Tag)
+
+getFirsts :: Patchy (Named p) => PatchChoices (Named p) x y -> [NamedTag]
+getFirsts (getChoices -> (a :> _)) = getTagsFL a
+
+getNamedTags :: Patchy (Named p) => PatchChoices (Named p) x y -> [NamedTag]
+getNamedTags (getChoices -> (a :> (b :> c))) =
+    getTagsFL a ++
+    getTagsFL b ++
+    getTagsFL c
+
+getTagsFL :: FL (TaggedPatch (Named p)) x y -> [(String, Tag)]
+getTagsFL NilFL = []
+getTagsFL (a :>: b) = e : getTagsFL b
+  where
+    e = (cs . _piName . patch2patchinfo . tpPatch $ a, tag a)
+
+-- not used
+showChoices :: Patchy (Named p) => PatchChoices (Named p) x y -> String
+showChoices choices =
+    case getChoices choices of
+        (a :> (b :> c)) -> showFL a ++ " :> (" ++ showFL b ++ " :> " ++ showFL c ++ ")"
+
+-- not used
+showFL :: FL (TaggedPatch (Named p)) x y -> String
+showFL fl =
+    case mapFL (cs . _piName . patch2patchinfo . tpPatch) fl of
+         [] -> "[]"
+         x -> unwords x
+
+
+-- * graph stuff
+
+transitiveReduction :: Ord i => Graph i v -> Graph i v
+transitiveReduction g =
+    fromList $ map inner $ toList g
+  where
+    inner (i, v, outgoing) =
+        (i, v, filter (\ o -> not $ hasIndirectPath i o) outgoing)
+    hasIndirectPath a b = any (\ m -> a ~> m && m ~> b) (vertices g)
+    a ~> b = b `elem` successors g a
+
+
+-- * dot
+
+toDot :: (Ord i) => Graph i String -> String
+toDot graph =
+    "digraph g {\n" ++
+        (concatMap inner $ toList $ fmap (escapeQuotes . take 15) $
+            transitiveReduction $ indexToInt graph) ++
+    "}\n"
+  where
+    inner (i, name, outgoing) =
+        printf "    %i [label = \"%s\"];\n" i name ++
+        concatMap (\ out -> printf "    %i -> %i;\n" i out) outgoing
+
+    escapeQuotes :: String -> String
+    escapeQuotes = concatMap (\ c -> if c == '\"' then "\\\"" else [c])
+
+-- | convert indices to Ints
+indexToInt :: forall i v . Ord i => Graph i v -> Graph Int v
+indexToInt g =
+    fromList $ map inner $ toList g
+  where
+    inner (i, v, outgoing) = (intMap ! i, v, map (intMap !) outgoing)
+    intMap :: Map i Int
+    intMap = Map.fromList $ zip (vertices g) [0..]
+</pre></br><h2>printed</h2></br><pre>
+
+{-# language GADTs, TypeOperators, ViewPatterns, FlexibleContexts, ScopedTypeVariables #-}
+
+
+import Data.Graph.Wrapper
+import Data.Map (Map, (!))
+import qualified Data.Map as Map
+import Data.String.Conversions
+
+import Text.Printf
+
+import Control.Applicative
+
+import Darcs.Repository
+import Darcs.Witnesses.Ordered
+import Darcs.Patch.Named
+import Darcs.Patch.Info
+import Darcs.Patch.Choices
+import Darcs.Patch.Patchy
+
+
+main = withRepository [] $ RepoJob $ \ repo ->
+    putStr . toDot . dependencies . patchSetToPatches =<< readRepo repo
+
+
+dependencies :: Patchy (Named p) => FL (Named p) x y -> Graph Tag String
+dependencies fl =
+    let choices = patchChoices fl
+        tags = getNamedTags choices
+    in fromList $ flip map tags $ \ (name, tag) ->
+        let firsts = getFirsts $ forceFirst tag choices
+            depends = filter (\ (n, t) -> t /= tag) firsts
+        in (tag, name, map snd depends) :: (Tag, String, [Tag])
+
+
+type NamedTag = (String, Tag)
+
+getFirsts :: Patchy (Named p) => PatchChoices (Named p) x y -> [NamedTag]
+getFirsts (getChoices -> (a :> _)) = getTagsFL a
+
+getNamedTags :: Patchy (Named p) => PatchChoices (Named p) x y -> [NamedTag]
+getNamedTags (getChoices -> (a :> (b :> c))) =
+    getTagsFL a ++
+    getTagsFL b ++
+    getTagsFL c
+
+getTagsFL :: FL (TaggedPatch (Named p)) x y -> [(String, Tag)]
+getTagsFL NilFL = []
+getTagsFL (a :>: b) = e : getTagsFL b
+  where
+    e = (cs . _piName . patch2patchinfo . tpPatch $ a, tag a)
+
+-- not used
+showChoices :: Patchy (Named p) => PatchChoices (Named p) x y -> String
+showChoices choices =
+    case getChoices choices of
+        (a :> (b :> c)) -> showFL a ++ " :> (" ++ showFL b ++ " :> " ++ showFL c ++ ")"
+
+-- not used
+showFL :: FL (TaggedPatch (Named p)) x y -> String
+showFL fl =
+    case mapFL (cs . _piName . patch2patchinfo . tpPatch) fl of
+         [] -> "[]"
+         x -> unwords x
+
+
+-- * graph stuff
+
+transitiveReduction :: Ord i => Graph i v -> Graph i v
+transitiveReduction g =
+    fromList $ map inner $ toList g
+  where
+    inner (i, v, outgoing) =
+        (i, v, filter (\ o -> not $ hasIndirectPath i o) outgoing)
+    hasIndirectPath a b = any (\ m -> a ~> m && m ~> b) (vertices g)
+    a ~> b = b `elem` successors g a
+
+
+-- * dot
+
+toDot :: (Ord i) => Graph i String -> String
+toDot graph =
+    "digraph g {\n" ++
+        (concatMap inner $ toList $ fmap (escapeQuotes . take 15) $
+            transitiveReduction $ indexToInt graph) ++
+    "}\n"
+  where
+    inner (i, name, outgoing) =
+        printf "    %i [label = \"%s\"];\n" i name ++
+        concatMap (\ out -> printf "    %i -> %i;\n" i out) outgoing
+
+    escapeQuotes :: String -> String
+    escapeQuotes = concatMap (\ c -> if c == '\"' then "\\\"" else [c])
+
+-- | convert indices to Ints
+indexToInt :: forall i v . Ord i => Graph i v -> Graph Int v
+indexToInt g =
+    fromList $ map inner $ toList g
+  where
+    inner (i, v, outgoing) = (intMap ! i, v, map (intMap !) outgoing)
+    intMap :: Map i Int
+    intMap = Map.fromList $ zip (vertices g) [0..]
+
+</pre>

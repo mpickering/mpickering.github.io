@@ -1,0 +1,448 @@
+<a href="Parser.hs89342654490916525.out.html">prev</a></br><a href="failures.html">home</a></br><a href="Parser.hs9241764252031439871.out.html">next</a></br></br><pre>183c183
+<           cons e1 e2 = cap (getTypedConstr ivl '(:)) [e1,e2]
+---
+>           cons e1 e2 = cap (getTypedConstr ivl ':) [e1,e2]
+209c209
+<           cons e1 e2 = cap (getTypedConstr ivl '(:)) [e1,e2]
+---
+>           cons e1 e2 = cap (getTypedConstr ivl ':) [e1,e2]
+218a219
+> 
+</pre></br><h2>original</h2></br><pre>--
+-- (C) Susumu Katayama
+--
+module MagicHaskeller.Analytical.Parser where
+
+import Data.List(sort, group)
+import Control.Monad -- hiding (guard)
+import Control.Monad.State -- hiding (guard)
+import Data.Char(ord)
+import Data.Array
+import qualified Data.Map as Map
+import qualified Data.IntMap as IntMap
+import Language.Haskell.TH hiding (match)
+
+import MagicHaskeller.CoreLang(VarLib)
+import qualified MagicHaskeller.Types as Types
+import MagicHaskeller.PriorSubsts hiding (unify)
+import MagicHaskeller.TyConLib
+import MagicHaskeller.ReadTHType(thTypeToType)
+import qualified MagicHaskeller.PolyDynamic as PD
+
+import MagicHaskeller.Analytical.Syntax
+
+
+data XVarLib = XVL {varLib :: VarLib, invVarLib :: Map.Map String Int, zeroID :: Int, succID :: Int, negateID :: Int} deriving Show
+
+-- We compare nameBase ignoring the module name, instead of using equivalence over Name's.
+mkXVarLib :: VarLib -> XVarLib
+mkXVarLib vl = let
+                   (_,mx) = bounds vl
+               in XVL {varLib = vl
+                      , invVarLib = Map.fromListWith (\_ a -> a) ([ (nameBase name, num) | (num, PD.Dynamic{PD.dynExp=thexpr}) <- assocs vl, name <- extractName thexpr ])
+                      , zeroID = mx-2   -- These are dependent on the order in CoreLang.defaultPrimitives
+                      , succID = mx-1
+                      , negateID = mx
+                      }
+extractName (ConE name) = [name]
+extractName (VarE name) = [name]
+extractName _           = []
+parseTypedIOPairss :: (Functor m, MonadPlus m) => TyConLib -> XVarLib -> [Dec] -> PriorSubsts m [(Name, Types.Typed [IOPair])]
+parseTypedIOPairss tcl xvl ds = inferTypedIOPairss =<< parseTypedIOPairss' tcl xvl ds
+inferTypedIOPairss :: MonadPlus m => [(Name,(Maybe Types.Type, Maybe (Types.Typed [IOPair])))] -> PriorSubsts m [(Name, Types.Typed [IOPair])]
+inferTypedIOPairss ((name, (Just ty, Just (iops Types.::: infty))):ts)
+    = do apinfty <- applyPS infty
+         mguPS apinfty $ Types.quantify ty
+--         updateSubstPS (return . unquantifySubst)
+
+         s <- getSubst
+         let hd = (name, map (tapplyIOP s) iops Types.:::ty)
+         tl <- inferTypedIOPairss ts
+         return (hd:tl)
+inferTypedIOPairss ((name, (Nothing, Just (iops Types.::: infty))):ts)
+    = do s <- getSubst
+         let hd = (name, map (tapplyIOP $ quantifySubst s) iops Types.::: Types.apply s infty)
+         tl <- inferTypedIOPairss ts
+         return (hd:tl)
+inferTypedIOPairss ((_nam, (Just _t, Nothing)):ts) = inferTypedIOPairss ts -- pattern including only a type signature. This is still useful when incorporating with MagicHaskeller, but MagH has its own parser, so let's ignore the pattern silently.
+inferTypedIOPairss ((_,    (Nothing, Nothing)):_)  = error "MagicHaskeller.TypedIOPairs.inferTypedIOPairss: impossible"
+inferTypedIOPairss [] = return []
+
+parseTypedIOPairss' :: (Functor m,MonadPlus m) => TyConLib -> XVarLib -> [Dec] -> PriorSubsts m [(Name, (Maybe Types.Type, Maybe (Types.Typed [IOPair])))]
+parseTypedIOPairss' tcl xvl ds
+    = do tups <- parseIOPairss xvl ds
+         return $ Map.toList $ Map.fromListWith plus
+                    ([(name, (Just t,  Nothing))   | (name, t)    <- parseTypes tcl ds] ++
+                     [(name, (Nothing, Just tiops)) | (name, tiops) <- tups])
+(a,b) `plus` (c,d) = (a `mplus` c, b `mplus` d)
+
+parseTypes :: TyConLib -> [Dec] -> [(Name,Types.Type)]
+parseTypes tcl ds = [ (name, thTypeToType tcl ty) | SigD name ty <- ds ]
+
+
+parseIOPairss :: (Functor m, MonadPlus m) => XVarLib -> [Dec] -> PriorSubsts m [(Name, Types.Typed [IOPair])]
+parseIOPairss xvl (FunD funname clauses : decs)
+    = do tiops <- mapM (clauseToIOPair xvl) clauses
+         let (iops,t:ts) = unzipTyped tiops
+         ty <- foldM mgtPS t ts
+         s <- getSubst
+         let hd = (funname, map (tapplyIOP s) iops Types.::: ty)
+         tl <- parseIOPairss xvl decs
+         return $ hd:tl
+parseIOPairss xvl (ValD (VarP name) (NormalB ex) [] : decs)
+    = do (vout Types.::: tout, _intmap) <- runStateT (inferType (thExpToExpr xvl ex)) IntMap.empty
+         let hd = (name,    [IOP 0 [] vout] Types.::: tout)
+         tl <- parseIOPairss xvl decs
+         return $ hd:tl
+parseIOPairss xvl (_:decs) = parseIOPairss xvl decs
+parseIOPairss _   []       = return []
+
+-- ·¿Àë¸À¤¬¤¢¤ë¾ì¹ç¡¤¤½¤Îforall¤Ê¤ä¤Ä¤Ë¥Þ¥Ã¥Á¤·¤Æ½ªÎ»¡¥
+-- ¤Ê¤¤¾ì¹ç¡¤¤½¤Î¤Þ¤Þ´Ø¿ô¤Ë¤·¤Æ½ªÎ»¡¥
+clauseToIOPair :: (Functor m, MonadPlus m) => XVarLib -> Clause -> PriorSubsts m (Types.Typed IOPair)
+clauseToIOPair ivl cl = fmap fst $ runStateT (clauseToIOPair' ivl cl) IntMap.empty
+clauseToIOPair' ivl (Clause inpats (NormalB ex) []) =do ins <- mapM inferT (reverse $ map (patToExp ivl) inpats)
+                                                        let (vins,tins) = unzipTyped ins
+                                                        vout Types.::: tout <- inferT (thExpToExpr ivl ex)
+                                                        ty <- lift $ applyPS (Types.popArgs tins tout)
+                                                        return $ normalizeMkIOP vins vout Types.::: ty
+clauseToIOPair' _ _ = error "Neither _guards_ nor _where_clauses_ are permitted in clauses representing I/O pairs."
+-- In future where-clauses might be supported.
+
+
+matchType :: MonadPlus m => [Types.Type] -> Types.Type -> Types.Type -> PriorSubsts m ()
+matchType argtys retty ty = mguType argtys retty (Types.quantify ty) >> updateSubstPS (return . unquantifySubst)
+unquantifySubst = map (\(v,t) -> (v, Types.unquantify t))
+quantifySubst   = map (\(v,t) -> (v, Types.quantify t))
+mguType (t:ts) r (u Types.:->v) = do mguPS t u
+                                     s <- getSubst
+                                     mguType (map (Types.apply s) ts) (Types.apply s r) v
+mguType []     r v       = Types.mgu r v
+mguType (_:_)  _ _       = error "Not enough arguments supplied."
+
+
+inferType, inferT :: MonadPlus m => Expr -> StateT (IntMap.IntMap Types.Type) (PriorSubsts m) (Types.Typed Expr)
+inferType e = do e' Types.:::t <- inferT e
+                 s <- lift getSubst
+                 return (tapplyExpr s e' Types.::: Types.apply s t)
+inferT v@(U i) = do tenv <- get
+                    case IntMap.lookup i tenv of
+                        Nothing -> do tvid <- lift newTVar
+                                      let ty = Types.TV tvid
+                                      put $ IntMap.insert i ty tenv
+                                      return (v Types.::: ty)
+                        Just ty -> do apty <- lift $ applyPS ty
+                                      return (v Types.::: apty)
+inferT (C sz (i Types.:::ty) es)
+                       = do es' <- mapM inferT es
+                            lift $ do let (typees, typers) = unzipTyped es'
+                                      let tvs = map head $ group $ sort $ Types.tyvars ty
+                                      tvid <- reserveTVars $ length tvs
+                                      let apty = Types.apply (zip tvs $ map Types.TV [tvid..]) ty
+                                      rty <- foldM funApM apty typers
+                                      rapty <- applyPS rty
+                                      return $ C sz (i Types.:::apty) typees Types.::: rapty
+funApM :: MonadPlus m => Types.Type -> Types.Type -> PriorSubsts m Types.Type
+funApM (a Types.:-> r) t = fAM a r t
+funApM (a Types.:>  r) t = fAM a r t
+funApM (Types.TV i)    t = do tvid <- newTVar
+                              updatePS [(i,t Types.:->Types.TV tvid)]
+                              return $ Types.TV tvid
+funApM _         _ = fail "too many arguments applied."
+fAM apa r t = do apt <- applyPS t
+                 mguPS apa apt
+                 applyPS r
+tapplyIOP :: Types.Subst -> IOPair -> IOPair
+tapplyIOP s (IOP bvs ins out) = IOP bvs (map (tapplyExpr s) ins) (tapplyExpr s out)
+
+tapplyExpr :: Types.Subst -> Expr -> Expr
+tapplyExpr sub (C sz (i Types.:::ty) es) = C sz (i Types.:::Types.apply sub ty) (map (tapplyExpr sub) es)
+tapplyExpr _   v               = v
+{-
+substitution¤ò°ìÅÙget¤·¤¿¤é¡¤¤½¤ì¤òÁ´ÂÎ¤ËÇÈµÚ¤µ¤»¤ëÉ¬Í×¤¬¤¢¤ë¡©
+¤Æ¤æ¡¼¤«¡¤³Æ¥³¥ó¥¹¥È¥é¥¯¥¿¤Îforall¤ÇfreshVar¤·¤¿¤ä¤Ä¤À¤±¤¹¤ì¤Ð¤è¤¤¡©
+¹Í¤¨¤ë¤ÎÌÌÅÝ¤¯¤µ¤¤¤·¡¤Î§Â®¤Ç¤Ï¤Ê¤¤¤Î¤Ç2¥Ñ¥¹¤Ç¡¥
+-}
+
+-- MagicHaskeller.Types¤ËÃÖ¤¯¤Ù¤­¤È¤¤¤¦µ¤¤¬¤·¤Ê¤¤¤Ç¤â¤Ê¤¤¡¥
+unzipTyped [] = ([],[])
+unzipTyped ((e Types.:::t):ets) = let (es,ts) = unzipTyped ets in (e:es,t:ts)
+
+
+getMbTypedConstr :: XVarLib -> Name -> Maybe (Types.Typed Constr)
+getMbTypedConstr xvl name = fmap (mkTypedConstr xvl) $ Map.lookup (nameBase name) (invVarLib xvl)
+getTypedConstr :: XVarLib -> Name -> Types.Typed Constr
+getTypedConstr xvl name = case Map.lookup (nameBase name) $ invVarLib xvl of Just c -> mkTypedConstr xvl c
+                                                                             Nothing -> error ("could not find "++show name)
+mkTypedConstr  xvl c   = c Types.::: PD.dynType (varLib xvl!c)
+litToExp ivl (IntegerL i) | i>=0      = natToConExp ivl i
+                          | otherwise = cap (mkTypedConstr ivl (negateID ivl)) [natToConExp ivl (-i)]
+-- litToExp tcl (CharL c)     = C (Ctor (ord c) (c¤ËÁêÅö¤¹¤ëÅÛ. ¤¢¤ëÌõ¤Ê¤¤?)) [] ¤Æ¤æ¡¼¤«¡¤constructor°·¤¤¤Ë¤¹¤ì¤Ð¤¤¤¤¤Î¤À¤¬¡¥
+-- litToExp tcl (StringL str) = strToConExp tcl str
+patToExp ivl (LitP l)      = litToExp ivl l
+patToExp ivl (VarP name)   = U (strToInt $ nameBase name)
+patToExp ivl (TupP pats)         = cap (getTypedConstr ivl (tupleDataName (length pats))) (map (patToExp ivl) pats)
+patToExp ivl (ConP name pats)    = cap (getTypedConstr ivl name)                          (map (patToExp ivl) pats)
+patToExp ivl (InfixP p1 name p2) = cap (getTypedConstr ivl name)                          (map (patToExp ivl) [p1,p2])
+patToExp ivl (TildeP p)    = patToExp ivl p
+patToExp ivl (AsP _ _)     = error "As (@) patterns not supported."
+patToExp ivl WildP         = U (strToInt "_") -- will not work correctly if there are more than one wildcards in one I/O pair, I think.
+patToExp ivl (RecP _ _)    = error "Record patterns not supported."
+patToExp ivl (ListP pats)  = foldr cons nil $ map (patToExp ivl) pats
+    where nil        = C 1 (getTypedConstr ivl '[]) []
+          cons e1 e2 = cap (getTypedConstr ivl '(:)) [e1,e2]
+patToExp ivl (SigP pat _t) = patToExp ivl pat -- Or should this cause an error?
+
+-- Is this encoding really quicker than raw String (or maybe PackedString)?
+strToInt [] = 1
+strToInt (x:xs) = ord x + 256 * strToInt xs
+
+natLimit = 32
+natToConExp ivl i -- x | i > natLimit = C (Ctor i  (i¤ËÁêÅö¤¹¤ëÅÛ. ¤¢¤ëÌõ¤Ê¤¤?)) []
+                  | otherwise    = smallNat ivl i
+smallNat ivl 0 = C 1 (mkTypedConstr ivl (zeroID ivl)) []
+smallNat ivl i = cap (mkTypedConstr ivl (succID ivl)) [smallNat ivl (i-1)]
+-- strToConExp tcl "" = C (Ctor 0 ([]¤ËÁêÅö¤¹¤ëÅÛ)) []
+
+thExpToExpr ivl (VarE name) = case getMbTypedConstr ivl name of Nothing -> U (strToInt $ nameBase name)
+                                                                Just x  -> C 1 x []
+thExpToExpr ivl (ConE name) = C 1 (getTypedConstr ivl name) []
+thExpToExpr ivl (LitE l)    = litToExp ivl l
+thExpToExpr ivl (AppE f x)  = case thExpToExpr ivl f of C sz c xs -> let thx = thExpToExpr ivl x
+                                                                     in C (sz + size thx) c (xs ++ [thx])  -- O(n^2)
+                                                        U _    -> error "Only constructor applications are permitted in IO examples."
+thExpToExpr ivl (InfixE (Just x) (ConE name) (Just y)) = cap (getTypedConstr ivl name) [thExpToExpr ivl x, thExpToExpr ivl y]
+thExpToExpr ivl (InfixE (Just x) (VarE name) (Just y)) = cap (getTypedConstr ivl name) [thExpToExpr ivl x, thExpToExpr ivl y]
+thExpToExpr ivl (TupE es) = cap (getTypedConstr ivl (tupleDataName (length es))) (map (thExpToExpr ivl) es)
+thExpToExpr ivl (ListE es) = foldr cons nil $ map (thExpToExpr ivl) es
+    where nil        = cap (getTypedConstr ivl '[]) []
+          cons e1 e2 = cap (getTypedConstr ivl '(:)) [e1,e2]
+thExpToExpr ivl (SigE e _t) = thExpToExpr ivl e
+thExpToExpr _ _ = error "Unsupported expression in IO examples."
+{-
+case¤Î¾ì¹ç¡¤´û¤Ë¤¢¤ëprimitive component¤Ë¹ç¤ï¤»¤ë¤Î¤Ï·ë¹½¤ä¤ä¤³¤·¤¤¡¥¡Ê¤¿¤È¤¨¤Ð¡¤¥³¥ó¥¹¥È¥é¥¯¥¿¤Î½ç½ø¤Å¤±¤È¤«¤ò¹ç¤ï¤»¤ë¤Î¤Ï¤Ã¤Æ¤³¤È¤Í¡¥¡Ë
+¥³¥ó¥¹¥È¥é¥¯¥¿¤Î½ç½ø¤Å¤±¤Ïreify¤Ç¥²¥Ã¥È¤·¤¿½ç¤Ë¤¹¤ë¤³¤È¤Ë¤·¤Æ¡¤case¤ÏÄ¾ÀÜTH¤òÀ¸À®¤¹¤ë¤³¤È¤Ë¤¹¤ë¡¥
+¤³¤ì¤¬²ÄÇ½¤Ê¤Î¤Ï¡¤¤Þ¤ºanalytical¤ä¤Ã¤Æ¤½¤ì¤«¤ésystematic¤ò¤ä¤ë¤«¤é¡¥
+
+¤½¤¦¤Ê¤ë¤È¡¤clauseToIOPair¤È¤«¤ËVarLib¤Ï¤¤¤é¤Ê¤¯¤Ê¤ë¤·¡¤Constr¤ÏCoreExpr¤ÎÂå¤ï¤ê¤ËTH.Exp(¤«TH.Name)¤ò»ý¤Ä¤³¤È¤Ë¤Ê¤ë¡¥
+-}
+</pre></br><h2>printed</h2></br><pre>--
+-- (C) Susumu Katayama
+--
+module MagicHaskeller.Analytical.Parser where
+
+import Data.List(sort, group)
+import Control.Monad -- hiding (guard)
+import Control.Monad.State -- hiding (guard)
+import Data.Char(ord)
+import Data.Array
+import qualified Data.Map as Map
+import qualified Data.IntMap as IntMap
+import Language.Haskell.TH hiding (match)
+
+import MagicHaskeller.CoreLang(VarLib)
+import qualified MagicHaskeller.Types as Types
+import MagicHaskeller.PriorSubsts hiding (unify)
+import MagicHaskeller.TyConLib
+import MagicHaskeller.ReadTHType(thTypeToType)
+import qualified MagicHaskeller.PolyDynamic as PD
+
+import MagicHaskeller.Analytical.Syntax
+
+
+data XVarLib = XVL {varLib :: VarLib, invVarLib :: Map.Map String Int, zeroID :: Int, succID :: Int, negateID :: Int} deriving Show
+
+-- We compare nameBase ignoring the module name, instead of using equivalence over Name's.
+mkXVarLib :: VarLib -> XVarLib
+mkXVarLib vl = let
+                   (_,mx) = bounds vl
+               in XVL {varLib = vl
+                      , invVarLib = Map.fromListWith (\_ a -> a) ([ (nameBase name, num) | (num, PD.Dynamic{PD.dynExp=thexpr}) <- assocs vl, name <- extractName thexpr ])
+                      , zeroID = mx-2   -- These are dependent on the order in CoreLang.defaultPrimitives
+                      , succID = mx-1
+                      , negateID = mx
+                      }
+extractName (ConE name) = [name]
+extractName (VarE name) = [name]
+extractName _           = []
+parseTypedIOPairss :: (Functor m, MonadPlus m) => TyConLib -> XVarLib -> [Dec] -> PriorSubsts m [(Name, Types.Typed [IOPair])]
+parseTypedIOPairss tcl xvl ds = inferTypedIOPairss =<< parseTypedIOPairss' tcl xvl ds
+inferTypedIOPairss :: MonadPlus m => [(Name,(Maybe Types.Type, Maybe (Types.Typed [IOPair])))] -> PriorSubsts m [(Name, Types.Typed [IOPair])]
+inferTypedIOPairss ((name, (Just ty, Just (iops Types.::: infty))):ts)
+    = do apinfty <- applyPS infty
+         mguPS apinfty $ Types.quantify ty
+--         updateSubstPS (return . unquantifySubst)
+
+         s <- getSubst
+         let hd = (name, map (tapplyIOP s) iops Types.:::ty)
+         tl <- inferTypedIOPairss ts
+         return (hd:tl)
+inferTypedIOPairss ((name, (Nothing, Just (iops Types.::: infty))):ts)
+    = do s <- getSubst
+         let hd = (name, map (tapplyIOP $ quantifySubst s) iops Types.::: Types.apply s infty)
+         tl <- inferTypedIOPairss ts
+         return (hd:tl)
+inferTypedIOPairss ((_nam, (Just _t, Nothing)):ts) = inferTypedIOPairss ts -- pattern including only a type signature. This is still useful when incorporating with MagicHaskeller, but MagH has its own parser, so let's ignore the pattern silently.
+inferTypedIOPairss ((_,    (Nothing, Nothing)):_)  = error "MagicHaskeller.TypedIOPairs.inferTypedIOPairss: impossible"
+inferTypedIOPairss [] = return []
+
+parseTypedIOPairss' :: (Functor m,MonadPlus m) => TyConLib -> XVarLib -> [Dec] -> PriorSubsts m [(Name, (Maybe Types.Type, Maybe (Types.Typed [IOPair])))]
+parseTypedIOPairss' tcl xvl ds
+    = do tups <- parseIOPairss xvl ds
+         return $ Map.toList $ Map.fromListWith plus
+                    ([(name, (Just t,  Nothing))   | (name, t)    <- parseTypes tcl ds] ++
+                     [(name, (Nothing, Just tiops)) | (name, tiops) <- tups])
+(a,b) `plus` (c,d) = (a `mplus` c, b `mplus` d)
+
+parseTypes :: TyConLib -> [Dec] -> [(Name,Types.Type)]
+parseTypes tcl ds = [ (name, thTypeToType tcl ty) | SigD name ty <- ds ]
+
+
+parseIOPairss :: (Functor m, MonadPlus m) => XVarLib -> [Dec] -> PriorSubsts m [(Name, Types.Typed [IOPair])]
+parseIOPairss xvl (FunD funname clauses : decs)
+    = do tiops <- mapM (clauseToIOPair xvl) clauses
+         let (iops,t:ts) = unzipTyped tiops
+         ty <- foldM mgtPS t ts
+         s <- getSubst
+         let hd = (funname, map (tapplyIOP s) iops Types.::: ty)
+         tl <- parseIOPairss xvl decs
+         return $ hd:tl
+parseIOPairss xvl (ValD (VarP name) (NormalB ex) [] : decs)
+    = do (vout Types.::: tout, _intmap) <- runStateT (inferType (thExpToExpr xvl ex)) IntMap.empty
+         let hd = (name,    [IOP 0 [] vout] Types.::: tout)
+         tl <- parseIOPairss xvl decs
+         return $ hd:tl
+parseIOPairss xvl (_:decs) = parseIOPairss xvl decs
+parseIOPairss _   []       = return []
+
+-- ·¿Àë¸À¤¬¤¢¤ë¾ì¹ç¡¤¤½¤Îforall¤Ê¤ä¤Ä¤Ë¥Þ¥Ã¥Á¤·¤Æ½ªÎ»¡¥
+-- ¤Ê¤¤¾ì¹ç¡¤¤½¤Î¤Þ¤Þ´Ø¿ô¤Ë¤·¤Æ½ªÎ»¡¥
+clauseToIOPair :: (Functor m, MonadPlus m) => XVarLib -> Clause -> PriorSubsts m (Types.Typed IOPair)
+clauseToIOPair ivl cl = fmap fst $ runStateT (clauseToIOPair' ivl cl) IntMap.empty
+clauseToIOPair' ivl (Clause inpats (NormalB ex) []) =do ins <- mapM inferT (reverse $ map (patToExp ivl) inpats)
+                                                        let (vins,tins) = unzipTyped ins
+                                                        vout Types.::: tout <- inferT (thExpToExpr ivl ex)
+                                                        ty <- lift $ applyPS (Types.popArgs tins tout)
+                                                        return $ normalizeMkIOP vins vout Types.::: ty
+clauseToIOPair' _ _ = error "Neither _guards_ nor _where_clauses_ are permitted in clauses representing I/O pairs."
+-- In future where-clauses might be supported.
+
+
+matchType :: MonadPlus m => [Types.Type] -> Types.Type -> Types.Type -> PriorSubsts m ()
+matchType argtys retty ty = mguType argtys retty (Types.quantify ty) >> updateSubstPS (return . unquantifySubst)
+unquantifySubst = map (\(v,t) -> (v, Types.unquantify t))
+quantifySubst   = map (\(v,t) -> (v, Types.quantify t))
+mguType (t:ts) r (u Types.:->v) = do mguPS t u
+                                     s <- getSubst
+                                     mguType (map (Types.apply s) ts) (Types.apply s r) v
+mguType []     r v       = Types.mgu r v
+mguType (_:_)  _ _       = error "Not enough arguments supplied."
+
+
+inferType, inferT :: MonadPlus m => Expr -> StateT (IntMap.IntMap Types.Type) (PriorSubsts m) (Types.Typed Expr)
+inferType e = do e' Types.:::t <- inferT e
+                 s <- lift getSubst
+                 return (tapplyExpr s e' Types.::: Types.apply s t)
+inferT v@(U i) = do tenv <- get
+                    case IntMap.lookup i tenv of
+                        Nothing -> do tvid <- lift newTVar
+                                      let ty = Types.TV tvid
+                                      put $ IntMap.insert i ty tenv
+                                      return (v Types.::: ty)
+                        Just ty -> do apty <- lift $ applyPS ty
+                                      return (v Types.::: apty)
+inferT (C sz (i Types.:::ty) es)
+                       = do es' <- mapM inferT es
+                            lift $ do let (typees, typers) = unzipTyped es'
+                                      let tvs = map head $ group $ sort $ Types.tyvars ty
+                                      tvid <- reserveTVars $ length tvs
+                                      let apty = Types.apply (zip tvs $ map Types.TV [tvid..]) ty
+                                      rty <- foldM funApM apty typers
+                                      rapty <- applyPS rty
+                                      return $ C sz (i Types.:::apty) typees Types.::: rapty
+funApM :: MonadPlus m => Types.Type -> Types.Type -> PriorSubsts m Types.Type
+funApM (a Types.:-> r) t = fAM a r t
+funApM (a Types.:>  r) t = fAM a r t
+funApM (Types.TV i)    t = do tvid <- newTVar
+                              updatePS [(i,t Types.:->Types.TV tvid)]
+                              return $ Types.TV tvid
+funApM _         _ = fail "too many arguments applied."
+fAM apa r t = do apt <- applyPS t
+                 mguPS apa apt
+                 applyPS r
+tapplyIOP :: Types.Subst -> IOPair -> IOPair
+tapplyIOP s (IOP bvs ins out) = IOP bvs (map (tapplyExpr s) ins) (tapplyExpr s out)
+
+tapplyExpr :: Types.Subst -> Expr -> Expr
+tapplyExpr sub (C sz (i Types.:::ty) es) = C sz (i Types.:::Types.apply sub ty) (map (tapplyExpr sub) es)
+tapplyExpr _   v               = v
+{-
+substitution¤ò°ìÅÙget¤·¤¿¤é¡¤¤½¤ì¤òÁ´ÂÎ¤ËÇÈµÚ¤µ¤»¤ëÉ¬Í×¤¬¤¢¤ë¡©
+¤Æ¤æ¡¼¤«¡¤³Æ¥³¥ó¥¹¥È¥é¥¯¥¿¤Îforall¤ÇfreshVar¤·¤¿¤ä¤Ä¤À¤±¤¹¤ì¤Ð¤è¤¤¡©
+¹Í¤¨¤ë¤ÎÌÌÅÝ¤¯¤µ¤¤¤·¡¤Î§Â®¤Ç¤Ï¤Ê¤¤¤Î¤Ç2¥Ñ¥¹¤Ç¡¥
+-}
+
+-- MagicHaskeller.Types¤ËÃÖ¤¯¤Ù¤­¤È¤¤¤¦µ¤¤¬¤·¤Ê¤¤¤Ç¤â¤Ê¤¤¡¥
+unzipTyped [] = ([],[])
+unzipTyped ((e Types.:::t):ets) = let (es,ts) = unzipTyped ets in (e:es,t:ts)
+
+
+getMbTypedConstr :: XVarLib -> Name -> Maybe (Types.Typed Constr)
+getMbTypedConstr xvl name = fmap (mkTypedConstr xvl) $ Map.lookup (nameBase name) (invVarLib xvl)
+getTypedConstr :: XVarLib -> Name -> Types.Typed Constr
+getTypedConstr xvl name = case Map.lookup (nameBase name) $ invVarLib xvl of Just c -> mkTypedConstr xvl c
+                                                                             Nothing -> error ("could not find "++show name)
+mkTypedConstr  xvl c   = c Types.::: PD.dynType (varLib xvl!c)
+litToExp ivl (IntegerL i) | i>=0      = natToConExp ivl i
+                          | otherwise = cap (mkTypedConstr ivl (negateID ivl)) [natToConExp ivl (-i)]
+-- litToExp tcl (CharL c)     = C (Ctor (ord c) (c¤ËÁêÅö¤¹¤ëÅÛ. ¤¢¤ëÌõ¤Ê¤¤?)) [] ¤Æ¤æ¡¼¤«¡¤constructor°·¤¤¤Ë¤¹¤ì¤Ð¤¤¤¤¤Î¤À¤¬¡¥
+-- litToExp tcl (StringL str) = strToConExp tcl str
+patToExp ivl (LitP l)      = litToExp ivl l
+patToExp ivl (VarP name)   = U (strToInt $ nameBase name)
+patToExp ivl (TupP pats)         = cap (getTypedConstr ivl (tupleDataName (length pats))) (map (patToExp ivl) pats)
+patToExp ivl (ConP name pats)    = cap (getTypedConstr ivl name)                          (map (patToExp ivl) pats)
+patToExp ivl (InfixP p1 name p2) = cap (getTypedConstr ivl name)                          (map (patToExp ivl) [p1,p2])
+patToExp ivl (TildeP p)    = patToExp ivl p
+patToExp ivl (AsP _ _)     = error "As (@) patterns not supported."
+patToExp ivl WildP         = U (strToInt "_") -- will not work correctly if there are more than one wildcards in one I/O pair, I think.
+patToExp ivl (RecP _ _)    = error "Record patterns not supported."
+patToExp ivl (ListP pats)  = foldr cons nil $ map (patToExp ivl) pats
+    where nil        = C 1 (getTypedConstr ivl '[]) []
+          cons e1 e2 = cap (getTypedConstr ivl ':) [e1,e2]
+patToExp ivl (SigP pat _t) = patToExp ivl pat -- Or should this cause an error?
+
+-- Is this encoding really quicker than raw String (or maybe PackedString)?
+strToInt [] = 1
+strToInt (x:xs) = ord x + 256 * strToInt xs
+
+natLimit = 32
+natToConExp ivl i -- x | i > natLimit = C (Ctor i  (i¤ËÁêÅö¤¹¤ëÅÛ. ¤¢¤ëÌõ¤Ê¤¤?)) []
+                  | otherwise    = smallNat ivl i
+smallNat ivl 0 = C 1 (mkTypedConstr ivl (zeroID ivl)) []
+smallNat ivl i = cap (mkTypedConstr ivl (succID ivl)) [smallNat ivl (i-1)]
+-- strToConExp tcl "" = C (Ctor 0 ([]¤ËÁêÅö¤¹¤ëÅÛ)) []
+
+thExpToExpr ivl (VarE name) = case getMbTypedConstr ivl name of Nothing -> U (strToInt $ nameBase name)
+                                                                Just x  -> C 1 x []
+thExpToExpr ivl (ConE name) = C 1 (getTypedConstr ivl name) []
+thExpToExpr ivl (LitE l)    = litToExp ivl l
+thExpToExpr ivl (AppE f x)  = case thExpToExpr ivl f of C sz c xs -> let thx = thExpToExpr ivl x
+                                                                     in C (sz + size thx) c (xs ++ [thx])  -- O(n^2)
+                                                        U _    -> error "Only constructor applications are permitted in IO examples."
+thExpToExpr ivl (InfixE (Just x) (ConE name) (Just y)) = cap (getTypedConstr ivl name) [thExpToExpr ivl x, thExpToExpr ivl y]
+thExpToExpr ivl (InfixE (Just x) (VarE name) (Just y)) = cap (getTypedConstr ivl name) [thExpToExpr ivl x, thExpToExpr ivl y]
+thExpToExpr ivl (TupE es) = cap (getTypedConstr ivl (tupleDataName (length es))) (map (thExpToExpr ivl) es)
+thExpToExpr ivl (ListE es) = foldr cons nil $ map (thExpToExpr ivl) es
+    where nil        = cap (getTypedConstr ivl '[]) []
+          cons e1 e2 = cap (getTypedConstr ivl ':) [e1,e2]
+thExpToExpr ivl (SigE e _t) = thExpToExpr ivl e
+thExpToExpr _ _ = error "Unsupported expression in IO examples."
+{-
+case¤Î¾ì¹ç¡¤´û¤Ë¤¢¤ëprimitive component¤Ë¹ç¤ï¤»¤ë¤Î¤Ï·ë¹½¤ä¤ä¤³¤·¤¤¡¥¡Ê¤¿¤È¤¨¤Ð¡¤¥³¥ó¥¹¥È¥é¥¯¥¿¤Î½ç½ø¤Å¤±¤È¤«¤ò¹ç¤ï¤»¤ë¤Î¤Ï¤Ã¤Æ¤³¤È¤Í¡¥¡Ë
+¥³¥ó¥¹¥È¥é¥¯¥¿¤Î½ç½ø¤Å¤±¤Ïreify¤Ç¥²¥Ã¥È¤·¤¿½ç¤Ë¤¹¤ë¤³¤È¤Ë¤·¤Æ¡¤case¤ÏÄ¾ÀÜTH¤òÀ¸À®¤¹¤ë¤³¤È¤Ë¤¹¤ë¡¥
+¤³¤ì¤¬²ÄÇ½¤Ê¤Î¤Ï¡¤¤Þ¤ºanalytical¤ä¤Ã¤Æ¤½¤ì¤«¤ésystematic¤ò¤ä¤ë¤«¤é¡¥
+
+¤½¤¦¤Ê¤ë¤È¡¤clauseToIOPair¤È¤«¤ËVarLib¤Ï¤¤¤é¤Ê¤¯¤Ê¤ë¤·¡¤Constr¤ÏCoreExpr¤ÎÂå¤ï¤ê¤ËTH.Exp(¤«TH.Name)¤ò»ý¤Ä¤³¤È¤Ë¤Ê¤ë¡¥
+-}
+
+</pre>

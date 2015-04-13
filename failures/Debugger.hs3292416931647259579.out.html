@@ -1,0 +1,246 @@
+<a href="Debug.hs9736844788949715.out.html">prev</a></br><a href="failures.html">home</a></br><a href="Decl.hs1325671291115195164.out.html">next</a></br></br><pre>19d18
+<   Begin     :: (a -> m (DebuggerM m '[a] b cs))
+20c19
+<             -> DebuggerM m '[] a (b ': cs)
+---
+>   Begin     :: (a -> m (DebuggerM m  '[a] b cs))
+20a20
+>             -> DebuggerM m     a (b  : cs)
+22d21
+<   Break     :: (a -> m (DebuggerM m (a ': z ': ys) b cs))
+23c22
+<             -> DebuggerM m ys z (a ': b ': cs)
+---
+>   Break     :: (a -> m (DebuggerM m (a  : z  : ys) b cs))
+23a23
+>             -> DebuggerM m ys z (a  : b  : cs)
+26c26
+<             -> DebuggerM m (z ': ys) a (b ': cs)
+---
+>             -> DebuggerM m (z  : ys) a (b  : cs)
+28c28
+<   End       :: DebuggerM m ys z '[a]
+---
+>   End       :: DebuggerM m ys z  '[a]
+31c31
+<             -> DebuggerM m (z ': ys) a '[]
+---
+>             -> DebuggerM m (z  : ys) a 
+47c47
+< given :: DebuggerM m (z ': ys) a bs -> z
+---
+> given :: DebuggerM m (z  : ys) a bs -> z
+51c51
+< returned :: DebuggerM m (z ': ys) a bs -> a
+---
+> returned :: DebuggerM m (z  : ys) a bs -> a
+55c55
+< back :: DebuggerM m (z ': ys) a bs -> DebuggerM m ys z (a ': bs)
+---
+> back :: DebuggerM m (z  : ys) a bs -> DebuggerM m ys z (a  : bs)
+59c59
+< redo :: DebuggerM m (a ': z ': ys) b cs -> m (DebuggerM m (a ': z ': ys) b cs)
+---
+> redo :: DebuggerM m (a  : z  : ys) b cs -> m (DebuggerM m (a  : z  : ys) b cs)
+62c62
+< redoWith :: a -> DebuggerM m (a ': zs) b cs -> m (DebuggerM m (a ': zs) b cs)
+---
+> redoWith :: a -> DebuggerM m (a  : zs) b cs -> m (DebuggerM m (a  : zs) b cs)
+65c65
+< use :: a -> DebuggerM m zs a (b ': cs) -> m (DebuggerM m (a ': zs) b cs)
+---
+> use :: a -> DebuggerM m zs a (b  : cs) -> m (DebuggerM m (a  : zs) b cs)
+69c69
+< step :: DebuggerM m (z ': ys) a (b ': cs) -> m (DebuggerM m (a ': z ': ys) b cs)
+---
+> step :: DebuggerM m (z  : ys) a (b  : cs) -> m (DebuggerM m (a  : z  : ys) b cs)
+72c72
+< debugM :: Monad m => CascadeM m (a ': b ': cs) -> DebuggerM m '[] a (b ': cs)
+---
+> debugM :: Monad m => CascadeM m (a  : b  : cs) -> DebuggerM m     a (b  : cs)
+76d75
+<            -> CascadeM m (b ': cs)
+77d75
+<            -> DebuggerM m zs a (b ': cs)
+78c76
+<            -> (a -> m (DebuggerM m (a ': zs) b cs))
+---
+>            -> CascadeM m (b  : cs)
+78a77
+>            -> DebuggerM m zs a (b  : cs)
+78a78
+>            -> (a -> m (DebuggerM m (a  : zs) b cs))
+85a86
+> 
+</pre></br><h2>original</h2></br><pre>{-# LANGUAGE ConstraintKinds        #-}
+{-# LANGUAGE DataKinds              #-}
+{-# LANGUAGE GADTs                  #-}
+{-# LANGUAGE TypeFamilies           #-}
+{-# LANGUAGE TypeOperators          #-}
+{-# LANGUAGE UndecidableInstances   #-} -- to use All Show zs
+module Cascade.Debugger where
+import Cascade
+import Cascade.Util.ListKind
+
+import Control.Arrow
+import Control.Category
+import Prelude hiding (id, (.))
+import GHC.Prim         (Constraint)
+
+
+data DebuggerM (m :: * -> *) (past :: [*]) (current :: *) (future :: [*]) where
+
+  Begin     :: (a -> m (DebuggerM m '[a] b cs))
+            -> DebuggerM m '[] a (b ': cs)
+
+  Break     :: (a -> m (DebuggerM m (a ': z ': ys) b cs))
+            -> DebuggerM m ys z (a ': b ': cs)
+            -> z
+            -> a
+            -> DebuggerM m (z ': ys) a (b ': cs)
+
+  End       :: DebuggerM m ys z '[a]
+            -> z
+            -> a
+            -> DebuggerM m (z ': ys) a '[]
+
+instance (All Show zs, All Show bs, Show a) => Show (DebuggerM m zs a bs) where
+  showsPrec p d = case d of
+      Begin _       -> showString "Begin"
+      Break _ _ z a -> showParen (p > 10) $ showString "Break" . showIO z a
+      End     _ z a -> showParen (p > 10) $ showString "End  " . showIO z a
+    where showIO z a =  showString " { given = ".  showsPrec 11 z .
+                        showString ", returned = " . showsPrec 11 a .
+                        showString " }"
+
+printHistory :: (All Show zs, All Show bs, Show a) => DebuggerM m zs a bs-> IO ()
+printHistory d@(Begin _      ) = print d
+printHistory d@(Break _ _ _ _) = print d >> printHistory (back d)
+printHistory d@(End     _ _ _) = print d >> printHistory (back d)
+
+given :: DebuggerM m (z ': ys) a bs -> z
+given (Break _ _ z _) = z
+given (End     _ z _) = z
+
+returned :: DebuggerM m (z ': ys) a bs -> a
+returned (Break _ _ _ a) = a
+returned (End     _ _ a) = a
+
+back :: DebuggerM m (z ': ys) a bs -> DebuggerM m ys z (a ': bs)
+back (Break _ d _ _) = d
+back (End     d _ _) = d
+
+redo :: DebuggerM m (a ': z ': ys) b cs -> m (DebuggerM m (a ': z ': ys) b cs)
+redo = step . back
+
+redoWith :: a -> DebuggerM m (a ': zs) b cs -> m (DebuggerM m (a ': zs) b cs)
+redoWith x = use x . back
+
+use :: a -> DebuggerM m zs a (b ': cs) -> m (DebuggerM m (a ': zs) b cs)
+use a (Begin f      ) = f a
+use a (Break f _ _ _) = f a
+
+step :: DebuggerM m (z ': ys) a (b ': cs) -> m (DebuggerM m (a ': z ': ys) b cs)
+step (Break f _ _ a) = f a
+
+debugM :: Monad m => CascadeM m (a ': b ': cs) -> DebuggerM m '[] a (b ': cs)
+debugM (f :>>> fs) = let d = Begin (go f fs d) in d
+  where go :: Monad m
+           => Kleisli m a b
+           -> CascadeM m (b ': cs)
+           -> DebuggerM m zs a (b ': cs)
+           -> (a -> m (DebuggerM m (a ': zs) b cs))
+        go (Kleisli f) Done         d a = do
+          b <- f a
+          return $ End d a b
+        go (Kleisli f) (f' :>>> fs) d a = do
+          b <- f a
+          let d' = Break (go f' fs d') d a b
+          return d'
+</pre></br><h2>printed</h2></br><pre>{-# LANGUAGE ConstraintKinds        #-}
+{-# LANGUAGE DataKinds              #-}
+{-# LANGUAGE GADTs                  #-}
+{-# LANGUAGE TypeFamilies           #-}
+{-# LANGUAGE TypeOperators          #-}
+{-# LANGUAGE UndecidableInstances   #-} -- to use All Show zs
+module Cascade.Debugger where
+import Cascade
+import Cascade.Util.ListKind
+
+import Control.Arrow
+import Control.Category
+import Prelude hiding (id, (.))
+import GHC.Prim         (Constraint)
+
+
+data DebuggerM (m :: * -> *) (past :: [*]) (current :: *) (future :: [*]) where
+
+  Begin     :: (a -> m (DebuggerM m  '[a] b cs))
+            -> DebuggerM m     a (b  : cs)
+
+  Break     :: (a -> m (DebuggerM m (a  : z  : ys) b cs))
+            -> DebuggerM m ys z (a  : b  : cs)
+            -> z
+            -> a
+            -> DebuggerM m (z  : ys) a (b  : cs)
+
+  End       :: DebuggerM m ys z  '[a]
+            -> z
+            -> a
+            -> DebuggerM m (z  : ys) a 
+
+instance (All Show zs, All Show bs, Show a) => Show (DebuggerM m zs a bs) where
+  showsPrec p d = case d of
+      Begin _       -> showString "Begin"
+      Break _ _ z a -> showParen (p > 10) $ showString "Break" . showIO z a
+      End     _ z a -> showParen (p > 10) $ showString "End  " . showIO z a
+    where showIO z a =  showString " { given = ".  showsPrec 11 z .
+                        showString ", returned = " . showsPrec 11 a .
+                        showString " }"
+
+printHistory :: (All Show zs, All Show bs, Show a) => DebuggerM m zs a bs-> IO ()
+printHistory d@(Begin _      ) = print d
+printHistory d@(Break _ _ _ _) = print d >> printHistory (back d)
+printHistory d@(End     _ _ _) = print d >> printHistory (back d)
+
+given :: DebuggerM m (z  : ys) a bs -> z
+given (Break _ _ z _) = z
+given (End     _ z _) = z
+
+returned :: DebuggerM m (z  : ys) a bs -> a
+returned (Break _ _ _ a) = a
+returned (End     _ _ a) = a
+
+back :: DebuggerM m (z  : ys) a bs -> DebuggerM m ys z (a  : bs)
+back (Break _ d _ _) = d
+back (End     d _ _) = d
+
+redo :: DebuggerM m (a  : z  : ys) b cs -> m (DebuggerM m (a  : z  : ys) b cs)
+redo = step . back
+
+redoWith :: a -> DebuggerM m (a  : zs) b cs -> m (DebuggerM m (a  : zs) b cs)
+redoWith x = use x . back
+
+use :: a -> DebuggerM m zs a (b  : cs) -> m (DebuggerM m (a  : zs) b cs)
+use a (Begin f      ) = f a
+use a (Break f _ _ _) = f a
+
+step :: DebuggerM m (z  : ys) a (b  : cs) -> m (DebuggerM m (a  : z  : ys) b cs)
+step (Break f _ _ a) = f a
+
+debugM :: Monad m => CascadeM m (a  : b  : cs) -> DebuggerM m     a (b  : cs)
+debugM (f :>>> fs) = let d = Begin (go f fs d) in d
+  where go :: Monad m
+           => Kleisli m a b
+           -> CascadeM m (b  : cs)
+           -> DebuggerM m zs a (b  : cs)
+           -> (a -> m (DebuggerM m (a  : zs) b cs))
+        go (Kleisli f) Done         d a = do
+          b <- f a
+          return $ End d a b
+        go (Kleisli f) (f' :>>> fs) d a = do
+          b <- f a
+          let d' = Break (go f' fs d') d a b
+          return d'
+
+</pre>

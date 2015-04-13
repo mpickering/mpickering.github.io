@@ -1,0 +1,622 @@
+<a href="Links.hs1101581096816959685.out.html">prev</a></br><a href="failures.html">home</a></br><a href="List.hs15760615361802933454.out.html">next</a></br></br><pre>32d31
+<     Map f '[] = '[]
+33c32
+<     Map f (x ': xs) = (Apply f x) ': xs
+---
+>     Map f     = 
+33a33
+>     Map f (x  : xs) = (Apply f x)  : xs
+48c48
+< instance TypeLength '[] where
+---
+> instance TypeLength     where
+51c51
+< instance TypeLength xs => TypeLength (x ': xs) where
+---
+> instance TypeLength xs => TypeLength (x  : xs) where
+56d55
+<     Insert a '[]       = (a ': '[])
+57d55
+<     Insert a (a ': xs) = (a ': xs)
+58c56
+<     Insert a (x ': xs) = x ': (Insert a xs)
+---
+>     Insert a           = (a  :    )
+58a57
+>     Insert a (a  : xs) = (a  : xs)
+58a58
+>     Insert a (x  : xs) = x  : (Insert a xs)
+71d70
+<     Union '[] ys = ys
+72c71
+<     Union (x ': xs) ys = Insert x (Union xs ys)
+---
+>     Union     ys = ys
+72a72
+>     Union (x  : xs) ys = Insert x (Union xs ys)
+85d84
+<     Remove a '[] = '[]
+86d84
+<     Remove a (a ': ys) = ys
+87c85
+<     Remove a (y ': ys) = y ': (Remove a ys)
+---
+>     Remove a     = 
+87a86
+>     Remove a (a  : ys) = ys
+87a87
+>     Remove a (y  : ys) = y  : (Remove a ys)
+100d99
+<     Difference '[] ys = ys
+101c100
+<     Difference (x ': xs) ys = Remove x (Difference xs ys)
+---
+>     Difference     ys = ys
+101a101
+>     Difference (x  : xs) ys = Remove x (Difference xs ys)
+114d113
+<     ReverseAcc '[] acc = acc
+115c114
+<     ReverseAcc (x ': xs) acc = ReverseAcc xs (x ': acc)
+---
+>     ReverseAcc     acc = acc
+115a115
+>     ReverseAcc (x  : xs) acc = ReverseAcc xs (x  : acc)
+119c119
+<     Reverse xs = ReverseAcc xs '[]
+---
+>     Reverse xs = ReverseAcc xs 
+128d127
+<     Intersection '[] ys = '[]
+129d127
+<     Intersection (x ': xs) (x ': ys) = x ': (Intersection xs ys)
+130c128
+<     Intersection (x ': xs) (y ': ys) = Intersection xs ys
+---
+>     Intersection     ys = 
+130a129
+>     Intersection (x  : xs) (x  : ys) = x  : (Intersection xs ys)
+130a130
+>     Intersection (x  : xs) (y  : ys) = Intersection xs ys
+143d142
+<     Find x '[]       = False
+144d142
+<     Find x (x ': ys) = True
+145c143
+<     Find x (y ': ys) = Find x ys
+---
+>     Find x           = False
+145a144
+>     Find x (x  : ys) = True
+145a145
+>     Find x (y  : ys) = Find x ys
+158d157
+<     Distinct '[] '[] = False
+159d157
+<     Distinct (x ': xs) (x ': ys) = Distinct xs ys
+160c158
+<     Distinct (x ': xs) (y ': ys) = Not (Find x (y ': ys)) && Distinct xs ys
+---
+>     Distinct         = False
+160a159
+>     Distinct (x  : xs) (x  : ys) = Distinct xs ys
+160a160
+>     Distinct (x  : xs) (y  : ys) = Not (Find x (y  : ys)) && Distinct xs ys
+173d172
+<     Lookup k ('(k,a) ': ls) = a
+174c173
+<     Lookup k ('(x,a) ': ls) = Lookup k ls
+---
+>     Lookup k (  k,a   : ls) = a
+174a174
+>     Lookup k (  x,a   : ls) = Lookup k ls
+187c187
+<     Fst '(a,b) = a
+---
+>     Fst   a,b  = a
+191c191
+< type instance Apply Fst' '(a, b) = a
+---
+> type instance Apply Fst'   a, b  = a
+195c195
+<     Snd '(a,b) = b
+---
+>     Snd   a,b  = b
+200c200
+< type instance Apply Snd' '(a, b) = b
+---
+> type instance Apply Snd'   a, b  = b
+204c204
+<     AsFst a b = '(a,b)
+---
+>     AsFst a b =   a,b
+217c217
+<     AsSnd a b = '(b,a)
+---
+>     AsSnd a b =   b,a
+230c230
+<     Swap '(a,b) = '(b,a)
+---
+>     Swap   a,b  =   b,a
+235c235
+< type instance Apply Swap' '(a,b) = Swap '(a,b)
+---
+> type instance Apply Swap'   a,b  = Swap   a,b
+237a238
+> 
+</pre></br><h2>original</h2></br><pre>{-# LANGUAGE
+      DataKinds
+    , GADTs
+    , PolyKinds
+    , ScopedTypeVariables
+    , TypeFamilies
+    , TypeOperators
+    , UndecidableInstances
+    #-}
+
+{-# OPTIONS_HADDOCK show-extensions #-}
+
+{-|
+Module       : Data.Type.List
+Description  : Operation on type-level lists and tuples.
+Copyright    : (c) Marcin Mrotek, 2014
+License      : BSD3
+Maintainer   : marcin.jan.mrotek@gmail.com
+
+Operations on type-level lists and tuples, together with their curried versions - the more apostrophes, the more arguments are missing from the function.
+Curried type functions can be evaluated by the 'Apply' type family from "Data.Singletons".
+-}
+
+module Data.Type.List where
+
+import Data.Type.Bool
+import Data.Type.Equality
+import Data.Singletons
+
+-- |Maps a curried type function over a type list.
+type family Map (f :: TyFun a b -> *) (xs :: [a]) where
+    Map f '[] = '[]
+    Map f (x ': xs) = (Apply f x) ': xs
+
+data Map'' :: TyFun (TyFun a b -> *) (TyFun [a] [b] -> *) -> * where
+    Map'' :: Map'' f
+
+data Map' :: (TyFun a b -> *) -> TyFun [a] [b] -> * where
+    Map' :: Map' f g
+
+type instance Apply Map'' f = Map' f
+type instance Apply (Map' f) l = Map f l
+
+-- |Length of a type-level list, accesible at runtime.
+class TypeLength xs where
+    typeLength :: sing xs -> Int
+
+instance TypeLength '[] where
+    typeLength _ = 0
+
+instance TypeLength xs => TypeLength (x ': xs) where
+    typeLength _ = (typeLength (undefined :: sing xs)) + 1
+
+-- |Insert a type into a type list.
+type family Insert a xs where
+    Insert a '[]       = (a ': '[])
+    Insert a (a ': xs) = (a ': xs)
+    Insert a (x ': xs) = x ': (Insert a xs)
+
+data Insert'' :: TyFun k (TyFun [k] [k] -> *) -> * where
+    Insert'' :: Insert'' f
+
+data Insert' :: k -> TyFun [k] [k] -> * where
+    Insert' :: Insert' x f
+
+type instance Apply Insert'' x = Insert' x
+type instance Apply (Insert' x) xs = Insert x xs
+
+-- |Set union over type lists.
+type family Union xs ys where
+    Union '[] ys = ys
+    Union (x ': xs) ys = Insert x (Union xs ys)
+
+data Union'' :: TyFun [k] (TyFun [k] [k] -> *) -> * where
+    Union'' :: Union'' f
+
+data Union' :: [k] -> TyFun [k] [k] -> * where
+    Union' :: Union' xs f
+
+type instance Apply Union'' xs = Union' xs
+type instance Apply (Union' xs) ys = Union xs ys
+
+-- |Remove a type from type list.
+type family Remove x ys where
+    Remove a '[] = '[]
+    Remove a (a ': ys) = ys
+    Remove a (y ': ys) = y ': (Remove a ys)
+
+data Remove'' :: TyFun k (TyFun [k] [k] -> *) -> * where
+    Remove'' :: Remove'' f
+
+data Remove' :: k -> TyFun [k] [k] -> * where
+    Remove' :: Remove' x f
+
+type instance Apply Remove'' x = Remove' x
+type instance Apply (Remove' x) xs = Remove x xs
+
+-- |Set difference of two lists.
+type family Difference xs ys where
+    Difference '[] ys = ys
+    Difference (x ': xs) ys = Remove x (Difference xs ys)
+
+data Difference'' :: TyFun [k] (TyFun [k] [k] -> *) -> * where
+    Difference'' :: Difference'' f
+
+data Difference' :: [k] -> TyFun [k] [k] -> * where
+    Difference' :: Difference' xs f
+
+type instance Apply Difference'' xs = Difference' xs
+type instance Apply (Difference' xs) ys = Difference xs ys
+
+-- |Helper function for Reverse.
+type family ReverseAcc xs acc where
+    ReverseAcc '[] acc = acc
+    ReverseAcc (x ': xs) acc = ReverseAcc xs (x ': acc)
+
+-- |Reverse a type list.
+type family Reverse xs where
+    Reverse xs = ReverseAcc xs '[]
+
+data Reverse' :: TyFun [k] [k] -> * where
+    Reverse' :: Reverse' f
+
+type instance Apply Reverse' xs = Reverse xs
+
+-- | Type list intersection.
+type family Intersection xs ys where
+    Intersection '[] ys = '[]
+    Intersection (x ': xs) (x ': ys) = x ': (Intersection xs ys)
+    Intersection (x ': xs) (y ': ys) = Intersection xs ys
+
+data Intersection'' :: TyFun [k] (TyFun [k] [k] -> *) -> * where
+    Intersection'' :: Intersection'' f
+
+data Intersection' :: [k] -> TyFun [k] [k] -> * where
+    Intersection' :: Intersection' xs f
+
+type instance Apply Intersection'' xs = Intersection' xs
+type instance Apply (Intersection' xs) ys = Intersection xs ys
+
+-- | Type list membership test.
+type family Find x ys where
+    Find x '[]       = False
+    Find x (x ': ys) = True
+    Find x (y ': ys) = Find x ys
+
+data Find'' :: TyFun k (TyFun [k] Bool -> *) -> * where
+    Find'' :: Find'' f
+
+data Find' :: k -> TyFun [k] Bool -> * where
+    Find' :: Find' x f
+
+type instance Apply Find'' x = Find' x
+type instance Apply (Find' x) xs = Find x xs
+
+-- |Test if two list do not contain any equal elements.
+type family Distinct xs ys where
+    Distinct '[] '[] = False
+    Distinct (x ': xs) (x ': ys) = Distinct xs ys
+    Distinct (x ': xs) (y ': ys) = Not (Find x (y ': ys)) && Distinct xs ys
+
+data Distinct'' :: TyFun [k] (TyFun [k] Bool -> *) -> * where
+    Distinct'' :: Distinct'' f
+
+data Distinct' :: [k] -> TyFun [k] Bool -> * where
+    Distinct' :: Distinct' xs f
+
+type instance Apply Distinct'' xs = Distinct' xs
+type instance Apply (Distinct' xs) ys = Distinct xs ys
+
+-- |Lookup an association type list.
+type family Lookup (x :: k) (l :: [(k,a)]) where
+    Lookup k ('(k,a) ': ls) = a
+    Lookup k ('(x,a) ': ls) = Lookup k ls
+
+data Lookup'' :: TyFun k (TyFun [(k,a)] a -> *) -> * where
+    Lookup'' :: Lookup'' f
+
+data Lookup' :: k -> TyFun [(k,a)] a -> * where
+    Lookup' :: Lookup' x f
+
+type instance Apply Lookup'' x = Lookup' x
+type instance Apply (Lookup' x) xs = Lookup x xs
+
+-- |First element of a type pair.
+type family Fst k where
+    Fst '(a,b) = a
+
+data Fst' :: TyFun (a,b) a -> * where
+    Fst' :: Fst' f
+type instance Apply Fst' '(a, b) = a
+
+-- |Second element of a type pair.
+type family Snd k where
+    Snd '(a,b) = b
+
+data Snd' :: TyFun (a,b) b -> * where
+    Snd' :: Snd' k
+
+type instance Apply Snd' '(a, b) = b
+
+-- |Cons a type pair with elements in order.
+type family AsFst a b where
+    AsFst a b = '(a,b)
+
+data AsFst'' :: TyFun a (TyFun b (a,b) -> *) -> * where
+    AsFst'' :: AsFst'' f
+
+data AsFst' :: a -> TyFun b (a,b) -> * where
+    AsFst' :: AsFst' a f
+
+type instance Apply AsFst'' a = AsFst' a
+type instance Apply (AsFst' a) b = AsFst a b
+
+-- |Cons a type pair in reverse order.
+type family AsSnd a b where
+    AsSnd a b = '(b,a)
+
+data AsSnd'' :: TyFun a (TyFun b (b,a) -> *) -> * where
+    AsSnd'' :: AsSnd'' f
+
+data AsSnd' :: a -> TyFun b (b,a) -> * where
+    AsSnd' :: AsSnd' k f
+
+type instance Apply AsSnd'' a = AsSnd' a
+type instance Apply (AsSnd' a) b = AsSnd a b
+
+-- |Swap elements of a type pair.
+type family Swap k where
+    Swap '(a,b) = '(b,a)
+
+data Swap' :: TyFun (a,b) (b,a) -> * where
+    Swap' :: Swap' f
+
+type instance Apply Swap' '(a,b) = Swap '(a,b)
+
+
+</pre></br><h2>printed</h2></br><pre>{-# LANGUAGE
+      DataKinds
+    , GADTs
+    , PolyKinds
+    , ScopedTypeVariables
+    , TypeFamilies
+    , TypeOperators
+    , UndecidableInstances
+    #-}
+
+{-# OPTIONS_HADDOCK show-extensions #-}
+
+{-|
+Module       : Data.Type.List
+Description  : Operation on type-level lists and tuples.
+Copyright    : (c) Marcin Mrotek, 2014
+License      : BSD3
+Maintainer   : marcin.jan.mrotek@gmail.com
+
+Operations on type-level lists and tuples, together with their curried versions - the more apostrophes, the more arguments are missing from the function.
+Curried type functions can be evaluated by the 'Apply' type family from "Data.Singletons".
+-}
+
+module Data.Type.List where
+
+import Data.Type.Bool
+import Data.Type.Equality
+import Data.Singletons
+
+-- |Maps a curried type function over a type list.
+type family Map (f :: TyFun a b -> *) (xs :: [a]) where
+    Map f     = 
+    Map f (x  : xs) = (Apply f x)  : xs
+
+data Map'' :: TyFun (TyFun a b -> *) (TyFun [a] [b] -> *) -> * where
+    Map'' :: Map'' f
+
+data Map' :: (TyFun a b -> *) -> TyFun [a] [b] -> * where
+    Map' :: Map' f g
+
+type instance Apply Map'' f = Map' f
+type instance Apply (Map' f) l = Map f l
+
+-- |Length of a type-level list, accesible at runtime.
+class TypeLength xs where
+    typeLength :: sing xs -> Int
+
+instance TypeLength     where
+    typeLength _ = 0
+
+instance TypeLength xs => TypeLength (x  : xs) where
+    typeLength _ = (typeLength (undefined :: sing xs)) + 1
+
+-- |Insert a type into a type list.
+type family Insert a xs where
+    Insert a           = (a  :    )
+    Insert a (a  : xs) = (a  : xs)
+    Insert a (x  : xs) = x  : (Insert a xs)
+
+data Insert'' :: TyFun k (TyFun [k] [k] -> *) -> * where
+    Insert'' :: Insert'' f
+
+data Insert' :: k -> TyFun [k] [k] -> * where
+    Insert' :: Insert' x f
+
+type instance Apply Insert'' x = Insert' x
+type instance Apply (Insert' x) xs = Insert x xs
+
+-- |Set union over type lists.
+type family Union xs ys where
+    Union     ys = ys
+    Union (x  : xs) ys = Insert x (Union xs ys)
+
+data Union'' :: TyFun [k] (TyFun [k] [k] -> *) -> * where
+    Union'' :: Union'' f
+
+data Union' :: [k] -> TyFun [k] [k] -> * where
+    Union' :: Union' xs f
+
+type instance Apply Union'' xs = Union' xs
+type instance Apply (Union' xs) ys = Union xs ys
+
+-- |Remove a type from type list.
+type family Remove x ys where
+    Remove a     = 
+    Remove a (a  : ys) = ys
+    Remove a (y  : ys) = y  : (Remove a ys)
+
+data Remove'' :: TyFun k (TyFun [k] [k] -> *) -> * where
+    Remove'' :: Remove'' f
+
+data Remove' :: k -> TyFun [k] [k] -> * where
+    Remove' :: Remove' x f
+
+type instance Apply Remove'' x = Remove' x
+type instance Apply (Remove' x) xs = Remove x xs
+
+-- |Set difference of two lists.
+type family Difference xs ys where
+    Difference     ys = ys
+    Difference (x  : xs) ys = Remove x (Difference xs ys)
+
+data Difference'' :: TyFun [k] (TyFun [k] [k] -> *) -> * where
+    Difference'' :: Difference'' f
+
+data Difference' :: [k] -> TyFun [k] [k] -> * where
+    Difference' :: Difference' xs f
+
+type instance Apply Difference'' xs = Difference' xs
+type instance Apply (Difference' xs) ys = Difference xs ys
+
+-- |Helper function for Reverse.
+type family ReverseAcc xs acc where
+    ReverseAcc     acc = acc
+    ReverseAcc (x  : xs) acc = ReverseAcc xs (x  : acc)
+
+-- |Reverse a type list.
+type family Reverse xs where
+    Reverse xs = ReverseAcc xs 
+
+data Reverse' :: TyFun [k] [k] -> * where
+    Reverse' :: Reverse' f
+
+type instance Apply Reverse' xs = Reverse xs
+
+-- | Type list intersection.
+type family Intersection xs ys where
+    Intersection     ys = 
+    Intersection (x  : xs) (x  : ys) = x  : (Intersection xs ys)
+    Intersection (x  : xs) (y  : ys) = Intersection xs ys
+
+data Intersection'' :: TyFun [k] (TyFun [k] [k] -> *) -> * where
+    Intersection'' :: Intersection'' f
+
+data Intersection' :: [k] -> TyFun [k] [k] -> * where
+    Intersection' :: Intersection' xs f
+
+type instance Apply Intersection'' xs = Intersection' xs
+type instance Apply (Intersection' xs) ys = Intersection xs ys
+
+-- | Type list membership test.
+type family Find x ys where
+    Find x           = False
+    Find x (x  : ys) = True
+    Find x (y  : ys) = Find x ys
+
+data Find'' :: TyFun k (TyFun [k] Bool -> *) -> * where
+    Find'' :: Find'' f
+
+data Find' :: k -> TyFun [k] Bool -> * where
+    Find' :: Find' x f
+
+type instance Apply Find'' x = Find' x
+type instance Apply (Find' x) xs = Find x xs
+
+-- |Test if two list do not contain any equal elements.
+type family Distinct xs ys where
+    Distinct         = False
+    Distinct (x  : xs) (x  : ys) = Distinct xs ys
+    Distinct (x  : xs) (y  : ys) = Not (Find x (y  : ys)) && Distinct xs ys
+
+data Distinct'' :: TyFun [k] (TyFun [k] Bool -> *) -> * where
+    Distinct'' :: Distinct'' f
+
+data Distinct' :: [k] -> TyFun [k] Bool -> * where
+    Distinct' :: Distinct' xs f
+
+type instance Apply Distinct'' xs = Distinct' xs
+type instance Apply (Distinct' xs) ys = Distinct xs ys
+
+-- |Lookup an association type list.
+type family Lookup (x :: k) (l :: [(k,a)]) where
+    Lookup k (  k,a   : ls) = a
+    Lookup k (  x,a   : ls) = Lookup k ls
+
+data Lookup'' :: TyFun k (TyFun [(k,a)] a -> *) -> * where
+    Lookup'' :: Lookup'' f
+
+data Lookup' :: k -> TyFun [(k,a)] a -> * where
+    Lookup' :: Lookup' x f
+
+type instance Apply Lookup'' x = Lookup' x
+type instance Apply (Lookup' x) xs = Lookup x xs
+
+-- |First element of a type pair.
+type family Fst k where
+    Fst   a,b  = a
+
+data Fst' :: TyFun (a,b) a -> * where
+    Fst' :: Fst' f
+type instance Apply Fst'   a, b  = a
+
+-- |Second element of a type pair.
+type family Snd k where
+    Snd   a,b  = b
+
+data Snd' :: TyFun (a,b) b -> * where
+    Snd' :: Snd' k
+
+type instance Apply Snd'   a, b  = b
+
+-- |Cons a type pair with elements in order.
+type family AsFst a b where
+    AsFst a b =   a,b
+
+data AsFst'' :: TyFun a (TyFun b (a,b) -> *) -> * where
+    AsFst'' :: AsFst'' f
+
+data AsFst' :: a -> TyFun b (a,b) -> * where
+    AsFst' :: AsFst' a f
+
+type instance Apply AsFst'' a = AsFst' a
+type instance Apply (AsFst' a) b = AsFst a b
+
+-- |Cons a type pair in reverse order.
+type family AsSnd a b where
+    AsSnd a b =   b,a
+
+data AsSnd'' :: TyFun a (TyFun b (b,a) -> *) -> * where
+    AsSnd'' :: AsSnd'' f
+
+data AsSnd' :: a -> TyFun b (b,a) -> * where
+    AsSnd' :: AsSnd' k f
+
+type instance Apply AsSnd'' a = AsSnd' a
+type instance Apply (AsSnd' a) b = AsSnd a b
+
+-- |Swap elements of a type pair.
+type family Swap k where
+    Swap   a,b  =   b,a
+
+data Swap' :: TyFun (a,b) (b,a) -> * where
+    Swap' :: Swap' f
+
+type instance Apply Swap'   a,b  = Swap   a,b
+
+
+
+</pre>

@@ -1,0 +1,206 @@
+<a href="Char.hs6780301931105222769.out.html">prev</a></br><a href="failures.html">home</a></br><a href="ChemShifts.hs10040168551732267506.out.html">next</a></br></br><pre>49c49
+<     first f >>> arr (\ (bs,c) -> [(b,c) | b <- bs])
+---
+>     first f >>> arr (\ (bs,c) ->        |(b,c) | b <- bs])
+99a100
+> 
+</pre></br><h2>original</h2></br><pre>{-# OPTIONS -Wall -fno-warn-orphans #-}
+{-# LANGUAGE TypeOperators, GeneralizedNewtypeDeriving #-}
+
+----------------------------------------------------------------------
+-- |
+-- Module      :  Data.Bot.Chatter
+-- Copyright   :  (c) Conal Elliott 2008
+-- License     :  BSD3
+--
+-- Maintainer  :  conal@conal.net
+-- Stability   :  experimental
+--
+-- Bots who can produce any number of reactions to each input.  See
+-- <http://conal.net/blog/tag/bot/> for explanation and @Examples.Chatter@
+-- for examples.  Builds on "Data.Bot.Mutant".
+
+----------------------------------------------------------------------
+
+module Data.Bot.Chatter
+  ( ChatterBot(..), (:->)
+  , justC, filterC, scanlC, accumC
+  ) where
+
+import Prelude hiding (id,(.))
+import Control.Category
+import Control.Arrow
+import Control.Applicative
+import Data.Monoid
+import Data.Maybe
+
+import Data.Bot.Mutant
+
+
+-- | Chatter-bots.  Can have any number of outputs per input.  'mappend'
+-- appends outputs.
+newtype ChatterBot i o = Chatter { unChatter :: MutantBot i [o] }
+
+instance Monoid (ChatterBot i o) where
+  mempty = Chatter (pure mempty)
+  Chatter b `mappend` Chatter c = Chatter (liftA2 mappend b c)
+
+instance Category ChatterBot where
+  id = arr id
+  Chatter bc . Chatter ab = Chatter (concatMB bc . ab)
+
+instance Arrow ChatterBot where
+  arr h = Chatter (arr (pure . h))
+  first (Chatter f) = Chatter $
+    first f >>> arr (\ (bs,c) -> [(b,c) | b <- bs])
+    -- first f >>> arr (\ (bs,c) -> fmap (flip (,) c) bs)
+
+instance ArrowZero ChatterBot where
+  zeroArrow = mempty
+
+instance ArrowPlus ChatterBot where
+  (<+>) = mappend
+
+instance Alternative (ChatterBot i) where
+  empty = mempty
+  (<|>) = mappend
+
+-- Boilerplate Functor & Applicative for Arrow instance
+
+instance Functor (ChatterBot i) where fmap = (^<<)
+
+instance Applicative (ChatterBot i) where
+  pure x        = arr (const x)
+  fbot <*> xbot = fbot &&& xbot >>> arr (uncurry ($))
+
+-- TODO: generalize from lists.
+
+-- | Friendly synonym for 'ChatterBot'
+type (:->) = ChatterBot
+
+
+---- Operations
+
+-- | Each 'Nothing' gets dropped, and the 'Just' constructors are stripped
+-- from what's left.
+justC :: Maybe a :-> a
+justC = Chatter (arr maybeToList)
+
+-- | Pass through whatever satisfies a given predicate
+filterC :: (a -> Bool) -> a :-> a
+filterC test = f ^>> justC
+ where
+   f a | test a    = Just a
+       | otherwise = Nothing
+
+
+-- | Chatter-bot analog to list 'scanl', but without initial @b@
+scanlC :: (b -> a -> b) -> b -> (a :-> b)
+scanlC = (fmap.fmap) (Chatter . fmap pure) scanlM
+
+-- scanlC f b = Chatter $ pure <$> scanlM f b
+
+-- | Cumulative function applications.  @accumC == scanlC (flip ($))@
+accumC :: a -> ((a->a) :-> a)
+accumC = scanlC (flip ($))
+</pre></br><h2>printed</h2></br><pre>{-# OPTIONS -Wall -fno-warn-orphans #-}
+{-# LANGUAGE TypeOperators, GeneralizedNewtypeDeriving #-}
+
+----------------------------------------------------------------------
+-- |
+-- Module      :  Data.Bot.Chatter
+-- Copyright   :  (c) Conal Elliott 2008
+-- License     :  BSD3
+--
+-- Maintainer  :  conal@conal.net
+-- Stability   :  experimental
+--
+-- Bots who can produce any number of reactions to each input.  See
+-- <http://conal.net/blog/tag/bot/> for explanation and @Examples.Chatter@
+-- for examples.  Builds on "Data.Bot.Mutant".
+
+----------------------------------------------------------------------
+
+module Data.Bot.Chatter
+  ( ChatterBot(..), (:->)
+  , justC, filterC, scanlC, accumC
+  ) where
+
+import Prelude hiding (id,(.))
+import Control.Category
+import Control.Arrow
+import Control.Applicative
+import Data.Monoid
+import Data.Maybe
+
+import Data.Bot.Mutant
+
+
+-- | Chatter-bots.  Can have any number of outputs per input.  'mappend'
+-- appends outputs.
+newtype ChatterBot i o = Chatter { unChatter :: MutantBot i [o] }
+
+instance Monoid (ChatterBot i o) where
+  mempty = Chatter (pure mempty)
+  Chatter b `mappend` Chatter c = Chatter (liftA2 mappend b c)
+
+instance Category ChatterBot where
+  id = arr id
+  Chatter bc . Chatter ab = Chatter (concatMB bc . ab)
+
+instance Arrow ChatterBot where
+  arr h = Chatter (arr (pure . h))
+  first (Chatter f) = Chatter $
+    first f >>> arr (\ (bs,c) ->        |(b,c) | b <- bs])
+    -- first f >>> arr (\ (bs,c) -> fmap (flip (,) c) bs)
+
+instance ArrowZero ChatterBot where
+  zeroArrow = mempty
+
+instance ArrowPlus ChatterBot where
+  (<+>) = mappend
+
+instance Alternative (ChatterBot i) where
+  empty = mempty
+  (<|>) = mappend
+
+-- Boilerplate Functor & Applicative for Arrow instance
+
+instance Functor (ChatterBot i) where fmap = (^<<)
+
+instance Applicative (ChatterBot i) where
+  pure x        = arr (const x)
+  fbot <*> xbot = fbot &&& xbot >>> arr (uncurry ($))
+
+-- TODO: generalize from lists.
+
+-- | Friendly synonym for 'ChatterBot'
+type (:->) = ChatterBot
+
+
+---- Operations
+
+-- | Each 'Nothing' gets dropped, and the 'Just' constructors are stripped
+-- from what's left.
+justC :: Maybe a :-> a
+justC = Chatter (arr maybeToList)
+
+-- | Pass through whatever satisfies a given predicate
+filterC :: (a -> Bool) -> a :-> a
+filterC test = f ^>> justC
+ where
+   f a | test a    = Just a
+       | otherwise = Nothing
+
+
+-- | Chatter-bot analog to list 'scanl', but without initial @b@
+scanlC :: (b -> a -> b) -> b -> (a :-> b)
+scanlC = (fmap.fmap) (Chatter . fmap pure) scanlM
+
+-- scanlC f b = Chatter $ pure <$> scanlM f b
+
+-- | Cumulative function applications.  @accumC == scanlC (flip ($))@
+accumC :: a -> ((a->a) :-> a)
+accumC = scanlC (flip ($))
+
+</pre>

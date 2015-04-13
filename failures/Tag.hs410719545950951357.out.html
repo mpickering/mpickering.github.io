@@ -1,0 +1,546 @@
+<a href="Table.hs1559826381670147526.out.html">prev</a></br><a href="failures.html">home</a></br><a href="Target.hs1066156125282442307.out.html">next</a></br></br><pre>25c25
+< {-# LINE 33 "src/ehc/CodeGen/Tag.chs" #-}
+---
+> 
+25a26
+> 
+25a27
+> 
+25a28
+> 
+25a29
+> 
+25a30
+> 
+25a31
+> 
+25a32
+> 
+53c60
+< {-# LINE 62 "src/ehc/CodeGen/Tag.chs" #-}
+---
+> 
+53a61
+> 
+62c70
+< {-# LINE 72 "src/ehc/CodeGen/Tag.chs" #-}
+---
+> 
+62a71
+> 
+67c76
+< {-# LINE 78 "src/ehc/CodeGen/Tag.chs" #-}
+---
+> 
+67a77
+> 
+81c91
+< {-# LINE 97 "src/ehc/CodeGen/Tag.chs" #-}
+---
+> 
+81a92
+> 
+81a93
+> 
+81a94
+> 
+81a95
+> 
+81a96
+> 
+86c101
+< {-# LINE 103 "src/ehc/CodeGen/Tag.chs" #-}
+---
+> 
+86a102
+> 
+91c107
+< {-# LINE 113 "src/ehc/CodeGen/Tag.chs" #-}
+---
+> 
+91a108
+> 
+91a109
+> 
+91a110
+> 
+91a111
+> 
+91a112
+> 
+105c126
+< {-# LINE 128 "src/ehc/CodeGen/Tag.chs" #-}
+---
+> 
+105a127
+> 
+121c143
+< {-# LINE 145 "src/ehc/CodeGen/Tag.chs" #-}
+---
+> 
+121a144
+> 
+125c148
+< {-# LINE 150 "src/ehc/CodeGen/Tag.chs" #-}
+---
+> 
+125a149
+> 
+158c182
+< {-# LINE 184 "src/ehc/CodeGen/Tag.chs" #-}
+---
+> 
+158a183
+> 
+162c187
+< {-# LINE 193 "src/ehc/CodeGen/Tag.chs" #-}
+---
+> 
+162a188
+> 
+162a189
+> 
+162a190
+> 
+162a191
+> 
+162a192
+> 
+168c198
+< {-# LINE 204 "src/ehc/CodeGen/Tag.chs" #-}
+---
+> 
+168a199
+> 
+168a200
+> 
+168a201
+> 
+168a202
+> 
+168a203
+> 
+173c208
+< {-# LINE 214 "src/ehc/CodeGen/Tag.chs" #-}
+---
+> 
+173a209
+> 
+173a210
+> 
+173a211
+> 
+173a212
+> 
+173a213
+> 
+183a224
+> 
+</pre></br><h2>original</h2></br><pre>module UHC.Light.Compiler.CodeGen.Tag
+( CTag (..), ctagIsRec, ctagTag, ctagChar, ctagInt, emptyCTag
+, mkOnlyConInfoCTag, patchTyInfoCTag
+, ctag, ppCTag, ppCTagInt
+, tagBoolTrue, tagBoolFalse
+, tagListCons, tagListNil
+, TagDataInfo (..)
+, mkTyIsConTagInfo, mkConTagInfo, emptyTagDataInfo
+, tagInfoInt, tagInfoChar
+, TagLike (..), tagDataInfo
+, CTagsMp, emptyCTagsMp
+, mkClassCTag )
+where
+import Data.Maybe
+import Control.Monad
+import UHC.Util.Pretty
+import UHC.Util.AssocL
+import UHC.Light.Compiler.Base.HsName
+import UHC.Light.Compiler.Base.HsName.Builtin
+import UHC.Util.Binary
+import UHC.Util.Serialize
+
+
+
+{-# LINE 33 "src/ehc/CodeGen/Tag.chs" #-}
+data CTag
+  = CTagRec
+  | CTag
+      { ctagTyNm        :: !HsName
+      , ctagNm          :: !HsName
+      , ctagTag'        :: !Int
+      , ctagArity       :: !Int
+      , ctagMaxArity    :: !Int
+      }
+  deriving (Show,Eq,Ord)
+
+ctagIsRec :: CTag -> Bool
+ctagIsRec CTagRec = True
+ctagIsRec t       = False
+
+ctagTag :: CTag -> Int
+ctagTag CTagRec = 0
+ctagTag t       = ctagTag' t
+
+ctagInt  =  CTag hsnInt  hsnInt  0 1 1
+{-# INLINE ctagInt #-}
+ctagChar =  CTag hsnChar hsnChar 0 1 1
+{-# INLINE ctagChar #-}
+
+emptyCTag = CTag hsnUnknown hsnUnknown 0 0 0
+{-# INLINE emptyCTag #-}
+
+{-# LINE 62 "src/ehc/CodeGen/Tag.chs" #-}
+-- | Construct a minimal datatype tag which still must be completed wrt more global datatype info
+mkOnlyConInfoCTag :: HsName -> Int -> Int -> CTag
+mkOnlyConInfoCTag conNm tg arity = emptyCTag {ctagNm = conNm, ctagTag' = tg, ctagArity = arity}
+
+-- | Patch a datatype tag with datatype global info
+patchTyInfoCTag :: HsName -> Int -> CTag -> CTag
+patchTyInfoCTag tyNm maxArity t = t {ctagTyNm = tyNm, ctagMaxArity = maxArity}
+
+{-# LINE 72 "src/ehc/CodeGen/Tag.chs" #-}
+-- only used when `not ehcCfgClassViaRec'
+mkClassCTag :: HsName -> Int -> CTag
+mkClassCTag n sz = CTag n n 0 sz sz
+
+{-# LINE 78 "src/ehc/CodeGen/Tag.chs" #-}
+ctag :: a -> (HsName -> HsName -> Int -> Int -> Int -> a) -> CTag -> a
+ctag n t tg = case tg of {CTag tn cn i a ma -> t tn cn i a ma; _ -> n}
+{-# INLINE ctag #-}
+
+ppCTag :: CTag -> PP_Doc
+ppCTag = ctag (pp "Rec") (\tn cn t a ma -> pp t >|< "/" >|< pp cn >|< "/" >|< pp a >|< "/" >|< pp ma)
+
+ppCTagInt :: CTag -> PP_Doc
+ppCTagInt = ctag (pp "-1") (\_ _ t _ _ -> pp t)
+
+instance PP CTag where
+  pp = ppCTag
+
+{-# LINE 97 "src/ehc/CodeGen/Tag.chs" #-}
+tagBoolTrue, tagBoolFalse :: Int
+tagBoolTrue  = 1        -- this makes it hardcoded, ideally dependent on datatype def itself !!
+tagBoolFalse = 0        -- this makes it hardcoded, ideally dependent on datatype def itself !!
+
+{-# LINE 103 "src/ehc/CodeGen/Tag.chs" #-}
+tagListCons, tagListNil :: Int
+tagListCons = 0         -- this makes it hardcoded, ideally dependent on datatype def itself !!
+tagListNil  = 1         -- this makes it hardcoded, ideally dependent on datatype def itself !!
+
+{-# LINE 113 "src/ehc/CodeGen/Tag.chs" #-}
+-- | datatype info about tag: type name & constr name, required throughout various codegen stages
+data TagDataInfo = TagDataInfo
+  { tagDataInfoTypeNm   :: !HsName
+  , tagDataInfoConstrNm :: !HsName
+  }
+  deriving (Show)
+
+instance Eq TagDataInfo where
+  i1 == i2 = tagDataInfoConstrNm i1 == tagDataInfoConstrNm i2
+
+instance Ord TagDataInfo where
+  i1 `compare` i2 = tagDataInfoConstrNm i1 `compare` tagDataInfoConstrNm i2
+
+{-# LINE 128 "src/ehc/CodeGen/Tag.chs" #-}
+mkTyConTagInfo :: HsName -> HsName -> TagDataInfo
+mkTyConTagInfo = TagDataInfo
+{-# INLINE mkTyConTagInfo #-}
+
+-- | Construct info when Ty and Con name are equal
+mkTyIsConTagInfo :: HsName -> TagDataInfo
+mkTyIsConTagInfo n = mkTyConTagInfo n n
+{-# INLINE mkTyIsConTagInfo #-}
+
+mkConTagInfo :: HsName -> TagDataInfo
+mkConTagInfo cn = mkTyConTagInfo hsnUnknown cn
+{-# INLINE mkConTagInfo #-}
+
+emptyTagDataInfo = mkTyConTagInfo hsnUnknown hsnUnknown
+
+{-# LINE 145 "src/ehc/CodeGen/Tag.chs" #-}
+tagInfoInt  = mkTyIsConTagInfo hsnInt
+tagInfoChar = mkTyIsConTagInfo hsnChar
+
+{-# LINE 150 "src/ehc/CodeGen/Tag.chs" #-}
+class TagLike t where
+  tagIsData         :: t -> Bool
+  tagIsTup          :: t -> Bool
+
+  -- | extract data related info, only allowed when tagIsData
+  tagMbDataInfo     :: t -> Maybe TagDataInfo
+  tagDataTypeNm     :: t -> HsName
+  tagDataConstrNm   :: t -> HsName
+  tagDataTag        :: t -> Int
+
+  -- defaults: either tagDataInfo or tagDataTypeNm and tagDataConstrNm and tagIsData
+  tagMbDataInfo     t   = if tagIsData t then Just (emptyTagDataInfo {tagDataInfoTypeNm = tagDataTypeNm t, tagDataInfoConstrNm = tagDataConstrNm t}) else Nothing
+  tagDataTypeNm         = tagDataInfoTypeNm . tagDataInfo
+  tagDataConstrNm       = tagDataInfoConstrNm . tagDataInfo
+  tagIsData             = isJust . tagMbDataInfo
+
+  -- defaults
+  tagIsTup              = not . tagIsData
+
+-- | Assuming a datatype, return info
+tagDataInfo :: TagLike t => t -> TagDataInfo
+tagDataInfo = fromJust . tagMbDataInfo
+{-# INLINE tagDataInfo #-}
+
+instance TagLike CTag where
+  tagMbDataInfo     = ctag Nothing (\tn cn _ _ _ -> Just (emptyTagDataInfo {tagDataInfoTypeNm = tn, tagDataInfoConstrNm = cn}))
+  tagDataTag        = ctagTag'
+  -- not necessary:
+  tagIsTup          = ctagIsRec
+  tagDataTypeNm     = ctagTyNm
+  tagDataConstrNm   = ctagNm
+
+{-# LINE 184 "src/ehc/CodeGen/Tag.chs" #-}
+instance PP TagDataInfo where
+  pp i = tagDataInfoTypeNm i >|< "#" >|< tagDataInfoConstrNm i
+
+{-# LINE 193 "src/ehc/CodeGen/Tag.chs" #-}
+type CTagsMp = AssocL HsName (AssocL HsName CTag)
+
+emptyCTagsMp :: CTagsMp
+emptyCTagsMp = []
+
+{-# LINE 204 "src/ehc/CodeGen/Tag.chs" #-}
+deriving instance Typeable CTag
+deriving instance Data CTag
+
+
+{-# LINE 214 "src/ehc/CodeGen/Tag.chs" #-}
+instance Serialize CTag where
+  sput = sputShared
+  sget = sgetShared
+  sputNested (CTagRec          ) = sputWord8 0
+  sputNested (CTag    a b c d e) = sputWord8 1 >> sput a >> sput b >> sput c >> sput d >> sput e
+  sgetNested
+    = do t <- sgetWord8
+         case t of
+           0 -> return CTagRec
+           1 -> liftM5 CTag    sget sget sget sget sget
+</pre></br><h2>printed</h2></br><pre>module UHC.Light.Compiler.CodeGen.Tag
+( CTag (..), ctagIsRec, ctagTag, ctagChar, ctagInt, emptyCTag
+, mkOnlyConInfoCTag, patchTyInfoCTag
+, ctag, ppCTag, ppCTagInt
+, tagBoolTrue, tagBoolFalse
+, tagListCons, tagListNil
+, TagDataInfo (..)
+, mkTyIsConTagInfo, mkConTagInfo, emptyTagDataInfo
+, tagInfoInt, tagInfoChar
+, TagLike (..), tagDataInfo
+, CTagsMp, emptyCTagsMp
+, mkClassCTag )
+where
+import Data.Maybe
+import Control.Monad
+import UHC.Util.Pretty
+import UHC.Util.AssocL
+import UHC.Light.Compiler.Base.HsName
+import UHC.Light.Compiler.Base.HsName.Builtin
+import UHC.Util.Binary
+import UHC.Util.Serialize
+
+
+
+
+
+
+
+
+
+
+
+data CTag
+  = CTagRec
+  | CTag
+      { ctagTyNm        :: !HsName
+      , ctagNm          :: !HsName
+      , ctagTag'        :: !Int
+      , ctagArity       :: !Int
+      , ctagMaxArity    :: !Int
+      }
+  deriving (Show,Eq,Ord)
+
+ctagIsRec :: CTag -> Bool
+ctagIsRec CTagRec = True
+ctagIsRec t       = False
+
+ctagTag :: CTag -> Int
+ctagTag CTagRec = 0
+ctagTag t       = ctagTag' t
+
+ctagInt  =  CTag hsnInt  hsnInt  0 1 1
+{-# INLINE ctagInt #-}
+ctagChar =  CTag hsnChar hsnChar 0 1 1
+{-# INLINE ctagChar #-}
+
+emptyCTag = CTag hsnUnknown hsnUnknown 0 0 0
+{-# INLINE emptyCTag #-}
+
+
+
+-- | Construct a minimal datatype tag which still must be completed wrt more global datatype info
+mkOnlyConInfoCTag :: HsName -> Int -> Int -> CTag
+mkOnlyConInfoCTag conNm tg arity = emptyCTag {ctagNm = conNm, ctagTag' = tg, ctagArity = arity}
+
+-- | Patch a datatype tag with datatype global info
+patchTyInfoCTag :: HsName -> Int -> CTag -> CTag
+patchTyInfoCTag tyNm maxArity t = t {ctagTyNm = tyNm, ctagMaxArity = maxArity}
+
+
+
+-- only used when `not ehcCfgClassViaRec'
+mkClassCTag :: HsName -> Int -> CTag
+mkClassCTag n sz = CTag n n 0 sz sz
+
+
+
+ctag :: a -> (HsName -> HsName -> Int -> Int -> Int -> a) -> CTag -> a
+ctag n t tg = case tg of {CTag tn cn i a ma -> t tn cn i a ma; _ -> n}
+{-# INLINE ctag #-}
+
+ppCTag :: CTag -> PP_Doc
+ppCTag = ctag (pp "Rec") (\tn cn t a ma -> pp t >|< "/" >|< pp cn >|< "/" >|< pp a >|< "/" >|< pp ma)
+
+ppCTagInt :: CTag -> PP_Doc
+ppCTagInt = ctag (pp "-1") (\_ _ t _ _ -> pp t)
+
+instance PP CTag where
+  pp = ppCTag
+
+
+
+
+
+
+
+tagBoolTrue, tagBoolFalse :: Int
+tagBoolTrue  = 1        -- this makes it hardcoded, ideally dependent on datatype def itself !!
+tagBoolFalse = 0        -- this makes it hardcoded, ideally dependent on datatype def itself !!
+
+
+
+tagListCons, tagListNil :: Int
+tagListCons = 0         -- this makes it hardcoded, ideally dependent on datatype def itself !!
+tagListNil  = 1         -- this makes it hardcoded, ideally dependent on datatype def itself !!
+
+
+
+
+
+
+
+-- | datatype info about tag: type name & constr name, required throughout various codegen stages
+data TagDataInfo = TagDataInfo
+  { tagDataInfoTypeNm   :: !HsName
+  , tagDataInfoConstrNm :: !HsName
+  }
+  deriving (Show)
+
+instance Eq TagDataInfo where
+  i1 == i2 = tagDataInfoConstrNm i1 == tagDataInfoConstrNm i2
+
+instance Ord TagDataInfo where
+  i1 `compare` i2 = tagDataInfoConstrNm i1 `compare` tagDataInfoConstrNm i2
+
+
+
+mkTyConTagInfo :: HsName -> HsName -> TagDataInfo
+mkTyConTagInfo = TagDataInfo
+{-# INLINE mkTyConTagInfo #-}
+
+-- | Construct info when Ty and Con name are equal
+mkTyIsConTagInfo :: HsName -> TagDataInfo
+mkTyIsConTagInfo n = mkTyConTagInfo n n
+{-# INLINE mkTyIsConTagInfo #-}
+
+mkConTagInfo :: HsName -> TagDataInfo
+mkConTagInfo cn = mkTyConTagInfo hsnUnknown cn
+{-# INLINE mkConTagInfo #-}
+
+emptyTagDataInfo = mkTyConTagInfo hsnUnknown hsnUnknown
+
+
+
+tagInfoInt  = mkTyIsConTagInfo hsnInt
+tagInfoChar = mkTyIsConTagInfo hsnChar
+
+
+
+class TagLike t where
+  tagIsData         :: t -> Bool
+  tagIsTup          :: t -> Bool
+
+  -- | extract data related info, only allowed when tagIsData
+  tagMbDataInfo     :: t -> Maybe TagDataInfo
+  tagDataTypeNm     :: t -> HsName
+  tagDataConstrNm   :: t -> HsName
+  tagDataTag        :: t -> Int
+
+  -- defaults: either tagDataInfo or tagDataTypeNm and tagDataConstrNm and tagIsData
+  tagMbDataInfo     t   = if tagIsData t then Just (emptyTagDataInfo {tagDataInfoTypeNm = tagDataTypeNm t, tagDataInfoConstrNm = tagDataConstrNm t}) else Nothing
+  tagDataTypeNm         = tagDataInfoTypeNm . tagDataInfo
+  tagDataConstrNm       = tagDataInfoConstrNm . tagDataInfo
+  tagIsData             = isJust . tagMbDataInfo
+
+  -- defaults
+  tagIsTup              = not . tagIsData
+
+-- | Assuming a datatype, return info
+tagDataInfo :: TagLike t => t -> TagDataInfo
+tagDataInfo = fromJust . tagMbDataInfo
+{-# INLINE tagDataInfo #-}
+
+instance TagLike CTag where
+  tagMbDataInfo     = ctag Nothing (\tn cn _ _ _ -> Just (emptyTagDataInfo {tagDataInfoTypeNm = tn, tagDataInfoConstrNm = cn}))
+  tagDataTag        = ctagTag'
+  -- not necessary:
+  tagIsTup          = ctagIsRec
+  tagDataTypeNm     = ctagTyNm
+  tagDataConstrNm   = ctagNm
+
+
+
+instance PP TagDataInfo where
+  pp i = tagDataInfoTypeNm i >|< "#" >|< tagDataInfoConstrNm i
+
+
+
+
+
+
+
+type CTagsMp = AssocL HsName (AssocL HsName CTag)
+
+emptyCTagsMp :: CTagsMp
+emptyCTagsMp = []
+
+
+
+
+
+
+
+deriving instance Typeable CTag
+deriving instance Data CTag
+
+
+
+
+
+
+
+
+instance Serialize CTag where
+  sput = sputShared
+  sget = sgetShared
+  sputNested (CTagRec          ) = sputWord8 0
+  sputNested (CTag    a b c d e) = sputWord8 1 >> sput a >> sput b >> sput c >> sput d >> sput e
+  sgetNested
+    = do t <- sgetWord8
+         case t of
+           0 -> return CTagRec
+           1 -> liftM5 CTag    sget sget sget sget sget
+
+</pre>

@@ -1,0 +1,504 @@
+<a href="QQ.hs148881739274452500.out.html">prev</a></br><a href="failures.html">home</a></br><a href="QQ.hs3188867711558260932.out.html">next</a></br></br><pre>183c183
+<   toName HsCons    = '(:)
+---
+>   toName HsCons    = ':
+248a249
+> 
+</pre></br><h2>original</h2></br><pre>{-# LANGUAGE TemplateHaskell #-}
+
+{- |
+  Module      :  Lighttpd.Conf.QQ
+  Copyright   :  (c) Matt Morrow 2008
+  License     :  BSD3
+
+  Maintainer  :  Matt Morrow <mjm2002@gmail.com>
+  Stability   :  unstable
+  Portability :  non-portable (DeriveDataTypeable)
+-}
+
+module Lighttpd.Conf.QQ (
+    lighttpd
+  , confToExpQ
+  , confToPatQ
+  , pprint
+) where
+
+import Lighttpd.Conf(parseConf')
+import Lighttpd.Conf.Instances.Lift
+import Language.Haskell.TH.Syntax
+import Language.Haskell.TH.Lib
+import Language.Haskell.TH.Quote
+import Language.Haskell.Exts.Syntax
+import Language.Haskell.Exts(parseModule)
+import Language.Haskell.Exts.Pretty(prettyPrint)
+import Language.Haskell.Exts.Parser(ParseResult(..))
+
+-----------------------------------------------------------------------------
+
+{- |
+> ghci> (\port -> [$lighttpd| server.port = $port |]) 80
+> Config [OptionE (QName {moduleName = Name "server", baseName = Name "port"}) (IntegerV 80)]
+-}
+lighttpd :: QuasiQuoter
+lighttpd = QuasiQuoter confToExpQ confToPatQ
+
+confToExpQ :: String -> ExpQ
+confToExpQ s = case parseConf' s of
+                  Nothing -> error "this is never reached"
+                  Just c  -> [|c|]
+
+confToPatQ :: String -> PatQ
+confToPatQ s = case parseConf' s of
+                  Nothing -> error "this is never reached"
+                  Just c  -> return . parsePat . show $ c
+
+-- | Not directly related to
+--  @Lighttpd.Conf.QQ@, but exported
+--  since it may be useful. Requires
+--  the String produced by show(ing)
+--  it's argument is a valid Haskell
+--  expression (all derived Show
+--  instances have this property).
+--  Returns an empty String if it
+--  isn't a valid expression.
+pprint :: (Show a) => a -> String
+pprint a = case parseHsExp (show a) of
+            Left _ -> []
+            Right e -> prettyPrint e
+
+-----------------------------------------------------------------------------
+
+-- the below is just copied from metaquote
+-- (a package i'm working on) and duplicated here
+-- until i formally release it.
+
+parsePat :: String -> Pat
+parsePat s = either (error "pattern: no parse") toPat (parseHsPat s)
+
+
+parseHsModule :: String -> Either String HsModule
+parseHsModule s =
+  case parseModule s of
+    ParseOk m -> Right m
+    ParseFailed loc e ->
+      let line = srcLine loc - 1
+      in Left (unlines [show line,show loc,e])
+
+parseHsDecls :: String -> Either String [HsDecl]
+parseHsDecls s =
+  let s' = unlines [pprHsModule (emptyHsModule "Main"), s]
+  in case parseModule s' of
+      ParseOk m -> Right (moduleDecls m)
+      ParseFailed loc e ->
+        let line = srcLine loc - 1
+        in Left (unlines [show line,show loc,e])
+
+parseHsExp :: String -> Either String HsExp
+parseHsExp s =
+  case parseHsDecls ("main = ("++(filter (/='\n') s)++")") of
+    Left err -> Left err
+    Right xs ->
+      case [ e | HsPatBind _ _ (HsUnGuardedRhs e) _ <- xs] of
+        []    -> Left "invalid expression"
+        (e:_) -> Right e
+
+parseHsPat :: String -> Either String HsPat
+parseHsPat s =
+  case parseHsDecls ("("++(filter (/='\n') s)++")=()") of
+    Left err -> Left err
+    Right xs ->
+      case [ p | HsPatBind _ p _ _ <- xs] of
+        []    -> Left "invalid pattern"
+        (p:_) -> Right p
+
+pprHsModule :: HsModule -> String
+pprHsModule = prettyPrint
+
+moduleDecls :: HsModule -> [HsDecl]
+moduleDecls (HsModule _ _ _ _ x) = x
+
+mkModule :: String -> Module
+mkModule = Module
+
+emptySrcLoc :: SrcLoc
+emptySrcLoc = (SrcLoc [] 0 0)
+
+emptyHsModule :: String -> HsModule
+emptyHsModule n =
+    (HsModule
+        emptySrcLoc
+        (mkModule n)
+        Nothing
+        []
+        [])
+
+-----------------------------------------------------------------------------
+
+class ToName a where toName :: a -> Name
+class ToLit  a where toLit  :: a -> Lit
+class ToPat  a where toPat  :: a -> Pat
+
+
+instance ToPat Lit where
+  toPat = LitP
+instance (ToPat a) => ToPat [a] where
+  toPat = ListP . fmap toPat
+instance (ToPat a, ToPat b) => ToPat (a,b) where
+  toPat (a,b) = TupP [toPat a, toPat b]
+instance (ToPat a, ToPat b, ToPat c) => ToPat (a,b,c) where
+  toPat (a,b,c) = TupP [toPat a, toPat b, toPat c]
+instance (ToPat a, ToPat b, ToPat c, ToPat d) => ToPat (a,b,c,d) where
+  toPat (a,b,c,d) = TupP [toPat a, toPat b, toPat c, toPat d]
+
+instance ToLit Char where
+  toLit = CharL
+instance ToLit String where
+  toLit = StringL
+instance ToLit Integer where
+  toLit = IntegerL
+instance ToLit Int where
+  toLit = IntegerL . toInteger
+instance ToLit Float where
+  toLit = RationalL . toRational
+instance ToLit Double where
+  toLit = RationalL . toRational
+
+
+instance ToName String where
+  toName = mkName
+
+instance ToName HsName where
+  toName (HsIdent s) = toName s
+  toName (HsSymbol s) = toName s
+
+instance ToName Module where
+  toName (Module s) = toName s
+
+-- #ifdef __HADDOCK__
+-- instance ToName HsSpecialCon
+-- #else
+instance ToName HsSpecialCon where
+  toName HsUnitCon = '()
+  toName HsListCon = '[]
+  toName HsFunCon  = ''(->)
+  toName (HsTupleCon n)
+    | n<2 = '()
+    | otherwise =
+      let x = maybe [] (++".") (nameModule '())
+      in toName . concat $ x : ["(",replicate (n-1) ',',")"]
+  toName HsCons    = '(:)
+-- #endif
+
+instance ToName HsQName where
+  toName (Qual (Module []) n) = toName n
+  toName (Qual m n) =
+    let m' = show . toName $ m
+        n' = show . toName $ n
+    in toName . concat $ [m',".",n']
+  toName (UnQual n) = toName n
+  toName (Special s) = toName s
+
+instance ToLit HsLiteral where
+  toLit (HsChar a) = CharL a
+  toLit (HsString a) = StringL a
+  toLit (HsInt a) = IntegerL a
+  toLit (HsFrac a) = RationalL a
+  toLit (HsCharPrim a) = CharL a      -- XXX
+  toLit (HsStringPrim a) = StringL a  -- XXX
+  toLit (HsIntPrim a) = IntPrimL a
+  toLit (HsFloatPrim a) = FloatPrimL a
+  toLit (HsDoublePrim a) = DoublePrimL a
+
+instance ToPat HsPat where
+  toPat (HsPVar n)
+    = VarP (toName n)
+  toPat (HsPLit l)
+    = LitP (toLit l)
+-- ghci> parseHsPat "-2"
+-- Right (HsPParen (HsPNeg (HsPLit (HsInt 2))))
+  toPat (HsPNeg p)
+    = error "toPat: HsPNeg not supported"
+  toPat (HsPInfixApp p n q)
+    = InfixP (toPat p) (toName n) (toPat q)
+  toPat (HsPApp n ps)
+    = ConP (toName n) (fmap toPat ps)
+  toPat (HsPTuple ps)
+    = TupP (fmap toPat ps)
+  toPat (HsPList ps)
+    = ListP (fmap toPat ps)
+  toPat (HsPParen p)
+    = toPat p
+  toPat (HsPRec n pfs)
+    = RecP (toName n) (fmap toFieldPat pfs)
+      where toFieldPat (HsPFieldPat n p)
+              = (toName n, toPat p)
+  toPat (HsPAsPat n p)
+    = AsP (toName n) (toPat p)
+  toPat (HsPWildCard)
+    = WildP
+  toPat (HsPIrrPat p)
+    = TildeP (toPat p)
+  toPat (HsPatTypeSig _ p t)
+    = SigP (toPat p) (VarT (toName "a")) -- (toType t)  --XXX fill in
+  toPat (HsPRPat rps)
+    = error "toPat: HsRPat not supported"
+  toPat (HsPXTag _ _ _ pM p)
+    = error "toPat: HsPXTag not supported"
+  toPat (HsPXETag _ _ _ pM)
+    = error "toPat: HsPXETag not supported"
+  toPat (HsPXPcdata _)
+    = error "toPat: HsPXPcdata not supported"
+  toPat (HsPXPatTag p)
+    = error "toPat: HsPXPatTag not supported"
+
+-----------------------------------------------------------------------------
+</pre></br><h2>printed</h2></br><pre>{-# LANGUAGE TemplateHaskell #-}
+
+{- |
+  Module      :  Lighttpd.Conf.QQ
+  Copyright   :  (c) Matt Morrow 2008
+  License     :  BSD3
+
+  Maintainer  :  Matt Morrow <mjm2002@gmail.com>
+  Stability   :  unstable
+  Portability :  non-portable (DeriveDataTypeable)
+-}
+
+module Lighttpd.Conf.QQ (
+    lighttpd
+  , confToExpQ
+  , confToPatQ
+  , pprint
+) where
+
+import Lighttpd.Conf(parseConf')
+import Lighttpd.Conf.Instances.Lift
+import Language.Haskell.TH.Syntax
+import Language.Haskell.TH.Lib
+import Language.Haskell.TH.Quote
+import Language.Haskell.Exts.Syntax
+import Language.Haskell.Exts(parseModule)
+import Language.Haskell.Exts.Pretty(prettyPrint)
+import Language.Haskell.Exts.Parser(ParseResult(..))
+
+-----------------------------------------------------------------------------
+
+{- |
+> ghci> (\port -> [$lighttpd| server.port = $port |]) 80
+> Config [OptionE (QName {moduleName = Name "server", baseName = Name "port"}) (IntegerV 80)]
+-}
+lighttpd :: QuasiQuoter
+lighttpd = QuasiQuoter confToExpQ confToPatQ
+
+confToExpQ :: String -> ExpQ
+confToExpQ s = case parseConf' s of
+                  Nothing -> error "this is never reached"
+                  Just c  -> [|c|]
+
+confToPatQ :: String -> PatQ
+confToPatQ s = case parseConf' s of
+                  Nothing -> error "this is never reached"
+                  Just c  -> return . parsePat . show $ c
+
+-- | Not directly related to
+--  @Lighttpd.Conf.QQ@, but exported
+--  since it may be useful. Requires
+--  the String produced by show(ing)
+--  it's argument is a valid Haskell
+--  expression (all derived Show
+--  instances have this property).
+--  Returns an empty String if it
+--  isn't a valid expression.
+pprint :: (Show a) => a -> String
+pprint a = case parseHsExp (show a) of
+            Left _ -> []
+            Right e -> prettyPrint e
+
+-----------------------------------------------------------------------------
+
+-- the below is just copied from metaquote
+-- (a package i'm working on) and duplicated here
+-- until i formally release it.
+
+parsePat :: String -> Pat
+parsePat s = either (error "pattern: no parse") toPat (parseHsPat s)
+
+
+parseHsModule :: String -> Either String HsModule
+parseHsModule s =
+  case parseModule s of
+    ParseOk m -> Right m
+    ParseFailed loc e ->
+      let line = srcLine loc - 1
+      in Left (unlines [show line,show loc,e])
+
+parseHsDecls :: String -> Either String [HsDecl]
+parseHsDecls s =
+  let s' = unlines [pprHsModule (emptyHsModule "Main"), s]
+  in case parseModule s' of
+      ParseOk m -> Right (moduleDecls m)
+      ParseFailed loc e ->
+        let line = srcLine loc - 1
+        in Left (unlines [show line,show loc,e])
+
+parseHsExp :: String -> Either String HsExp
+parseHsExp s =
+  case parseHsDecls ("main = ("++(filter (/='\n') s)++")") of
+    Left err -> Left err
+    Right xs ->
+      case [ e | HsPatBind _ _ (HsUnGuardedRhs e) _ <- xs] of
+        []    -> Left "invalid expression"
+        (e:_) -> Right e
+
+parseHsPat :: String -> Either String HsPat
+parseHsPat s =
+  case parseHsDecls ("("++(filter (/='\n') s)++")=()") of
+    Left err -> Left err
+    Right xs ->
+      case [ p | HsPatBind _ p _ _ <- xs] of
+        []    -> Left "invalid pattern"
+        (p:_) -> Right p
+
+pprHsModule :: HsModule -> String
+pprHsModule = prettyPrint
+
+moduleDecls :: HsModule -> [HsDecl]
+moduleDecls (HsModule _ _ _ _ x) = x
+
+mkModule :: String -> Module
+mkModule = Module
+
+emptySrcLoc :: SrcLoc
+emptySrcLoc = (SrcLoc [] 0 0)
+
+emptyHsModule :: String -> HsModule
+emptyHsModule n =
+    (HsModule
+        emptySrcLoc
+        (mkModule n)
+        Nothing
+        []
+        [])
+
+-----------------------------------------------------------------------------
+
+class ToName a where toName :: a -> Name
+class ToLit  a where toLit  :: a -> Lit
+class ToPat  a where toPat  :: a -> Pat
+
+
+instance ToPat Lit where
+  toPat = LitP
+instance (ToPat a) => ToPat [a] where
+  toPat = ListP . fmap toPat
+instance (ToPat a, ToPat b) => ToPat (a,b) where
+  toPat (a,b) = TupP [toPat a, toPat b]
+instance (ToPat a, ToPat b, ToPat c) => ToPat (a,b,c) where
+  toPat (a,b,c) = TupP [toPat a, toPat b, toPat c]
+instance (ToPat a, ToPat b, ToPat c, ToPat d) => ToPat (a,b,c,d) where
+  toPat (a,b,c,d) = TupP [toPat a, toPat b, toPat c, toPat d]
+
+instance ToLit Char where
+  toLit = CharL
+instance ToLit String where
+  toLit = StringL
+instance ToLit Integer where
+  toLit = IntegerL
+instance ToLit Int where
+  toLit = IntegerL . toInteger
+instance ToLit Float where
+  toLit = RationalL . toRational
+instance ToLit Double where
+  toLit = RationalL . toRational
+
+
+instance ToName String where
+  toName = mkName
+
+instance ToName HsName where
+  toName (HsIdent s) = toName s
+  toName (HsSymbol s) = toName s
+
+instance ToName Module where
+  toName (Module s) = toName s
+
+-- #ifdef __HADDOCK__
+-- instance ToName HsSpecialCon
+-- #else
+instance ToName HsSpecialCon where
+  toName HsUnitCon = '()
+  toName HsListCon = '[]
+  toName HsFunCon  = ''(->)
+  toName (HsTupleCon n)
+    | n<2 = '()
+    | otherwise =
+      let x = maybe [] (++".") (nameModule '())
+      in toName . concat $ x : ["(",replicate (n-1) ',',")"]
+  toName HsCons    = ':
+-- #endif
+
+instance ToName HsQName where
+  toName (Qual (Module []) n) = toName n
+  toName (Qual m n) =
+    let m' = show . toName $ m
+        n' = show . toName $ n
+    in toName . concat $ [m',".",n']
+  toName (UnQual n) = toName n
+  toName (Special s) = toName s
+
+instance ToLit HsLiteral where
+  toLit (HsChar a) = CharL a
+  toLit (HsString a) = StringL a
+  toLit (HsInt a) = IntegerL a
+  toLit (HsFrac a) = RationalL a
+  toLit (HsCharPrim a) = CharL a      -- XXX
+  toLit (HsStringPrim a) = StringL a  -- XXX
+  toLit (HsIntPrim a) = IntPrimL a
+  toLit (HsFloatPrim a) = FloatPrimL a
+  toLit (HsDoublePrim a) = DoublePrimL a
+
+instance ToPat HsPat where
+  toPat (HsPVar n)
+    = VarP (toName n)
+  toPat (HsPLit l)
+    = LitP (toLit l)
+-- ghci> parseHsPat "-2"
+-- Right (HsPParen (HsPNeg (HsPLit (HsInt 2))))
+  toPat (HsPNeg p)
+    = error "toPat: HsPNeg not supported"
+  toPat (HsPInfixApp p n q)
+    = InfixP (toPat p) (toName n) (toPat q)
+  toPat (HsPApp n ps)
+    = ConP (toName n) (fmap toPat ps)
+  toPat (HsPTuple ps)
+    = TupP (fmap toPat ps)
+  toPat (HsPList ps)
+    = ListP (fmap toPat ps)
+  toPat (HsPParen p)
+    = toPat p
+  toPat (HsPRec n pfs)
+    = RecP (toName n) (fmap toFieldPat pfs)
+      where toFieldPat (HsPFieldPat n p)
+              = (toName n, toPat p)
+  toPat (HsPAsPat n p)
+    = AsP (toName n) (toPat p)
+  toPat (HsPWildCard)
+    = WildP
+  toPat (HsPIrrPat p)
+    = TildeP (toPat p)
+  toPat (HsPatTypeSig _ p t)
+    = SigP (toPat p) (VarT (toName "a")) -- (toType t)  --XXX fill in
+  toPat (HsPRPat rps)
+    = error "toPat: HsRPat not supported"
+  toPat (HsPXTag _ _ _ pM p)
+    = error "toPat: HsPXTag not supported"
+  toPat (HsPXETag _ _ _ pM)
+    = error "toPat: HsPXETag not supported"
+  toPat (HsPXPcdata _)
+    = error "toPat: HsPXPcdata not supported"
+  toPat (HsPXPatTag p)
+    = error "toPat: HsPXPatTag not supported"
+
+-----------------------------------------------------------------------------
+
+</pre>

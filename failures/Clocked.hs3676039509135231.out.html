@@ -1,0 +1,190 @@
+<a href="Clock.hs6002468971618907920.out.html">prev</a></br><a href="failures.html">home</a></br><a href="Cluss.hs1064488480171620203.out.html">next</a></br></br><pre>68c68
+<         waitTime :: Double = waitSeconds - (now - lastTime state) - heuristicCorrection
+---
+>         waitTime    Double = waitSeconds - (now - lastTime state) - heuristicCorrection
+91a92
+> 
+</pre></br><h2>original</h2></br><pre>
+{-# language ForeignFunctionInterface, ScopedTypeVariables #-}
+
+-- Implementation using qt
+-- and a heuristic to shorten the time span to be waited
+-- to get closer to the wanted time span.
+
+module Clocked (
+    Timer,
+    withTimer,
+    waitTimer,
+    getTimeDouble,
+  ) where
+
+
+import Data.IORef
+import Data.Sequence
+
+import Control.Monad
+import Control.Monad.CatchIO
+import Control.Monad.IO.Class
+import Control.Applicative ((<$>))
+
+import Clocked.Common
+import Clocked.WinTimePeriod
+
+
+-- | The heuristic correction is calculated using a moving average
+-- of the time deviation. This is the size of the window for
+-- calculating the moving average.
+windowSize :: Double
+windowSize = 10
+
+-- | Estimate of the time deviation.
+-- Empiric data on linux (2.6.35-28)
+initialDeviation = 0.00018
+
+-- | the heuristic correction gets limited by a fraction of the wanted time span
+heuristicCorrectionFraction = 0.1
+
+foreign import ccall qtUSleep :: Int -> IO ()
+
+newtype Timer = Timer (IORef State)
+
+-- | Run a monadic action with a 'Timer'.
+withTimer :: MonadCatchIO m => (Timer -> m a) -> m a
+withTimer m = withTimePeriod 1 $
+    (m =<< liftIO (Timer <$> (newIORef =<< mkState)))
+
+data State = State {
+    lastTime :: Double,
+    deviations :: Seq Double,
+    deviationMovingAverage :: Double
+  }
+
+mkState :: IO State
+mkState = do
+    now <- getTimeDouble
+    return $ State now (mkFullBuffer (round windowSize) initialDeviation) initialDeviation
+
+-- | Waits the given amount of seconds minus the elapsed time
+-- since the last call to 'waitTimer' (or the initialisation of the timer).
+waitTimer :: Timer -> Double -> IO ()
+waitTimer (Timer ref) waitSeconds = do
+    state <- readIORef ref
+    now <- getTimeDouble
+    let heuristicCorrection = deviationMovingAverage state
+        waitTime :: Double = waitSeconds - (now - lastTime state) - heuristicCorrection
+        waitMicroSeconds = round (waitTime * 10 ^ 6)
+    when (waitMicroSeconds > 0) $
+        qtUSleep waitMicroSeconds
+    after <- getTimeDouble
+    let actuallyWaited = after - lastTime state
+        deviation = min
+            (actuallyWaited - waitSeconds + heuristicCorrection)
+            (waitSeconds * heuristicCorrectionFraction)
+        (droppedDeviation, newBuffer) = crank deviation (deviations state)
+        newAverage = deviationMovingAverage state + ((deviation - droppedDeviation) / windowSize)
+        state' = State after newBuffer newAverage
+    writeIORef ref state'
+
+
+-- * buffer functions for Seq
+
+mkFullBuffer :: Int -> a -> Seq a
+mkFullBuffer = Data.Sequence.replicate
+
+crank :: a -> Seq a -> (a, Seq a)
+crank new buffer = case viewl buffer of
+    head :< tail -> (head, tail |> new)
+    EmptyL -> error "crank on empty buffer"
+</pre></br><h2>printed</h2></br><pre>
+{-# language ForeignFunctionInterface, ScopedTypeVariables #-}
+
+-- Implementation using qt
+-- and a heuristic to shorten the time span to be waited
+-- to get closer to the wanted time span.
+
+module Clocked (
+    Timer,
+    withTimer,
+    waitTimer,
+    getTimeDouble,
+  ) where
+
+
+import Data.IORef
+import Data.Sequence
+
+import Control.Monad
+import Control.Monad.CatchIO
+import Control.Monad.IO.Class
+import Control.Applicative ((<$>))
+
+import Clocked.Common
+import Clocked.WinTimePeriod
+
+
+-- | The heuristic correction is calculated using a moving average
+-- of the time deviation. This is the size of the window for
+-- calculating the moving average.
+windowSize :: Double
+windowSize = 10
+
+-- | Estimate of the time deviation.
+-- Empiric data on linux (2.6.35-28)
+initialDeviation = 0.00018
+
+-- | the heuristic correction gets limited by a fraction of the wanted time span
+heuristicCorrectionFraction = 0.1
+
+foreign import ccall qtUSleep :: Int -> IO ()
+
+newtype Timer = Timer (IORef State)
+
+-- | Run a monadic action with a 'Timer'.
+withTimer :: MonadCatchIO m => (Timer -> m a) -> m a
+withTimer m = withTimePeriod 1 $
+    (m =<< liftIO (Timer <$> (newIORef =<< mkState)))
+
+data State = State {
+    lastTime :: Double,
+    deviations :: Seq Double,
+    deviationMovingAverage :: Double
+  }
+
+mkState :: IO State
+mkState = do
+    now <- getTimeDouble
+    return $ State now (mkFullBuffer (round windowSize) initialDeviation) initialDeviation
+
+-- | Waits the given amount of seconds minus the elapsed time
+-- since the last call to 'waitTimer' (or the initialisation of the timer).
+waitTimer :: Timer -> Double -> IO ()
+waitTimer (Timer ref) waitSeconds = do
+    state <- readIORef ref
+    now <- getTimeDouble
+    let heuristicCorrection = deviationMovingAverage state
+        waitTime    Double = waitSeconds - (now - lastTime state) - heuristicCorrection
+        waitMicroSeconds = round (waitTime * 10 ^ 6)
+    when (waitMicroSeconds > 0) $
+        qtUSleep waitMicroSeconds
+    after <- getTimeDouble
+    let actuallyWaited = after - lastTime state
+        deviation = min
+            (actuallyWaited - waitSeconds + heuristicCorrection)
+            (waitSeconds * heuristicCorrectionFraction)
+        (droppedDeviation, newBuffer) = crank deviation (deviations state)
+        newAverage = deviationMovingAverage state + ((deviation - droppedDeviation) / windowSize)
+        state' = State after newBuffer newAverage
+    writeIORef ref state'
+
+
+-- * buffer functions for Seq
+
+mkFullBuffer :: Int -> a -> Seq a
+mkFullBuffer = Data.Sequence.replicate
+
+crank :: a -> Seq a -> (a, Seq a)
+crank new buffer = case viewl buffer of
+    head :< tail -> (head, tail |> new)
+    EmptyL -> error "crank on empty buffer"
+
+</pre>

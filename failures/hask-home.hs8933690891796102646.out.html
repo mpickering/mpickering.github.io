@@ -1,0 +1,682 @@
+<a href="hask-home-upload.hs2043874587251766297.out.html">prev</a></br><a href="failures.html">home</a></br><a href="Haskell.hs2067029090714958111.out.html">next</a></br></br><pre>1c1
+< #!/usr/bin/env runghc
+---
+> 
+337a338
+> 
+</pre></br><h2>original</h2></br><pre>#!/usr/bin/env runghc
+{-# LANGUAGE ScopedTypeVariables #-}
+
+-- Generate a homepage for a darcsized cabalized Haskell package.
+-- NOTE: this is very hack, making lots of assumptions and
+-- with crazy path stuff everywhere. I should clean this up.
+
+import qualified Control.Exception as C
+import Control.Monad
+import Data.Char
+import Data.List
+import Data.Maybe
+import Distribution.PackageDescription
+    (PackageDescription,RepoKind(RepoHead),RepoType(..),repoLocation,repoKind,
+     repoType,package,homepage,synopsis,buildDepends,maintainer,licenseFile,
+     license,library,description,sourceRepos)
+import Distribution.PackageDescription.Configuration
+    (flattenPackageDescription)
+import Distribution.PackageDescription.Parse
+    (readPackageDescription)
+import Distribution.Simple
+import Distribution.Simple.Utils
+    (defaultPackageDesc)
+import Distribution.Verbosity
+    (normal)
+import Data.Version (showVersion)
+import Text.ParserCombinators.Parsec (parse)
+import Text.ParserCombinators.Parsec.Rfc2822
+    (mailbox,NameAddr,nameAddr_addr,nameAddr_name)
+import Network.URI
+import Prelude hiding (catch)
+import System.Directory
+import System.Environment
+import System.Exit
+import System.IO
+import System.Cmd
+import Text.Regex
+import Text.XHtml.Strict
+
+import Text.HMarkup
+
+-- These paths are all relative to the root of the darcs repo.
+
+docDir = "doc"
+downloadDir = "download"
+haddockDir = docDir ++ "/" ++ "api"
+indexFile = docDir ++ "/" ++ "index.html"
+doapFile = docDir ++ "/" ++ "doap.rdf"
+htaccessFile = downloadDir ++ "/" ++ ".htaccess"
+
+-- packages that we don't need to list as requirements
+standardPackages = map (\x -> PackageName x)
+                   ["base","stm","mtl","fgl","QuickCheck",
+                    "Cabal","network","readline","unix","parsec","haskell98",
+                    "posix","html","random","old-time","regex-compat"]
+
+-- Packages whose homepages we know
+knownPackages = [(PackageName "fps",("FastPackedString","http://www.cse.unsw.edu.au/~dons/fps.html")),
+                 (PackageName "Crypto",("The Haskell Cryptographic Library","http://haskell.org/crypto/")),
+                 (PackageName "HTTP",("The Haskell HTTP package","http://haskell.org/http/")),
+                 (PackageName "XmlRpc",("HaXR - the Haskell XML-RPC library","http://haskell.org/haxr/")),
+                 (PackageName "xhtml",("Text.XHtml","http://www.cs.chalmers.se/~bringert/darcs/haskell-xhtml/doc/")),
+                 (PackageName "cgi-compat",("cgi-compat","http://www.cs.chalmers.se/~bringert/darcs/cgi-compat/doc/")),
+                 (PackageName "haskelldb",("HaskellDB","http://haskelldb.sourceforge.net/")),
+                 (PackageName "parsedate",("parsedate","http://www.cs.chalmers.se/~bringert/darcs/parsedate/doc/")),
+                 (PackageName "hmarkup",("hmarkup","http://www.cs.chalmers.se/~bringert/darcs/hmarkup/doc/")),
+                 (PackageName "hxt",("Haskell XML Toolbox","http://www.fh-wedel.de/~si/HXmlToolbox/index.html"))
+                ]
+
+stylesheet = unlines
+ [
+  "body { background-color: white; color: black; margin: 0; padding: 0; }",
+  "h1, .footer { background-color:silver; color: black; margin: 0; border: 0 solid black; }",
+  "h1 { border-bottom-width: thin; padding: 1em; }",
+  ".footer { font-size: smaller; text-align:center; border-top-width: thin; padding: 0.25em 1em; }",
+  ".footer span { padding: 0 0.25em; } ",
+  "hr { display: none; }",
+  ".section { padding: 0; margin: 0 5em; }"
+ ]
+
+txt2html :: String -> IO Html
+txt2html s = do r <- markupToHtml defaultMarkupXHtmlPrefs s
+                case r of
+                  Left err -> fail err
+                  Right h  -> return h
+
+buildHaddock :: PackageDescription -> IO ()
+buildHaddock desc =
+    do
+    showExceptions $ withArgs ["haddock","-v"] $ defaultMainNoRead desc
+    rawSystem "rm" ["-rf", haddockDir]
+    rawSystem "cp" ["-r", "dist/doc/html", haddockDir]
+    return ()
+
+systemOrFail :: String -> IO ()
+systemOrFail cmd =
+    do
+    e <- system cmd
+    case e of
+      ExitSuccess   -> return ()
+      ExitFailure i -> do hPutStrLn stderr $ "Command failed with status " ++ show i
+                                             ++ ": " ++ cmd
+                          exitWith e
+
+readFileOrNull :: FilePath -> IO String
+readFileOrNull f =
+    do e <- doesFileExist f
+       if e then readFile f
+            else do hPutStrLn stderr $ f ++ " not found, skipping"
+                    return ""
+
+match :: String -> String -> Bool
+match p = isJust . matchRegex (mkRegex p)
+
+distDir :: PackageDescription -> String
+distDir desc =  name ++ "-" ++ version where
+    name = pkgNameFromDesc desc
+    version = showVersion (pkgVersion (packageId desc))
+
+getPkgNameStr :: PackageName -> String
+getPkgNameStr desc = case desc of
+                    PackageName x -> x
+
+distFile :: PackageDescription -> String
+distFile desc = distDir desc ++ ".tar.gz"
+
+latestDistFile :: PackageDescription -> String
+latestDistFile desc = pkgNameFromDesc desc ++ "-latest.tar.gz"
+
+pkgNameFromDesc :: PackageDescription -> String
+pkgNameFromDesc desc = case (pkgName (package desc)) of
+                         PackageName name -> name
+
+fileURI :: PackageDescription -> String -> URI
+fileURI desc f = fromJust $ (nullURI { uriPath = f }) `relativeTo` darcsURI desc
+
+linkFile :: HTML a => PackageDescription -> String -> a -> Html
+linkFile desc f x = hlink (show $ fileURI desc f `relativeFrom` homepageURI desc) << x
+
+-- Uses source-repository sections to try and find a Darcs repo.
+-- This is a darcs-centric tool, but it would be nice to handle the
+-- other (hg,git,etc.) repository types that are possible.
+-- Falls back on darcsURI_hack when source-repository is missing.
+darcsURI :: PackageDescription -> URI
+darcsURI desc = fromMaybe (darcsURI_hack desc) source_repo where
+    all_repos = sourceRepos desc
+    darcs_head_repos = filter (\r -> repoType r == Just Darcs &&
+                               repoKind r == RepoHead) all_repos
+    source_repo = do repo <- listToMaybe darcs_head_repos
+                     repo_l <- repoLocation repo
+                     parseURI repo_l
+
+darcsURI_hack :: PackageDescription -> URI
+darcsURI_hack desc = home { uriPath = reverse $ drop (length docDir) $ dropWhile (=='/') $ reverse $ uriPath home }
+    where home = homepageURI desc
+
+homepageURI ::  PackageDescription -> URI
+homepageURI desc = fromMaybe (error $ "Package homepage is not a valid URI: " ++ homepage desc) $ parseURI $ homepage desc
+
+-- Create DOAP file using 'cabal2doap' program if available.
+-- Return path to DOAP, if successful.
+mkDoap :: IO (Maybe String)
+mkDoap = do ec <- system ("cabal2doap > " ++ doapFile)
+            return $ case ec of
+                       ExitSuccess -> Just doapFile
+                       _ -> Nothing
+
+mkTarball :: PackageDescription -> IO ()
+mkTarball desc =
+    do
+    system ("darcs dist --dist-name=" ++ distDir desc)
+    createDirectoryIfMissing True downloadDir
+    let f = downloadDir ++ "/" ++ distFile desc
+    renameFile (distFile desc) f
+
+makeIndex :: Maybe String -- ^ Blueprint base CSS URL (relative or absolute, with trailing slash)
+          -> PackageDescription
+          -> String -- ^ Name of Setup program (Setup.hs/Setup.lhs)
+          -> Html -- ^ README rendered as HTML
+          -> Maybe String -- ^ DOAP file location, if one was generated
+          -> Html
+makeIndex blueprint desc setupProg readme doap = (header << hdr) +++ (body << bdy)
+  where
+  style_elems =
+      case blueprint of
+        Nothing -> [style ! [thetype "text/css"] << stylesheet]
+        Just css_base -> [thelink ! [rel "stylesheet",
+                                    href (css_base ++ "screen.css"),
+                                    thetype "text/css",
+                                    strAttr "media" "screen, projection"] << noHtml,
+                         thelink ! [rel "stylesheet",
+                                    href (css_base ++ "print.css"),
+                                    thetype "text/css",
+                                    strAttr "media" "print"] << noHtml,
+                         primHtml "<!--[if IE]>",
+                         thelink ! [rel "stylesheet",
+                                    href (css_base ++ "ie.css"),
+                                    thetype "text/css",
+                                    strAttr "media" "screen, projection"] << noHtml,
+                         primHtml "<![endif]-->",
+                         thelink ! [rel "stylesheet",
+                                    href (css_base ++ "plugins/fancy-type/screen.css"),
+                                    thetype "text/css",
+                                    strAttr "media" "screen, projection"] << noHtml
+                        ]
+  doap_elems = case doap of
+                 Just doap_loc -> [thelink ! [rel "meta",
+                                             thetype "application/rdf+xml",
+                                             title "doap",
+                                             href (uriPath (fileURI desc doap_loc))]
+                                  << noHtml]
+                 Nothing -> []
+  hdr = [thetitle << t,
+         meta ! [name "generator", content "hask-home, http://www.cs.chalmers.se/~bringert/darcs/hask-home/doc/"],
+         meta ! [httpequiv "content-type", content "text/html; charset=UTF-8"]
+        ] ++ style_elems ++ doap_elems
+  t = pkgNameFromDesc desc ++ " - " ++ synopsis desc
+  title_block = case blueprint of
+                  Nothing -> [h1 << t]
+                  _ -> [thediv ! [theclass "span-22"]
+                       << [h1 << pkgNameFromDesc desc, h1 ! [theclass "alt"]
+                           << synopsis desc],
+                      hr]
+  bdy = [thediv ! [theclass "prepend-1"]
+                    << [thediv ! [theclass "container"]
+                                   << [title_block ++ [des, api, dow, req, ins, mai, lic, foo]]]]
+  des = section "Description" [readme]
+  api | not (isLibrary desc) = noHtml
+      | otherwise = section "API Documentation"
+                      [p << linkFile desc (haddockDir ++ "/" ++ pkgNameFromDesc desc ++ "/index.html")
+                                     << "Haddock-generated API documentation"]
+  dow = section "Download"
+         ([h3 << "Darcs", pre << ("$ darcs get --partial " ++ show (darcsURI desc))]
+          ++ [h3 << "Tarball",
+              p << ("Latest release: "
+                    +++ linkFile desc (downloadDir ++ "/" ++ distFile desc) (distFile desc)),
+              p << ("You can also use "
+                    +++ linkFile desc (downloadDir ++ "/" ++ latestDistFile desc) (latestDistFile desc)
+                    +++ " which should always redirect you to the latest release tarball.")])
+  req | null reqs = noHtml
+      | otherwise = section "Requirements" [ulist << reqs]
+  reqs = catMaybes $ map formatReq (buildDepends desc)
+  formatReq d@(Dependency p v)
+      | p `elem` standardPackages = Nothing
+      | otherwise = Just $ case lookup p knownPackages of
+                               Just (n,u) -> li << hlink u n
+                               Nothing -> li << getPkgNameStr p
+  ins = section "Installation"
+                  [olist << [li << ("Unpack the sources and enter the source directory:"
+                                    +++ pre << [unlines ["$ tar -zxf " ++ distFile desc,
+                                                         "$ cd " ++ distDir desc]]),
+                             li << ("Configure:"
+                                    +++ pre << [unlines ["$ runghc " ++ setupProg ++ " configure"]]),
+                             li << ("Build:"
+                                    +++ pre << [unlines ["$ runghc " ++ setupProg ++ " build"]]),
+                             li << ("Install (as root):"
+                                    +++ pre << [unlines ["# runghc " ++ setupProg ++ " install"]])
+                            ]
+        ]
+  mai = section "Maintainer" [maintainerToHtml (maintainer desc)]
+  lic = section "License"
+        [p << (show (license desc) +++
+               case (licenseFile desc) of
+                 "" -> noHtml
+                 path -> ", see " +++ (linkFile desc path << path) +++ ".")
+        ]
+  validXHtml = thespan << hlink "http://validator.w3.org/check?uri=referer" "Validate XHTML"
+  validCSS = thespan << hlink "http://jigsaw.w3.org/css-validator/check/referer" "Validate CSS"
+  generator = thespan << ("Page generated by "
+              +++ hlink "http://www.cs.chalmers.se/~bringert/darcs/hask-home/doc/" "hask-home")
+  foo = thediv ! [theclass "footer"]
+        << [hr, p << [generator +++ " " +++ validXHtml +++ " " +++ validCSS]]
+  section h xs = thediv ! [theclass "section"] << ((h2 << [h]):xs)
+
+maintainerToHtml :: String -> Html
+maintainerToHtml m =
+    let addrp = parse mailbox "maintainer" m
+    in case addrp of
+         Left _ -> p << m -- parse error
+         Right name_addr -> p << hlink ("mailto:"++addr) linktext where
+             addr = nameAddr_addr name_addr
+             linktext = case (nameAddr_name name_addr) of
+                          Nothing -> addr
+                          Just name -> name
+
+mkHtaccess :: PackageDescription -> String
+mkHtaccess desc =
+    unlines [
+             unwords["Redirect" ,
+                     uriPath $ fileURI desc (downloadDir ++ "/" ++ latestDistFile desc),
+                     show $ fileURI desc (downloadDir ++ "/" ++ distFile desc)]
+            ]
+
+isLibrary :: PackageDescription -> Bool
+isLibrary = isJust . library
+
+findSetup :: IO String
+findSetup = do
+            b <- doesFileExist "Setup.hs"
+            if b then return "Setup.hs"
+                 else do
+                      b <- doesFileExist "Setup.lhs"
+                      if b then return "Setup.lhs"
+                           else fail "No setup program found"
+
+hlink :: HTML a => String -> a -> Html
+hlink u b = anchor ! [href u] << b
+
+showExceptions :: IO a -> IO a
+showExceptions a = a `C.catches`
+                   [C.Handler (\(e::ExitCode) -> (print e >> C.throw e)),
+                    C.Handler (\(e::IOError) -> (print e >> C.throw e))]
+
+main = do
+       args <- getArgs
+       let blueprint_css_base = case args of
+                                  ["--blueprint", css_base] -> Just css_base
+                                  _ -> Nothing
+       packageDescPath <- defaultPackageDesc normal
+       gDesc <- readPackageDescription normal packageDescPath
+       let desc = flattenPackageDescription gDesc
+       hPutStrLn stderr $ "Creating " ++ docDir ++ " ..."
+       createDirectoryIfMissing True docDir
+       setupProg <- findSetup
+       when (isLibrary desc) $ do hPutStrLn stderr "Building API documentation..."
+                                  buildHaddock desc
+       hPutStrLn stderr $ "Building tarball " ++ distFile desc ++ " ..."
+       mkTarball desc
+       hPutStrLn stderr $ "Building DOAP RDF: " ++ doapFile ++ " ..."
+       doap <- mkDoap
+       readme <- readFileOrNull "README"
+       readme' <- txt2html $ if null readme then description desc else readme
+       hPutStrLn stderr $ "Writing " ++ indexFile ++ " ..."
+       writeFile indexFile $ renderHtml $
+                 makeIndex blueprint_css_base desc setupProg readme' doap
+       hPutStrLn stderr $ "Writing " ++ htaccessFile ++ " ..."
+       writeFile htaccessFile $ mkHtaccess desc
+</pre></br><h2>printed</h2></br><pre>
+{-# LANGUAGE ScopedTypeVariables #-}
+
+-- Generate a homepage for a darcsized cabalized Haskell package.
+-- NOTE: this is very hack, making lots of assumptions and
+-- with crazy path stuff everywhere. I should clean this up.
+
+import qualified Control.Exception as C
+import Control.Monad
+import Data.Char
+import Data.List
+import Data.Maybe
+import Distribution.PackageDescription
+    (PackageDescription,RepoKind(RepoHead),RepoType(..),repoLocation,repoKind,
+     repoType,package,homepage,synopsis,buildDepends,maintainer,licenseFile,
+     license,library,description,sourceRepos)
+import Distribution.PackageDescription.Configuration
+    (flattenPackageDescription)
+import Distribution.PackageDescription.Parse
+    (readPackageDescription)
+import Distribution.Simple
+import Distribution.Simple.Utils
+    (defaultPackageDesc)
+import Distribution.Verbosity
+    (normal)
+import Data.Version (showVersion)
+import Text.ParserCombinators.Parsec (parse)
+import Text.ParserCombinators.Parsec.Rfc2822
+    (mailbox,NameAddr,nameAddr_addr,nameAddr_name)
+import Network.URI
+import Prelude hiding (catch)
+import System.Directory
+import System.Environment
+import System.Exit
+import System.IO
+import System.Cmd
+import Text.Regex
+import Text.XHtml.Strict
+
+import Text.HMarkup
+
+-- These paths are all relative to the root of the darcs repo.
+
+docDir = "doc"
+downloadDir = "download"
+haddockDir = docDir ++ "/" ++ "api"
+indexFile = docDir ++ "/" ++ "index.html"
+doapFile = docDir ++ "/" ++ "doap.rdf"
+htaccessFile = downloadDir ++ "/" ++ ".htaccess"
+
+-- packages that we don't need to list as requirements
+standardPackages = map (\x -> PackageName x)
+                   ["base","stm","mtl","fgl","QuickCheck",
+                    "Cabal","network","readline","unix","parsec","haskell98",
+                    "posix","html","random","old-time","regex-compat"]
+
+-- Packages whose homepages we know
+knownPackages = [(PackageName "fps",("FastPackedString","http://www.cse.unsw.edu.au/~dons/fps.html")),
+                 (PackageName "Crypto",("The Haskell Cryptographic Library","http://haskell.org/crypto/")),
+                 (PackageName "HTTP",("The Haskell HTTP package","http://haskell.org/http/")),
+                 (PackageName "XmlRpc",("HaXR - the Haskell XML-RPC library","http://haskell.org/haxr/")),
+                 (PackageName "xhtml",("Text.XHtml","http://www.cs.chalmers.se/~bringert/darcs/haskell-xhtml/doc/")),
+                 (PackageName "cgi-compat",("cgi-compat","http://www.cs.chalmers.se/~bringert/darcs/cgi-compat/doc/")),
+                 (PackageName "haskelldb",("HaskellDB","http://haskelldb.sourceforge.net/")),
+                 (PackageName "parsedate",("parsedate","http://www.cs.chalmers.se/~bringert/darcs/parsedate/doc/")),
+                 (PackageName "hmarkup",("hmarkup","http://www.cs.chalmers.se/~bringert/darcs/hmarkup/doc/")),
+                 (PackageName "hxt",("Haskell XML Toolbox","http://www.fh-wedel.de/~si/HXmlToolbox/index.html"))
+                ]
+
+stylesheet = unlines
+ [
+  "body { background-color: white; color: black; margin: 0; padding: 0; }",
+  "h1, .footer { background-color:silver; color: black; margin: 0; border: 0 solid black; }",
+  "h1 { border-bottom-width: thin; padding: 1em; }",
+  ".footer { font-size: smaller; text-align:center; border-top-width: thin; padding: 0.25em 1em; }",
+  ".footer span { padding: 0 0.25em; } ",
+  "hr { display: none; }",
+  ".section { padding: 0; margin: 0 5em; }"
+ ]
+
+txt2html :: String -> IO Html
+txt2html s = do r <- markupToHtml defaultMarkupXHtmlPrefs s
+                case r of
+                  Left err -> fail err
+                  Right h  -> return h
+
+buildHaddock :: PackageDescription -> IO ()
+buildHaddock desc =
+    do
+    showExceptions $ withArgs ["haddock","-v"] $ defaultMainNoRead desc
+    rawSystem "rm" ["-rf", haddockDir]
+    rawSystem "cp" ["-r", "dist/doc/html", haddockDir]
+    return ()
+
+systemOrFail :: String -> IO ()
+systemOrFail cmd =
+    do
+    e <- system cmd
+    case e of
+      ExitSuccess   -> return ()
+      ExitFailure i -> do hPutStrLn stderr $ "Command failed with status " ++ show i
+                                             ++ ": " ++ cmd
+                          exitWith e
+
+readFileOrNull :: FilePath -> IO String
+readFileOrNull f =
+    do e <- doesFileExist f
+       if e then readFile f
+            else do hPutStrLn stderr $ f ++ " not found, skipping"
+                    return ""
+
+match :: String -> String -> Bool
+match p = isJust . matchRegex (mkRegex p)
+
+distDir :: PackageDescription -> String
+distDir desc =  name ++ "-" ++ version where
+    name = pkgNameFromDesc desc
+    version = showVersion (pkgVersion (packageId desc))
+
+getPkgNameStr :: PackageName -> String
+getPkgNameStr desc = case desc of
+                    PackageName x -> x
+
+distFile :: PackageDescription -> String
+distFile desc = distDir desc ++ ".tar.gz"
+
+latestDistFile :: PackageDescription -> String
+latestDistFile desc = pkgNameFromDesc desc ++ "-latest.tar.gz"
+
+pkgNameFromDesc :: PackageDescription -> String
+pkgNameFromDesc desc = case (pkgName (package desc)) of
+                         PackageName name -> name
+
+fileURI :: PackageDescription -> String -> URI
+fileURI desc f = fromJust $ (nullURI { uriPath = f }) `relativeTo` darcsURI desc
+
+linkFile :: HTML a => PackageDescription -> String -> a -> Html
+linkFile desc f x = hlink (show $ fileURI desc f `relativeFrom` homepageURI desc) << x
+
+-- Uses source-repository sections to try and find a Darcs repo.
+-- This is a darcs-centric tool, but it would be nice to handle the
+-- other (hg,git,etc.) repository types that are possible.
+-- Falls back on darcsURI_hack when source-repository is missing.
+darcsURI :: PackageDescription -> URI
+darcsURI desc = fromMaybe (darcsURI_hack desc) source_repo where
+    all_repos = sourceRepos desc
+    darcs_head_repos = filter (\r -> repoType r == Just Darcs &&
+                               repoKind r == RepoHead) all_repos
+    source_repo = do repo <- listToMaybe darcs_head_repos
+                     repo_l <- repoLocation repo
+                     parseURI repo_l
+
+darcsURI_hack :: PackageDescription -> URI
+darcsURI_hack desc = home { uriPath = reverse $ drop (length docDir) $ dropWhile (=='/') $ reverse $ uriPath home }
+    where home = homepageURI desc
+
+homepageURI ::  PackageDescription -> URI
+homepageURI desc = fromMaybe (error $ "Package homepage is not a valid URI: " ++ homepage desc) $ parseURI $ homepage desc
+
+-- Create DOAP file using 'cabal2doap' program if available.
+-- Return path to DOAP, if successful.
+mkDoap :: IO (Maybe String)
+mkDoap = do ec <- system ("cabal2doap > " ++ doapFile)
+            return $ case ec of
+                       ExitSuccess -> Just doapFile
+                       _ -> Nothing
+
+mkTarball :: PackageDescription -> IO ()
+mkTarball desc =
+    do
+    system ("darcs dist --dist-name=" ++ distDir desc)
+    createDirectoryIfMissing True downloadDir
+    let f = downloadDir ++ "/" ++ distFile desc
+    renameFile (distFile desc) f
+
+makeIndex :: Maybe String -- ^ Blueprint base CSS URL (relative or absolute, with trailing slash)
+          -> PackageDescription
+          -> String -- ^ Name of Setup program (Setup.hs/Setup.lhs)
+          -> Html -- ^ README rendered as HTML
+          -> Maybe String -- ^ DOAP file location, if one was generated
+          -> Html
+makeIndex blueprint desc setupProg readme doap = (header << hdr) +++ (body << bdy)
+  where
+  style_elems =
+      case blueprint of
+        Nothing -> [style ! [thetype "text/css"] << stylesheet]
+        Just css_base -> [thelink ! [rel "stylesheet",
+                                    href (css_base ++ "screen.css"),
+                                    thetype "text/css",
+                                    strAttr "media" "screen, projection"] << noHtml,
+                         thelink ! [rel "stylesheet",
+                                    href (css_base ++ "print.css"),
+                                    thetype "text/css",
+                                    strAttr "media" "print"] << noHtml,
+                         primHtml "<!--[if IE]>",
+                         thelink ! [rel "stylesheet",
+                                    href (css_base ++ "ie.css"),
+                                    thetype "text/css",
+                                    strAttr "media" "screen, projection"] << noHtml,
+                         primHtml "<![endif]-->",
+                         thelink ! [rel "stylesheet",
+                                    href (css_base ++ "plugins/fancy-type/screen.css"),
+                                    thetype "text/css",
+                                    strAttr "media" "screen, projection"] << noHtml
+                        ]
+  doap_elems = case doap of
+                 Just doap_loc -> [thelink ! [rel "meta",
+                                             thetype "application/rdf+xml",
+                                             title "doap",
+                                             href (uriPath (fileURI desc doap_loc))]
+                                  << noHtml]
+                 Nothing -> []
+  hdr = [thetitle << t,
+         meta ! [name "generator", content "hask-home, http://www.cs.chalmers.se/~bringert/darcs/hask-home/doc/"],
+         meta ! [httpequiv "content-type", content "text/html; charset=UTF-8"]
+        ] ++ style_elems ++ doap_elems
+  t = pkgNameFromDesc desc ++ " - " ++ synopsis desc
+  title_block = case blueprint of
+                  Nothing -> [h1 << t]
+                  _ -> [thediv ! [theclass "span-22"]
+                       << [h1 << pkgNameFromDesc desc, h1 ! [theclass "alt"]
+                           << synopsis desc],
+                      hr]
+  bdy = [thediv ! [theclass "prepend-1"]
+                    << [thediv ! [theclass "container"]
+                                   << [title_block ++ [des, api, dow, req, ins, mai, lic, foo]]]]
+  des = section "Description" [readme]
+  api | not (isLibrary desc) = noHtml
+      | otherwise = section "API Documentation"
+                      [p << linkFile desc (haddockDir ++ "/" ++ pkgNameFromDesc desc ++ "/index.html")
+                                     << "Haddock-generated API documentation"]
+  dow = section "Download"
+         ([h3 << "Darcs", pre << ("$ darcs get --partial " ++ show (darcsURI desc))]
+          ++ [h3 << "Tarball",
+              p << ("Latest release: "
+                    +++ linkFile desc (downloadDir ++ "/" ++ distFile desc) (distFile desc)),
+              p << ("You can also use "
+                    +++ linkFile desc (downloadDir ++ "/" ++ latestDistFile desc) (latestDistFile desc)
+                    +++ " which should always redirect you to the latest release tarball.")])
+  req | null reqs = noHtml
+      | otherwise = section "Requirements" [ulist << reqs]
+  reqs = catMaybes $ map formatReq (buildDepends desc)
+  formatReq d@(Dependency p v)
+      | p `elem` standardPackages = Nothing
+      | otherwise = Just $ case lookup p knownPackages of
+                               Just (n,u) -> li << hlink u n
+                               Nothing -> li << getPkgNameStr p
+  ins = section "Installation"
+                  [olist << [li << ("Unpack the sources and enter the source directory:"
+                                    +++ pre << [unlines ["$ tar -zxf " ++ distFile desc,
+                                                         "$ cd " ++ distDir desc]]),
+                             li << ("Configure:"
+                                    +++ pre << [unlines ["$ runghc " ++ setupProg ++ " configure"]]),
+                             li << ("Build:"
+                                    +++ pre << [unlines ["$ runghc " ++ setupProg ++ " build"]]),
+                             li << ("Install (as root):"
+                                    +++ pre << [unlines ["# runghc " ++ setupProg ++ " install"]])
+                            ]
+        ]
+  mai = section "Maintainer" [maintainerToHtml (maintainer desc)]
+  lic = section "License"
+        [p << (show (license desc) +++
+               case (licenseFile desc) of
+                 "" -> noHtml
+                 path -> ", see " +++ (linkFile desc path << path) +++ ".")
+        ]
+  validXHtml = thespan << hlink "http://validator.w3.org/check?uri=referer" "Validate XHTML"
+  validCSS = thespan << hlink "http://jigsaw.w3.org/css-validator/check/referer" "Validate CSS"
+  generator = thespan << ("Page generated by "
+              +++ hlink "http://www.cs.chalmers.se/~bringert/darcs/hask-home/doc/" "hask-home")
+  foo = thediv ! [theclass "footer"]
+        << [hr, p << [generator +++ " " +++ validXHtml +++ " " +++ validCSS]]
+  section h xs = thediv ! [theclass "section"] << ((h2 << [h]):xs)
+
+maintainerToHtml :: String -> Html
+maintainerToHtml m =
+    let addrp = parse mailbox "maintainer" m
+    in case addrp of
+         Left _ -> p << m -- parse error
+         Right name_addr -> p << hlink ("mailto:"++addr) linktext where
+             addr = nameAddr_addr name_addr
+             linktext = case (nameAddr_name name_addr) of
+                          Nothing -> addr
+                          Just name -> name
+
+mkHtaccess :: PackageDescription -> String
+mkHtaccess desc =
+    unlines [
+             unwords["Redirect" ,
+                     uriPath $ fileURI desc (downloadDir ++ "/" ++ latestDistFile desc),
+                     show $ fileURI desc (downloadDir ++ "/" ++ distFile desc)]
+            ]
+
+isLibrary :: PackageDescription -> Bool
+isLibrary = isJust . library
+
+findSetup :: IO String
+findSetup = do
+            b <- doesFileExist "Setup.hs"
+            if b then return "Setup.hs"
+                 else do
+                      b <- doesFileExist "Setup.lhs"
+                      if b then return "Setup.lhs"
+                           else fail "No setup program found"
+
+hlink :: HTML a => String -> a -> Html
+hlink u b = anchor ! [href u] << b
+
+showExceptions :: IO a -> IO a
+showExceptions a = a `C.catches`
+                   [C.Handler (\(e::ExitCode) -> (print e >> C.throw e)),
+                    C.Handler (\(e::IOError) -> (print e >> C.throw e))]
+
+main = do
+       args <- getArgs
+       let blueprint_css_base = case args of
+                                  ["--blueprint", css_base] -> Just css_base
+                                  _ -> Nothing
+       packageDescPath <- defaultPackageDesc normal
+       gDesc <- readPackageDescription normal packageDescPath
+       let desc = flattenPackageDescription gDesc
+       hPutStrLn stderr $ "Creating " ++ docDir ++ " ..."
+       createDirectoryIfMissing True docDir
+       setupProg <- findSetup
+       when (isLibrary desc) $ do hPutStrLn stderr "Building API documentation..."
+                                  buildHaddock desc
+       hPutStrLn stderr $ "Building tarball " ++ distFile desc ++ " ..."
+       mkTarball desc
+       hPutStrLn stderr $ "Building DOAP RDF: " ++ doapFile ++ " ..."
+       doap <- mkDoap
+       readme <- readFileOrNull "README"
+       readme' <- txt2html $ if null readme then description desc else readme
+       hPutStrLn stderr $ "Writing " ++ indexFile ++ " ..."
+       writeFile indexFile $ renderHtml $
+                 makeIndex blueprint_css_base desc setupProg readme' doap
+       hPutStrLn stderr $ "Writing " ++ htaccessFile ++ " ..."
+       writeFile htaccessFile $ mkHtaccess desc
+
+</pre>
