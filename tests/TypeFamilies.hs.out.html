@@ -1,0 +1,3452 @@
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE TypeFamilies #-}
+
+-- From https://ocharles.org.uk/blog/posts/2014-12-12-type-families.html
+
+import Control.Concurrent.STM
+import Control.Concurrent.MVar
+import Data.Foldable (forM_)
+import Data.IORef
+
+class IOStore store where
+  newIO :: a -> IO (store a)
+  getIO :: store a -> IO a
+  putIO :: store a -> a -> IO ()
+
+instance IOStore MVar where
+  newIO = newMVar
+  getIO = readMVar
+  putIO mvar a = modifyMVar_ mvar (return . const a)
+
+instance IOStore IORef where
+  newIO = newIORef
+  getIO = readIORef
+  putIO ioref a = modifyIORef ioref (const a)
+
+type Present = String
+storePresentsIO :: IOStore store => [Present] -> IO (store [Present])
+storePresentsIO xs = do
+  store <- newIO []
+  forM_ xs $ \x -> do
+    old <- getIO store
+    putIO store (x : old)
+  return store
+
+-- Type family version
+
+class Store store where
+  type StoreMonad store :: * -> *
+  new :: a -> (StoreMonad store) (store a)
+  get :: store a -> (StoreMonad store) a
+  put :: store a -> a -> (StoreMonad store) ()
+
+instance Store IORef where
+  type StoreMonad IORef = IO
+  new = newIORef
+  get = readIORef
+  put ioref a = modifyIORef ioref (const a)
+
+instance Store TVar where
+  type StoreMonad TVar = STM
+  new = newTVar
+  get = readTVar
+  put ioref a = modifyTVar ioref (const a)
+
+storePresents :: (Store store, Monad (StoreMonad store))
+              => [Present] -> (StoreMonad store) (store [Present])
+storePresents xs = do
+  store <- new []
+  forM_ xs $ \x -> do
+    old <- get store
+    put store (x : old)
+  return store
+
+type family (++) (a :: [k]) (b :: [k]) :: [k] where
+              ++[]          b = b
+              ++a  : as)    b = a  : (as ++ b)
+
+type family               |>f :: * -> *)    (s :: * -> *) :: * -> *
+
+type instance   |>    Union s = Union (f :> s)
+
+
+==============
+tests/examples/TypeFamilies.hs
+==============
+lengths:(1801,1761)
+
+==============
+
+({ tests/examples/TypeFamilies.hs:1:1 }
+ Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnEofPos),DP (2,0))])
+ (HsModule 
+  (Nothing) 
+  (Nothing) 
+  [
+   ({ tests/examples/TypeFamilies.hs:6:1-29 }
+    Just (Ann (DP (2,1)) (ColDelta 1) DP (5,1) [DComment (DP (0,0),DP (0,33)) "{-# LANGUAGE FlexibleContexts #-}",DComment (DP (1,1),DP (1,30)) "{-# LANGUAGE TypeFamilies #-}",DComment (DP (2,1),DP (2,73)) "-- From https://ocharles.org.uk/blog/posts/2014-12-12-type-families.html"] [((G AnnImport),DP (0,0)),((G AnnVal),DP (0,1))])
+    (ImportDecl 
+     (Nothing) 
+     ({ tests/examples/TypeFamilies.hs:6:8-29 }
+      Nothing{ModuleName: Control.Concurrent.STM}) 
+     (Nothing) 
+     (False) 
+     (False) 
+     (False) 
+     (False) 
+     (Nothing) 
+     (Nothing))),
+   ({ tests/examples/TypeFamilies.hs:7:1-30 }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [((G AnnImport),DP (0,0)),((G AnnVal),DP (0,1))])
+    (ImportDecl 
+     (Nothing) 
+     ({ tests/examples/TypeFamilies.hs:7:8-30 }
+      Nothing{ModuleName: Control.Concurrent.MVar}) 
+     (Nothing) 
+     (False) 
+     (False) 
+     (False) 
+     (False) 
+     (Nothing) 
+     (Nothing))),
+   ({ tests/examples/TypeFamilies.hs:8:1-28 }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [((G AnnImport),DP (0,0)),((G AnnVal),DP (0,1))])
+    (ImportDecl 
+     (Nothing) 
+     ({ tests/examples/TypeFamilies.hs:8:8-20 }
+      Nothing{ModuleName: Data.Foldable}) 
+     (Nothing) 
+     (False) 
+     (False) 
+     (False) 
+     (False) 
+     (Nothing) 
+     (Just 
+      ((,) 
+       (False) 
+       ({ tests/examples/TypeFamilies.hs:8:22-28 }
+        Just (Ann (DP (0,1)) (ColDelta 22) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])
+        [
+         ({ tests/examples/TypeFamilies.hs:8:23-27 }
+          Just (Ann (DP (0,0)) (ColDelta 23) DP (0,0) [] [])
+          (IEVar 
+           ({ tests/examples/TypeFamilies.hs:8:23-27 }
+            Just (Ann (DP (0,0)) (ColDelta 23) DP (0,0) [] [((G AnnVal),DP (0,0))])
+            (Unqual {OccName: forM_}))))]))))),
+   ({ tests/examples/TypeFamilies.hs:9:1-17 }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [((G AnnImport),DP (0,0)),((G AnnVal),DP (0,1))])
+    (ImportDecl 
+     (Nothing) 
+     ({ tests/examples/TypeFamilies.hs:9:8-17 }
+      Nothing{ModuleName: Data.IORef}) 
+     (Nothing) 
+     (False) 
+     (False) 
+     (False) 
+     (False) 
+     (Nothing) 
+     (Nothing)))] 
+  [
+   ({ tests/examples/TypeFamilies.hs:(11,1)-(14,32) }
+    Just (Ann (DP (2,1)) (ColDelta 1) DP (2,1) [] [((G AnnClass),DP (0,0)),((G AnnWhere),DP (0,1))])
+    (TyClD 
+     (ClassDecl 
+      ({ <no location info> }
+       Just (Ann (DP (-11,0)) (ColDelta 0) DP (-11,0) [] [])
+       []) 
+      ({ tests/examples/TypeFamilies.hs:11:7-13 }
+       Just (Ann (DP (0,1)) (ColDelta 7) DP (0,1) [] [((G AnnVal),DP (0,0))])
+       (Unqual {OccName: IOStore})) 
+      (HsQTvs 
+       [] 
+       [
+        ({ tests/examples/TypeFamilies.hs:11:15-19 }
+         Just (Ann (DP (0,1)) (ColDelta 15) DP (0,1) [] [((G AnnVal),DP (0,0))])
+         (UserTyVar 
+          (Unqual {OccName: store})))]) 
+      [] 
+      [
+       ({ tests/examples/TypeFamilies.hs:12:3-28 }
+        Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnDcolon),DP (0,1))])
+        (TypeSig 
+         [
+          ({ tests/examples/TypeFamilies.hs:12:3-7 }
+           Just (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnVal),DP (0,0))])
+           (Unqual {OccName: newIO}))] 
+         ({ tests/examples/TypeFamilies.hs:12:12-28 }
+          Just (Ann (DP (0,1)) (ColDelta 12) DP (0,1) [] [])
+          (HsForAllTy 
+           (Implicit) 
+           (Nothing) 
+           (HsQTvs 
+            [] 
+            []) 
+           ({ <no location info> }
+            Just (Ann (DP (-11,0)) (ColDelta 0) DP (-11,0) [] [])
+            []) 
+           ({ tests/examples/TypeFamilies.hs:12:12-28 }
+            Just (Ann (DP (0,0)) (ColDelta 12) DP (0,0) [] [((G AnnRarrow),DP (0,1))])
+            (HsFunTy 
+             ({ tests/examples/TypeFamilies.hs:12:12 }
+              Just (Ann (DP (0,0)) (ColDelta 12) DP (0,0) [] [((G AnnVal),DP (0,0))])
+              (HsTyVar 
+               (Unqual {OccName: a}))) 
+             ({ tests/examples/TypeFamilies.hs:12:17-28 }
+              Just (Ann (DP (0,1)) (ColDelta 17) DP (0,1) [] [])
+              (HsAppTy 
+               ({ tests/examples/TypeFamilies.hs:12:17-18 }
+                Just (Ann (DP (0,0)) (ColDelta 17) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                (HsTyVar 
+                 (Unqual {OccName: IO}))) 
+               ({ tests/examples/TypeFamilies.hs:12:20-28 }
+                Just (Ann (DP (0,1)) (ColDelta 20) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])
+                (HsParTy 
+                 ({ tests/examples/TypeFamilies.hs:12:21-27 }
+                  Just (Ann (DP (0,0)) (ColDelta 21) DP (0,0) [] [])
+                  (HsAppTy 
+                   ({ tests/examples/TypeFamilies.hs:12:21-25 }
+                    Just (Ann (DP (0,0)) (ColDelta 21) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                    (HsTyVar 
+                     (Unqual {OccName: store}))) 
+                   ({ tests/examples/TypeFamilies.hs:12:27 }
+                    Just (Ann (DP (0,1)) (ColDelta 27) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                    (HsTyVar 
+                     (Unqual {OccName: a}))))))))))))) 
+         (PlaceHolder))),
+       ({ tests/examples/TypeFamilies.hs:13:3-26 }
+        Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnDcolon),DP (0,1))])
+        (TypeSig 
+         [
+          ({ tests/examples/TypeFamilies.hs:13:3-7 }
+           Just (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnVal),DP (0,0))])
+           (Unqual {OccName: getIO}))] 
+         ({ tests/examples/TypeFamilies.hs:13:12-26 }
+          Just (Ann (DP (0,1)) (ColDelta 12) DP (0,1) [] [])
+          (HsForAllTy 
+           (Implicit) 
+           (Nothing) 
+           (HsQTvs 
+            [] 
+            []) 
+           ({ <no location info> }
+            Just (Ann (DP (-11,0)) (ColDelta 0) DP (-11,0) [] [])
+            []) 
+           ({ tests/examples/TypeFamilies.hs:13:12-26 }
+            Just (Ann (DP (0,0)) (ColDelta 12) DP (0,0) [] [((G AnnRarrow),DP (0,1))])
+            (HsFunTy 
+             ({ tests/examples/TypeFamilies.hs:13:12-18 }
+              Just (Ann (DP (0,0)) (ColDelta 12) DP (0,0) [] [])
+              (HsAppTy 
+               ({ tests/examples/TypeFamilies.hs:13:12-16 }
+                Just (Ann (DP (0,0)) (ColDelta 12) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                (HsTyVar 
+                 (Unqual {OccName: store}))) 
+               ({ tests/examples/TypeFamilies.hs:13:18 }
+                Just (Ann (DP (0,1)) (ColDelta 18) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                (HsTyVar 
+                 (Unqual {OccName: a}))))) 
+             ({ tests/examples/TypeFamilies.hs:13:23-26 }
+              Just (Ann (DP (0,1)) (ColDelta 23) DP (0,1) [] [])
+              (HsAppTy 
+               ({ tests/examples/TypeFamilies.hs:13:23-24 }
+                Just (Ann (DP (0,0)) (ColDelta 23) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                (HsTyVar 
+                 (Unqual {OccName: IO}))) 
+               ({ tests/examples/TypeFamilies.hs:13:26 }
+                Just (Ann (DP (0,1)) (ColDelta 26) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                (HsTyVar 
+                 (Unqual {OccName: a}))))))))) 
+         (PlaceHolder))),
+       ({ tests/examples/TypeFamilies.hs:14:3-32 }
+        Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnDcolon),DP (0,1))])
+        (TypeSig 
+         [
+          ({ tests/examples/TypeFamilies.hs:14:3-7 }
+           Just (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnVal),DP (0,0))])
+           (Unqual {OccName: putIO}))] 
+         ({ tests/examples/TypeFamilies.hs:14:12-32 }
+          Just (Ann (DP (0,1)) (ColDelta 12) DP (0,1) [] [])
+          (HsForAllTy 
+           (Implicit) 
+           (Nothing) 
+           (HsQTvs 
+            [] 
+            []) 
+           ({ <no location info> }
+            Just (Ann (DP (-11,0)) (ColDelta 0) DP (-11,0) [] [])
+            []) 
+           ({ tests/examples/TypeFamilies.hs:14:12-32 }
+            Just (Ann (DP (0,0)) (ColDelta 12) DP (0,0) [] [((G AnnRarrow),DP (0,1))])
+            (HsFunTy 
+             ({ tests/examples/TypeFamilies.hs:14:12-18 }
+              Just (Ann (DP (0,0)) (ColDelta 12) DP (0,0) [] [])
+              (HsAppTy 
+               ({ tests/examples/TypeFamilies.hs:14:12-16 }
+                Just (Ann (DP (0,0)) (ColDelta 12) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                (HsTyVar 
+                 (Unqual {OccName: store}))) 
+               ({ tests/examples/TypeFamilies.hs:14:18 }
+                Just (Ann (DP (0,1)) (ColDelta 18) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                (HsTyVar 
+                 (Unqual {OccName: a}))))) 
+             ({ tests/examples/TypeFamilies.hs:14:23-32 }
+              Just (Ann (DP (0,1)) (ColDelta 23) DP (0,1) [] [((G AnnRarrow),DP (0,1))])
+              (HsFunTy 
+               ({ tests/examples/TypeFamilies.hs:14:23 }
+                Just (Ann (DP (0,0)) (ColDelta 23) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                (HsTyVar 
+                 (Unqual {OccName: a}))) 
+               ({ tests/examples/TypeFamilies.hs:14:28-32 }
+                Just (Ann (DP (0,1)) (ColDelta 28) DP (0,1) [] [])
+                (HsAppTy 
+                 ({ tests/examples/TypeFamilies.hs:14:28-29 }
+                  Just (Ann (DP (0,0)) (ColDelta 28) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                  (HsTyVar 
+                   (Unqual {OccName: IO}))) 
+                 ({ tests/examples/TypeFamilies.hs:14:31-32 }
+                  Just (Ann (DP (0,1)) (ColDelta 31) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])
+                  (HsTupleTy 
+                   (HsBoxedOrConstraintTuple) 
+                   [])))))))))) 
+         (PlaceHolder)))] {Bag(Located (HsBind RdrName)): 
+      []} 
+      [] 
+      [] 
+      [] 
+      (PlaceHolder)))),
+   ({ tests/examples/TypeFamilies.hs:(16,1)-(19,52) }
+    Just (Ann (DP (2,1)) (ColDelta 1) DP (2,1) [] [((G AnnInstance),DP (0,0)),((G AnnWhere),DP (0,1))])
+    (InstD 
+     (ClsInstD 
+      (ClsInstDecl 
+       ({ tests/examples/TypeFamilies.hs:16:10-21 }
+        Just (Ann (DP (0,1)) (ColDelta 10) DP (0,1) [] [])
+        (HsForAllTy 
+         (Implicit) 
+         (Nothing) 
+         (HsQTvs 
+          [] 
+          []) 
+         ({ <no location info> }
+          Just (Ann (DP (-11,0)) (ColDelta 0) DP (-11,0) [] [])
+          []) 
+         ({ tests/examples/TypeFamilies.hs:16:10-21 }
+          Just (Ann (DP (0,0)) (ColDelta 10) DP (0,0) [] [])
+          (HsAppTy 
+           ({ tests/examples/TypeFamilies.hs:16:10-16 }
+            Just (Ann (DP (0,0)) (ColDelta 10) DP (0,0) [] [((G AnnVal),DP (0,0))])
+            (HsTyVar 
+             (Unqual {OccName: IOStore}))) 
+           ({ tests/examples/TypeFamilies.hs:16:18-21 }
+            Just (Ann (DP (0,1)) (ColDelta 18) DP (0,1) [] [((G AnnVal),DP (0,0))])
+            (HsTyVar 
+             (Unqual {OccName: MVar}))))))) {Bag(Located (HsBind RdrName)): 
+       [
+        ({ tests/examples/TypeFamilies.hs:17:3-17 }
+         Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [])
+         (FunBind 
+          ({ tests/examples/TypeFamilies.hs:17:3-7 }
+           Just (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnVal),DP (0,0))])
+           (Unqual {OccName: newIO})) 
+          (False) 
+          (MG 
+           [
+            ({ tests/examples/TypeFamilies.hs:17:3-17 }
+             Just (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnEqual),DP (0,1))])
+             (Match 
+              (Just 
+               ((,) 
+                ({ tests/examples/TypeFamilies.hs:17:3-7 }
+                 Just (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                 (Unqual {OccName: newIO})) 
+                (False))) 
+              [] 
+              (Nothing) 
+              (GRHSs 
+               [
+                ({ tests/examples/TypeFamilies.hs:17:9-17 }
+                 Just (Ann (DP (0,-1)) (ColDelta 9) DP (0,-1) [] [])
+                 (GRHS 
+                  [] 
+                  ({ tests/examples/TypeFamilies.hs:17:11-17 }
+                   Just (Ann (DP (0,1)) (ColDelta 11) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                   (HsVar 
+                    (Unqual {OccName: newMVar})))))] 
+               (EmptyLocalBinds))))] 
+           [] 
+           (PlaceHolder) 
+           (FromSource)) 
+          (WpHole) 
+          (PlaceHolder) 
+          [])),
+        ({ tests/examples/TypeFamilies.hs:18:3-18 }
+         Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [])
+         (FunBind 
+          ({ tests/examples/TypeFamilies.hs:18:3-7 }
+           Just (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnVal),DP (0,0))])
+           (Unqual {OccName: getIO})) 
+          (False) 
+          (MG 
+           [
+            ({ tests/examples/TypeFamilies.hs:18:3-18 }
+             Just (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnEqual),DP (0,1))])
+             (Match 
+              (Just 
+               ((,) 
+                ({ tests/examples/TypeFamilies.hs:18:3-7 }
+                 Just (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                 (Unqual {OccName: getIO})) 
+                (False))) 
+              [] 
+              (Nothing) 
+              (GRHSs 
+               [
+                ({ tests/examples/TypeFamilies.hs:18:9-18 }
+                 Just (Ann (DP (0,-1)) (ColDelta 9) DP (0,-1) [] [])
+                 (GRHS 
+                  [] 
+                  ({ tests/examples/TypeFamilies.hs:18:11-18 }
+                   Just (Ann (DP (0,1)) (ColDelta 11) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                   (HsVar 
+                    (Unqual {OccName: readMVar})))))] 
+               (EmptyLocalBinds))))] 
+           [] 
+           (PlaceHolder) 
+           (FromSource)) 
+          (WpHole) 
+          (PlaceHolder) 
+          [])),
+        ({ tests/examples/TypeFamilies.hs:19:3-52 }
+         Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [])
+         (FunBind 
+          ({ tests/examples/TypeFamilies.hs:19:3-7 }
+           Just (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnVal),DP (0,0))])
+           (Unqual {OccName: putIO})) 
+          (False) 
+          (MG 
+           [
+            ({ tests/examples/TypeFamilies.hs:19:3-52 }
+             Just (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnEqual),DP (0,1))])
+             (Match 
+              (Just 
+               ((,) 
+                ({ tests/examples/TypeFamilies.hs:19:3-7 }
+                 Just (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                 (Unqual {OccName: putIO})) 
+                (False))) 
+              [
+               ({ tests/examples/TypeFamilies.hs:19:9-12 }
+                Just (Ann (DP (0,1)) (ColDelta 9) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                (VarPat 
+                 (Unqual {OccName: mvar}))),
+               ({ tests/examples/TypeFamilies.hs:19:14 }
+                Just (Ann (DP (0,1)) (ColDelta 14) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                (VarPat 
+                 (Unqual {OccName: a})))] 
+              (Nothing) 
+              (GRHSs 
+               [
+                ({ tests/examples/TypeFamilies.hs:19:16-52 }
+                 Just (Ann (DP (0,-1)) (ColDelta 16) DP (0,-1) [] [])
+                 (GRHS 
+                  [] 
+                  ({ tests/examples/TypeFamilies.hs:19:18-52 }
+                   Just (Ann (DP (0,1)) (ColDelta 18) DP (0,1) [] [])
+                   (HsApp 
+                    ({ tests/examples/TypeFamilies.hs:19:18-33 }
+                     Just (Ann (DP (0,0)) (ColDelta 18) DP (0,0) [] [])
+                     (HsApp 
+                      ({ tests/examples/TypeFamilies.hs:19:18-28 }
+                       Just (Ann (DP (0,0)) (ColDelta 18) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                       (HsVar 
+                        (Unqual {OccName: modifyMVar_}))) 
+                      ({ tests/examples/TypeFamilies.hs:19:30-33 }
+                       Just (Ann (DP (0,1)) (ColDelta 30) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                       (HsVar 
+                        (Unqual {OccName: mvar}))))) 
+                    ({ tests/examples/TypeFamilies.hs:19:35-52 }
+                     Just (Ann (DP (0,1)) (ColDelta 35) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])
+                     (HsPar 
+                      ({ tests/examples/TypeFamilies.hs:19:36-51 }
+                       Just (Ann (DP (0,0)) (ColDelta 36) DP (0,0) [] [])
+                       (OpApp 
+                        ({ tests/examples/TypeFamilies.hs:19:36-41 }
+                         Just (Ann (DP (0,0)) (ColDelta 36) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                         (HsVar 
+                          (Unqual {OccName: return}))) 
+                        ({ tests/examples/TypeFamilies.hs:19:43 }
+                         Just (Ann (DP (0,1)) (ColDelta 43) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                         (HsVar 
+                          (Unqual {OccName: .}))) 
+                        (PlaceHolder) 
+                        ({ tests/examples/TypeFamilies.hs:19:45-51 }
+                         Just (Ann (DP (0,1)) (ColDelta 45) DP (0,1) [] [])
+                         (HsApp 
+                          ({ tests/examples/TypeFamilies.hs:19:45-49 }
+                           Just (Ann (DP (0,0)) (ColDelta 45) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                           (HsVar 
+                            (Unqual {OccName: const}))) 
+                          ({ tests/examples/TypeFamilies.hs:19:51 }
+                           Just (Ann (DP (0,1)) (ColDelta 51) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                           (HsVar 
+                            (Unqual {OccName: a})))))))))))))] 
+               (EmptyLocalBinds))))] 
+           [] 
+           (PlaceHolder) 
+           (FromSource)) 
+          (WpHole) 
+          (PlaceHolder) 
+          []))]} 
+       [] 
+       [] 
+       [] 
+       (Nothing))))),
+   ({ tests/examples/TypeFamilies.hs:(21,1)-(24,45) }
+    Just (Ann (DP (2,1)) (ColDelta 1) DP (2,1) [] [((G AnnInstance),DP (0,0)),((G AnnWhere),DP (0,1))])
+    (InstD 
+     (ClsInstD 
+      (ClsInstDecl 
+       ({ tests/examples/TypeFamilies.hs:21:10-22 }
+        Just (Ann (DP (0,1)) (ColDelta 10) DP (0,1) [] [])
+        (HsForAllTy 
+         (Implicit) 
+         (Nothing) 
+         (HsQTvs 
+          [] 
+          []) 
+         ({ <no location info> }
+          Just (Ann (DP (-11,0)) (ColDelta 0) DP (-11,0) [] [])
+          []) 
+         ({ tests/examples/TypeFamilies.hs:21:10-22 }
+          Just (Ann (DP (0,0)) (ColDelta 10) DP (0,0) [] [])
+          (HsAppTy 
+           ({ tests/examples/TypeFamilies.hs:21:10-16 }
+            Just (Ann (DP (0,0)) (ColDelta 10) DP (0,0) [] [((G AnnVal),DP (0,0))])
+            (HsTyVar 
+             (Unqual {OccName: IOStore}))) 
+           ({ tests/examples/TypeFamilies.hs:21:18-22 }
+            Just (Ann (DP (0,1)) (ColDelta 18) DP (0,1) [] [((G AnnVal),DP (0,0))])
+            (HsTyVar 
+             (Unqual {OccName: IORef}))))))) {Bag(Located (HsBind RdrName)): 
+       [
+        ({ tests/examples/TypeFamilies.hs:22:3-18 }
+         Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [])
+         (FunBind 
+          ({ tests/examples/TypeFamilies.hs:22:3-7 }
+           Just (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnVal),DP (0,0))])
+           (Unqual {OccName: newIO})) 
+          (False) 
+          (MG 
+           [
+            ({ tests/examples/TypeFamilies.hs:22:3-18 }
+             Just (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnEqual),DP (0,1))])
+             (Match 
+              (Just 
+               ((,) 
+                ({ tests/examples/TypeFamilies.hs:22:3-7 }
+                 Just (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                 (Unqual {OccName: newIO})) 
+                (False))) 
+              [] 
+              (Nothing) 
+              (GRHSs 
+               [
+                ({ tests/examples/TypeFamilies.hs:22:9-18 }
+                 Just (Ann (DP (0,-1)) (ColDelta 9) DP (0,-1) [] [])
+                 (GRHS 
+                  [] 
+                  ({ tests/examples/TypeFamilies.hs:22:11-18 }
+                   Just (Ann (DP (0,1)) (ColDelta 11) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                   (HsVar 
+                    (Unqual {OccName: newIORef})))))] 
+               (EmptyLocalBinds))))] 
+           [] 
+           (PlaceHolder) 
+           (FromSource)) 
+          (WpHole) 
+          (PlaceHolder) 
+          [])),
+        ({ tests/examples/TypeFamilies.hs:23:3-19 }
+         Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [])
+         (FunBind 
+          ({ tests/examples/TypeFamilies.hs:23:3-7 }
+           Just (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnVal),DP (0,0))])
+           (Unqual {OccName: getIO})) 
+          (False) 
+          (MG 
+           [
+            ({ tests/examples/TypeFamilies.hs:23:3-19 }
+             Just (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnEqual),DP (0,1))])
+             (Match 
+              (Just 
+               ((,) 
+                ({ tests/examples/TypeFamilies.hs:23:3-7 }
+                 Just (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                 (Unqual {OccName: getIO})) 
+                (False))) 
+              [] 
+              (Nothing) 
+              (GRHSs 
+               [
+                ({ tests/examples/TypeFamilies.hs:23:9-19 }
+                 Just (Ann (DP (0,-1)) (ColDelta 9) DP (0,-1) [] [])
+                 (GRHS 
+                  [] 
+                  ({ tests/examples/TypeFamilies.hs:23:11-19 }
+                   Just (Ann (DP (0,1)) (ColDelta 11) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                   (HsVar 
+                    (Unqual {OccName: readIORef})))))] 
+               (EmptyLocalBinds))))] 
+           [] 
+           (PlaceHolder) 
+           (FromSource)) 
+          (WpHole) 
+          (PlaceHolder) 
+          [])),
+        ({ tests/examples/TypeFamilies.hs:24:3-45 }
+         Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [])
+         (FunBind 
+          ({ tests/examples/TypeFamilies.hs:24:3-7 }
+           Just (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnVal),DP (0,0))])
+           (Unqual {OccName: putIO})) 
+          (False) 
+          (MG 
+           [
+            ({ tests/examples/TypeFamilies.hs:24:3-45 }
+             Just (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnEqual),DP (0,1))])
+             (Match 
+              (Just 
+               ((,) 
+                ({ tests/examples/TypeFamilies.hs:24:3-7 }
+                 Just (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                 (Unqual {OccName: putIO})) 
+                (False))) 
+              [
+               ({ tests/examples/TypeFamilies.hs:24:9-13 }
+                Just (Ann (DP (0,1)) (ColDelta 9) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                (VarPat 
+                 (Unqual {OccName: ioref}))),
+               ({ tests/examples/TypeFamilies.hs:24:15 }
+                Just (Ann (DP (0,1)) (ColDelta 15) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                (VarPat 
+                 (Unqual {OccName: a})))] 
+              (Nothing) 
+              (GRHSs 
+               [
+                ({ tests/examples/TypeFamilies.hs:24:17-45 }
+                 Just (Ann (DP (0,-1)) (ColDelta 17) DP (0,-1) [] [])
+                 (GRHS 
+                  [] 
+                  ({ tests/examples/TypeFamilies.hs:24:19-45 }
+                   Just (Ann (DP (0,1)) (ColDelta 19) DP (0,1) [] [])
+                   (HsApp 
+                    ({ tests/examples/TypeFamilies.hs:24:19-35 }
+                     Just (Ann (DP (0,0)) (ColDelta 19) DP (0,0) [] [])
+                     (HsApp 
+                      ({ tests/examples/TypeFamilies.hs:24:19-29 }
+                       Just (Ann (DP (0,0)) (ColDelta 19) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                       (HsVar 
+                        (Unqual {OccName: modifyIORef}))) 
+                      ({ tests/examples/TypeFamilies.hs:24:31-35 }
+                       Just (Ann (DP (0,1)) (ColDelta 31) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                       (HsVar 
+                        (Unqual {OccName: ioref}))))) 
+                    ({ tests/examples/TypeFamilies.hs:24:37-45 }
+                     Just (Ann (DP (0,1)) (ColDelta 37) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])
+                     (HsPar 
+                      ({ tests/examples/TypeFamilies.hs:24:38-44 }
+                       Just (Ann (DP (0,0)) (ColDelta 38) DP (0,0) [] [])
+                       (HsApp 
+                        ({ tests/examples/TypeFamilies.hs:24:38-42 }
+                         Just (Ann (DP (0,0)) (ColDelta 38) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                         (HsVar 
+                          (Unqual {OccName: const}))) 
+                        ({ tests/examples/TypeFamilies.hs:24:44 }
+                         Just (Ann (DP (0,1)) (ColDelta 44) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                         (HsVar 
+                          (Unqual {OccName: a})))))))))))] 
+               (EmptyLocalBinds))))] 
+           [] 
+           (PlaceHolder) 
+           (FromSource)) 
+          (WpHole) 
+          (PlaceHolder) 
+          []))]} 
+       [] 
+       [] 
+       [] 
+       (Nothing))))),
+   ({ tests/examples/TypeFamilies.hs:26:1-21 }
+    Just (Ann (DP (2,1)) (ColDelta 1) DP (2,1) [] [((G AnnType),DP (0,0)),((G AnnEqual),DP (0,1))])
+    (TyClD 
+     (SynDecl 
+      ({ tests/examples/TypeFamilies.hs:26:6-12 }
+       Just (Ann (DP (0,1)) (ColDelta 6) DP (0,1) [] [((G AnnVal),DP (0,0))])
+       (Unqual {OccName: Present})) 
+      (HsQTvs 
+       [] 
+       []) 
+      ({ tests/examples/TypeFamilies.hs:26:16-21 }
+       Just (Ann (DP (0,1)) (ColDelta 16) DP (0,1) [] [((G AnnVal),DP (0,0))])
+       (HsTyVar 
+        (Unqual {OccName: String}))) 
+      (PlaceHolder)))),
+   ({ tests/examples/TypeFamilies.hs:27:1-69 }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [((G AnnDcolon),DP (0,1))])
+    (SigD 
+     (TypeSig 
+      [
+       ({ tests/examples/TypeFamilies.hs:27:1-15 }
+        Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+        (Unqual {OccName: storePresentsIO}))] 
+      ({ tests/examples/TypeFamilies.hs:27:20-69 }
+       Just (Ann (DP (0,1)) (ColDelta 20) DP (0,1) [] [])
+       (HsForAllTy 
+        (Implicit) 
+        (Nothing) 
+        (HsQTvs 
+         [] 
+         []) 
+        ({ tests/examples/TypeFamilies.hs:27:20-32 }
+         Just (Ann (DP (0,0)) (ColDelta 20) DP (0,0) [] [((G AnnDarrow),DP (0,1))])
+         [
+          ({ tests/examples/TypeFamilies.hs:27:20-32 }
+           Just (Ann (DP (0,0)) (ColDelta 20) DP (0,0) [] [])
+           (HsAppTy 
+            ({ tests/examples/TypeFamilies.hs:27:20-26 }
+             Just (Ann (DP (0,0)) (ColDelta 20) DP (0,0) [] [((G AnnVal),DP (0,0))])
+             (HsTyVar 
+              (Unqual {OccName: IOStore}))) 
+            ({ tests/examples/TypeFamilies.hs:27:28-32 }
+             Just (Ann (DP (0,1)) (ColDelta 28) DP (0,1) [] [((G AnnVal),DP (0,0))])
+             (HsTyVar 
+              (Unqual {OccName: store})))))]) 
+        ({ tests/examples/TypeFamilies.hs:27:37-69 }
+         Just (Ann (DP (0,1)) (ColDelta 37) DP (0,1) [] [((G AnnRarrow),DP (0,1))])
+         (HsFunTy 
+          ({ tests/examples/TypeFamilies.hs:27:37-45 }
+           Just (Ann (DP (0,0)) (ColDelta 37) DP (0,0) [] [((G AnnOpenS),DP (0,0)),((G AnnCloseS),DP (0,0))])
+           (HsListTy 
+            ({ tests/examples/TypeFamilies.hs:27:38-44 }
+             Just (Ann (DP (0,0)) (ColDelta 38) DP (0,0) [] [((G AnnVal),DP (0,0))])
+             (HsTyVar 
+              (Unqual {OccName: Present}))))) 
+          ({ tests/examples/TypeFamilies.hs:27:50-69 }
+           Just (Ann (DP (0,1)) (ColDelta 50) DP (0,1) [] [])
+           (HsAppTy 
+            ({ tests/examples/TypeFamilies.hs:27:50-51 }
+             Just (Ann (DP (0,0)) (ColDelta 50) DP (0,0) [] [((G AnnVal),DP (0,0))])
+             (HsTyVar 
+              (Unqual {OccName: IO}))) 
+            ({ tests/examples/TypeFamilies.hs:27:53-69 }
+             Just (Ann (DP (0,1)) (ColDelta 53) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])
+             (HsParTy 
+              ({ tests/examples/TypeFamilies.hs:27:54-68 }
+               Just (Ann (DP (0,0)) (ColDelta 54) DP (0,0) [] [])
+               (HsAppTy 
+                ({ tests/examples/TypeFamilies.hs:27:54-58 }
+                 Just (Ann (DP (0,0)) (ColDelta 54) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                 (HsTyVar 
+                  (Unqual {OccName: store}))) 
+                ({ tests/examples/TypeFamilies.hs:27:60-68 }
+                 Just (Ann (DP (0,1)) (ColDelta 60) DP (0,1) [] [((G AnnOpenS),DP (0,0)),((G AnnCloseS),DP (0,0))])
+                 (HsListTy 
+                  ({ tests/examples/TypeFamilies.hs:27:61-67 }
+                   Just (Ann (DP (0,0)) (ColDelta 61) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                   (HsTyVar 
+                    (Unqual {OccName: Present}))))))))))))))) 
+      (PlaceHolder)))),
+   ({ tests/examples/TypeFamilies.hs:(28,1)-(33,14) }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [])
+    (ValD 
+     (FunBind 
+      ({ tests/examples/TypeFamilies.hs:28:1-15 }
+       Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+       (Unqual {OccName: storePresentsIO})) 
+      (False) 
+      (MG 
+       [
+        ({ tests/examples/TypeFamilies.hs:(28,1)-(33,14) }
+         Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnEqual),DP (0,1))])
+         (Match 
+          (Just 
+           ((,) 
+            ({ tests/examples/TypeFamilies.hs:28:1-15 }
+             Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+             (Unqual {OccName: storePresentsIO})) 
+            (False))) 
+          [
+           ({ tests/examples/TypeFamilies.hs:28:17-18 }
+            Just (Ann (DP (0,1)) (ColDelta 17) DP (0,1) [] [((G AnnVal),DP (0,0))])
+            (VarPat 
+             (Unqual {OccName: xs})))] 
+          (Nothing) 
+          (GRHSs 
+           [
+            ({ tests/examples/TypeFamilies.hs:(28,20)-(33,14) }
+             Just (Ann (DP (0,-1)) (ColDelta 20) DP (0,-1) [] [])
+             (GRHS 
+              [] 
+              ({ tests/examples/TypeFamilies.hs:(28,22)-(33,14) }
+               Just (Ann (DP (0,1)) (ColDelta 22) DP (0,1) [] [((G AnnDo),DP (0,0)),((AnnList tests/examples/TypeFamilies.hs:(29,3)-(33,14)),DP (0,0))])
+               (HsDo 
+                (DoExpr) 
+                [
+                 ({ tests/examples/TypeFamilies.hs:29:3-19 }
+                  Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnLarrow),DP (0,1))])
+                  (BindStmt 
+                   ({ tests/examples/TypeFamilies.hs:29:3-7 }
+                    Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                    (VarPat 
+                     (Unqual {OccName: store}))) 
+                   ({ tests/examples/TypeFamilies.hs:29:12-19 }
+                    Just (Ann (DP (0,1)) (ColDelta 9) DP (0,1) [] [])
+                    (HsApp 
+                     ({ tests/examples/TypeFamilies.hs:29:12-16 }
+                      Just (Ann (DP (0,0)) (ColDelta 9) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                      (HsVar 
+                       (Unqual {OccName: newIO}))) 
+                     ({ tests/examples/TypeFamilies.hs:29:18-19 }
+                      Just (Ann (DP (0,1)) (ColDelta 15) DP (0,1) [] [((G AnnOpenS),DP (0,0)),((G AnnCloseS),DP (0,0))])
+                      (HsVar 
+                       (Exact {Name: []}))))) 
+                   (HsLit 
+                    (HsString "" {FastString: "noSyntaxExpr"})) 
+                   (HsLit 
+                    (HsString "" {FastString: "noSyntaxExpr"})))),
+                 ({ tests/examples/TypeFamilies.hs:(30,3)-(32,25) }
+                  Just (Ann (DP (1,0)) (ColDelta 0) DP (1,0) [] [])
+                  (BodyStmt 
+                   ({ tests/examples/TypeFamilies.hs:(30,3)-(32,25) }
+                    Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])
+                    (OpApp 
+                     ({ tests/examples/TypeFamilies.hs:30:3-10 }
+                      Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])
+                      (HsApp 
+                       ({ tests/examples/TypeFamilies.hs:30:3-7 }
+                        Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                        (HsVar 
+                         (Unqual {OccName: forM_}))) 
+                       ({ tests/examples/TypeFamilies.hs:30:9-10 }
+                        Just (Ann (DP (0,1)) (ColDelta 6) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                        (HsVar 
+                         (Unqual {OccName: xs}))))) 
+                     ({ tests/examples/TypeFamilies.hs:30:12 }
+                      Just (Ann (DP (0,1)) (ColDelta 9) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                      (HsVar 
+                       (Unqual {OccName: $}))) 
+                     (PlaceHolder) 
+                     ({ tests/examples/TypeFamilies.hs:(30,14)-(32,25) }
+                      Just (Ann (DP (0,1)) (ColDelta 11) DP (0,1) [] [((G AnnLam),DP (0,0)),((AnnList tests/examples/TypeFamilies.hs:(30,14)-(32,25)),DP (0,0))])
+                      (HsLam 
+                       (MG 
+                        [
+                         ({ tests/examples/TypeFamilies.hs:(30,14)-(32,25) }
+                          Just (Ann (DP (0,-1)) (ColDelta 0) DP (0,-1) [] [((G AnnRarrow),DP (0,1))])
+                          (Match 
+                           (Nothing) 
+                           [
+                            ({ tests/examples/TypeFamilies.hs:30:15 }
+                             Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                             (VarPat 
+                              (Unqual {OccName: x})))] 
+                           (Nothing) 
+                           (GRHSs 
+                            [
+                             ({ tests/examples/TypeFamilies.hs:(30,20)-(32,25) }
+                              Just (Ann (DP (0,1)) (ColDelta 6) DP (0,1) [] [])
+                              (GRHS 
+                               [] 
+                               ({ tests/examples/TypeFamilies.hs:(30,20)-(32,25) }
+                                Just (Ann (DP (0,0)) (ColDelta 6) DP (0,0) [] [((G AnnDo),DP (0,0)),((AnnList tests/examples/TypeFamilies.hs:(31,5)-(32,25)),DP (0,0))])
+                                (HsDo 
+                                 (DoExpr) 
+                                 [
+                                  ({ tests/examples/TypeFamilies.hs:31:5-22 }
+                                   Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnLarrow),DP (0,1))])
+                                   (BindStmt 
+                                    ({ tests/examples/TypeFamilies.hs:31:5-7 }
+                                     Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                                     (VarPat 
+                                      (Unqual {OccName: old}))) 
+                                    ({ tests/examples/TypeFamilies.hs:31:12-22 }
+                                     Just (Ann (DP (0,1)) (ColDelta 7) DP (0,1) [] [])
+                                     (HsApp 
+                                      ({ tests/examples/TypeFamilies.hs:31:12-16 }
+                                       Just (Ann (DP (0,0)) (ColDelta 7) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                                       (HsVar 
+                                        (Unqual {OccName: getIO}))) 
+                                      ({ tests/examples/TypeFamilies.hs:31:18-22 }
+                                       Just (Ann (DP (0,1)) (ColDelta 13) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                                       (HsVar 
+                                        (Unqual {OccName: store}))))) 
+                                    (HsLit 
+                                     (HsString "" {FastString: "noSyntaxExpr"})) 
+                                    (HsLit 
+                                     (HsString "" {FastString: "noSyntaxExpr"})))),
+                                  ({ tests/examples/TypeFamilies.hs:32:5-25 }
+                                   Just (Ann (DP (1,0)) (ColDelta 0) DP (1,0) [] [])
+                                   (BodyStmt 
+                                    ({ tests/examples/TypeFamilies.hs:32:5-25 }
+                                     Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])
+                                     (HsApp 
+                                      ({ tests/examples/TypeFamilies.hs:32:5-15 }
+                                       Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])
+                                       (HsApp 
+                                        ({ tests/examples/TypeFamilies.hs:32:5-9 }
+                                         Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                                         (HsVar 
+                                          (Unqual {OccName: putIO}))) 
+                                        ({ tests/examples/TypeFamilies.hs:32:11-15 }
+                                         Just (Ann (DP (0,1)) (ColDelta 6) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                                         (HsVar 
+                                          (Unqual {OccName: store}))))) 
+                                      ({ tests/examples/TypeFamilies.hs:32:17-25 }
+                                       Just (Ann (DP (0,1)) (ColDelta 12) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])
+                                       (HsPar 
+                                        ({ tests/examples/TypeFamilies.hs:32:18-24 }
+                                         Just (Ann (DP (0,0)) (ColDelta 13) DP (0,0) [] [])
+                                         (OpApp 
+                                          ({ tests/examples/TypeFamilies.hs:32:18 }
+                                           Just (Ann (DP (0,0)) (ColDelta 13) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                                           (HsVar 
+                                            (Unqual {OccName: x}))) 
+                                          ({ tests/examples/TypeFamilies.hs:32:20 }
+                                           Just (Ann (DP (0,1)) (ColDelta 15) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                                           (HsVar 
+                                            (Exact {Name: :}))) 
+                                          (PlaceHolder) 
+                                          ({ tests/examples/TypeFamilies.hs:32:22-24 }
+                                           Just (Ann (DP (0,1)) (ColDelta 17) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                                           (HsVar 
+                                            (Unqual {OccName: old}))))))))) 
+                                    (HsLit 
+                                     (HsString "" {FastString: "noSyntaxExpr"})) 
+                                    (HsLit 
+                                     (HsString "" {FastString: "noSyntaxExpr"})) 
+                                    (PlaceHolder)))] 
+                                 (PlaceHolder)))))] 
+                            (EmptyLocalBinds))))] 
+                        [] 
+                        (PlaceHolder) 
+                        (FromSource)))))) 
+                   (HsLit 
+                    (HsString "" {FastString: "noSyntaxExpr"})) 
+                   (HsLit 
+                    (HsString "" {FastString: "noSyntaxExpr"})) 
+                   (PlaceHolder))),
+                 ({ tests/examples/TypeFamilies.hs:33:3-14 }
+                  Just (Ann (DP (1,0)) (ColDelta 0) DP (1,0) [] [])
+                  (BodyStmt 
+                   ({ tests/examples/TypeFamilies.hs:33:3-14 }
+                    Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])
+                    (HsApp 
+                     ({ tests/examples/TypeFamilies.hs:33:3-8 }
+                      Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                      (HsVar 
+                       (Unqual {OccName: return}))) 
+                     ({ tests/examples/TypeFamilies.hs:33:10-14 }
+                      Just (Ann (DP (0,1)) (ColDelta 7) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                      (HsVar 
+                       (Unqual {OccName: store}))))) 
+                   (HsLit 
+                    (HsString "" {FastString: "noSyntaxExpr"})) 
+                   (HsLit 
+                    (HsString "" {FastString: "noSyntaxExpr"})) 
+                   (PlaceHolder)))] 
+                (PlaceHolder)))))] 
+           (EmptyLocalBinds))))] 
+       [] 
+       (PlaceHolder) 
+       (FromSource)) 
+      (WpHole) 
+      (PlaceHolder) 
+      []))),
+   ({ tests/examples/TypeFamilies.hs:(37,1)-(41,46) }
+    Just (Ann (DP (2,1)) (ColDelta 1) DP (4,1) [DComment (DP (2,1),DP (2,23)) "-- Type family version"] [((G AnnClass),DP (0,0)),((G AnnWhere),DP (0,1))])
+    (TyClD 
+     (ClassDecl 
+      ({ <no location info> }
+       Just (Ann (DP (-11,0)) (ColDelta 0) DP (-11,0) [] [])
+       []) 
+      ({ tests/examples/TypeFamilies.hs:37:7-11 }
+       Just (Ann (DP (0,1)) (ColDelta 7) DP (0,1) [] [((G AnnVal),DP (0,0))])
+       (Unqual {OccName: Store})) 
+      (HsQTvs 
+       [] 
+       [
+        ({ tests/examples/TypeFamilies.hs:37:13-17 }
+         Just (Ann (DP (0,1)) (ColDelta 13) DP (0,1) [] [((G AnnVal),DP (0,0))])
+         (UserTyVar 
+          (Unqual {OccName: store})))]) 
+      [] 
+      [
+       ({ tests/examples/TypeFamilies.hs:39:3-42 }
+        Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnDcolon),DP (0,1))])
+        (TypeSig 
+         [
+          ({ tests/examples/TypeFamilies.hs:39:3-5 }
+           Just (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnVal),DP (0,0))])
+           (Unqual {OccName: new}))] 
+         ({ tests/examples/TypeFamilies.hs:39:10-42 }
+          Just (Ann (DP (0,1)) (ColDelta 10) DP (0,1) [] [])
+          (HsForAllTy 
+           (Implicit) 
+           (Nothing) 
+           (HsQTvs 
+            [] 
+            []) 
+           ({ <no location info> }
+            Just (Ann (DP (-11,0)) (ColDelta 0) DP (-11,0) [] [])
+            []) 
+           ({ tests/examples/TypeFamilies.hs:39:10-42 }
+            Just (Ann (DP (0,0)) (ColDelta 10) DP (0,0) [] [((G AnnRarrow),DP (0,1))])
+            (HsFunTy 
+             ({ tests/examples/TypeFamilies.hs:39:10 }
+              Just (Ann (DP (0,0)) (ColDelta 10) DP (0,0) [] [((G AnnVal),DP (0,0))])
+              (HsTyVar 
+               (Unqual {OccName: a}))) 
+             ({ tests/examples/TypeFamilies.hs:39:15-42 }
+              Just (Ann (DP (0,1)) (ColDelta 15) DP (0,1) [] [])
+              (HsAppTy 
+               ({ tests/examples/TypeFamilies.hs:39:15-32 }
+                Just (Ann (DP (0,0)) (ColDelta 15) DP (0,0) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])
+                (HsParTy 
+                 ({ tests/examples/TypeFamilies.hs:39:16-31 }
+                  Just (Ann (DP (0,0)) (ColDelta 16) DP (0,0) [] [])
+                  (HsAppTy 
+                   ({ tests/examples/TypeFamilies.hs:39:16-25 }
+                    Just (Ann (DP (0,0)) (ColDelta 16) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                    (HsTyVar 
+                     (Unqual {OccName: StoreMonad}))) 
+                   ({ tests/examples/TypeFamilies.hs:39:27-31 }
+                    Just (Ann (DP (0,1)) (ColDelta 27) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                    (HsTyVar 
+                     (Unqual {OccName: store}))))))) 
+               ({ tests/examples/TypeFamilies.hs:39:34-42 }
+                Just (Ann (DP (0,1)) (ColDelta 34) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])
+                (HsParTy 
+                 ({ tests/examples/TypeFamilies.hs:39:35-41 }
+                  Just (Ann (DP (0,0)) (ColDelta 35) DP (0,0) [] [])
+                  (HsAppTy 
+                   ({ tests/examples/TypeFamilies.hs:39:35-39 }
+                    Just (Ann (DP (0,0)) (ColDelta 35) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                    (HsTyVar 
+                     (Unqual {OccName: store}))) 
+                   ({ tests/examples/TypeFamilies.hs:39:41 }
+                    Just (Ann (DP (0,1)) (ColDelta 41) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                    (HsTyVar 
+                     (Unqual {OccName: a}))))))))))))) 
+         (PlaceHolder))),
+       ({ tests/examples/TypeFamilies.hs:40:3-40 }
+        Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnDcolon),DP (0,1))])
+        (TypeSig 
+         [
+          ({ tests/examples/TypeFamilies.hs:40:3-5 }
+           Just (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnVal),DP (0,0))])
+           (Unqual {OccName: get}))] 
+         ({ tests/examples/TypeFamilies.hs:40:10-40 }
+          Just (Ann (DP (0,1)) (ColDelta 10) DP (0,1) [] [])
+          (HsForAllTy 
+           (Implicit) 
+           (Nothing) 
+           (HsQTvs 
+            [] 
+            []) 
+           ({ <no location info> }
+            Just (Ann (DP (-11,0)) (ColDelta 0) DP (-11,0) [] [])
+            []) 
+           ({ tests/examples/TypeFamilies.hs:40:10-40 }
+            Just (Ann (DP (0,0)) (ColDelta 10) DP (0,0) [] [((G AnnRarrow),DP (0,1))])
+            (HsFunTy 
+             ({ tests/examples/TypeFamilies.hs:40:10-16 }
+              Just (Ann (DP (0,0)) (ColDelta 10) DP (0,0) [] [])
+              (HsAppTy 
+               ({ tests/examples/TypeFamilies.hs:40:10-14 }
+                Just (Ann (DP (0,0)) (ColDelta 10) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                (HsTyVar 
+                 (Unqual {OccName: store}))) 
+               ({ tests/examples/TypeFamilies.hs:40:16 }
+                Just (Ann (DP (0,1)) (ColDelta 16) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                (HsTyVar 
+                 (Unqual {OccName: a}))))) 
+             ({ tests/examples/TypeFamilies.hs:40:21-40 }
+              Just (Ann (DP (0,1)) (ColDelta 21) DP (0,1) [] [])
+              (HsAppTy 
+               ({ tests/examples/TypeFamilies.hs:40:21-38 }
+                Just (Ann (DP (0,0)) (ColDelta 21) DP (0,0) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])
+                (HsParTy 
+                 ({ tests/examples/TypeFamilies.hs:40:22-37 }
+                  Just (Ann (DP (0,0)) (ColDelta 22) DP (0,0) [] [])
+                  (HsAppTy 
+                   ({ tests/examples/TypeFamilies.hs:40:22-31 }
+                    Just (Ann (DP (0,0)) (ColDelta 22) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                    (HsTyVar 
+                     (Unqual {OccName: StoreMonad}))) 
+                   ({ tests/examples/TypeFamilies.hs:40:33-37 }
+                    Just (Ann (DP (0,1)) (ColDelta 33) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                    (HsTyVar 
+                     (Unqual {OccName: store}))))))) 
+               ({ tests/examples/TypeFamilies.hs:40:40 }
+                Just (Ann (DP (0,1)) (ColDelta 40) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                (HsTyVar 
+                 (Unqual {OccName: a}))))))))) 
+         (PlaceHolder))),
+       ({ tests/examples/TypeFamilies.hs:41:3-46 }
+        Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnDcolon),DP (0,1))])
+        (TypeSig 
+         [
+          ({ tests/examples/TypeFamilies.hs:41:3-5 }
+           Just (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnVal),DP (0,0))])
+           (Unqual {OccName: put}))] 
+         ({ tests/examples/TypeFamilies.hs:41:10-46 }
+          Just (Ann (DP (0,1)) (ColDelta 10) DP (0,1) [] [])
+          (HsForAllTy 
+           (Implicit) 
+           (Nothing) 
+           (HsQTvs 
+            [] 
+            []) 
+           ({ <no location info> }
+            Just (Ann (DP (-11,0)) (ColDelta 0) DP (-11,0) [] [])
+            []) 
+           ({ tests/examples/TypeFamilies.hs:41:10-46 }
+            Just (Ann (DP (0,0)) (ColDelta 10) DP (0,0) [] [((G AnnRarrow),DP (0,1))])
+            (HsFunTy 
+             ({ tests/examples/TypeFamilies.hs:41:10-16 }
+              Just (Ann (DP (0,0)) (ColDelta 10) DP (0,0) [] [])
+              (HsAppTy 
+               ({ tests/examples/TypeFamilies.hs:41:10-14 }
+                Just (Ann (DP (0,0)) (ColDelta 10) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                (HsTyVar 
+                 (Unqual {OccName: store}))) 
+               ({ tests/examples/TypeFamilies.hs:41:16 }
+                Just (Ann (DP (0,1)) (ColDelta 16) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                (HsTyVar 
+                 (Unqual {OccName: a}))))) 
+             ({ tests/examples/TypeFamilies.hs:41:21-46 }
+              Just (Ann (DP (0,1)) (ColDelta 21) DP (0,1) [] [((G AnnRarrow),DP (0,1))])
+              (HsFunTy 
+               ({ tests/examples/TypeFamilies.hs:41:21 }
+                Just (Ann (DP (0,0)) (ColDelta 21) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                (HsTyVar 
+                 (Unqual {OccName: a}))) 
+               ({ tests/examples/TypeFamilies.hs:41:26-46 }
+                Just (Ann (DP (0,1)) (ColDelta 26) DP (0,1) [] [])
+                (HsAppTy 
+                 ({ tests/examples/TypeFamilies.hs:41:26-43 }
+                  Just (Ann (DP (0,0)) (ColDelta 26) DP (0,0) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])
+                  (HsParTy 
+                   ({ tests/examples/TypeFamilies.hs:41:27-42 }
+                    Just (Ann (DP (0,0)) (ColDelta 27) DP (0,0) [] [])
+                    (HsAppTy 
+                     ({ tests/examples/TypeFamilies.hs:41:27-36 }
+                      Just (Ann (DP (0,0)) (ColDelta 27) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                      (HsTyVar 
+                       (Unqual {OccName: StoreMonad}))) 
+                     ({ tests/examples/TypeFamilies.hs:41:38-42 }
+                      Just (Ann (DP (0,1)) (ColDelta 38) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                      (HsTyVar 
+                       (Unqual {OccName: store}))))))) 
+                 ({ tests/examples/TypeFamilies.hs:41:45-46 }
+                  Just (Ann (DP (0,1)) (ColDelta 45) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])
+                  (HsTupleTy 
+                   (HsBoxedOrConstraintTuple) 
+                   [])))))))))) 
+         (PlaceHolder)))] {Bag(Located (HsBind RdrName)): 
+      []} 
+      [
+       ({ tests/examples/TypeFamilies.hs:38:3-33 }
+        Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnType),DP (0,0)),((G AnnDcolon),DP (0,1))])
+        (FamilyDecl 
+         (OpenTypeFamily) 
+         ({ tests/examples/TypeFamilies.hs:38:8-17 }
+          Just (Ann (DP (0,1)) (ColDelta 8) DP (0,1) [] [((G AnnVal),DP (0,0))])
+          (Unqual {OccName: StoreMonad})) 
+         (HsQTvs 
+          [] 
+          [
+           ({ tests/examples/TypeFamilies.hs:38:19-23 }
+            Just (Ann (DP (0,1)) (ColDelta 19) DP (0,1) [] [((G AnnVal),DP (0,0))])
+            (UserTyVar 
+             (Unqual {OccName: store})))]) 
+         (Just 
+          ({ tests/examples/TypeFamilies.hs:38:28-33 }
+           Just (Ann (DP (0,1)) (ColDelta 28) DP (0,1) [] [((G AnnRarrow),DP (0,1))])
+           (HsFunTy 
+            ({ tests/examples/TypeFamilies.hs:38:28 }
+             Just (Ann (DP (0,0)) (ColDelta 28) DP (0,0) [] [((G AnnVal),DP (0,0))])
+             (HsTyVar 
+              (Exact {Name: *}))) 
+            ({ tests/examples/TypeFamilies.hs:38:33 }
+             Just (Ann (DP (0,1)) (ColDelta 33) DP (0,1) [] [((G AnnVal),DP (0,0))])
+             (HsTyVar 
+              (Exact {Name: *}))))))))] 
+      [] 
+      [] 
+      (PlaceHolder)))),
+   ({ tests/examples/TypeFamilies.hs:(43,1)-(47,43) }
+    Just (Ann (DP (2,1)) (ColDelta 1) DP (2,1) [] [((G AnnInstance),DP (0,0)),((G AnnWhere),DP (0,1))])
+    (InstD 
+     (ClsInstD 
+      (ClsInstDecl 
+       ({ tests/examples/TypeFamilies.hs:43:10-20 }
+        Just (Ann (DP (0,1)) (ColDelta 10) DP (0,1) [] [])
+        (HsForAllTy 
+         (Implicit) 
+         (Nothing) 
+         (HsQTvs 
+          [] 
+          []) 
+         ({ <no location info> }
+          Just (Ann (DP (-11,0)) (ColDelta 0) DP (-11,0) [] [])
+          []) 
+         ({ tests/examples/TypeFamilies.hs:43:10-20 }
+          Just (Ann (DP (0,0)) (ColDelta 10) DP (0,0) [] [])
+          (HsAppTy 
+           ({ tests/examples/TypeFamilies.hs:43:10-14 }
+            Just (Ann (DP (0,0)) (ColDelta 10) DP (0,0) [] [((G AnnVal),DP (0,0))])
+            (HsTyVar 
+             (Unqual {OccName: Store}))) 
+           ({ tests/examples/TypeFamilies.hs:43:16-20 }
+            Just (Ann (DP (0,1)) (ColDelta 16) DP (0,1) [] [((G AnnVal),DP (0,0))])
+            (HsTyVar 
+             (Unqual {OccName: IORef}))))))) {Bag(Located (HsBind RdrName)): 
+       [
+        ({ tests/examples/TypeFamilies.hs:45:3-16 }
+         Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [])
+         (FunBind 
+          ({ tests/examples/TypeFamilies.hs:45:3-5 }
+           Just (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnVal),DP (0,0))])
+           (Unqual {OccName: new})) 
+          (False) 
+          (MG 
+           [
+            ({ tests/examples/TypeFamilies.hs:45:3-16 }
+             Just (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnEqual),DP (0,1))])
+             (Match 
+              (Just 
+               ((,) 
+                ({ tests/examples/TypeFamilies.hs:45:3-5 }
+                 Just (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                 (Unqual {OccName: new})) 
+                (False))) 
+              [] 
+              (Nothing) 
+              (GRHSs 
+               [
+                ({ tests/examples/TypeFamilies.hs:45:7-16 }
+                 Just (Ann (DP (0,-1)) (ColDelta 7) DP (0,-1) [] [])
+                 (GRHS 
+                  [] 
+                  ({ tests/examples/TypeFamilies.hs:45:9-16 }
+                   Just (Ann (DP (0,1)) (ColDelta 9) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                   (HsVar 
+                    (Unqual {OccName: newIORef})))))] 
+               (EmptyLocalBinds))))] 
+           [] 
+           (PlaceHolder) 
+           (FromSource)) 
+          (WpHole) 
+          (PlaceHolder) 
+          [])),
+        ({ tests/examples/TypeFamilies.hs:46:3-17 }
+         Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [])
+         (FunBind 
+          ({ tests/examples/TypeFamilies.hs:46:3-5 }
+           Just (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnVal),DP (0,0))])
+           (Unqual {OccName: get})) 
+          (False) 
+          (MG 
+           [
+            ({ tests/examples/TypeFamilies.hs:46:3-17 }
+             Just (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnEqual),DP (0,1))])
+             (Match 
+              (Just 
+               ((,) 
+                ({ tests/examples/TypeFamilies.hs:46:3-5 }
+                 Just (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                 (Unqual {OccName: get})) 
+                (False))) 
+              [] 
+              (Nothing) 
+              (GRHSs 
+               [
+                ({ tests/examples/TypeFamilies.hs:46:7-17 }
+                 Just (Ann (DP (0,-1)) (ColDelta 7) DP (0,-1) [] [])
+                 (GRHS 
+                  [] 
+                  ({ tests/examples/TypeFamilies.hs:46:9-17 }
+                   Just (Ann (DP (0,1)) (ColDelta 9) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                   (HsVar 
+                    (Unqual {OccName: readIORef})))))] 
+               (EmptyLocalBinds))))] 
+           [] 
+           (PlaceHolder) 
+           (FromSource)) 
+          (WpHole) 
+          (PlaceHolder) 
+          [])),
+        ({ tests/examples/TypeFamilies.hs:47:3-43 }
+         Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [])
+         (FunBind 
+          ({ tests/examples/TypeFamilies.hs:47:3-5 }
+           Just (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnVal),DP (0,0))])
+           (Unqual {OccName: put})) 
+          (False) 
+          (MG 
+           [
+            ({ tests/examples/TypeFamilies.hs:47:3-43 }
+             Just (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnEqual),DP (0,1))])
+             (Match 
+              (Just 
+               ((,) 
+                ({ tests/examples/TypeFamilies.hs:47:3-5 }
+                 Just (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                 (Unqual {OccName: put})) 
+                (False))) 
+              [
+               ({ tests/examples/TypeFamilies.hs:47:7-11 }
+                Just (Ann (DP (0,1)) (ColDelta 7) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                (VarPat 
+                 (Unqual {OccName: ioref}))),
+               ({ tests/examples/TypeFamilies.hs:47:13 }
+                Just (Ann (DP (0,1)) (ColDelta 13) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                (VarPat 
+                 (Unqual {OccName: a})))] 
+              (Nothing) 
+              (GRHSs 
+               [
+                ({ tests/examples/TypeFamilies.hs:47:15-43 }
+                 Just (Ann (DP (0,-1)) (ColDelta 15) DP (0,-1) [] [])
+                 (GRHS 
+                  [] 
+                  ({ tests/examples/TypeFamilies.hs:47:17-43 }
+                   Just (Ann (DP (0,1)) (ColDelta 17) DP (0,1) [] [])
+                   (HsApp 
+                    ({ tests/examples/TypeFamilies.hs:47:17-33 }
+                     Just (Ann (DP (0,0)) (ColDelta 17) DP (0,0) [] [])
+                     (HsApp 
+                      ({ tests/examples/TypeFamilies.hs:47:17-27 }
+                       Just (Ann (DP (0,0)) (ColDelta 17) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                       (HsVar 
+                        (Unqual {OccName: modifyIORef}))) 
+                      ({ tests/examples/TypeFamilies.hs:47:29-33 }
+                       Just (Ann (DP (0,1)) (ColDelta 29) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                       (HsVar 
+                        (Unqual {OccName: ioref}))))) 
+                    ({ tests/examples/TypeFamilies.hs:47:35-43 }
+                     Just (Ann (DP (0,1)) (ColDelta 35) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])
+                     (HsPar 
+                      ({ tests/examples/TypeFamilies.hs:47:36-42 }
+                       Just (Ann (DP (0,0)) (ColDelta 36) DP (0,0) [] [])
+                       (HsApp 
+                        ({ tests/examples/TypeFamilies.hs:47:36-40 }
+                         Just (Ann (DP (0,0)) (ColDelta 36) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                         (HsVar 
+                          (Unqual {OccName: const}))) 
+                        ({ tests/examples/TypeFamilies.hs:47:42 }
+                         Just (Ann (DP (0,1)) (ColDelta 42) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                         (HsVar 
+                          (Unqual {OccName: a})))))))))))] 
+               (EmptyLocalBinds))))] 
+           [] 
+           (PlaceHolder) 
+           (FromSource)) 
+          (WpHole) 
+          (PlaceHolder) 
+          []))]} 
+       [] 
+       [
+        ({ tests/examples/TypeFamilies.hs:44:3-28 }
+         Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnType),DP (0,0))])
+         (TyFamInstDecl 
+          ({ tests/examples/TypeFamilies.hs:44:8-28 }
+           Just (Ann (DP (0,1)) (ColDelta 8) DP (0,1) [] [((G AnnEqual),DP (0,1))])
+           (TyFamEqn 
+            ({ tests/examples/TypeFamilies.hs:44:8-17 }
+             Just (Ann (DP (0,0)) (ColDelta 8) DP (0,0) [] [((G AnnVal),DP (0,0))])
+             (Unqual {OccName: StoreMonad})) 
+            (HsWB 
+             [
+              ({ tests/examples/TypeFamilies.hs:44:19-23 }
+               Just (Ann (DP (0,1)) (ColDelta 19) DP (0,1) [] [((G AnnVal),DP (0,0))])
+               (HsTyVar 
+                (Unqual {OccName: IORef})))] 
+             (PlaceHolder) 
+             (PlaceHolder) 
+             (PlaceHolder)) 
+            ({ tests/examples/TypeFamilies.hs:44:27-28 }
+             Just (Ann (DP (0,1)) (ColDelta 27) DP (0,1) [] [((G AnnVal),DP (0,0))])
+             (HsTyVar 
+              (Unqual {OccName: IO}))))) 
+          (PlaceHolder)))] 
+       [] 
+       (Nothing))))),
+   ({ tests/examples/TypeFamilies.hs:(49,1)-(53,42) }
+    Just (Ann (DP (2,1)) (ColDelta 1) DP (2,1) [] [((G AnnInstance),DP (0,0)),((G AnnWhere),DP (0,1))])
+    (InstD 
+     (ClsInstD 
+      (ClsInstDecl 
+       ({ tests/examples/TypeFamilies.hs:49:10-19 }
+        Just (Ann (DP (0,1)) (ColDelta 10) DP (0,1) [] [])
+        (HsForAllTy 
+         (Implicit) 
+         (Nothing) 
+         (HsQTvs 
+          [] 
+          []) 
+         ({ <no location info> }
+          Just (Ann (DP (-11,0)) (ColDelta 0) DP (-11,0) [] [])
+          []) 
+         ({ tests/examples/TypeFamilies.hs:49:10-19 }
+          Just (Ann (DP (0,0)) (ColDelta 10) DP (0,0) [] [])
+          (HsAppTy 
+           ({ tests/examples/TypeFamilies.hs:49:10-14 }
+            Just (Ann (DP (0,0)) (ColDelta 10) DP (0,0) [] [((G AnnVal),DP (0,0))])
+            (HsTyVar 
+             (Unqual {OccName: Store}))) 
+           ({ tests/examples/TypeFamilies.hs:49:16-19 }
+            Just (Ann (DP (0,1)) (ColDelta 16) DP (0,1) [] [((G AnnVal),DP (0,0))])
+            (HsTyVar 
+             (Unqual {OccName: TVar}))))))) {Bag(Located (HsBind RdrName)): 
+       [
+        ({ tests/examples/TypeFamilies.hs:51:3-15 }
+         Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [])
+         (FunBind 
+          ({ tests/examples/TypeFamilies.hs:51:3-5 }
+           Just (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnVal),DP (0,0))])
+           (Unqual {OccName: new})) 
+          (False) 
+          (MG 
+           [
+            ({ tests/examples/TypeFamilies.hs:51:3-15 }
+             Just (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnEqual),DP (0,1))])
+             (Match 
+              (Just 
+               ((,) 
+                ({ tests/examples/TypeFamilies.hs:51:3-5 }
+                 Just (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                 (Unqual {OccName: new})) 
+                (False))) 
+              [] 
+              (Nothing) 
+              (GRHSs 
+               [
+                ({ tests/examples/TypeFamilies.hs:51:7-15 }
+                 Just (Ann (DP (0,-1)) (ColDelta 7) DP (0,-1) [] [])
+                 (GRHS 
+                  [] 
+                  ({ tests/examples/TypeFamilies.hs:51:9-15 }
+                   Just (Ann (DP (0,1)) (ColDelta 9) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                   (HsVar 
+                    (Unqual {OccName: newTVar})))))] 
+               (EmptyLocalBinds))))] 
+           [] 
+           (PlaceHolder) 
+           (FromSource)) 
+          (WpHole) 
+          (PlaceHolder) 
+          [])),
+        ({ tests/examples/TypeFamilies.hs:52:3-16 }
+         Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [])
+         (FunBind 
+          ({ tests/examples/TypeFamilies.hs:52:3-5 }
+           Just (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnVal),DP (0,0))])
+           (Unqual {OccName: get})) 
+          (False) 
+          (MG 
+           [
+            ({ tests/examples/TypeFamilies.hs:52:3-16 }
+             Just (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnEqual),DP (0,1))])
+             (Match 
+              (Just 
+               ((,) 
+                ({ tests/examples/TypeFamilies.hs:52:3-5 }
+                 Just (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                 (Unqual {OccName: get})) 
+                (False))) 
+              [] 
+              (Nothing) 
+              (GRHSs 
+               [
+                ({ tests/examples/TypeFamilies.hs:52:7-16 }
+                 Just (Ann (DP (0,-1)) (ColDelta 7) DP (0,-1) [] [])
+                 (GRHS 
+                  [] 
+                  ({ tests/examples/TypeFamilies.hs:52:9-16 }
+                   Just (Ann (DP (0,1)) (ColDelta 9) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                   (HsVar 
+                    (Unqual {OccName: readTVar})))))] 
+               (EmptyLocalBinds))))] 
+           [] 
+           (PlaceHolder) 
+           (FromSource)) 
+          (WpHole) 
+          (PlaceHolder) 
+          [])),
+        ({ tests/examples/TypeFamilies.hs:53:3-42 }
+         Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [])
+         (FunBind 
+          ({ tests/examples/TypeFamilies.hs:53:3-5 }
+           Just (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnVal),DP (0,0))])
+           (Unqual {OccName: put})) 
+          (False) 
+          (MG 
+           [
+            ({ tests/examples/TypeFamilies.hs:53:3-42 }
+             Just (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnEqual),DP (0,1))])
+             (Match 
+              (Just 
+               ((,) 
+                ({ tests/examples/TypeFamilies.hs:53:3-5 }
+                 Just (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                 (Unqual {OccName: put})) 
+                (False))) 
+              [
+               ({ tests/examples/TypeFamilies.hs:53:7-11 }
+                Just (Ann (DP (0,1)) (ColDelta 7) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                (VarPat 
+                 (Unqual {OccName: ioref}))),
+               ({ tests/examples/TypeFamilies.hs:53:13 }
+                Just (Ann (DP (0,1)) (ColDelta 13) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                (VarPat 
+                 (Unqual {OccName: a})))] 
+              (Nothing) 
+              (GRHSs 
+               [
+                ({ tests/examples/TypeFamilies.hs:53:15-42 }
+                 Just (Ann (DP (0,-1)) (ColDelta 15) DP (0,-1) [] [])
+                 (GRHS 
+                  [] 
+                  ({ tests/examples/TypeFamilies.hs:53:17-42 }
+                   Just (Ann (DP (0,1)) (ColDelta 17) DP (0,1) [] [])
+                   (HsApp 
+                    ({ tests/examples/TypeFamilies.hs:53:17-32 }
+                     Just (Ann (DP (0,0)) (ColDelta 17) DP (0,0) [] [])
+                     (HsApp 
+                      ({ tests/examples/TypeFamilies.hs:53:17-26 }
+                       Just (Ann (DP (0,0)) (ColDelta 17) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                       (HsVar 
+                        (Unqual {OccName: modifyTVar}))) 
+                      ({ tests/examples/TypeFamilies.hs:53:28-32 }
+                       Just (Ann (DP (0,1)) (ColDelta 28) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                       (HsVar 
+                        (Unqual {OccName: ioref}))))) 
+                    ({ tests/examples/TypeFamilies.hs:53:34-42 }
+                     Just (Ann (DP (0,1)) (ColDelta 34) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])
+                     (HsPar 
+                      ({ tests/examples/TypeFamilies.hs:53:35-41 }
+                       Just (Ann (DP (0,0)) (ColDelta 35) DP (0,0) [] [])
+                       (HsApp 
+                        ({ tests/examples/TypeFamilies.hs:53:35-39 }
+                         Just (Ann (DP (0,0)) (ColDelta 35) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                         (HsVar 
+                          (Unqual {OccName: const}))) 
+                        ({ tests/examples/TypeFamilies.hs:53:41 }
+                         Just (Ann (DP (0,1)) (ColDelta 41) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                         (HsVar 
+                          (Unqual {OccName: a})))))))))))] 
+               (EmptyLocalBinds))))] 
+           [] 
+           (PlaceHolder) 
+           (FromSource)) 
+          (WpHole) 
+          (PlaceHolder) 
+          []))]} 
+       [] 
+       [
+        ({ tests/examples/TypeFamilies.hs:50:3-28 }
+         Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnType),DP (0,0))])
+         (TyFamInstDecl 
+          ({ tests/examples/TypeFamilies.hs:50:8-28 }
+           Just (Ann (DP (0,1)) (ColDelta 8) DP (0,1) [] [((G AnnEqual),DP (0,1))])
+           (TyFamEqn 
+            ({ tests/examples/TypeFamilies.hs:50:8-17 }
+             Just (Ann (DP (0,0)) (ColDelta 8) DP (0,0) [] [((G AnnVal),DP (0,0))])
+             (Unqual {OccName: StoreMonad})) 
+            (HsWB 
+             [
+              ({ tests/examples/TypeFamilies.hs:50:19-22 }
+               Just (Ann (DP (0,1)) (ColDelta 19) DP (0,1) [] [((G AnnVal),DP (0,0))])
+               (HsTyVar 
+                (Unqual {OccName: TVar})))] 
+             (PlaceHolder) 
+             (PlaceHolder) 
+             (PlaceHolder)) 
+            ({ tests/examples/TypeFamilies.hs:50:26-28 }
+             Just (Ann (DP (0,1)) (ColDelta 26) DP (0,1) [] [((G AnnVal),DP (0,0))])
+             (HsTyVar 
+              (Unqual {OccName: STM}))))) 
+          (PlaceHolder)))] 
+       [] 
+       (Nothing))))),
+   ({ tests/examples/TypeFamilies.hs:(55,1)-(56,66) }
+    Just (Ann (DP (2,1)) (ColDelta 1) DP (2,1) [] [((G AnnDcolon),DP (0,1))])
+    (SigD 
+     (TypeSig 
+      [
+       ({ tests/examples/TypeFamilies.hs:55:1-13 }
+        Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+        (Unqual {OccName: storePresents}))] 
+      ({ tests/examples/TypeFamilies.hs:(55,18)-(56,66) }
+       Just (Ann (DP (0,1)) (ColDelta 18) DP (0,1) [] [])
+       (HsForAllTy 
+        (Implicit) 
+        (Nothing) 
+        (HsQTvs 
+         [] 
+         []) 
+        ({ tests/examples/TypeFamilies.hs:55:18-56 }
+         Just (Ann (DP (0,0)) (ColDelta 18) DP (0,0) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0)),((G AnnDarrow),DP (1,15))])
+         [
+          ({ tests/examples/TypeFamilies.hs:55:19-29 }
+           Just (Ann (DP (0,0)) (ColDelta 19) DP (0,0) [] [((G AnnComma),DP (0,0))])
+           (HsAppTy 
+            ({ tests/examples/TypeFamilies.hs:55:19-23 }
+             Just (Ann (DP (0,0)) (ColDelta 19) DP (0,0) [] [((G AnnVal),DP (0,0))])
+             (HsTyVar 
+              (Unqual {OccName: Store}))) 
+            ({ tests/examples/TypeFamilies.hs:55:25-29 }
+             Just (Ann (DP (0,1)) (ColDelta 25) DP (0,1) [] [((G AnnVal),DP (0,0))])
+             (HsTyVar 
+              (Unqual {OccName: store}))))),
+          ({ tests/examples/TypeFamilies.hs:55:32-55 }
+           Just (Ann (DP (0,1)) (ColDelta 32) DP (0,1) [] [])
+           (HsAppTy 
+            ({ tests/examples/TypeFamilies.hs:55:32-36 }
+             Just (Ann (DP (0,0)) (ColDelta 32) DP (0,0) [] [((G AnnVal),DP (0,0))])
+             (HsTyVar 
+              (Unqual {OccName: Monad}))) 
+            ({ tests/examples/TypeFamilies.hs:55:38-55 }
+             Just (Ann (DP (0,1)) (ColDelta 38) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])
+             (HsParTy 
+              ({ tests/examples/TypeFamilies.hs:55:39-54 }
+               Just (Ann (DP (0,0)) (ColDelta 39) DP (0,0) [] [])
+               (HsAppTy 
+                ({ tests/examples/TypeFamilies.hs:55:39-48 }
+                 Just (Ann (DP (0,0)) (ColDelta 39) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                 (HsTyVar 
+                  (Unqual {OccName: StoreMonad}))) 
+                ({ tests/examples/TypeFamilies.hs:55:50-54 }
+                 Just (Ann (DP (0,1)) (ColDelta 50) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                 (HsTyVar 
+                  (Unqual {OccName: store})))))))))]) 
+        ({ tests/examples/TypeFamilies.hs:56:18-66 }
+         Just (Ann (DP (0,1)) (ColDelta 18) DP (0,1) [] [((G AnnRarrow),DP (0,1))])
+         (HsFunTy 
+          ({ tests/examples/TypeFamilies.hs:56:18-26 }
+           Just (Ann (DP (0,0)) (ColDelta 18) DP (0,0) [] [((G AnnOpenS),DP (0,0)),((G AnnCloseS),DP (0,0))])
+           (HsListTy 
+            ({ tests/examples/TypeFamilies.hs:56:19-25 }
+             Just (Ann (DP (0,0)) (ColDelta 19) DP (0,0) [] [((G AnnVal),DP (0,0))])
+             (HsTyVar 
+              (Unqual {OccName: Present}))))) 
+          ({ tests/examples/TypeFamilies.hs:56:31-66 }
+           Just (Ann (DP (0,1)) (ColDelta 31) DP (0,1) [] [])
+           (HsAppTy 
+            ({ tests/examples/TypeFamilies.hs:56:31-48 }
+             Just (Ann (DP (0,0)) (ColDelta 31) DP (0,0) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])
+             (HsParTy 
+              ({ tests/examples/TypeFamilies.hs:56:32-47 }
+               Just (Ann (DP (0,0)) (ColDelta 32) DP (0,0) [] [])
+               (HsAppTy 
+                ({ tests/examples/TypeFamilies.hs:56:32-41 }
+                 Just (Ann (DP (0,0)) (ColDelta 32) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                 (HsTyVar 
+                  (Unqual {OccName: StoreMonad}))) 
+                ({ tests/examples/TypeFamilies.hs:56:43-47 }
+                 Just (Ann (DP (0,1)) (ColDelta 43) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                 (HsTyVar 
+                  (Unqual {OccName: store}))))))) 
+            ({ tests/examples/TypeFamilies.hs:56:50-66 }
+             Just (Ann (DP (0,1)) (ColDelta 50) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])
+             (HsParTy 
+              ({ tests/examples/TypeFamilies.hs:56:51-65 }
+               Just (Ann (DP (0,0)) (ColDelta 51) DP (0,0) [] [])
+               (HsAppTy 
+                ({ tests/examples/TypeFamilies.hs:56:51-55 }
+                 Just (Ann (DP (0,0)) (ColDelta 51) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                 (HsTyVar 
+                  (Unqual {OccName: store}))) 
+                ({ tests/examples/TypeFamilies.hs:56:57-65 }
+                 Just (Ann (DP (0,1)) (ColDelta 57) DP (0,1) [] [((G AnnOpenS),DP (0,0)),((G AnnCloseS),DP (0,0))])
+                 (HsListTy 
+                  ({ tests/examples/TypeFamilies.hs:56:58-64 }
+                   Just (Ann (DP (0,0)) (ColDelta 58) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                   (HsTyVar 
+                    (Unqual {OccName: Present}))))))))))))))) 
+      (PlaceHolder)))),
+   ({ tests/examples/TypeFamilies.hs:(57,1)-(62,14) }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [])
+    (ValD 
+     (FunBind 
+      ({ tests/examples/TypeFamilies.hs:57:1-13 }
+       Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+       (Unqual {OccName: storePresents})) 
+      (False) 
+      (MG 
+       [
+        ({ tests/examples/TypeFamilies.hs:(57,1)-(62,14) }
+         Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnEqual),DP (0,1))])
+         (Match 
+          (Just 
+           ((,) 
+            ({ tests/examples/TypeFamilies.hs:57:1-13 }
+             Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+             (Unqual {OccName: storePresents})) 
+            (False))) 
+          [
+           ({ tests/examples/TypeFamilies.hs:57:15-16 }
+            Just (Ann (DP (0,1)) (ColDelta 15) DP (0,1) [] [((G AnnVal),DP (0,0))])
+            (VarPat 
+             (Unqual {OccName: xs})))] 
+          (Nothing) 
+          (GRHSs 
+           [
+            ({ tests/examples/TypeFamilies.hs:(57,18)-(62,14) }
+             Just (Ann (DP (0,-1)) (ColDelta 18) DP (0,-1) [] [])
+             (GRHS 
+              [] 
+              ({ tests/examples/TypeFamilies.hs:(57,20)-(62,14) }
+               Just (Ann (DP (0,1)) (ColDelta 20) DP (0,1) [] [((G AnnDo),DP (0,0)),((AnnList tests/examples/TypeFamilies.hs:(58,3)-(62,14)),DP (0,0))])
+               (HsDo 
+                (DoExpr) 
+                [
+                 ({ tests/examples/TypeFamilies.hs:58:3-17 }
+                  Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnLarrow),DP (0,1))])
+                  (BindStmt 
+                   ({ tests/examples/TypeFamilies.hs:58:3-7 }
+                    Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                    (VarPat 
+                     (Unqual {OccName: store}))) 
+                   ({ tests/examples/TypeFamilies.hs:58:12-17 }
+                    Just (Ann (DP (0,1)) (ColDelta 9) DP (0,1) [] [])
+                    (HsApp 
+                     ({ tests/examples/TypeFamilies.hs:58:12-14 }
+                      Just (Ann (DP (0,0)) (ColDelta 9) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                      (HsVar 
+                       (Unqual {OccName: new}))) 
+                     ({ tests/examples/TypeFamilies.hs:58:16-17 }
+                      Just (Ann (DP (0,1)) (ColDelta 13) DP (0,1) [] [((G AnnOpenS),DP (0,0)),((G AnnCloseS),DP (0,0))])
+                      (HsVar 
+                       (Exact {Name: []}))))) 
+                   (HsLit 
+                    (HsString "" {FastString: "noSyntaxExpr"})) 
+                   (HsLit 
+                    (HsString "" {FastString: "noSyntaxExpr"})))),
+                 ({ tests/examples/TypeFamilies.hs:(59,3)-(61,23) }
+                  Just (Ann (DP (1,0)) (ColDelta 0) DP (1,0) [] [])
+                  (BodyStmt 
+                   ({ tests/examples/TypeFamilies.hs:(59,3)-(61,23) }
+                    Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])
+                    (OpApp 
+                     ({ tests/examples/TypeFamilies.hs:59:3-10 }
+                      Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])
+                      (HsApp 
+                       ({ tests/examples/TypeFamilies.hs:59:3-7 }
+                        Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                        (HsVar 
+                         (Unqual {OccName: forM_}))) 
+                       ({ tests/examples/TypeFamilies.hs:59:9-10 }
+                        Just (Ann (DP (0,1)) (ColDelta 6) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                        (HsVar 
+                         (Unqual {OccName: xs}))))) 
+                     ({ tests/examples/TypeFamilies.hs:59:12 }
+                      Just (Ann (DP (0,1)) (ColDelta 9) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                      (HsVar 
+                       (Unqual {OccName: $}))) 
+                     (PlaceHolder) 
+                     ({ tests/examples/TypeFamilies.hs:(59,14)-(61,23) }
+                      Just (Ann (DP (0,1)) (ColDelta 11) DP (0,1) [] [((G AnnLam),DP (0,0)),((AnnList tests/examples/TypeFamilies.hs:(59,14)-(61,23)),DP (0,0))])
+                      (HsLam 
+                       (MG 
+                        [
+                         ({ tests/examples/TypeFamilies.hs:(59,14)-(61,23) }
+                          Just (Ann (DP (0,-1)) (ColDelta 0) DP (0,-1) [] [((G AnnRarrow),DP (0,1))])
+                          (Match 
+                           (Nothing) 
+                           [
+                            ({ tests/examples/TypeFamilies.hs:59:15 }
+                             Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                             (VarPat 
+                              (Unqual {OccName: x})))] 
+                           (Nothing) 
+                           (GRHSs 
+                            [
+                             ({ tests/examples/TypeFamilies.hs:(59,20)-(61,23) }
+                              Just (Ann (DP (0,1)) (ColDelta 6) DP (0,1) [] [])
+                              (GRHS 
+                               [] 
+                               ({ tests/examples/TypeFamilies.hs:(59,20)-(61,23) }
+                                Just (Ann (DP (0,0)) (ColDelta 6) DP (0,0) [] [((G AnnDo),DP (0,0)),((AnnList tests/examples/TypeFamilies.hs:(60,5)-(61,23)),DP (0,0))])
+                                (HsDo 
+                                 (DoExpr) 
+                                 [
+                                  ({ tests/examples/TypeFamilies.hs:60:5-20 }
+                                   Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnLarrow),DP (0,1))])
+                                   (BindStmt 
+                                    ({ tests/examples/TypeFamilies.hs:60:5-7 }
+                                     Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                                     (VarPat 
+                                      (Unqual {OccName: old}))) 
+                                    ({ tests/examples/TypeFamilies.hs:60:12-20 }
+                                     Just (Ann (DP (0,1)) (ColDelta 7) DP (0,1) [] [])
+                                     (HsApp 
+                                      ({ tests/examples/TypeFamilies.hs:60:12-14 }
+                                       Just (Ann (DP (0,0)) (ColDelta 7) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                                       (HsVar 
+                                        (Unqual {OccName: get}))) 
+                                      ({ tests/examples/TypeFamilies.hs:60:16-20 }
+                                       Just (Ann (DP (0,1)) (ColDelta 11) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                                       (HsVar 
+                                        (Unqual {OccName: store}))))) 
+                                    (HsLit 
+                                     (HsString "" {FastString: "noSyntaxExpr"})) 
+                                    (HsLit 
+                                     (HsString "" {FastString: "noSyntaxExpr"})))),
+                                  ({ tests/examples/TypeFamilies.hs:61:5-23 }
+                                   Just (Ann (DP (1,0)) (ColDelta 0) DP (1,0) [] [])
+                                   (BodyStmt 
+                                    ({ tests/examples/TypeFamilies.hs:61:5-23 }
+                                     Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])
+                                     (HsApp 
+                                      ({ tests/examples/TypeFamilies.hs:61:5-13 }
+                                       Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])
+                                       (HsApp 
+                                        ({ tests/examples/TypeFamilies.hs:61:5-7 }
+                                         Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                                         (HsVar 
+                                          (Unqual {OccName: put}))) 
+                                        ({ tests/examples/TypeFamilies.hs:61:9-13 }
+                                         Just (Ann (DP (0,1)) (ColDelta 4) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                                         (HsVar 
+                                          (Unqual {OccName: store}))))) 
+                                      ({ tests/examples/TypeFamilies.hs:61:15-23 }
+                                       Just (Ann (DP (0,1)) (ColDelta 10) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])
+                                       (HsPar 
+                                        ({ tests/examples/TypeFamilies.hs:61:16-22 }
+                                         Just (Ann (DP (0,0)) (ColDelta 11) DP (0,0) [] [])
+                                         (OpApp 
+                                          ({ tests/examples/TypeFamilies.hs:61:16 }
+                                           Just (Ann (DP (0,0)) (ColDelta 11) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                                           (HsVar 
+                                            (Unqual {OccName: x}))) 
+                                          ({ tests/examples/TypeFamilies.hs:61:18 }
+                                           Just (Ann (DP (0,1)) (ColDelta 13) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                                           (HsVar 
+                                            (Exact {Name: :}))) 
+                                          (PlaceHolder) 
+                                          ({ tests/examples/TypeFamilies.hs:61:20-22 }
+                                           Just (Ann (DP (0,1)) (ColDelta 15) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                                           (HsVar 
+                                            (Unqual {OccName: old}))))))))) 
+                                    (HsLit 
+                                     (HsString "" {FastString: "noSyntaxExpr"})) 
+                                    (HsLit 
+                                     (HsString "" {FastString: "noSyntaxExpr"})) 
+                                    (PlaceHolder)))] 
+                                 (PlaceHolder)))))] 
+                            (EmptyLocalBinds))))] 
+                        [] 
+                        (PlaceHolder) 
+                        (FromSource)))))) 
+                   (HsLit 
+                    (HsString "" {FastString: "noSyntaxExpr"})) 
+                   (HsLit 
+                    (HsString "" {FastString: "noSyntaxExpr"})) 
+                   (PlaceHolder))),
+                 ({ tests/examples/TypeFamilies.hs:62:3-14 }
+                  Just (Ann (DP (1,0)) (ColDelta 0) DP (1,0) [] [])
+                  (BodyStmt 
+                   ({ tests/examples/TypeFamilies.hs:62:3-14 }
+                    Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])
+                    (HsApp 
+                     ({ tests/examples/TypeFamilies.hs:62:3-8 }
+                      Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                      (HsVar 
+                       (Unqual {OccName: return}))) 
+                     ({ tests/examples/TypeFamilies.hs:62:10-14 }
+                      Just (Ann (DP (0,1)) (ColDelta 7) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                      (HsVar 
+                       (Unqual {OccName: store}))))) 
+                   (HsLit 
+                    (HsString "" {FastString: "noSyntaxExpr"})) 
+                   (HsLit 
+                    (HsString "" {FastString: "noSyntaxExpr"})) 
+                   (PlaceHolder)))] 
+                (PlaceHolder)))))] 
+           (EmptyLocalBinds))))] 
+       [] 
+       (PlaceHolder) 
+       (FromSource)) 
+      (WpHole) 
+      (PlaceHolder) 
+      []))),
+   ({ tests/examples/TypeFamilies.hs:(64,1)-(66,35) }
+    Just (Ann (DP (2,1)) (ColDelta 1) DP (2,1) [] [((G AnnType),DP (0,0)),((G AnnFamily),DP (0,1)),((G AnnDcolon),DP (0,1)),((G AnnWhere),DP (0,1))])
+    (TyClD 
+     (FamDecl 
+      (FamilyDecl 
+       (ClosedTypeFamily 
+        [
+         ({ tests/examples/TypeFamilies.hs:65:5-22 }
+          Just (Ann (DP (1,5)) (ColDelta 5) DP (1,5) [] [((G AnnEqual),DP (0,1)),((G AnnEqual),DP (0,1))])
+          (TyFamEqn 
+           ({ tests/examples/TypeFamilies.hs:65:15-16 }
+            Just (Ann (DP (0,10)) (ColDelta 15) DP (0,10) [] [((G AnnVal),DP (0,0)),((G AnnVal),DP (-1,15))])
+            (Unqual {OccName: ++})) 
+           (HsWB 
+            [
+             ({ tests/examples/TypeFamilies.hs:65:5-7 }
+              Just (Ann (DP (0,-12)) (ColDelta 5) DP (0,-12) [] [((G AnnSimpleQuote),DP (0,-12)),((G AnnOpenS),DP (0,0)),((G AnnCloseS),DP (0,0)),((G AnnSimpleQuote),DP (0,-12)),((G AnnOpenS),DP (0,0)),((G AnnCloseS),DP (0,0))])
+              (HsExplicitListTy 
+               (PlaceHolder) 
+               [])),
+             ({ tests/examples/TypeFamilies.hs:65:18 }
+              Just (Ann (DP (0,10)) (ColDelta 18) DP (0,10) [] [((G AnnVal),DP (0,0)),((G AnnVal),DP (0,0))])
+              (HsTyVar 
+               (Unqual {OccName: b})))] 
+            (PlaceHolder) 
+            (PlaceHolder) 
+            (PlaceHolder)) 
+           ({ tests/examples/TypeFamilies.hs:65:22 }
+            Just (Ann (DP (0,1)) (ColDelta 22) DP (0,1) [] [((G AnnVal),DP (0,0)),((G AnnVal),DP (0,0))])
+            (HsTyVar 
+             (Unqual {OccName: b}))))),
+         ({ tests/examples/TypeFamilies.hs:66:5-35 }
+          Just (Ann (DP (1,5)) (ColDelta 5) DP (1,5) [] [((G AnnEqual),DP (0,1)),((G AnnEqual),DP (0,1))])
+          (TyFamEqn 
+           ({ tests/examples/TypeFamilies.hs:66:15-16 }
+            Just (Ann (DP (0,10)) (ColDelta 15) DP (0,10) [] [((G AnnVal),DP (0,0)),((G AnnVal),DP (0,0))])
+            (Unqual {OccName: ++})) 
+           (HsWB 
+            [
+             ({ tests/examples/TypeFamilies.hs:66:5-13 }
+              Just (Ann (DP (0,-12)) (ColDelta 5) DP (0,-12) [] [((G AnnOpenP),DP (0,-12)),((G AnnCloseP),DP (0,0)),((G AnnOpenP),DP (0,-12)),((G AnnCloseP),DP (0,0))])
+              (HsParTy 
+               ({ tests/examples/TypeFamilies.hs:66:6-12 }
+                Just (Ann (DP (0,0)) (ColDelta 6) DP (0,0) [] [])
+                (HsOpTy 
+                 ({ tests/examples/TypeFamilies.hs:66:6 }
+                  Just (Ann (DP (0,0)) (ColDelta 6) DP (0,0) [] [((G AnnVal),DP (0,0)),((G AnnVal),DP (0,0))])
+                  (HsTyVar 
+                   (Unqual {OccName: a}))) 
+                 ((,) 
+                  (WpKiApps 
+                   []) 
+                  ({ tests/examples/TypeFamilies.hs:66:9 }
+                   Just (Ann (DP (0,2)) (ColDelta 9) DP (0,2) [] [((G AnnVal),DP (0,0)),((G AnnVal),DP (0,0))])
+                   (Exact {Name: :}))) 
+                 ({ tests/examples/TypeFamilies.hs:66:11-12 }
+                  Just (Ann (DP (0,1)) (ColDelta 11) DP (0,1) [] [((G AnnVal),DP (0,0)),((G AnnVal),DP (0,0))])
+                  (HsTyVar 
+                   (Unqual {OccName: as}))))))),
+             ({ tests/examples/TypeFamilies.hs:66:18 }
+              Just (Ann (DP (0,4)) (ColDelta 18) DP (0,4) [] [((G AnnVal),DP (0,0)),((G AnnVal),DP (0,0))])
+              (HsTyVar 
+               (Unqual {OccName: b})))] 
+            (PlaceHolder) 
+            (PlaceHolder) 
+            (PlaceHolder)) 
+           ({ tests/examples/TypeFamilies.hs:66:22-35 }
+            Just (Ann (DP (0,1)) (ColDelta 22) DP (0,1) [] [])
+            (HsOpTy 
+             ({ tests/examples/TypeFamilies.hs:66:22 }
+              Just (Ann (DP (0,0)) (ColDelta 22) DP (0,0) [] [((G AnnVal),DP (0,0)),((G AnnVal),DP (0,0))])
+              (HsTyVar 
+               (Unqual {OccName: a}))) 
+             ((,) 
+              (WpKiApps 
+               []) 
+              ({ tests/examples/TypeFamilies.hs:66:25 }
+               Just (Ann (DP (0,2)) (ColDelta 25) DP (0,2) [] [((G AnnVal),DP (0,0)),((G AnnVal),DP (0,0))])
+               (Exact {Name: :}))) 
+             ({ tests/examples/TypeFamilies.hs:66:27-35 }
+              Just (Ann (DP (0,1)) (ColDelta 27) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0)),((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])
+              (HsParTy 
+               ({ tests/examples/TypeFamilies.hs:66:28-34 }
+                Just (Ann (DP (0,0)) (ColDelta 28) DP (0,0) [] [])
+                (HsOpTy 
+                 ({ tests/examples/TypeFamilies.hs:66:28-29 }
+                  Just (Ann (DP (0,0)) (ColDelta 28) DP (0,0) [] [((G AnnVal),DP (0,0)),((G AnnVal),DP (0,0))])
+                  (HsTyVar 
+                   (Unqual {OccName: as}))) 
+                 ((,) 
+                  (WpKiApps 
+                   []) 
+                  ({ tests/examples/TypeFamilies.hs:66:31-32 }
+                   Just (Ann (DP (0,1)) (ColDelta 31) DP (0,1) [] [((G AnnVal),DP (0,0)),((G AnnVal),DP (0,0))])
+                   (Unqual {OccName: ++}))) 
+                 ({ tests/examples/TypeFamilies.hs:66:34 }
+                  Just (Ann (DP (0,1)) (ColDelta 34) DP (0,1) [] [((G AnnVal),DP (0,0)),((G AnnVal),DP (0,0))])
+                  (HsTyVar 
+                   (Unqual {OccName: b})))))))))))]) 
+       ({ tests/examples/TypeFamilies.hs:64:13-16 }
+        Just (Ann (DP (0,1)) (ColDelta 13) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnVal),DP (0,0)),((G AnnCloseP),DP (0,0))])
+        (Unqual {OccName: ++})) 
+       (HsQTvs 
+        [] 
+        [
+         ({ tests/examples/TypeFamilies.hs:64:18-27 }
+          Just (Ann (DP (0,1)) (ColDelta 18) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnDcolon),DP (0,1)),((G AnnCloseP),DP (0,0))])
+          (KindedTyVar 
+           ({ tests/examples/TypeFamilies.hs:64:19 }
+            Just (Ann (DP (0,0)) (ColDelta 19) DP (0,0) [] [((G AnnVal),DP (0,0))])
+            (Unqual {OccName: a})) 
+           ({ tests/examples/TypeFamilies.hs:64:24-26 }
+            Just (Ann (DP (0,1)) (ColDelta 24) DP (0,1) [] [((G AnnOpenS),DP (0,0)),((G AnnCloseS),DP (0,0))])
+            (HsListTy 
+             ({ tests/examples/TypeFamilies.hs:64:25 }
+              Just (Ann (DP (0,0)) (ColDelta 25) DP (0,0) [] [((G AnnVal),DP (0,0))])
+              (HsTyVar 
+               (Unqual {OccName: k}))))))),
+         ({ tests/examples/TypeFamilies.hs:64:29-38 }
+          Just (Ann (DP (0,1)) (ColDelta 29) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnDcolon),DP (0,1)),((G AnnCloseP),DP (0,0))])
+          (KindedTyVar 
+           ({ tests/examples/TypeFamilies.hs:64:30 }
+            Just (Ann (DP (0,0)) (ColDelta 30) DP (0,0) [] [((G AnnVal),DP (0,0))])
+            (Unqual {OccName: b})) 
+           ({ tests/examples/TypeFamilies.hs:64:35-37 }
+            Just (Ann (DP (0,1)) (ColDelta 35) DP (0,1) [] [((G AnnOpenS),DP (0,0)),((G AnnCloseS),DP (0,0))])
+            (HsListTy 
+             ({ tests/examples/TypeFamilies.hs:64:36 }
+              Just (Ann (DP (0,0)) (ColDelta 36) DP (0,0) [] [((G AnnVal),DP (0,0))])
+              (HsTyVar 
+               (Unqual {OccName: k})))))))]) 
+       (Just 
+        ({ tests/examples/TypeFamilies.hs:64:43-45 }
+         Just (Ann (DP (0,1)) (ColDelta 43) DP (0,1) [] [((G AnnOpenS),DP (0,0)),((G AnnCloseS),DP (0,0))])
+         (HsListTy 
+          ({ tests/examples/TypeFamilies.hs:64:44 }
+           Just (Ann (DP (0,0)) (ColDelta 44) DP (0,0) [] [((G AnnVal),DP (0,0))])
+           (HsTyVar 
+            (Unqual {OccName: k})))))))))),
+   ({ tests/examples/TypeFamilies.hs:68:1-52 }
+    Just (Ann (DP (2,1)) (ColDelta 1) DP (2,1) [] [((G AnnType),DP (0,0)),((G AnnFamily),DP (0,1)),((G AnnDcolon),DP (0,1))])
+    (TyClD 
+     (FamDecl 
+      (FamilyDecl 
+       (OpenTypeFamily) 
+       ({ tests/examples/TypeFamilies.hs:68:27-28 }
+        Just (Ann (DP (0,15)) (ColDelta 27) DP (0,15) [] [((G AnnVal),DP (0,0))])
+        (Unqual {OccName: |>})) 
+       (HsQTvs 
+        [] 
+        [
+         ({ tests/examples/TypeFamilies.hs:68:13-25 }
+          Just (Ann (DP (0,-16)) (ColDelta 13) DP (0,-16) [] [((G AnnOpenP),DP (0,-16)),((G AnnDcolon),DP (0,1)),((G AnnCloseP),DP (0,0))])
+          (KindedTyVar 
+           ({ tests/examples/TypeFamilies.hs:68:14 }
+            Just (Ann (DP (0,0)) (ColDelta 14) DP (0,0) [] [((G AnnVal),DP (0,0))])
+            (Unqual {OccName: f})) 
+           ({ tests/examples/TypeFamilies.hs:68:19-24 }
+            Just (Ann (DP (0,1)) (ColDelta 19) DP (0,1) [] [((G AnnRarrow),DP (0,1))])
+            (HsFunTy 
+             ({ tests/examples/TypeFamilies.hs:68:19 }
+              Just (Ann (DP (0,0)) (ColDelta 19) DP (0,0) [] [((G AnnVal),DP (0,0))])
+              (HsTyVar 
+               (Exact {Name: *}))) 
+             ({ tests/examples/TypeFamilies.hs:68:24 }
+              Just (Ann (DP (0,1)) (ColDelta 24) DP (0,1) [] [((G AnnVal),DP (0,0))])
+              (HsTyVar 
+               (Exact {Name: *}))))))),
+         ({ tests/examples/TypeFamilies.hs:68:30-42 }
+          Just (Ann (DP (0,4)) (ColDelta 30) DP (0,4) [] [((G AnnOpenP),DP (0,0)),((G AnnDcolon),DP (0,1)),((G AnnCloseP),DP (0,0))])
+          (KindedTyVar 
+           ({ tests/examples/TypeFamilies.hs:68:31 }
+            Just (Ann (DP (0,0)) (ColDelta 31) DP (0,0) [] [((G AnnVal),DP (0,0))])
+            (Unqual {OccName: s})) 
+           ({ tests/examples/TypeFamilies.hs:68:36-41 }
+            Just (Ann (DP (0,1)) (ColDelta 36) DP (0,1) [] [((G AnnRarrow),DP (0,1))])
+            (HsFunTy 
+             ({ tests/examples/TypeFamilies.hs:68:36 }
+              Just (Ann (DP (0,0)) (ColDelta 36) DP (0,0) [] [((G AnnVal),DP (0,0))])
+              (HsTyVar 
+               (Exact {Name: *}))) 
+             ({ tests/examples/TypeFamilies.hs:68:41 }
+              Just (Ann (DP (0,1)) (ColDelta 41) DP (0,1) [] [((G AnnVal),DP (0,0))])
+              (HsTyVar 
+               (Exact {Name: *})))))))]) 
+       (Just 
+        ({ tests/examples/TypeFamilies.hs:68:47-52 }
+         Just (Ann (DP (0,1)) (ColDelta 47) DP (0,1) [] [((G AnnRarrow),DP (0,1))])
+         (HsFunTy 
+          ({ tests/examples/TypeFamilies.hs:68:47 }
+           Just (Ann (DP (0,0)) (ColDelta 47) DP (0,0) [] [((G AnnVal),DP (0,0))])
+           (HsTyVar 
+            (Exact {Name: *}))) 
+          ({ tests/examples/TypeFamilies.hs:68:52 }
+           Just (Ann (DP (0,1)) (ColDelta 52) DP (0,1) [] [((G AnnVal),DP (0,0))])
+           (HsTyVar 
+            (Exact {Name: *})))))))))),
+   ({ tests/examples/TypeFamilies.hs:70:1-43 }
+    Just (Ann (DP (2,1)) (ColDelta 1) DP (2,1) [] [((G AnnType),DP (0,0)),((G AnnInstance),DP (0,1))])
+    (InstD 
+     (TyFamInstD 
+      (TyFamInstDecl 
+       ({ tests/examples/TypeFamilies.hs:70:15-43 }
+        Just (Ann (DP (0,1)) (ColDelta 15) DP (0,1) [] [((G AnnEqual),DP (0,1))])
+        (TyFamEqn 
+         ({ tests/examples/TypeFamilies.hs:70:17-18 }
+          Just (Ann (DP (0,2)) (ColDelta 17) DP (0,2) [] [((G AnnVal),DP (0,0))])
+          (Unqual {OccName: |>})) 
+         (HsWB 
+          [
+           ({ tests/examples/TypeFamilies.hs:70:15 }
+            Just (Ann (DP (0,-4)) (ColDelta 15) DP (0,-4) [] [((G AnnVal),DP (0,-4))])
+            (HsTyVar 
+             (Unqual {OccName: f}))),
+           ({ tests/examples/TypeFamilies.hs:70:20-26 }
+            Just (Ann (DP (0,4)) (ColDelta 20) DP (0,4) [] [])
+            (HsAppTy 
+             ({ tests/examples/TypeFamilies.hs:70:20-24 }
+              Just (Ann (DP (0,0)) (ColDelta 20) DP (0,0) [] [((G AnnVal),DP (0,0))])
+              (HsTyVar 
+               (Unqual {OccName: Union}))) 
+             ({ tests/examples/TypeFamilies.hs:70:26 }
+              Just (Ann (DP (0,1)) (ColDelta 26) DP (0,1) [] [((G AnnVal),DP (0,0))])
+              (HsTyVar 
+               (Unqual {OccName: s})))))] 
+          (PlaceHolder) 
+          (PlaceHolder) 
+          (PlaceHolder)) 
+         ({ tests/examples/TypeFamilies.hs:70:30-43 }
+          Just (Ann (DP (0,1)) (ColDelta 30) DP (0,1) [] [])
+          (HsAppTy 
+           ({ tests/examples/TypeFamilies.hs:70:30-34 }
+            Just (Ann (DP (0,0)) (ColDelta 30) DP (0,0) [] [((G AnnVal),DP (0,0))])
+            (HsTyVar 
+             (Unqual {OccName: Union}))) 
+           ({ tests/examples/TypeFamilies.hs:70:36-43 }
+            Just (Ann (DP (0,1)) (ColDelta 36) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])
+            (HsParTy 
+             ({ tests/examples/TypeFamilies.hs:70:37-42 }
+              Just (Ann (DP (0,0)) (ColDelta 37) DP (0,0) [] [])
+              (HsOpTy 
+               ({ tests/examples/TypeFamilies.hs:70:37 }
+                Just (Ann (DP (0,0)) (ColDelta 37) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                (HsTyVar 
+                 (Unqual {OccName: f}))) 
+               ((,) 
+                (WpKiApps 
+                 []) 
+                ({ tests/examples/TypeFamilies.hs:70:39-40 }
+                 Just (Ann (DP (0,1)) (ColDelta 39) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                 (Unqual {OccName: :>}))) 
+               ({ tests/examples/TypeFamilies.hs:70:42 }
+                Just (Ann (DP (0,1)) (ColDelta 42) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                (HsTyVar 
+                 (Unqual {OccName: s}))))))))))) 
+       (PlaceHolder)))))] 
+  (Nothing) 
+  (Nothing)))
+==============
+[(AnnKey tests/examples/TypeFamilies.hs:1:1 CN "HsModule",
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnEofPos),DP (2,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:6:1-29 CN "ImportDecl",
+  (Ann (DP (2,1)) (ColDelta 1) DP (5,1) [DComment (DP (0,0),DP (0,33)) "{-# LANGUAGE FlexibleContexts #-}",DComment (DP (1,1),DP (1,30)) "{-# LANGUAGE TypeFamilies #-}",DComment (DP (2,1),DP (2,73)) "-- From https://ocharles.org.uk/blog/posts/2014-12-12-type-families.html"] [((G AnnImport),DP (0,0)),((G AnnVal),DP (0,1))])),
+ (AnnKey tests/examples/TypeFamilies.hs:7:1-30 CN "ImportDecl",
+  (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [((G AnnImport),DP (0,0)),((G AnnVal),DP (0,1))])),
+ (AnnKey tests/examples/TypeFamilies.hs:8:1-28 CN "ImportDecl",
+  (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [((G AnnImport),DP (0,0)),((G AnnVal),DP (0,1))])),
+ (AnnKey tests/examples/TypeFamilies.hs:8:22-28 CN "(:)",
+  (Ann (DP (0,1)) (ColDelta 22) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:8:23-27 CN "IEVar",
+  (Ann (DP (0,0)) (ColDelta 23) DP (0,0) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:8:23-27 CN "Unqual",
+  (Ann (DP (0,0)) (ColDelta 23) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:9:1-17 CN "ImportDecl",
+  (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [((G AnnImport),DP (0,0)),((G AnnVal),DP (0,1))])),
+ (AnnKey tests/examples/TypeFamilies.hs:(11,1)-(14,32) CN "TyClD",
+  (Ann (DP (2,1)) (ColDelta 1) DP (2,1) [] [((G AnnClass),DP (0,0)),((G AnnWhere),DP (0,1))])),
+ (AnnKey tests/examples/TypeFamilies.hs:11:7-13 CN "Unqual",
+  (Ann (DP (0,1)) (ColDelta 7) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:11:15-19 CN "UserTyVar",
+  (Ann (DP (0,1)) (ColDelta 15) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:12:3-7 CN "Unqual",
+  (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:12:3-28 CN "TypeSig",
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnDcolon),DP (0,1))])),
+ (AnnKey tests/examples/TypeFamilies.hs:12:12 CN "HsTyVar",
+  (Ann (DP (0,0)) (ColDelta 12) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:12:12-28 CN "HsForAllTy",
+  (Ann (DP (0,1)) (ColDelta 12) DP (0,1) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:12:12-28 CN "HsFunTy",
+  (Ann (DP (0,0)) (ColDelta 12) DP (0,0) [] [((G AnnRarrow),DP (0,1))])),
+ (AnnKey tests/examples/TypeFamilies.hs:12:17-18 CN "HsTyVar",
+  (Ann (DP (0,0)) (ColDelta 17) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:12:17-28 CN "HsAppTy",
+  (Ann (DP (0,1)) (ColDelta 17) DP (0,1) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:12:20-28 CN "HsParTy",
+  (Ann (DP (0,1)) (ColDelta 20) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:12:21-25 CN "HsTyVar",
+  (Ann (DP (0,0)) (ColDelta 21) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:12:21-27 CN "HsAppTy",
+  (Ann (DP (0,0)) (ColDelta 21) DP (0,0) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:12:27 CN "HsTyVar",
+  (Ann (DP (0,1)) (ColDelta 27) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:13:3-7 CN "Unqual",
+  (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:13:3-26 CN "TypeSig",
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnDcolon),DP (0,1))])),
+ (AnnKey tests/examples/TypeFamilies.hs:13:12-16 CN "HsTyVar",
+  (Ann (DP (0,0)) (ColDelta 12) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:13:12-18 CN "HsAppTy",
+  (Ann (DP (0,0)) (ColDelta 12) DP (0,0) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:13:12-26 CN "HsForAllTy",
+  (Ann (DP (0,1)) (ColDelta 12) DP (0,1) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:13:12-26 CN "HsFunTy",
+  (Ann (DP (0,0)) (ColDelta 12) DP (0,0) [] [((G AnnRarrow),DP (0,1))])),
+ (AnnKey tests/examples/TypeFamilies.hs:13:18 CN "HsTyVar",
+  (Ann (DP (0,1)) (ColDelta 18) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:13:23-24 CN "HsTyVar",
+  (Ann (DP (0,0)) (ColDelta 23) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:13:23-26 CN "HsAppTy",
+  (Ann (DP (0,1)) (ColDelta 23) DP (0,1) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:13:26 CN "HsTyVar",
+  (Ann (DP (0,1)) (ColDelta 26) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:14:3-7 CN "Unqual",
+  (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:14:3-32 CN "TypeSig",
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnDcolon),DP (0,1))])),
+ (AnnKey tests/examples/TypeFamilies.hs:14:12-16 CN "HsTyVar",
+  (Ann (DP (0,0)) (ColDelta 12) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:14:12-18 CN "HsAppTy",
+  (Ann (DP (0,0)) (ColDelta 12) DP (0,0) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:14:12-32 CN "HsForAllTy",
+  (Ann (DP (0,1)) (ColDelta 12) DP (0,1) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:14:12-32 CN "HsFunTy",
+  (Ann (DP (0,0)) (ColDelta 12) DP (0,0) [] [((G AnnRarrow),DP (0,1))])),
+ (AnnKey tests/examples/TypeFamilies.hs:14:18 CN "HsTyVar",
+  (Ann (DP (0,1)) (ColDelta 18) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:14:23 CN "HsTyVar",
+  (Ann (DP (0,0)) (ColDelta 23) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:14:23-32 CN "HsFunTy",
+  (Ann (DP (0,1)) (ColDelta 23) DP (0,1) [] [((G AnnRarrow),DP (0,1))])),
+ (AnnKey tests/examples/TypeFamilies.hs:14:28-29 CN "HsTyVar",
+  (Ann (DP (0,0)) (ColDelta 28) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:14:28-32 CN "HsAppTy",
+  (Ann (DP (0,1)) (ColDelta 28) DP (0,1) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:14:31-32 CN "HsTupleTy",
+  (Ann (DP (0,1)) (ColDelta 31) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:(16,1)-(19,52) CN "InstD",
+  (Ann (DP (2,1)) (ColDelta 1) DP (2,1) [] [((G AnnInstance),DP (0,0)),((G AnnWhere),DP (0,1))])),
+ (AnnKey tests/examples/TypeFamilies.hs:16:10-16 CN "HsTyVar",
+  (Ann (DP (0,0)) (ColDelta 10) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:16:10-21 CN "HsAppTy",
+  (Ann (DP (0,0)) (ColDelta 10) DP (0,0) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:16:10-21 CN "HsForAllTy",
+  (Ann (DP (0,1)) (ColDelta 10) DP (0,1) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:16:18-21 CN "HsTyVar",
+  (Ann (DP (0,1)) (ColDelta 18) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:17:3-7 CN "Unqual",
+  (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:17:3-17 CN "FunBind",
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:17:3-17 CN "Match",
+  (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnEqual),DP (0,1))])),
+ (AnnKey tests/examples/TypeFamilies.hs:17:9-17 CN "GRHS",
+  (Ann (DP (0,-1)) (ColDelta 9) DP (0,-1) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:17:11-17 CN "HsVar",
+  (Ann (DP (0,1)) (ColDelta 11) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:18:3-7 CN "Unqual",
+  (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:18:3-18 CN "FunBind",
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:18:3-18 CN "Match",
+  (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnEqual),DP (0,1))])),
+ (AnnKey tests/examples/TypeFamilies.hs:18:9-18 CN "GRHS",
+  (Ann (DP (0,-1)) (ColDelta 9) DP (0,-1) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:18:11-18 CN "HsVar",
+  (Ann (DP (0,1)) (ColDelta 11) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:19:3-7 CN "Unqual",
+  (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:19:3-52 CN "FunBind",
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:19:3-52 CN "Match",
+  (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnEqual),DP (0,1))])),
+ (AnnKey tests/examples/TypeFamilies.hs:19:9-12 CN "VarPat",
+  (Ann (DP (0,1)) (ColDelta 9) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:19:14 CN "VarPat",
+  (Ann (DP (0,1)) (ColDelta 14) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:19:16-52 CN "GRHS",
+  (Ann (DP (0,-1)) (ColDelta 16) DP (0,-1) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:19:18-28 CN "HsVar",
+  (Ann (DP (0,0)) (ColDelta 18) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:19:18-33 CN "HsApp",
+  (Ann (DP (0,0)) (ColDelta 18) DP (0,0) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:19:18-52 CN "HsApp",
+  (Ann (DP (0,1)) (ColDelta 18) DP (0,1) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:19:30-33 CN "HsVar",
+  (Ann (DP (0,1)) (ColDelta 30) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:19:35-52 CN "HsPar",
+  (Ann (DP (0,1)) (ColDelta 35) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:19:36-41 CN "HsVar",
+  (Ann (DP (0,0)) (ColDelta 36) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:19:36-51 CN "OpApp",
+  (Ann (DP (0,0)) (ColDelta 36) DP (0,0) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:19:43 CN "HsVar",
+  (Ann (DP (0,1)) (ColDelta 43) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:19:45-49 CN "HsVar",
+  (Ann (DP (0,0)) (ColDelta 45) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:19:45-51 CN "HsApp",
+  (Ann (DP (0,1)) (ColDelta 45) DP (0,1) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:19:51 CN "HsVar",
+  (Ann (DP (0,1)) (ColDelta 51) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:(21,1)-(24,45) CN "InstD",
+  (Ann (DP (2,1)) (ColDelta 1) DP (2,1) [] [((G AnnInstance),DP (0,0)),((G AnnWhere),DP (0,1))])),
+ (AnnKey tests/examples/TypeFamilies.hs:21:10-16 CN "HsTyVar",
+  (Ann (DP (0,0)) (ColDelta 10) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:21:10-22 CN "HsAppTy",
+  (Ann (DP (0,0)) (ColDelta 10) DP (0,0) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:21:10-22 CN "HsForAllTy",
+  (Ann (DP (0,1)) (ColDelta 10) DP (0,1) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:21:18-22 CN "HsTyVar",
+  (Ann (DP (0,1)) (ColDelta 18) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:22:3-7 CN "Unqual",
+  (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:22:3-18 CN "FunBind",
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:22:3-18 CN "Match",
+  (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnEqual),DP (0,1))])),
+ (AnnKey tests/examples/TypeFamilies.hs:22:9-18 CN "GRHS",
+  (Ann (DP (0,-1)) (ColDelta 9) DP (0,-1) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:22:11-18 CN "HsVar",
+  (Ann (DP (0,1)) (ColDelta 11) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:23:3-7 CN "Unqual",
+  (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:23:3-19 CN "FunBind",
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:23:3-19 CN "Match",
+  (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnEqual),DP (0,1))])),
+ (AnnKey tests/examples/TypeFamilies.hs:23:9-19 CN "GRHS",
+  (Ann (DP (0,-1)) (ColDelta 9) DP (0,-1) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:23:11-19 CN "HsVar",
+  (Ann (DP (0,1)) (ColDelta 11) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:24:3-7 CN "Unqual",
+  (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:24:3-45 CN "FunBind",
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:24:3-45 CN "Match",
+  (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnEqual),DP (0,1))])),
+ (AnnKey tests/examples/TypeFamilies.hs:24:9-13 CN "VarPat",
+  (Ann (DP (0,1)) (ColDelta 9) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:24:15 CN "VarPat",
+  (Ann (DP (0,1)) (ColDelta 15) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:24:17-45 CN "GRHS",
+  (Ann (DP (0,-1)) (ColDelta 17) DP (0,-1) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:24:19-29 CN "HsVar",
+  (Ann (DP (0,0)) (ColDelta 19) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:24:19-35 CN "HsApp",
+  (Ann (DP (0,0)) (ColDelta 19) DP (0,0) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:24:19-45 CN "HsApp",
+  (Ann (DP (0,1)) (ColDelta 19) DP (0,1) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:24:31-35 CN "HsVar",
+  (Ann (DP (0,1)) (ColDelta 31) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:24:37-45 CN "HsPar",
+  (Ann (DP (0,1)) (ColDelta 37) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:24:38-42 CN "HsVar",
+  (Ann (DP (0,0)) (ColDelta 38) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:24:38-44 CN "HsApp",
+  (Ann (DP (0,0)) (ColDelta 38) DP (0,0) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:24:44 CN "HsVar",
+  (Ann (DP (0,1)) (ColDelta 44) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:26:1-21 CN "TyClD",
+  (Ann (DP (2,1)) (ColDelta 1) DP (2,1) [] [((G AnnType),DP (0,0)),((G AnnEqual),DP (0,1))])),
+ (AnnKey tests/examples/TypeFamilies.hs:26:6-12 CN "Unqual",
+  (Ann (DP (0,1)) (ColDelta 6) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:26:16-21 CN "HsTyVar",
+  (Ann (DP (0,1)) (ColDelta 16) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:27:1-15 CN "Unqual",
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:27:1-69 CN "SigD",
+  (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [((G AnnDcolon),DP (0,1))])),
+ (AnnKey tests/examples/TypeFamilies.hs:27:20-26 CN "HsTyVar",
+  (Ann (DP (0,0)) (ColDelta 20) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:27:20-32 CN "(:)",
+  (Ann (DP (0,0)) (ColDelta 20) DP (0,0) [] [((G AnnDarrow),DP (0,1))])),
+ (AnnKey tests/examples/TypeFamilies.hs:27:20-32 CN "HsAppTy",
+  (Ann (DP (0,0)) (ColDelta 20) DP (0,0) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:27:20-69 CN "HsForAllTy",
+  (Ann (DP (0,1)) (ColDelta 20) DP (0,1) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:27:28-32 CN "HsTyVar",
+  (Ann (DP (0,1)) (ColDelta 28) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:27:37-45 CN "HsListTy",
+  (Ann (DP (0,0)) (ColDelta 37) DP (0,0) [] [((G AnnOpenS),DP (0,0)),((G AnnCloseS),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:27:37-69 CN "HsFunTy",
+  (Ann (DP (0,1)) (ColDelta 37) DP (0,1) [] [((G AnnRarrow),DP (0,1))])),
+ (AnnKey tests/examples/TypeFamilies.hs:27:38-44 CN "HsTyVar",
+  (Ann (DP (0,0)) (ColDelta 38) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:27:50-51 CN "HsTyVar",
+  (Ann (DP (0,0)) (ColDelta 50) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:27:50-69 CN "HsAppTy",
+  (Ann (DP (0,1)) (ColDelta 50) DP (0,1) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:27:53-69 CN "HsParTy",
+  (Ann (DP (0,1)) (ColDelta 53) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:27:54-58 CN "HsTyVar",
+  (Ann (DP (0,0)) (ColDelta 54) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:27:54-68 CN "HsAppTy",
+  (Ann (DP (0,0)) (ColDelta 54) DP (0,0) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:27:60-68 CN "HsListTy",
+  (Ann (DP (0,1)) (ColDelta 60) DP (0,1) [] [((G AnnOpenS),DP (0,0)),((G AnnCloseS),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:27:61-67 CN "HsTyVar",
+  (Ann (DP (0,0)) (ColDelta 61) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:28:1-15 CN "Unqual",
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:(28,1)-(33,14) CN "Match",
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnEqual),DP (0,1))])),
+ (AnnKey tests/examples/TypeFamilies.hs:(28,1)-(33,14) CN "ValD",
+  (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:28:17-18 CN "VarPat",
+  (Ann (DP (0,1)) (ColDelta 17) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:(28,20)-(33,14) CN "GRHS",
+  (Ann (DP (0,-1)) (ColDelta 20) DP (0,-1) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:(28,22)-(33,14) CN "HsDo",
+  (Ann (DP (0,1)) (ColDelta 22) DP (0,1) [] [((G AnnDo),DP (0,0)),((AnnList tests/examples/TypeFamilies.hs:(29,3)-(33,14)),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:29:3-7 CN "VarPat",
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:29:3-19 CN "BindStmt",
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnLarrow),DP (0,1))])),
+ (AnnKey tests/examples/TypeFamilies.hs:(29,3)-(33,14) CN "(:)",
+  (Ann (DP (1,0)) (ColDelta 3) DP (1,0) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:29:12-16 CN "HsVar",
+  (Ann (DP (0,0)) (ColDelta 9) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:29:12-19 CN "HsApp",
+  (Ann (DP (0,1)) (ColDelta 9) DP (0,1) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:29:18-19 CN "HsVar",
+  (Ann (DP (0,1)) (ColDelta 15) DP (0,1) [] [((G AnnOpenS),DP (0,0)),((G AnnCloseS),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:30:3-7 CN "HsVar",
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:30:3-10 CN "HsApp",
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:(30,3)-(32,25) CN "BodyStmt",
+  (Ann (DP (1,0)) (ColDelta 0) DP (1,0) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:(30,3)-(32,25) CN "OpApp",
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:30:9-10 CN "HsVar",
+  (Ann (DP (0,1)) (ColDelta 6) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:30:12 CN "HsVar",
+  (Ann (DP (0,1)) (ColDelta 9) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:(30,14)-(32,25) CN "(:)",
+  (Ann (DP (0,-1)) (ColDelta 11) DP (0,-1) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:(30,14)-(32,25) CN "HsLam",
+  (Ann (DP (0,1)) (ColDelta 11) DP (0,1) [] [((G AnnLam),DP (0,0)),((AnnList tests/examples/TypeFamilies.hs:(30,14)-(32,25)),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:(30,14)-(32,25) CN "Match",
+  (Ann (DP (0,-1)) (ColDelta 0) DP (0,-1) [] [((G AnnRarrow),DP (0,1))])),
+ (AnnKey tests/examples/TypeFamilies.hs:30:15 CN "VarPat",
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:(30,20)-(32,25) CN "GRHS",
+  (Ann (DP (0,1)) (ColDelta 6) DP (0,1) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:(30,20)-(32,25) CN "HsDo",
+  (Ann (DP (0,0)) (ColDelta 6) DP (0,0) [] [((G AnnDo),DP (0,0)),((AnnList tests/examples/TypeFamilies.hs:(31,5)-(32,25)),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:31:5-7 CN "VarPat",
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:31:5-22 CN "BindStmt",
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnLarrow),DP (0,1))])),
+ (AnnKey tests/examples/TypeFamilies.hs:(31,5)-(32,25) CN "(:)",
+  (Ann (DP (1,0)) (ColDelta -9) DP (1,0) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:31:12-16 CN "HsVar",
+  (Ann (DP (0,0)) (ColDelta 7) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:31:12-22 CN "HsApp",
+  (Ann (DP (0,1)) (ColDelta 7) DP (0,1) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:31:18-22 CN "HsVar",
+  (Ann (DP (0,1)) (ColDelta 13) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:32:5-9 CN "HsVar",
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:32:5-15 CN "HsApp",
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:32:5-25 CN "BodyStmt",
+  (Ann (DP (1,0)) (ColDelta 0) DP (1,0) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:32:5-25 CN "HsApp",
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:32:11-15 CN "HsVar",
+  (Ann (DP (0,1)) (ColDelta 6) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:32:17-25 CN "HsPar",
+  (Ann (DP (0,1)) (ColDelta 12) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:32:18 CN "HsVar",
+  (Ann (DP (0,0)) (ColDelta 13) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:32:18-24 CN "OpApp",
+  (Ann (DP (0,0)) (ColDelta 13) DP (0,0) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:32:20 CN "HsVar",
+  (Ann (DP (0,1)) (ColDelta 15) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:32:22-24 CN "HsVar",
+  (Ann (DP (0,1)) (ColDelta 17) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:33:3-8 CN "HsVar",
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:33:3-14 CN "BodyStmt",
+  (Ann (DP (1,0)) (ColDelta 0) DP (1,0) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:33:3-14 CN "HsApp",
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:33:10-14 CN "HsVar",
+  (Ann (DP (0,1)) (ColDelta 7) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:(37,1)-(41,46) CN "TyClD",
+  (Ann (DP (2,1)) (ColDelta 1) DP (4,1) [DComment (DP (2,1),DP (2,23)) "-- Type family version"] [((G AnnClass),DP (0,0)),((G AnnWhere),DP (0,1))])),
+ (AnnKey tests/examples/TypeFamilies.hs:37:7-11 CN "Unqual",
+  (Ann (DP (0,1)) (ColDelta 7) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:37:13-17 CN "UserTyVar",
+  (Ann (DP (0,1)) (ColDelta 13) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:38:3-33 CN "FamilyDecl",
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnType),DP (0,0)),((G AnnDcolon),DP (0,1))])),
+ (AnnKey tests/examples/TypeFamilies.hs:38:8-17 CN "Unqual",
+  (Ann (DP (0,1)) (ColDelta 8) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:38:19-23 CN "UserTyVar",
+  (Ann (DP (0,1)) (ColDelta 19) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:38:28 CN "HsTyVar",
+  (Ann (DP (0,0)) (ColDelta 28) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:38:28-33 CN "HsFunTy",
+  (Ann (DP (0,1)) (ColDelta 28) DP (0,1) [] [((G AnnRarrow),DP (0,1))])),
+ (AnnKey tests/examples/TypeFamilies.hs:38:33 CN "HsTyVar",
+  (Ann (DP (0,1)) (ColDelta 33) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:39:3-5 CN "Unqual",
+  (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:39:3-42 CN "TypeSig",
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnDcolon),DP (0,1))])),
+ (AnnKey tests/examples/TypeFamilies.hs:39:10 CN "HsTyVar",
+  (Ann (DP (0,0)) (ColDelta 10) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:39:10-42 CN "HsForAllTy",
+  (Ann (DP (0,1)) (ColDelta 10) DP (0,1) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:39:10-42 CN "HsFunTy",
+  (Ann (DP (0,0)) (ColDelta 10) DP (0,0) [] [((G AnnRarrow),DP (0,1))])),
+ (AnnKey tests/examples/TypeFamilies.hs:39:15-32 CN "HsParTy",
+  (Ann (DP (0,0)) (ColDelta 15) DP (0,0) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:39:15-42 CN "HsAppTy",
+  (Ann (DP (0,1)) (ColDelta 15) DP (0,1) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:39:16-25 CN "HsTyVar",
+  (Ann (DP (0,0)) (ColDelta 16) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:39:16-31 CN "HsAppTy",
+  (Ann (DP (0,0)) (ColDelta 16) DP (0,0) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:39:27-31 CN "HsTyVar",
+  (Ann (DP (0,1)) (ColDelta 27) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:39:34-42 CN "HsParTy",
+  (Ann (DP (0,1)) (ColDelta 34) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:39:35-39 CN "HsTyVar",
+  (Ann (DP (0,0)) (ColDelta 35) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:39:35-41 CN "HsAppTy",
+  (Ann (DP (0,0)) (ColDelta 35) DP (0,0) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:39:41 CN "HsTyVar",
+  (Ann (DP (0,1)) (ColDelta 41) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:40:3-5 CN "Unqual",
+  (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:40:3-40 CN "TypeSig",
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnDcolon),DP (0,1))])),
+ (AnnKey tests/examples/TypeFamilies.hs:40:10-14 CN "HsTyVar",
+  (Ann (DP (0,0)) (ColDelta 10) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:40:10-16 CN "HsAppTy",
+  (Ann (DP (0,0)) (ColDelta 10) DP (0,0) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:40:10-40 CN "HsForAllTy",
+  (Ann (DP (0,1)) (ColDelta 10) DP (0,1) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:40:10-40 CN "HsFunTy",
+  (Ann (DP (0,0)) (ColDelta 10) DP (0,0) [] [((G AnnRarrow),DP (0,1))])),
+ (AnnKey tests/examples/TypeFamilies.hs:40:16 CN "HsTyVar",
+  (Ann (DP (0,1)) (ColDelta 16) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:40:21-38 CN "HsParTy",
+  (Ann (DP (0,0)) (ColDelta 21) DP (0,0) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:40:21-40 CN "HsAppTy",
+  (Ann (DP (0,1)) (ColDelta 21) DP (0,1) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:40:22-31 CN "HsTyVar",
+  (Ann (DP (0,0)) (ColDelta 22) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:40:22-37 CN "HsAppTy",
+  (Ann (DP (0,0)) (ColDelta 22) DP (0,0) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:40:33-37 CN "HsTyVar",
+  (Ann (DP (0,1)) (ColDelta 33) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:40:40 CN "HsTyVar",
+  (Ann (DP (0,1)) (ColDelta 40) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:41:3-5 CN "Unqual",
+  (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:41:3-46 CN "TypeSig",
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnDcolon),DP (0,1))])),
+ (AnnKey tests/examples/TypeFamilies.hs:41:10-14 CN "HsTyVar",
+  (Ann (DP (0,0)) (ColDelta 10) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:41:10-16 CN "HsAppTy",
+  (Ann (DP (0,0)) (ColDelta 10) DP (0,0) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:41:10-46 CN "HsForAllTy",
+  (Ann (DP (0,1)) (ColDelta 10) DP (0,1) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:41:10-46 CN "HsFunTy",
+  (Ann (DP (0,0)) (ColDelta 10) DP (0,0) [] [((G AnnRarrow),DP (0,1))])),
+ (AnnKey tests/examples/TypeFamilies.hs:41:16 CN "HsTyVar",
+  (Ann (DP (0,1)) (ColDelta 16) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:41:21 CN "HsTyVar",
+  (Ann (DP (0,0)) (ColDelta 21) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:41:21-46 CN "HsFunTy",
+  (Ann (DP (0,1)) (ColDelta 21) DP (0,1) [] [((G AnnRarrow),DP (0,1))])),
+ (AnnKey tests/examples/TypeFamilies.hs:41:26-43 CN "HsParTy",
+  (Ann (DP (0,0)) (ColDelta 26) DP (0,0) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:41:26-46 CN "HsAppTy",
+  (Ann (DP (0,1)) (ColDelta 26) DP (0,1) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:41:27-36 CN "HsTyVar",
+  (Ann (DP (0,0)) (ColDelta 27) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:41:27-42 CN "HsAppTy",
+  (Ann (DP (0,0)) (ColDelta 27) DP (0,0) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:41:38-42 CN "HsTyVar",
+  (Ann (DP (0,1)) (ColDelta 38) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:41:45-46 CN "HsTupleTy",
+  (Ann (DP (0,1)) (ColDelta 45) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:(43,1)-(47,43) CN "InstD",
+  (Ann (DP (2,1)) (ColDelta 1) DP (2,1) [] [((G AnnInstance),DP (0,0)),((G AnnWhere),DP (0,1))])),
+ (AnnKey tests/examples/TypeFamilies.hs:43:10-14 CN "HsTyVar",
+  (Ann (DP (0,0)) (ColDelta 10) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:43:10-20 CN "HsAppTy",
+  (Ann (DP (0,0)) (ColDelta 10) DP (0,0) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:43:10-20 CN "HsForAllTy",
+  (Ann (DP (0,1)) (ColDelta 10) DP (0,1) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:43:16-20 CN "HsTyVar",
+  (Ann (DP (0,1)) (ColDelta 16) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:44:3-28 CN "TyFamInstDecl",
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnType),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:44:8-17 CN "Unqual",
+  (Ann (DP (0,0)) (ColDelta 8) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:44:8-28 CN "TyFamEqn",
+  (Ann (DP (0,1)) (ColDelta 8) DP (0,1) [] [((G AnnEqual),DP (0,1))])),
+ (AnnKey tests/examples/TypeFamilies.hs:44:19-23 CN "HsTyVar",
+  (Ann (DP (0,1)) (ColDelta 19) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:44:27-28 CN "HsTyVar",
+  (Ann (DP (0,1)) (ColDelta 27) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:45:3-5 CN "Unqual",
+  (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:45:3-16 CN "FunBind",
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:45:3-16 CN "Match",
+  (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnEqual),DP (0,1))])),
+ (AnnKey tests/examples/TypeFamilies.hs:45:7-16 CN "GRHS",
+  (Ann (DP (0,-1)) (ColDelta 7) DP (0,-1) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:45:9-16 CN "HsVar",
+  (Ann (DP (0,1)) (ColDelta 9) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:46:3-5 CN "Unqual",
+  (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:46:3-17 CN "FunBind",
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:46:3-17 CN "Match",
+  (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnEqual),DP (0,1))])),
+ (AnnKey tests/examples/TypeFamilies.hs:46:7-17 CN "GRHS",
+  (Ann (DP (0,-1)) (ColDelta 7) DP (0,-1) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:46:9-17 CN "HsVar",
+  (Ann (DP (0,1)) (ColDelta 9) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:47:3-5 CN "Unqual",
+  (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:47:3-43 CN "FunBind",
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:47:3-43 CN "Match",
+  (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnEqual),DP (0,1))])),
+ (AnnKey tests/examples/TypeFamilies.hs:47:7-11 CN "VarPat",
+  (Ann (DP (0,1)) (ColDelta 7) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:47:13 CN "VarPat",
+  (Ann (DP (0,1)) (ColDelta 13) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:47:15-43 CN "GRHS",
+  (Ann (DP (0,-1)) (ColDelta 15) DP (0,-1) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:47:17-27 CN "HsVar",
+  (Ann (DP (0,0)) (ColDelta 17) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:47:17-33 CN "HsApp",
+  (Ann (DP (0,0)) (ColDelta 17) DP (0,0) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:47:17-43 CN "HsApp",
+  (Ann (DP (0,1)) (ColDelta 17) DP (0,1) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:47:29-33 CN "HsVar",
+  (Ann (DP (0,1)) (ColDelta 29) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:47:35-43 CN "HsPar",
+  (Ann (DP (0,1)) (ColDelta 35) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:47:36-40 CN "HsVar",
+  (Ann (DP (0,0)) (ColDelta 36) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:47:36-42 CN "HsApp",
+  (Ann (DP (0,0)) (ColDelta 36) DP (0,0) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:47:42 CN "HsVar",
+  (Ann (DP (0,1)) (ColDelta 42) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:(49,1)-(53,42) CN "InstD",
+  (Ann (DP (2,1)) (ColDelta 1) DP (2,1) [] [((G AnnInstance),DP (0,0)),((G AnnWhere),DP (0,1))])),
+ (AnnKey tests/examples/TypeFamilies.hs:49:10-14 CN "HsTyVar",
+  (Ann (DP (0,0)) (ColDelta 10) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:49:10-19 CN "HsAppTy",
+  (Ann (DP (0,0)) (ColDelta 10) DP (0,0) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:49:10-19 CN "HsForAllTy",
+  (Ann (DP (0,1)) (ColDelta 10) DP (0,1) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:49:16-19 CN "HsTyVar",
+  (Ann (DP (0,1)) (ColDelta 16) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:50:3-28 CN "TyFamInstDecl",
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnType),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:50:8-17 CN "Unqual",
+  (Ann (DP (0,0)) (ColDelta 8) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:50:8-28 CN "TyFamEqn",
+  (Ann (DP (0,1)) (ColDelta 8) DP (0,1) [] [((G AnnEqual),DP (0,1))])),
+ (AnnKey tests/examples/TypeFamilies.hs:50:19-22 CN "HsTyVar",
+  (Ann (DP (0,1)) (ColDelta 19) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:50:26-28 CN "HsTyVar",
+  (Ann (DP (0,1)) (ColDelta 26) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:51:3-5 CN "Unqual",
+  (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:51:3-15 CN "FunBind",
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:51:3-15 CN "Match",
+  (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnEqual),DP (0,1))])),
+ (AnnKey tests/examples/TypeFamilies.hs:51:7-15 CN "GRHS",
+  (Ann (DP (0,-1)) (ColDelta 7) DP (0,-1) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:51:9-15 CN "HsVar",
+  (Ann (DP (0,1)) (ColDelta 9) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:52:3-5 CN "Unqual",
+  (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:52:3-16 CN "FunBind",
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:52:3-16 CN "Match",
+  (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnEqual),DP (0,1))])),
+ (AnnKey tests/examples/TypeFamilies.hs:52:7-16 CN "GRHS",
+  (Ann (DP (0,-1)) (ColDelta 7) DP (0,-1) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:52:9-16 CN "HsVar",
+  (Ann (DP (0,1)) (ColDelta 9) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:53:3-5 CN "Unqual",
+  (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:53:3-42 CN "FunBind",
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:53:3-42 CN "Match",
+  (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnEqual),DP (0,1))])),
+ (AnnKey tests/examples/TypeFamilies.hs:53:7-11 CN "VarPat",
+  (Ann (DP (0,1)) (ColDelta 7) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:53:13 CN "VarPat",
+  (Ann (DP (0,1)) (ColDelta 13) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:53:15-42 CN "GRHS",
+  (Ann (DP (0,-1)) (ColDelta 15) DP (0,-1) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:53:17-26 CN "HsVar",
+  (Ann (DP (0,0)) (ColDelta 17) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:53:17-32 CN "HsApp",
+  (Ann (DP (0,0)) (ColDelta 17) DP (0,0) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:53:17-42 CN "HsApp",
+  (Ann (DP (0,1)) (ColDelta 17) DP (0,1) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:53:28-32 CN "HsVar",
+  (Ann (DP (0,1)) (ColDelta 28) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:53:34-42 CN "HsPar",
+  (Ann (DP (0,1)) (ColDelta 34) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:53:35-39 CN "HsVar",
+  (Ann (DP (0,0)) (ColDelta 35) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:53:35-41 CN "HsApp",
+  (Ann (DP (0,0)) (ColDelta 35) DP (0,0) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:53:41 CN "HsVar",
+  (Ann (DP (0,1)) (ColDelta 41) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:55:1-13 CN "Unqual",
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:(55,1)-(56,66) CN "SigD",
+  (Ann (DP (2,1)) (ColDelta 1) DP (2,1) [] [((G AnnDcolon),DP (0,1))])),
+ (AnnKey tests/examples/TypeFamilies.hs:55:18-56 CN "(:)",
+  (Ann (DP (0,0)) (ColDelta 18) DP (0,0) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0)),((G AnnDarrow),DP (1,15))])),
+ (AnnKey tests/examples/TypeFamilies.hs:(55,18)-(56,66) CN "HsForAllTy",
+  (Ann (DP (0,1)) (ColDelta 18) DP (0,1) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:55:19-23 CN "HsTyVar",
+  (Ann (DP (0,0)) (ColDelta 19) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:55:19-29 CN "HsAppTy",
+  (Ann (DP (0,0)) (ColDelta 19) DP (0,0) [] [((G AnnComma),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:55:25-29 CN "HsTyVar",
+  (Ann (DP (0,1)) (ColDelta 25) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:55:32-36 CN "HsTyVar",
+  (Ann (DP (0,0)) (ColDelta 32) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:55:32-55 CN "HsAppTy",
+  (Ann (DP (0,1)) (ColDelta 32) DP (0,1) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:55:38-55 CN "HsParTy",
+  (Ann (DP (0,1)) (ColDelta 38) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:55:39-48 CN "HsTyVar",
+  (Ann (DP (0,0)) (ColDelta 39) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:55:39-54 CN "HsAppTy",
+  (Ann (DP (0,0)) (ColDelta 39) DP (0,0) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:55:50-54 CN "HsTyVar",
+  (Ann (DP (0,1)) (ColDelta 50) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:56:18-26 CN "HsListTy",
+  (Ann (DP (0,0)) (ColDelta 18) DP (0,0) [] [((G AnnOpenS),DP (0,0)),((G AnnCloseS),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:56:18-66 CN "HsFunTy",
+  (Ann (DP (0,1)) (ColDelta 18) DP (0,1) [] [((G AnnRarrow),DP (0,1))])),
+ (AnnKey tests/examples/TypeFamilies.hs:56:19-25 CN "HsTyVar",
+  (Ann (DP (0,0)) (ColDelta 19) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:56:31-48 CN "HsParTy",
+  (Ann (DP (0,0)) (ColDelta 31) DP (0,0) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:56:31-66 CN "HsAppTy",
+  (Ann (DP (0,1)) (ColDelta 31) DP (0,1) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:56:32-41 CN "HsTyVar",
+  (Ann (DP (0,0)) (ColDelta 32) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:56:32-47 CN "HsAppTy",
+  (Ann (DP (0,0)) (ColDelta 32) DP (0,0) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:56:43-47 CN "HsTyVar",
+  (Ann (DP (0,1)) (ColDelta 43) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:56:50-66 CN "HsParTy",
+  (Ann (DP (0,1)) (ColDelta 50) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:56:51-55 CN "HsTyVar",
+  (Ann (DP (0,0)) (ColDelta 51) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:56:51-65 CN "HsAppTy",
+  (Ann (DP (0,0)) (ColDelta 51) DP (0,0) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:56:57-65 CN "HsListTy",
+  (Ann (DP (0,1)) (ColDelta 57) DP (0,1) [] [((G AnnOpenS),DP (0,0)),((G AnnCloseS),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:56:58-64 CN "HsTyVar",
+  (Ann (DP (0,0)) (ColDelta 58) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:57:1-13 CN "Unqual",
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:(57,1)-(62,14) CN "Match",
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnEqual),DP (0,1))])),
+ (AnnKey tests/examples/TypeFamilies.hs:(57,1)-(62,14) CN "ValD",
+  (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:57:15-16 CN "VarPat",
+  (Ann (DP (0,1)) (ColDelta 15) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:(57,18)-(62,14) CN "GRHS",
+  (Ann (DP (0,-1)) (ColDelta 18) DP (0,-1) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:(57,20)-(62,14) CN "HsDo",
+  (Ann (DP (0,1)) (ColDelta 20) DP (0,1) [] [((G AnnDo),DP (0,0)),((AnnList tests/examples/TypeFamilies.hs:(58,3)-(62,14)),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:58:3-7 CN "VarPat",
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:58:3-17 CN "BindStmt",
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnLarrow),DP (0,1))])),
+ (AnnKey tests/examples/TypeFamilies.hs:(58,3)-(62,14) CN "(:)",
+  (Ann (DP (1,0)) (ColDelta 3) DP (1,0) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:58:12-14 CN "HsVar",
+  (Ann (DP (0,0)) (ColDelta 9) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:58:12-17 CN "HsApp",
+  (Ann (DP (0,1)) (ColDelta 9) DP (0,1) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:58:16-17 CN "HsVar",
+  (Ann (DP (0,1)) (ColDelta 13) DP (0,1) [] [((G AnnOpenS),DP (0,0)),((G AnnCloseS),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:59:3-7 CN "HsVar",
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:59:3-10 CN "HsApp",
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:(59,3)-(61,23) CN "BodyStmt",
+  (Ann (DP (1,0)) (ColDelta 0) DP (1,0) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:(59,3)-(61,23) CN "OpApp",
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:59:9-10 CN "HsVar",
+  (Ann (DP (0,1)) (ColDelta 6) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:59:12 CN "HsVar",
+  (Ann (DP (0,1)) (ColDelta 9) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:(59,14)-(61,23) CN "(:)",
+  (Ann (DP (0,-1)) (ColDelta 11) DP (0,-1) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:(59,14)-(61,23) CN "HsLam",
+  (Ann (DP (0,1)) (ColDelta 11) DP (0,1) [] [((G AnnLam),DP (0,0)),((AnnList tests/examples/TypeFamilies.hs:(59,14)-(61,23)),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:(59,14)-(61,23) CN "Match",
+  (Ann (DP (0,-1)) (ColDelta 0) DP (0,-1) [] [((G AnnRarrow),DP (0,1))])),
+ (AnnKey tests/examples/TypeFamilies.hs:59:15 CN "VarPat",
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:(59,20)-(61,23) CN "GRHS",
+  (Ann (DP (0,1)) (ColDelta 6) DP (0,1) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:(59,20)-(61,23) CN "HsDo",
+  (Ann (DP (0,0)) (ColDelta 6) DP (0,0) [] [((G AnnDo),DP (0,0)),((AnnList tests/examples/TypeFamilies.hs:(60,5)-(61,23)),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:60:5-7 CN "VarPat",
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:60:5-20 CN "BindStmt",
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnLarrow),DP (0,1))])),
+ (AnnKey tests/examples/TypeFamilies.hs:(60,5)-(61,23) CN "(:)",
+  (Ann (DP (1,0)) (ColDelta -9) DP (1,0) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:60:12-14 CN "HsVar",
+  (Ann (DP (0,0)) (ColDelta 7) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:60:12-20 CN "HsApp",
+  (Ann (DP (0,1)) (ColDelta 7) DP (0,1) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:60:16-20 CN "HsVar",
+  (Ann (DP (0,1)) (ColDelta 11) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:61:5-7 CN "HsVar",
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:61:5-13 CN "HsApp",
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:61:5-23 CN "BodyStmt",
+  (Ann (DP (1,0)) (ColDelta 0) DP (1,0) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:61:5-23 CN "HsApp",
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:61:9-13 CN "HsVar",
+  (Ann (DP (0,1)) (ColDelta 4) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:61:15-23 CN "HsPar",
+  (Ann (DP (0,1)) (ColDelta 10) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:61:16 CN "HsVar",
+  (Ann (DP (0,0)) (ColDelta 11) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:61:16-22 CN "OpApp",
+  (Ann (DP (0,0)) (ColDelta 11) DP (0,0) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:61:18 CN "HsVar",
+  (Ann (DP (0,1)) (ColDelta 13) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:61:20-22 CN "HsVar",
+  (Ann (DP (0,1)) (ColDelta 15) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:62:3-8 CN "HsVar",
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:62:3-14 CN "BodyStmt",
+  (Ann (DP (1,0)) (ColDelta 0) DP (1,0) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:62:3-14 CN "HsApp",
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:62:10-14 CN "HsVar",
+  (Ann (DP (0,1)) (ColDelta 7) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:(64,1)-(66,35) CN "TyClD",
+  (Ann (DP (2,1)) (ColDelta 1) DP (2,1) [] [((G AnnType),DP (0,0)),((G AnnFamily),DP (0,1)),((G AnnDcolon),DP (0,1)),((G AnnWhere),DP (0,1))])),
+ (AnnKey tests/examples/TypeFamilies.hs:64:13-16 CN "Unqual",
+  (Ann (DP (0,1)) (ColDelta 13) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnVal),DP (0,0)),((G AnnCloseP),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:64:18-27 CN "KindedTyVar",
+  (Ann (DP (0,1)) (ColDelta 18) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnDcolon),DP (0,1)),((G AnnCloseP),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:64:19 CN "Unqual",
+  (Ann (DP (0,0)) (ColDelta 19) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:64:24-26 CN "HsListTy",
+  (Ann (DP (0,1)) (ColDelta 24) DP (0,1) [] [((G AnnOpenS),DP (0,0)),((G AnnCloseS),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:64:25 CN "HsTyVar",
+  (Ann (DP (0,0)) (ColDelta 25) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:64:29-38 CN "KindedTyVar",
+  (Ann (DP (0,1)) (ColDelta 29) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnDcolon),DP (0,1)),((G AnnCloseP),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:64:30 CN "Unqual",
+  (Ann (DP (0,0)) (ColDelta 30) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:64:35-37 CN "HsListTy",
+  (Ann (DP (0,1)) (ColDelta 35) DP (0,1) [] [((G AnnOpenS),DP (0,0)),((G AnnCloseS),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:64:36 CN "HsTyVar",
+  (Ann (DP (0,0)) (ColDelta 36) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:64:43-45 CN "HsListTy",
+  (Ann (DP (0,1)) (ColDelta 43) DP (0,1) [] [((G AnnOpenS),DP (0,0)),((G AnnCloseS),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:64:44 CN "HsTyVar",
+  (Ann (DP (0,0)) (ColDelta 44) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:65:5-7 CN "HsExplicitListTy",
+  (Ann (DP (0,-12)) (ColDelta 5) DP (0,-12) [] [((G AnnSimpleQuote),DP (0,-12)),((G AnnOpenS),DP (0,0)),((G AnnCloseS),DP (0,0)),((G AnnSimpleQuote),DP (0,-12)),((G AnnOpenS),DP (0,0)),((G AnnCloseS),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:65:5-22 CN "TyFamEqn",
+  (Ann (DP (1,5)) (ColDelta 5) DP (1,5) [] [((G AnnEqual),DP (0,1)),((G AnnEqual),DP (0,1))])),
+ (AnnKey tests/examples/TypeFamilies.hs:65:15-16 CN "Unqual",
+  (Ann (DP (0,10)) (ColDelta 15) DP (0,10) [] [((G AnnVal),DP (0,0)),((G AnnVal),DP (-1,15))])),
+ (AnnKey tests/examples/TypeFamilies.hs:65:18 CN "HsTyVar",
+  (Ann (DP (0,10)) (ColDelta 18) DP (0,10) [] [((G AnnVal),DP (0,0)),((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:65:22 CN "HsTyVar",
+  (Ann (DP (0,1)) (ColDelta 22) DP (0,1) [] [((G AnnVal),DP (0,0)),((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:66:5-13 CN "HsParTy",
+  (Ann (DP (0,-12)) (ColDelta 5) DP (0,-12) [] [((G AnnOpenP),DP (0,-12)),((G AnnCloseP),DP (0,0)),((G AnnOpenP),DP (0,-12)),((G AnnCloseP),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:66:5-35 CN "TyFamEqn",
+  (Ann (DP (1,5)) (ColDelta 5) DP (1,5) [] [((G AnnEqual),DP (0,1)),((G AnnEqual),DP (0,1))])),
+ (AnnKey tests/examples/TypeFamilies.hs:66:6 CN "HsTyVar",
+  (Ann (DP (0,0)) (ColDelta 6) DP (0,0) [] [((G AnnVal),DP (0,0)),((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:66:6-12 CN "HsOpTy",
+  (Ann (DP (0,0)) (ColDelta 6) DP (0,0) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:66:9 CN "Exact",
+  (Ann (DP (0,2)) (ColDelta 9) DP (0,2) [] [((G AnnVal),DP (0,0)),((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:66:11-12 CN "HsTyVar",
+  (Ann (DP (0,1)) (ColDelta 11) DP (0,1) [] [((G AnnVal),DP (0,0)),((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:66:15-16 CN "Unqual",
+  (Ann (DP (0,10)) (ColDelta 15) DP (0,10) [] [((G AnnVal),DP (0,0)),((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:66:18 CN "HsTyVar",
+  (Ann (DP (0,4)) (ColDelta 18) DP (0,4) [] [((G AnnVal),DP (0,0)),((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:66:22 CN "HsTyVar",
+  (Ann (DP (0,0)) (ColDelta 22) DP (0,0) [] [((G AnnVal),DP (0,0)),((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:66:22-35 CN "HsOpTy",
+  (Ann (DP (0,1)) (ColDelta 22) DP (0,1) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:66:25 CN "Exact",
+  (Ann (DP (0,2)) (ColDelta 25) DP (0,2) [] [((G AnnVal),DP (0,0)),((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:66:27-35 CN "HsParTy",
+  (Ann (DP (0,1)) (ColDelta 27) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0)),((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:66:28-29 CN "HsTyVar",
+  (Ann (DP (0,0)) (ColDelta 28) DP (0,0) [] [((G AnnVal),DP (0,0)),((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:66:28-34 CN "HsOpTy",
+  (Ann (DP (0,0)) (ColDelta 28) DP (0,0) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:66:31-32 CN "Unqual",
+  (Ann (DP (0,1)) (ColDelta 31) DP (0,1) [] [((G AnnVal),DP (0,0)),((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:66:34 CN "HsTyVar",
+  (Ann (DP (0,1)) (ColDelta 34) DP (0,1) [] [((G AnnVal),DP (0,0)),((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:68:1-52 CN "TyClD",
+  (Ann (DP (2,1)) (ColDelta 1) DP (2,1) [] [((G AnnType),DP (0,0)),((G AnnFamily),DP (0,1)),((G AnnDcolon),DP (0,1))])),
+ (AnnKey tests/examples/TypeFamilies.hs:68:13-25 CN "KindedTyVar",
+  (Ann (DP (0,-16)) (ColDelta 13) DP (0,-16) [] [((G AnnOpenP),DP (0,-16)),((G AnnDcolon),DP (0,1)),((G AnnCloseP),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:68:14 CN "Unqual",
+  (Ann (DP (0,0)) (ColDelta 14) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:68:19 CN "HsTyVar",
+  (Ann (DP (0,0)) (ColDelta 19) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:68:19-24 CN "HsFunTy",
+  (Ann (DP (0,1)) (ColDelta 19) DP (0,1) [] [((G AnnRarrow),DP (0,1))])),
+ (AnnKey tests/examples/TypeFamilies.hs:68:24 CN "HsTyVar",
+  (Ann (DP (0,1)) (ColDelta 24) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:68:27-28 CN "Unqual",
+  (Ann (DP (0,15)) (ColDelta 27) DP (0,15) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:68:30-42 CN "KindedTyVar",
+  (Ann (DP (0,4)) (ColDelta 30) DP (0,4) [] [((G AnnOpenP),DP (0,0)),((G AnnDcolon),DP (0,1)),((G AnnCloseP),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:68:31 CN "Unqual",
+  (Ann (DP (0,0)) (ColDelta 31) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:68:36 CN "HsTyVar",
+  (Ann (DP (0,0)) (ColDelta 36) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:68:36-41 CN "HsFunTy",
+  (Ann (DP (0,1)) (ColDelta 36) DP (0,1) [] [((G AnnRarrow),DP (0,1))])),
+ (AnnKey tests/examples/TypeFamilies.hs:68:41 CN "HsTyVar",
+  (Ann (DP (0,1)) (ColDelta 41) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:68:47 CN "HsTyVar",
+  (Ann (DP (0,0)) (ColDelta 47) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:68:47-52 CN "HsFunTy",
+  (Ann (DP (0,1)) (ColDelta 47) DP (0,1) [] [((G AnnRarrow),DP (0,1))])),
+ (AnnKey tests/examples/TypeFamilies.hs:68:52 CN "HsTyVar",
+  (Ann (DP (0,1)) (ColDelta 52) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:70:1-43 CN "InstD",
+  (Ann (DP (2,1)) (ColDelta 1) DP (2,1) [] [((G AnnType),DP (0,0)),((G AnnInstance),DP (0,1))])),
+ (AnnKey tests/examples/TypeFamilies.hs:70:15 CN "HsTyVar",
+  (Ann (DP (0,-4)) (ColDelta 15) DP (0,-4) [] [((G AnnVal),DP (0,-4))])),
+ (AnnKey tests/examples/TypeFamilies.hs:70:15-43 CN "TyFamEqn",
+  (Ann (DP (0,1)) (ColDelta 15) DP (0,1) [] [((G AnnEqual),DP (0,1))])),
+ (AnnKey tests/examples/TypeFamilies.hs:70:17-18 CN "Unqual",
+  (Ann (DP (0,2)) (ColDelta 17) DP (0,2) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:70:20-24 CN "HsTyVar",
+  (Ann (DP (0,0)) (ColDelta 20) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:70:20-26 CN "HsAppTy",
+  (Ann (DP (0,4)) (ColDelta 20) DP (0,4) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:70:26 CN "HsTyVar",
+  (Ann (DP (0,1)) (ColDelta 26) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:70:30-34 CN "HsTyVar",
+  (Ann (DP (0,0)) (ColDelta 30) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:70:30-43 CN "HsAppTy",
+  (Ann (DP (0,1)) (ColDelta 30) DP (0,1) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:70:36-43 CN "HsParTy",
+  (Ann (DP (0,1)) (ColDelta 36) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:70:37 CN "HsTyVar",
+  (Ann (DP (0,0)) (ColDelta 37) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:70:37-42 CN "HsOpTy",
+  (Ann (DP (0,0)) (ColDelta 37) DP (0,0) [] [])),
+ (AnnKey tests/examples/TypeFamilies.hs:70:39-40 CN "Unqual",
+  (Ann (DP (0,1)) (ColDelta 39) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey tests/examples/TypeFamilies.hs:70:42 CN "HsTyVar",
+  (Ann (DP (0,1)) (ColDelta 42) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey <no location info> CN "EmptyLocalBinds",
+  (Ann (DP (-17,0)) (ColDelta 0) DP (-17,0) [] [])),
+ (AnnKey <no location info> CN "[]",
+  (Ann (DP (-11,0)) (ColDelta 0) DP (-11,0) [] []))]
+==============
+([((tests/examples/TypeFamilies.hs:6:1-29, AnnImport),
+   [tests/examples/TypeFamilies.hs:6:1-6]),
+  ((tests/examples/TypeFamilies.hs:6:1-29, AnnSemi),
+   [tests/examples/TypeFamilies.hs:7:1]),
+  ((tests/examples/TypeFamilies.hs:7:1-30, AnnImport),
+   [tests/examples/TypeFamilies.hs:7:1-6]),
+  ((tests/examples/TypeFamilies.hs:7:1-30, AnnSemi),
+   [tests/examples/TypeFamilies.hs:8:1]),
+  ((tests/examples/TypeFamilies.hs:8:1-28, AnnImport),
+   [tests/examples/TypeFamilies.hs:8:1-6]),
+  ((tests/examples/TypeFamilies.hs:8:1-28, AnnSemi),
+   [tests/examples/TypeFamilies.hs:9:1]),
+  ((tests/examples/TypeFamilies.hs:8:22-28, AnnCloseP),
+   [tests/examples/TypeFamilies.hs:8:28]),
+  ((tests/examples/TypeFamilies.hs:8:22-28, AnnOpenP),
+   [tests/examples/TypeFamilies.hs:8:22]),
+  ((tests/examples/TypeFamilies.hs:9:1-17, AnnImport),
+   [tests/examples/TypeFamilies.hs:9:1-6]),
+  ((tests/examples/TypeFamilies.hs:9:1-17, AnnSemi),
+   [tests/examples/TypeFamilies.hs:11:1]),
+  ((tests/examples/TypeFamilies.hs:(11,1)-(14,32), AnnClass),
+   [tests/examples/TypeFamilies.hs:11:1-5]),
+  ((tests/examples/TypeFamilies.hs:(11,1)-(14,32), AnnSemi),
+   [tests/examples/TypeFamilies.hs:16:1]),
+  ((tests/examples/TypeFamilies.hs:(11,1)-(14,32), AnnWhere),
+   [tests/examples/TypeFamilies.hs:11:21-25]),
+  ((tests/examples/TypeFamilies.hs:12:3-28, AnnDcolon),
+   [tests/examples/TypeFamilies.hs:12:9-10]),
+  ((tests/examples/TypeFamilies.hs:12:3-28, AnnSemi),
+   [tests/examples/TypeFamilies.hs:13:3]),
+  ((tests/examples/TypeFamilies.hs:12:12-28, AnnRarrow),
+   [tests/examples/TypeFamilies.hs:12:14-15]),
+  ((tests/examples/TypeFamilies.hs:12:20-28, AnnCloseP),
+   [tests/examples/TypeFamilies.hs:12:28]),
+  ((tests/examples/TypeFamilies.hs:12:20-28, AnnOpenP),
+   [tests/examples/TypeFamilies.hs:12:20]),
+  ((tests/examples/TypeFamilies.hs:13:3-26, AnnDcolon),
+   [tests/examples/TypeFamilies.hs:13:9-10]),
+  ((tests/examples/TypeFamilies.hs:13:3-26, AnnSemi),
+   [tests/examples/TypeFamilies.hs:14:3]),
+  ((tests/examples/TypeFamilies.hs:13:12-26, AnnRarrow),
+   [tests/examples/TypeFamilies.hs:13:20-21]),
+  ((tests/examples/TypeFamilies.hs:14:3-32, AnnDcolon),
+   [tests/examples/TypeFamilies.hs:14:9-10]),
+  ((tests/examples/TypeFamilies.hs:14:12-32, AnnRarrow),
+   [tests/examples/TypeFamilies.hs:14:20-21]),
+  ((tests/examples/TypeFamilies.hs:14:23-32, AnnRarrow),
+   [tests/examples/TypeFamilies.hs:14:25-26]),
+  ((tests/examples/TypeFamilies.hs:14:31-32, AnnCloseP),
+   [tests/examples/TypeFamilies.hs:14:32]),
+  ((tests/examples/TypeFamilies.hs:14:31-32, AnnOpenP),
+   [tests/examples/TypeFamilies.hs:14:31]),
+  ((tests/examples/TypeFamilies.hs:(16,1)-(19,52), AnnInstance),
+   [tests/examples/TypeFamilies.hs:16:1-8]),
+  ((tests/examples/TypeFamilies.hs:(16,1)-(19,52), AnnSemi),
+   [tests/examples/TypeFamilies.hs:21:1]),
+  ((tests/examples/TypeFamilies.hs:(16,1)-(19,52), AnnWhere),
+   [tests/examples/TypeFamilies.hs:16:23-27]),
+  ((tests/examples/TypeFamilies.hs:17:3-17, AnnEqual),
+   [tests/examples/TypeFamilies.hs:17:9]),
+  ((tests/examples/TypeFamilies.hs:17:3-17, AnnFunId),
+   [tests/examples/TypeFamilies.hs:17:3-7]),
+  ((tests/examples/TypeFamilies.hs:17:3-17, AnnSemi),
+   [tests/examples/TypeFamilies.hs:18:3]),
+  ((tests/examples/TypeFamilies.hs:18:3-18, AnnEqual),
+   [tests/examples/TypeFamilies.hs:18:9]),
+  ((tests/examples/TypeFamilies.hs:18:3-18, AnnFunId),
+   [tests/examples/TypeFamilies.hs:18:3-7]),
+  ((tests/examples/TypeFamilies.hs:18:3-18, AnnSemi),
+   [tests/examples/TypeFamilies.hs:19:3]),
+  ((tests/examples/TypeFamilies.hs:19:3-52, AnnEqual),
+   [tests/examples/TypeFamilies.hs:19:16]),
+  ((tests/examples/TypeFamilies.hs:19:3-52, AnnFunId),
+   [tests/examples/TypeFamilies.hs:19:3-7]),
+  ((tests/examples/TypeFamilies.hs:19:35-52, AnnCloseP),
+   [tests/examples/TypeFamilies.hs:19:52]),
+  ((tests/examples/TypeFamilies.hs:19:35-52, AnnOpenP),
+   [tests/examples/TypeFamilies.hs:19:35]),
+  ((tests/examples/TypeFamilies.hs:19:36-51, AnnVal),
+   [tests/examples/TypeFamilies.hs:19:43]),
+  ((tests/examples/TypeFamilies.hs:(21,1)-(24,45), AnnInstance),
+   [tests/examples/TypeFamilies.hs:21:1-8]),
+  ((tests/examples/TypeFamilies.hs:(21,1)-(24,45), AnnSemi),
+   [tests/examples/TypeFamilies.hs:26:1]),
+  ((tests/examples/TypeFamilies.hs:(21,1)-(24,45), AnnWhere),
+   [tests/examples/TypeFamilies.hs:21:24-28]),
+  ((tests/examples/TypeFamilies.hs:22:3-18, AnnEqual),
+   [tests/examples/TypeFamilies.hs:22:9]),
+  ((tests/examples/TypeFamilies.hs:22:3-18, AnnFunId),
+   [tests/examples/TypeFamilies.hs:22:3-7]),
+  ((tests/examples/TypeFamilies.hs:22:3-18, AnnSemi),
+   [tests/examples/TypeFamilies.hs:23:3]),
+  ((tests/examples/TypeFamilies.hs:23:3-19, AnnEqual),
+   [tests/examples/TypeFamilies.hs:23:9]),
+  ((tests/examples/TypeFamilies.hs:23:3-19, AnnFunId),
+   [tests/examples/TypeFamilies.hs:23:3-7]),
+  ((tests/examples/TypeFamilies.hs:23:3-19, AnnSemi),
+   [tests/examples/TypeFamilies.hs:24:3]),
+  ((tests/examples/TypeFamilies.hs:24:3-45, AnnEqual),
+   [tests/examples/TypeFamilies.hs:24:17]),
+  ((tests/examples/TypeFamilies.hs:24:3-45, AnnFunId),
+   [tests/examples/TypeFamilies.hs:24:3-7]),
+  ((tests/examples/TypeFamilies.hs:24:37-45, AnnCloseP),
+   [tests/examples/TypeFamilies.hs:24:45]),
+  ((tests/examples/TypeFamilies.hs:24:37-45, AnnOpenP),
+   [tests/examples/TypeFamilies.hs:24:37]),
+  ((tests/examples/TypeFamilies.hs:26:1-21, AnnEqual),
+   [tests/examples/TypeFamilies.hs:26:14]),
+  ((tests/examples/TypeFamilies.hs:26:1-21, AnnSemi),
+   [tests/examples/TypeFamilies.hs:27:1]),
+  ((tests/examples/TypeFamilies.hs:26:1-21, AnnType),
+   [tests/examples/TypeFamilies.hs:26:1-4]),
+  ((tests/examples/TypeFamilies.hs:27:1-69, AnnDcolon),
+   [tests/examples/TypeFamilies.hs:27:17-18]),
+  ((tests/examples/TypeFamilies.hs:27:1-69, AnnSemi),
+   [tests/examples/TypeFamilies.hs:28:1]),
+  ((tests/examples/TypeFamilies.hs:27:20-32, AnnDarrow),
+   [tests/examples/TypeFamilies.hs:27:34-35]),
+  ((tests/examples/TypeFamilies.hs:27:37-45, AnnCloseS),
+   [tests/examples/TypeFamilies.hs:27:45]),
+  ((tests/examples/TypeFamilies.hs:27:37-45, AnnOpenS),
+   [tests/examples/TypeFamilies.hs:27:37]),
+  ((tests/examples/TypeFamilies.hs:27:37-69, AnnRarrow),
+   [tests/examples/TypeFamilies.hs:27:47-48]),
+  ((tests/examples/TypeFamilies.hs:27:53-69, AnnCloseP),
+   [tests/examples/TypeFamilies.hs:27:69]),
+  ((tests/examples/TypeFamilies.hs:27:53-69, AnnOpenP),
+   [tests/examples/TypeFamilies.hs:27:53]),
+  ((tests/examples/TypeFamilies.hs:27:60-68, AnnCloseS),
+   [tests/examples/TypeFamilies.hs:27:68]),
+  ((tests/examples/TypeFamilies.hs:27:60-68, AnnOpenS),
+   [tests/examples/TypeFamilies.hs:27:60]),
+  ((tests/examples/TypeFamilies.hs:(28,1)-(33,14), AnnEqual),
+   [tests/examples/TypeFamilies.hs:28:20]),
+  ((tests/examples/TypeFamilies.hs:(28,1)-(33,14), AnnFunId),
+   [tests/examples/TypeFamilies.hs:28:1-15]),
+  ((tests/examples/TypeFamilies.hs:(28,1)-(33,14), AnnSemi),
+   [tests/examples/TypeFamilies.hs:37:1]),
+  ((tests/examples/TypeFamilies.hs:(28,22)-(33,14), AnnDo),
+   [tests/examples/TypeFamilies.hs:28:22-23]),
+  ((tests/examples/TypeFamilies.hs:29:3-19, AnnLarrow),
+   [tests/examples/TypeFamilies.hs:29:9-10]),
+  ((tests/examples/TypeFamilies.hs:29:3-19, AnnSemi),
+   [tests/examples/TypeFamilies.hs:30:3]),
+  ((tests/examples/TypeFamilies.hs:29:18-19, AnnCloseS),
+   [tests/examples/TypeFamilies.hs:29:19]),
+  ((tests/examples/TypeFamilies.hs:29:18-19, AnnOpenS),
+   [tests/examples/TypeFamilies.hs:29:18]),
+  ((tests/examples/TypeFamilies.hs:(30,3)-(32,25), AnnSemi),
+   [tests/examples/TypeFamilies.hs:33:3]),
+  ((tests/examples/TypeFamilies.hs:(30,3)-(32,25), AnnVal),
+   [tests/examples/TypeFamilies.hs:30:12]),
+  ((tests/examples/TypeFamilies.hs:(30,14)-(32,25), AnnLam),
+   [tests/examples/TypeFamilies.hs:30:14]),
+  ((tests/examples/TypeFamilies.hs:(30,14)-(32,25), AnnRarrow),
+   [tests/examples/TypeFamilies.hs:30:17-18]),
+  ((tests/examples/TypeFamilies.hs:(30,20)-(32,25), AnnDo),
+   [tests/examples/TypeFamilies.hs:30:20-21]),
+  ((tests/examples/TypeFamilies.hs:31:5-22, AnnLarrow),
+   [tests/examples/TypeFamilies.hs:31:9-10]),
+  ((tests/examples/TypeFamilies.hs:31:5-22, AnnSemi),
+   [tests/examples/TypeFamilies.hs:32:5]),
+  ((tests/examples/TypeFamilies.hs:32:17-25, AnnCloseP),
+   [tests/examples/TypeFamilies.hs:32:25]),
+  ((tests/examples/TypeFamilies.hs:32:17-25, AnnOpenP),
+   [tests/examples/TypeFamilies.hs:32:17]),
+  ((tests/examples/TypeFamilies.hs:32:18-24, AnnVal),
+   [tests/examples/TypeFamilies.hs:32:20]),
+  ((tests/examples/TypeFamilies.hs:(37,1)-(41,46), AnnClass),
+   [tests/examples/TypeFamilies.hs:37:1-5]),
+  ((tests/examples/TypeFamilies.hs:(37,1)-(41,46), AnnSemi),
+   [tests/examples/TypeFamilies.hs:43:1]),
+  ((tests/examples/TypeFamilies.hs:(37,1)-(41,46), AnnWhere),
+   [tests/examples/TypeFamilies.hs:37:19-23]),
+  ((tests/examples/TypeFamilies.hs:38:3-33, AnnDcolon),
+   [tests/examples/TypeFamilies.hs:38:25-26]),
+  ((tests/examples/TypeFamilies.hs:38:3-33, AnnSemi),
+   [tests/examples/TypeFamilies.hs:39:3]),
+  ((tests/examples/TypeFamilies.hs:38:3-33, AnnType),
+   [tests/examples/TypeFamilies.hs:38:3-6]),
+  ((tests/examples/TypeFamilies.hs:38:28-33, AnnRarrow),
+   [tests/examples/TypeFamilies.hs:38:30-31]),
+  ((tests/examples/TypeFamilies.hs:39:3-42, AnnDcolon),
+   [tests/examples/TypeFamilies.hs:39:7-8]),
+  ((tests/examples/TypeFamilies.hs:39:3-42, AnnSemi),
+   [tests/examples/TypeFamilies.hs:40:3]),
+  ((tests/examples/TypeFamilies.hs:39:10-42, AnnRarrow),
+   [tests/examples/TypeFamilies.hs:39:12-13]),
+  ((tests/examples/TypeFamilies.hs:39:15-32, AnnCloseP),
+   [tests/examples/TypeFamilies.hs:39:32]),
+  ((tests/examples/TypeFamilies.hs:39:15-32, AnnOpenP),
+   [tests/examples/TypeFamilies.hs:39:15]),
+  ((tests/examples/TypeFamilies.hs:39:34-42, AnnCloseP),
+   [tests/examples/TypeFamilies.hs:39:42]),
+  ((tests/examples/TypeFamilies.hs:39:34-42, AnnOpenP),
+   [tests/examples/TypeFamilies.hs:39:34]),
+  ((tests/examples/TypeFamilies.hs:40:3-40, AnnDcolon),
+   [tests/examples/TypeFamilies.hs:40:7-8]),
+  ((tests/examples/TypeFamilies.hs:40:3-40, AnnSemi),
+   [tests/examples/TypeFamilies.hs:41:3]),
+  ((tests/examples/TypeFamilies.hs:40:10-40, AnnRarrow),
+   [tests/examples/TypeFamilies.hs:40:18-19]),
+  ((tests/examples/TypeFamilies.hs:40:21-38, AnnCloseP),
+   [tests/examples/TypeFamilies.hs:40:38]),
+  ((tests/examples/TypeFamilies.hs:40:21-38, AnnOpenP),
+   [tests/examples/TypeFamilies.hs:40:21]),
+  ((tests/examples/TypeFamilies.hs:41:3-46, AnnDcolon),
+   [tests/examples/TypeFamilies.hs:41:7-8]),
+  ((tests/examples/TypeFamilies.hs:41:10-46, AnnRarrow),
+   [tests/examples/TypeFamilies.hs:41:18-19]),
+  ((tests/examples/TypeFamilies.hs:41:21-46, AnnRarrow),
+   [tests/examples/TypeFamilies.hs:41:23-24]),
+  ((tests/examples/TypeFamilies.hs:41:26-43, AnnCloseP),
+   [tests/examples/TypeFamilies.hs:41:43]),
+  ((tests/examples/TypeFamilies.hs:41:26-43, AnnOpenP),
+   [tests/examples/TypeFamilies.hs:41:26]),
+  ((tests/examples/TypeFamilies.hs:41:45-46, AnnCloseP),
+   [tests/examples/TypeFamilies.hs:41:46]),
+  ((tests/examples/TypeFamilies.hs:41:45-46, AnnOpenP),
+   [tests/examples/TypeFamilies.hs:41:45]),
+  ((tests/examples/TypeFamilies.hs:(43,1)-(47,43), AnnInstance),
+   [tests/examples/TypeFamilies.hs:43:1-8]),
+  ((tests/examples/TypeFamilies.hs:(43,1)-(47,43), AnnSemi),
+   [tests/examples/TypeFamilies.hs:49:1]),
+  ((tests/examples/TypeFamilies.hs:(43,1)-(47,43), AnnWhere),
+   [tests/examples/TypeFamilies.hs:43:22-26]),
+  ((tests/examples/TypeFamilies.hs:44:3-28, AnnSemi),
+   [tests/examples/TypeFamilies.hs:45:3]),
+  ((tests/examples/TypeFamilies.hs:44:3-28, AnnType),
+   [tests/examples/TypeFamilies.hs:44:3-6]),
+  ((tests/examples/TypeFamilies.hs:44:8-28, AnnEqual),
+   [tests/examples/TypeFamilies.hs:44:25]),
+  ((tests/examples/TypeFamilies.hs:45:3-16, AnnEqual),
+   [tests/examples/TypeFamilies.hs:45:7]),
+  ((tests/examples/TypeFamilies.hs:45:3-16, AnnFunId),
+   [tests/examples/TypeFamilies.hs:45:3-5]),
+  ((tests/examples/TypeFamilies.hs:45:3-16, AnnSemi),
+   [tests/examples/TypeFamilies.hs:46:3]),
+  ((tests/examples/TypeFamilies.hs:46:3-17, AnnEqual),
+   [tests/examples/TypeFamilies.hs:46:7]),
+  ((tests/examples/TypeFamilies.hs:46:3-17, AnnFunId),
+   [tests/examples/TypeFamilies.hs:46:3-5]),
+  ((tests/examples/TypeFamilies.hs:46:3-17, AnnSemi),
+   [tests/examples/TypeFamilies.hs:47:3]),
+  ((tests/examples/TypeFamilies.hs:47:3-43, AnnEqual),
+   [tests/examples/TypeFamilies.hs:47:15]),
+  ((tests/examples/TypeFamilies.hs:47:3-43, AnnFunId),
+   [tests/examples/TypeFamilies.hs:47:3-5]),
+  ((tests/examples/TypeFamilies.hs:47:35-43, AnnCloseP),
+   [tests/examples/TypeFamilies.hs:47:43]),
+  ((tests/examples/TypeFamilies.hs:47:35-43, AnnOpenP),
+   [tests/examples/TypeFamilies.hs:47:35]),
+  ((tests/examples/TypeFamilies.hs:(49,1)-(53,42), AnnInstance),
+   [tests/examples/TypeFamilies.hs:49:1-8]),
+  ((tests/examples/TypeFamilies.hs:(49,1)-(53,42), AnnSemi),
+   [tests/examples/TypeFamilies.hs:55:1]),
+  ((tests/examples/TypeFamilies.hs:(49,1)-(53,42), AnnWhere),
+   [tests/examples/TypeFamilies.hs:49:21-25]),
+  ((tests/examples/TypeFamilies.hs:50:3-28, AnnSemi),
+   [tests/examples/TypeFamilies.hs:51:3]),
+  ((tests/examples/TypeFamilies.hs:50:3-28, AnnType),
+   [tests/examples/TypeFamilies.hs:50:3-6]),
+  ((tests/examples/TypeFamilies.hs:50:8-28, AnnEqual),
+   [tests/examples/TypeFamilies.hs:50:24]),
+  ((tests/examples/TypeFamilies.hs:51:3-15, AnnEqual),
+   [tests/examples/TypeFamilies.hs:51:7]),
+  ((tests/examples/TypeFamilies.hs:51:3-15, AnnFunId),
+   [tests/examples/TypeFamilies.hs:51:3-5]),
+  ((tests/examples/TypeFamilies.hs:51:3-15, AnnSemi),
+   [tests/examples/TypeFamilies.hs:52:3]),
+  ((tests/examples/TypeFamilies.hs:52:3-16, AnnEqual),
+   [tests/examples/TypeFamilies.hs:52:7]),
+  ((tests/examples/TypeFamilies.hs:52:3-16, AnnFunId),
+   [tests/examples/TypeFamilies.hs:52:3-5]),
+  ((tests/examples/TypeFamilies.hs:52:3-16, AnnSemi),
+   [tests/examples/TypeFamilies.hs:53:3]),
+  ((tests/examples/TypeFamilies.hs:53:3-42, AnnEqual),
+   [tests/examples/TypeFamilies.hs:53:15]),
+  ((tests/examples/TypeFamilies.hs:53:3-42, AnnFunId),
+   [tests/examples/TypeFamilies.hs:53:3-5]),
+  ((tests/examples/TypeFamilies.hs:53:34-42, AnnCloseP),
+   [tests/examples/TypeFamilies.hs:53:42]),
+  ((tests/examples/TypeFamilies.hs:53:34-42, AnnOpenP),
+   [tests/examples/TypeFamilies.hs:53:34]),
+  ((tests/examples/TypeFamilies.hs:(55,1)-(56,66), AnnDcolon),
+   [tests/examples/TypeFamilies.hs:55:15-16]),
+  ((tests/examples/TypeFamilies.hs:(55,1)-(56,66), AnnSemi),
+   [tests/examples/TypeFamilies.hs:57:1]),
+  ((tests/examples/TypeFamilies.hs:55:18-56, AnnCloseP),
+   [tests/examples/TypeFamilies.hs:55:56]),
+  ((tests/examples/TypeFamilies.hs:55:18-56, AnnDarrow),
+   [tests/examples/TypeFamilies.hs:56:15-16]),
+  ((tests/examples/TypeFamilies.hs:55:18-56, AnnOpenP),
+   [tests/examples/TypeFamilies.hs:55:18]),
+  ((tests/examples/TypeFamilies.hs:55:19-29, AnnComma),
+   [tests/examples/TypeFamilies.hs:55:30]),
+  ((tests/examples/TypeFamilies.hs:55:38-55, AnnCloseP),
+   [tests/examples/TypeFamilies.hs:55:55]),
+  ((tests/examples/TypeFamilies.hs:55:38-55, AnnOpenP),
+   [tests/examples/TypeFamilies.hs:55:38]),
+  ((tests/examples/TypeFamilies.hs:56:18-26, AnnCloseS),
+   [tests/examples/TypeFamilies.hs:56:26]),
+  ((tests/examples/TypeFamilies.hs:56:18-26, AnnOpenS),
+   [tests/examples/TypeFamilies.hs:56:18]),
+  ((tests/examples/TypeFamilies.hs:56:18-66, AnnRarrow),
+   [tests/examples/TypeFamilies.hs:56:28-29]),
+  ((tests/examples/TypeFamilies.hs:56:31-48, AnnCloseP),
+   [tests/examples/TypeFamilies.hs:56:48]),
+  ((tests/examples/TypeFamilies.hs:56:31-48, AnnOpenP),
+   [tests/examples/TypeFamilies.hs:56:31]),
+  ((tests/examples/TypeFamilies.hs:56:50-66, AnnCloseP),
+   [tests/examples/TypeFamilies.hs:56:66]),
+  ((tests/examples/TypeFamilies.hs:56:50-66, AnnOpenP),
+   [tests/examples/TypeFamilies.hs:56:50]),
+  ((tests/examples/TypeFamilies.hs:56:57-65, AnnCloseS),
+   [tests/examples/TypeFamilies.hs:56:65]),
+  ((tests/examples/TypeFamilies.hs:56:57-65, AnnOpenS),
+   [tests/examples/TypeFamilies.hs:56:57]),
+  ((tests/examples/TypeFamilies.hs:(57,1)-(62,14), AnnEqual),
+   [tests/examples/TypeFamilies.hs:57:18]),
+  ((tests/examples/TypeFamilies.hs:(57,1)-(62,14), AnnFunId),
+   [tests/examples/TypeFamilies.hs:57:1-13]),
+  ((tests/examples/TypeFamilies.hs:(57,1)-(62,14), AnnSemi),
+   [tests/examples/TypeFamilies.hs:64:1]),
+  ((tests/examples/TypeFamilies.hs:(57,20)-(62,14), AnnDo),
+   [tests/examples/TypeFamilies.hs:57:20-21]),
+  ((tests/examples/TypeFamilies.hs:58:3-17, AnnLarrow),
+   [tests/examples/TypeFamilies.hs:58:9-10]),
+  ((tests/examples/TypeFamilies.hs:58:3-17, AnnSemi),
+   [tests/examples/TypeFamilies.hs:59:3]),
+  ((tests/examples/TypeFamilies.hs:58:16-17, AnnCloseS),
+   [tests/examples/TypeFamilies.hs:58:17]),
+  ((tests/examples/TypeFamilies.hs:58:16-17, AnnOpenS),
+   [tests/examples/TypeFamilies.hs:58:16]),
+  ((tests/examples/TypeFamilies.hs:(59,3)-(61,23), AnnSemi),
+   [tests/examples/TypeFamilies.hs:62:3]),
+  ((tests/examples/TypeFamilies.hs:(59,3)-(61,23), AnnVal),
+   [tests/examples/TypeFamilies.hs:59:12]),
+  ((tests/examples/TypeFamilies.hs:(59,14)-(61,23), AnnLam),
+   [tests/examples/TypeFamilies.hs:59:14]),
+  ((tests/examples/TypeFamilies.hs:(59,14)-(61,23), AnnRarrow),
+   [tests/examples/TypeFamilies.hs:59:17-18]),
+  ((tests/examples/TypeFamilies.hs:(59,20)-(61,23), AnnDo),
+   [tests/examples/TypeFamilies.hs:59:20-21]),
+  ((tests/examples/TypeFamilies.hs:60:5-20, AnnLarrow),
+   [tests/examples/TypeFamilies.hs:60:9-10]),
+  ((tests/examples/TypeFamilies.hs:60:5-20, AnnSemi),
+   [tests/examples/TypeFamilies.hs:61:5]),
+  ((tests/examples/TypeFamilies.hs:61:15-23, AnnCloseP),
+   [tests/examples/TypeFamilies.hs:61:23]),
+  ((tests/examples/TypeFamilies.hs:61:15-23, AnnOpenP),
+   [tests/examples/TypeFamilies.hs:61:15]),
+  ((tests/examples/TypeFamilies.hs:61:16-22, AnnVal),
+   [tests/examples/TypeFamilies.hs:61:18]),
+  ((tests/examples/TypeFamilies.hs:(64,1)-(66,35), AnnDcolon),
+   [tests/examples/TypeFamilies.hs:64:40-41]),
+  ((tests/examples/TypeFamilies.hs:(64,1)-(66,35), AnnFamily),
+   [tests/examples/TypeFamilies.hs:64:6-11]),
+  ((tests/examples/TypeFamilies.hs:(64,1)-(66,35), AnnSemi),
+   [tests/examples/TypeFamilies.hs:68:1]),
+  ((tests/examples/TypeFamilies.hs:(64,1)-(66,35), AnnType),
+   [tests/examples/TypeFamilies.hs:64:1-4]),
+  ((tests/examples/TypeFamilies.hs:(64,1)-(66,35), AnnWhere),
+   [tests/examples/TypeFamilies.hs:64:47-51]),
+  ((tests/examples/TypeFamilies.hs:64:13-16, AnnCloseP),
+   [tests/examples/TypeFamilies.hs:64:16]),
+  ((tests/examples/TypeFamilies.hs:64:13-16, AnnOpenP),
+   [tests/examples/TypeFamilies.hs:64:13]),
+  ((tests/examples/TypeFamilies.hs:64:13-16, AnnVal),
+   [tests/examples/TypeFamilies.hs:64:14-15]),
+  ((tests/examples/TypeFamilies.hs:64:18-27, AnnCloseP),
+   [tests/examples/TypeFamilies.hs:64:27]),
+  ((tests/examples/TypeFamilies.hs:64:18-27, AnnDcolon),
+   [tests/examples/TypeFamilies.hs:64:21-22]),
+  ((tests/examples/TypeFamilies.hs:64:18-27, AnnOpenP),
+   [tests/examples/TypeFamilies.hs:64:18]),
+  ((tests/examples/TypeFamilies.hs:64:24-26, AnnCloseS),
+   [tests/examples/TypeFamilies.hs:64:26]),
+  ((tests/examples/TypeFamilies.hs:64:24-26, AnnOpenS),
+   [tests/examples/TypeFamilies.hs:64:24]),
+  ((tests/examples/TypeFamilies.hs:64:29-38, AnnCloseP),
+   [tests/examples/TypeFamilies.hs:64:38]),
+  ((tests/examples/TypeFamilies.hs:64:29-38, AnnDcolon),
+   [tests/examples/TypeFamilies.hs:64:32-33]),
+  ((tests/examples/TypeFamilies.hs:64:29-38, AnnOpenP),
+   [tests/examples/TypeFamilies.hs:64:29]),
+  ((tests/examples/TypeFamilies.hs:64:35-37, AnnCloseS),
+   [tests/examples/TypeFamilies.hs:64:37]),
+  ((tests/examples/TypeFamilies.hs:64:35-37, AnnOpenS),
+   [tests/examples/TypeFamilies.hs:64:35]),
+  ((tests/examples/TypeFamilies.hs:64:43-45, AnnCloseS),
+   [tests/examples/TypeFamilies.hs:64:45]),
+  ((tests/examples/TypeFamilies.hs:64:43-45, AnnOpenS),
+   [tests/examples/TypeFamilies.hs:64:43]),
+  ((tests/examples/TypeFamilies.hs:65:5-7, AnnCloseS),
+   [tests/examples/TypeFamilies.hs:65:7]),
+  ((tests/examples/TypeFamilies.hs:65:5-7, AnnOpenS),
+   [tests/examples/TypeFamilies.hs:65:6]),
+  ((tests/examples/TypeFamilies.hs:65:5-7, AnnSimpleQuote),
+   [tests/examples/TypeFamilies.hs:65:5]),
+  ((tests/examples/TypeFamilies.hs:65:5-22, AnnEqual),
+   [tests/examples/TypeFamilies.hs:65:20]),
+  ((tests/examples/TypeFamilies.hs:65:5-22, AnnSemi),
+   [tests/examples/TypeFamilies.hs:66:5]),
+  ((tests/examples/TypeFamilies.hs:66:5-13, AnnCloseP),
+   [tests/examples/TypeFamilies.hs:66:13]),
+  ((tests/examples/TypeFamilies.hs:66:5-13, AnnOpenP),
+   [tests/examples/TypeFamilies.hs:66:5]),
+  ((tests/examples/TypeFamilies.hs:66:5-35, AnnEqual),
+   [tests/examples/TypeFamilies.hs:66:20]),
+  ((tests/examples/TypeFamilies.hs:66:6-12, AnnSimpleQuote),
+   [tests/examples/TypeFamilies.hs:66:8]),
+  ((tests/examples/TypeFamilies.hs:66:22-35, AnnSimpleQuote),
+   [tests/examples/TypeFamilies.hs:66:24]),
+  ((tests/examples/TypeFamilies.hs:66:27-35, AnnCloseP),
+   [tests/examples/TypeFamilies.hs:66:35]),
+  ((tests/examples/TypeFamilies.hs:66:27-35, AnnOpenP),
+   [tests/examples/TypeFamilies.hs:66:27]),
+  ((tests/examples/TypeFamilies.hs:68:1-52, AnnDcolon),
+   [tests/examples/TypeFamilies.hs:68:44-45]),
+  ((tests/examples/TypeFamilies.hs:68:1-52, AnnFamily),
+   [tests/examples/TypeFamilies.hs:68:6-11]),
+  ((tests/examples/TypeFamilies.hs:68:1-52, AnnSemi),
+   [tests/examples/TypeFamilies.hs:70:1]),
+  ((tests/examples/TypeFamilies.hs:68:1-52, AnnType),
+   [tests/examples/TypeFamilies.hs:68:1-4]),
+  ((tests/examples/TypeFamilies.hs:68:13-25, AnnCloseP),
+   [tests/examples/TypeFamilies.hs:68:25]),
+  ((tests/examples/TypeFamilies.hs:68:13-25, AnnDcolon),
+   [tests/examples/TypeFamilies.hs:68:16-17]),
+  ((tests/examples/TypeFamilies.hs:68:13-25, AnnOpenP),
+   [tests/examples/TypeFamilies.hs:68:13]),
+  ((tests/examples/TypeFamilies.hs:68:19-24, AnnRarrow),
+   [tests/examples/TypeFamilies.hs:68:21-22]),
+  ((tests/examples/TypeFamilies.hs:68:30-42, AnnCloseP),
+   [tests/examples/TypeFamilies.hs:68:42]),
+  ((tests/examples/TypeFamilies.hs:68:30-42, AnnDcolon),
+   [tests/examples/TypeFamilies.hs:68:33-34]),
+  ((tests/examples/TypeFamilies.hs:68:30-42, AnnOpenP),
+   [tests/examples/TypeFamilies.hs:68:30]),
+  ((tests/examples/TypeFamilies.hs:68:36-41, AnnRarrow),
+   [tests/examples/TypeFamilies.hs:68:38-39]),
+  ((tests/examples/TypeFamilies.hs:68:47-52, AnnRarrow),
+   [tests/examples/TypeFamilies.hs:68:49-50]),
+  ((tests/examples/TypeFamilies.hs:70:1-43, AnnInstance),
+   [tests/examples/TypeFamilies.hs:70:6-13]),
+  ((tests/examples/TypeFamilies.hs:70:1-43, AnnSemi),
+   [tests/examples/TypeFamilies.hs:72:1]),
+  ((tests/examples/TypeFamilies.hs:70:1-43, AnnType),
+   [tests/examples/TypeFamilies.hs:70:1-4]),
+  ((tests/examples/TypeFamilies.hs:70:15-43, AnnEqual),
+   [tests/examples/TypeFamilies.hs:70:28]),
+  ((tests/examples/TypeFamilies.hs:70:36-43, AnnCloseP),
+   [tests/examples/TypeFamilies.hs:70:43]),
+  ((tests/examples/TypeFamilies.hs:70:36-43, AnnOpenP),
+   [tests/examples/TypeFamilies.hs:70:36]),
+  ((<no location info>, AnnEofPos),
+   [tests/examples/TypeFamilies.hs:72:1])],
+ [(<no location info>,
+   [AnnLineComment "-- Type family version",
+    AnnLineComment "-- From https://ocharles.org.uk/blog/posts/2014-12-12-type-families.html",
+    AnnBlockComment "{-# LANGUAGE TypeFamilies #-}",
+    AnnBlockComment "{-# LANGUAGE FlexibleContexts #-}"])])
