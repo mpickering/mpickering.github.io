@@ -1,0 +1,661 @@
+<a href="TypeVector3.hs13115491521434444856.out.html">prev</a></br><a href="failures.html">home</a></br><a href="Undo.hs6280702451094482710.out.html">next</a></br></br><pre>29c29
+< {-# LINE 37 "src/ehc/Base/UID.chs" #-}
+---
+> 
+29a30
+> 
+29a31
+> 
+29a32
+> 
+29a33
+> 
+29a34
+> 
+29a35
+> 
+29a36
+> 
+50c57
+< {-# LINE 59 "src/ehc/Base/UID.chs" #-}
+---
+> 
+50a58
+> 
+68c76
+< {-# LINE 83 "src/ehc/Base/UID.chs" #-}
+---
+> 
+68a77
+> 
+68a78
+> 
+68a79
+> 
+68a80
+> 
+68a81
+> 
+68a82
+> 
+72c86
+< {-# LINE 92 "src/ehc/Base/UID.chs" #-}
+---
+> 
+72a87
+> 
+72a88
+> 
+72a89
+> 
+72a90
+> 
+72a91
+> 
+76c95
+< {-# LINE 101 "src/ehc/Base/UID.chs" #-}
+---
+> 
+76a96
+> 
+76a97
+> 
+76a98
+> 
+76a99
+> 
+76a100
+> 
+79c103
+< {-# LINE 105 "src/ehc/Base/UID.chs" #-}
+---
+> 
+79a104
+> 
+82c107
+< {-# LINE 109 "src/ehc/Base/UID.chs" #-}
+---
+> 
+82a108
+> 
+86c112
+< {-# LINE 114 "src/ehc/Base/UID.chs" #-}
+---
+> 
+86a113
+> 
+90c117
+< {-# LINE 119 "src/ehc/Base/UID.chs" #-}
+---
+> 
+90a118
+> 
+97c125
+< {-# LINE 135 "src/ehc/Base/UID.chs" #-}
+---
+> 
+97a126
+> 
+97a127
+> 
+97a128
+> 
+97a129
+> 
+97a130
+> 
+97a131
+> 
+97a132
+> 
+97a133
+> 
+97a134
+> 
+101c138
+< {-# LINE 140 "src/ehc/Base/UID.chs" #-}
+---
+> 
+101a139
+> 
+105c143
+< {-# LINE 145 "src/ehc/Base/UID.chs" #-}
+---
+> 
+105a144
+> 
+112c151
+< {-# LINE 153 "src/ehc/Base/UID.chs" #-}
+---
+> 
+112a152
+> 
+145c185
+< {-# LINE 187 "src/ehc/Base/UID.chs" #-}
+---
+> 
+145a186
+> 
+155c196
+< {-# LINE 198 "src/ehc/Base/UID.chs" #-}
+---
+> 
+155a197
+> 
+162c204
+< {-# LINE 210 "src/ehc/Base/UID.chs" #-}
+---
+> 
+162a205
+> 
+162a206
+> 
+162a207
+> 
+162a208
+> 
+162a209
+> 
+167c214
+< {-# LINE 220 "src/ehc/Base/UID.chs" #-}
+---
+> 
+167a215
+> 
+167a216
+> 
+167a217
+> 
+167a218
+> 
+167a219
+> 
+170c222
+< {-# LINE 228 "src/ehc/Base/UID.chs" #-}
+---
+> 
+170a223
+> 
+170a224
+> 
+170a225
+> 
+170a226
+> 
+170a227
+> 
+174c231
+< {-# LINE 246 "src/ehc/Base/UID.chs" #-}
+---
+> 
+174a232
+> 
+174a233
+> 
+174a234
+> 
+174a235
+> 
+174a236
+> 
+174a237
+> 
+174a238
+> 
+174a239
+> 
+174a240
+> 
+174a241
+> 
+174a242
+> 
+174a243
+> 
+174a244
+> 
+174a245
+> 
+184a256
+> 
+</pre></br><h2>original</h2></br><pre>module UHC.Light.Compiler.Base.UID
+( mkNewLevUID, mkNewLevUID2, mkNewLevUID3, mkNewLevUID4, mkNewLevUID5, mkNewLevUID6, mkNewLevUID7, mkNewLevUID8, uidNext, mkNewUID, mkNewUIDL, uidNull, uidChild, mkInfNewUIDL
+, FreshUidT, FreshUid, runFreshUidT, runFreshUid, evalFreshUid
+, MonadFreshUID (..)
+, UID (..)
+, mkUID
+, uidFromInt
+, uidStart, uidUnused
+, nextUnique
+, UIDS
+, mkNewLevUIDL, mkInfNewLevUIDL
+, showUIDParseable, ppUIDParseable
+, uidSimplifications )
+where
+import UHC.Util.Pretty
+import qualified Data.Set as Set
+import Data.List
+import Control.Monad.State
+import Control.Monad.Identity
+import Control.Monad
+import UHC.Util.Binary as B
+import UHC.Util.Serialize
+import Data.Hashable
+
+
+
+
+
+{-# LINE 37 "src/ehc/Base/UID.chs" #-}
+type FreshUidT m   = StateT UID m
+type FreshUid      = FreshUidT Identity
+
+{-
+freshUID :: MonadState UID m => m UID
+freshUID = state $ \x -> (x, uidNext x)
+-}
+
+runFreshUidT :: Monad m => FreshUidT m a -> UID -> m (a,UID)
+runFreshUidT f u = runStateT f u
+{-# INLINE runFreshUidT #-}
+
+runFreshUid :: FreshUid a -> UID -> (a,UID)
+runFreshUid f u = runIdentity $ runFreshUidT f u
+{-# INLINE runFreshUid #-}
+
+evalFreshUid :: FreshUid a -> UID -> a
+evalFreshUid f u = fst $ runIdentity $ runFreshUidT f u
+{-# INLINE evalFreshUid #-}
+
+{-# LINE 59 "src/ehc/Base/UID.chs" #-}
+class Monad m => MonadFreshUID m where
+  -- | Fresh single UID
+  freshUID :: m UID
+  freshUID = freshInfUID
+
+  -- | Fresh infinite range of UID
+  freshInfUID :: m UID
+  freshInfUID = freshUID
+
+-- TBD: flip results of mkNewLevUID (etc) to be in agreement with behavior of state
+instance Monad m => MonadFreshUID (FreshUidT m) where
+  freshUID = state $ \x -> (x, uidNext x)
+  {-# INLINE freshUID #-}
+
+  freshInfUID = state $ \x -> (uidChild x, uidNext x)
+  {-# INLINE freshInfUID #-}
+
+{-# LINE 83 "src/ehc/Base/UID.chs" #-}
+data UID = UID { uidHash :: !Int, uidInts :: ![Int] }
+  deriving (Eq,Ord)
+
+{-# LINE 92 "src/ehc/Base/UID.chs" #-}
+mkUID :: [Int] -> UID
+mkUID is = UID (hash is) is
+
+{-# LINE 101 "src/ehc/Base/UID.chs" #-}
+type UIDL = [UID]
+
+{-# LINE 105 "src/ehc/Base/UID.chs" #-}
+type UIDS = Set.Set UID
+
+{-# LINE 109 "src/ehc/Base/UID.chs" #-}
+instance Show UID where
+  show uid = concat . intersperse "_" . map show . reverse $ uidInts uid
+
+{-# LINE 114 "src/ehc/Base/UID.chs" #-}
+instance Hashable UID where
+  hashWithSalt salt (UID h _) = salt `hashWithSalt` h
+
+{-# LINE 119 "src/ehc/Base/UID.chs" #-}
+uidNext :: UID -> UID
+uidNext (UID _ (n:ns)) = mkUID (n+1:ns)
+
+uidChild :: UID -> UID
+uidChild (UID _ ns) = mkUID (0:ns)
+
+{-# LINE 135 "src/ehc/Base/UID.chs" #-}
+mkNewLevUID :: UID -> (UID,UID)
+mkNewLevUID u = (uidNext u, uidChild u)
+
+{-# LINE 140 "src/ehc/Base/UID.chs" #-}
+uidFromInt :: Int -> UID
+uidFromInt i = mkUID [i]
+
+{-# LINE 145 "src/ehc/Base/UID.chs" #-}
+uidStart :: UID
+uidStart = uidFromInt 0
+
+uidUnused :: UID
+uidUnused = uidFromInt (-1)
+
+{-# LINE 153 "src/ehc/Base/UID.chs" #-}
+mkNewLevUID2 u = let { (u',u1)          = mkNewLevUID   u; (u'',u2)          = mkNewLevUID   u'} in (u'',u1,u2)
+mkNewLevUID3 u = let { (u',u1,u2)       = mkNewLevUID2  u; (u'',u3)          = mkNewLevUID   u'} in (u'',u1,u2,u3)
+mkNewLevUID4 u = let { (u',u1,u2)       = mkNewLevUID2  u; (u'',u3,u4)       = mkNewLevUID2  u'} in (u'',u1,u2,u3,u4)
+mkNewLevUID5 u = let { (u',u1,u2)       = mkNewLevUID2  u; (u'',u3,u4,u5)    = mkNewLevUID3  u'} in (u'',u1,u2,u3,u4,u5)
+mkNewLevUID6 u = let { (u',u1,u2,u3)    = mkNewLevUID3  u; (u'',u4,u5,u6)    = mkNewLevUID3  u'} in (u'',u1,u2,u3,u4,u5,u6)
+mkNewLevUID7 u = let { (u',u1,u2,u3,u4) = mkNewLevUID4  u; (u'',u5,u6,u7)    = mkNewLevUID3  u'} in (u'',u1,u2,u3,u4,u5,u6,u7)
+mkNewLevUID8 u = let { (u',u1,u2,u3,u4) = mkNewLevUID4  u; (u'',u5,u6,u7,u8) = mkNewLevUID4  u'} in (u'',u1,u2,u3,u4,u5,u6,u7,u8)
+
+uidNull :: UID
+uidNull  = mkUID []
+
+mkNewUID :: UID -> (UID,UID)
+mkNewUID   uid = (uidNext uid,uid)
+
+mkInfNewUIDL' :: (UID -> (UID,UID)) -> UID -> [UID]
+mkInfNewUIDL' mk uid
+  =  let  l = drop 1 $ iterate (\(nxt,uid) -> mk nxt) $ mkNewUID uid
+     in   map snd l
+
+mkNewUIDL' :: (UID -> (UID,UID)) -> Int -> UID -> [UID] -- assume sz > 0
+mkNewUIDL' mk sz uid
+  =  take sz (mkInfNewUIDL' mk uid)
+
+mkNewUIDL :: Int -> UID -> [UID] -- assume sz > 0
+mkNewUIDL = mkNewUIDL' mkNewUID
+
+mkInfNewUIDL :: UID -> [UID]
+mkInfNewUIDL = mkInfNewUIDL' mkNewUID
+
+instance PP UID where
+  pp = text . show
+
+{-# LINE 187 "src/ehc/Base/UID.chs" #-}
+-- | Inverse of pUID
+showUIDParseable :: UID -> String
+-- showUIDParseable uid = "%[" ++ (concat $ intersperse "/" $ map show $ uidInts uid) ++ "]"
+showUIDParseable uid = "`{" ++ (concat $ intersperse "," $ map show $ uidInts uid) ++ "}"
+
+-- | Inverse of pUID
+ppUIDParseable :: UID -> PP_Doc
+ppUIDParseable = pp . showUIDParseable
+
+{-# LINE 198 "src/ehc/Base/UID.chs" #-}
+mkInfNewLevUIDL :: UID -> [UID]
+mkInfNewLevUIDL = mkInfNewUIDL' mkNewLevUID
+
+mkNewLevUIDL :: Int -> UID -> [UID]
+mkNewLevUIDL = mkNewUIDL' mkNewLevUID
+
+{-# LINE 210 "src/ehc/Base/UID.chs" #-}
+-- | Simplifications obtained by omitting all but 1 of the Int's, then re-adding one by one, omitting the original
+uidSimplifications :: UID -> [UID]
+uidSimplifications = map (mkUID . reverse) . drop 1 . init . inits . reverse . uidInts
+
+{-# LINE 220 "src/ehc/Base/UID.chs" #-}
+nextUnique = mkNewLevUID
+
+{-# LINE 228 "src/ehc/Base/UID.chs" #-}
+deriving instance Typeable UID
+deriving instance Data UID
+
+{-# LINE 246 "src/ehc/Base/UID.chs" #-}
+instance Binary UID where
+  put (UID a b) = B.put a >> B.put b
+  get = liftM2 UID B.get B.get
+
+instance Serialize UID where
+  sput = sputShared
+  sget = sgetShared
+  sputNested = sputPlain
+  sgetNested = sgetPlain
+
+</pre></br><h2>printed</h2></br><pre>module UHC.Light.Compiler.Base.UID
+( mkNewLevUID, mkNewLevUID2, mkNewLevUID3, mkNewLevUID4, mkNewLevUID5, mkNewLevUID6, mkNewLevUID7, mkNewLevUID8, uidNext, mkNewUID, mkNewUIDL, uidNull, uidChild, mkInfNewUIDL
+, FreshUidT, FreshUid, runFreshUidT, runFreshUid, evalFreshUid
+, MonadFreshUID (..)
+, UID (..)
+, mkUID
+, uidFromInt
+, uidStart, uidUnused
+, nextUnique
+, UIDS
+, mkNewLevUIDL, mkInfNewLevUIDL
+, showUIDParseable, ppUIDParseable
+, uidSimplifications )
+where
+import UHC.Util.Pretty
+import qualified Data.Set as Set
+import Data.List
+import Control.Monad.State
+import Control.Monad.Identity
+import Control.Monad
+import UHC.Util.Binary as B
+import UHC.Util.Serialize
+import Data.Hashable
+
+
+
+
+
+
+
+
+
+
+
+
+
+type FreshUidT m   = StateT UID m
+type FreshUid      = FreshUidT Identity
+
+{-
+freshUID :: MonadState UID m => m UID
+freshUID = state $ \x -> (x, uidNext x)
+-}
+
+runFreshUidT :: Monad m => FreshUidT m a -> UID -> m (a,UID)
+runFreshUidT f u = runStateT f u
+{-# INLINE runFreshUidT #-}
+
+runFreshUid :: FreshUid a -> UID -> (a,UID)
+runFreshUid f u = runIdentity $ runFreshUidT f u
+{-# INLINE runFreshUid #-}
+
+evalFreshUid :: FreshUid a -> UID -> a
+evalFreshUid f u = fst $ runIdentity $ runFreshUidT f u
+{-# INLINE evalFreshUid #-}
+
+
+
+class Monad m => MonadFreshUID m where
+  -- | Fresh single UID
+  freshUID :: m UID
+  freshUID = freshInfUID
+
+  -- | Fresh infinite range of UID
+  freshInfUID :: m UID
+  freshInfUID = freshUID
+
+-- TBD: flip results of mkNewLevUID (etc) to be in agreement with behavior of state
+instance Monad m => MonadFreshUID (FreshUidT m) where
+  freshUID = state $ \x -> (x, uidNext x)
+  {-# INLINE freshUID #-}
+
+  freshInfUID = state $ \x -> (uidChild x, uidNext x)
+  {-# INLINE freshInfUID #-}
+
+
+
+
+
+
+
+
+data UID = UID { uidHash :: !Int, uidInts :: ![Int] }
+  deriving (Eq,Ord)
+
+
+
+
+
+
+
+mkUID :: [Int] -> UID
+mkUID is = UID (hash is) is
+
+
+
+
+
+
+
+type UIDL = [UID]
+
+
+
+type UIDS = Set.Set UID
+
+
+
+instance Show UID where
+  show uid = concat . intersperse "_" . map show . reverse $ uidInts uid
+
+
+
+instance Hashable UID where
+  hashWithSalt salt (UID h _) = salt `hashWithSalt` h
+
+
+
+uidNext :: UID -> UID
+uidNext (UID _ (n:ns)) = mkUID (n+1:ns)
+
+uidChild :: UID -> UID
+uidChild (UID _ ns) = mkUID (0:ns)
+
+
+
+
+
+
+
+
+
+
+
+mkNewLevUID :: UID -> (UID,UID)
+mkNewLevUID u = (uidNext u, uidChild u)
+
+
+
+uidFromInt :: Int -> UID
+uidFromInt i = mkUID [i]
+
+
+
+uidStart :: UID
+uidStart = uidFromInt 0
+
+uidUnused :: UID
+uidUnused = uidFromInt (-1)
+
+
+
+mkNewLevUID2 u = let { (u',u1)          = mkNewLevUID   u; (u'',u2)          = mkNewLevUID   u'} in (u'',u1,u2)
+mkNewLevUID3 u = let { (u',u1,u2)       = mkNewLevUID2  u; (u'',u3)          = mkNewLevUID   u'} in (u'',u1,u2,u3)
+mkNewLevUID4 u = let { (u',u1,u2)       = mkNewLevUID2  u; (u'',u3,u4)       = mkNewLevUID2  u'} in (u'',u1,u2,u3,u4)
+mkNewLevUID5 u = let { (u',u1,u2)       = mkNewLevUID2  u; (u'',u3,u4,u5)    = mkNewLevUID3  u'} in (u'',u1,u2,u3,u4,u5)
+mkNewLevUID6 u = let { (u',u1,u2,u3)    = mkNewLevUID3  u; (u'',u4,u5,u6)    = mkNewLevUID3  u'} in (u'',u1,u2,u3,u4,u5,u6)
+mkNewLevUID7 u = let { (u',u1,u2,u3,u4) = mkNewLevUID4  u; (u'',u5,u6,u7)    = mkNewLevUID3  u'} in (u'',u1,u2,u3,u4,u5,u6,u7)
+mkNewLevUID8 u = let { (u',u1,u2,u3,u4) = mkNewLevUID4  u; (u'',u5,u6,u7,u8) = mkNewLevUID4  u'} in (u'',u1,u2,u3,u4,u5,u6,u7,u8)
+
+uidNull :: UID
+uidNull  = mkUID []
+
+mkNewUID :: UID -> (UID,UID)
+mkNewUID   uid = (uidNext uid,uid)
+
+mkInfNewUIDL' :: (UID -> (UID,UID)) -> UID -> [UID]
+mkInfNewUIDL' mk uid
+  =  let  l = drop 1 $ iterate (\(nxt,uid) -> mk nxt) $ mkNewUID uid
+     in   map snd l
+
+mkNewUIDL' :: (UID -> (UID,UID)) -> Int -> UID -> [UID] -- assume sz > 0
+mkNewUIDL' mk sz uid
+  =  take sz (mkInfNewUIDL' mk uid)
+
+mkNewUIDL :: Int -> UID -> [UID] -- assume sz > 0
+mkNewUIDL = mkNewUIDL' mkNewUID
+
+mkInfNewUIDL :: UID -> [UID]
+mkInfNewUIDL = mkInfNewUIDL' mkNewUID
+
+instance PP UID where
+  pp = text . show
+
+
+
+-- | Inverse of pUID
+showUIDParseable :: UID -> String
+-- showUIDParseable uid = "%[" ++ (concat $ intersperse "/" $ map show $ uidInts uid) ++ "]"
+showUIDParseable uid = "`{" ++ (concat $ intersperse "," $ map show $ uidInts uid) ++ "}"
+
+-- | Inverse of pUID
+ppUIDParseable :: UID -> PP_Doc
+ppUIDParseable = pp . showUIDParseable
+
+
+
+mkInfNewLevUIDL :: UID -> [UID]
+mkInfNewLevUIDL = mkInfNewUIDL' mkNewLevUID
+
+mkNewLevUIDL :: Int -> UID -> [UID]
+mkNewLevUIDL = mkNewUIDL' mkNewLevUID
+
+
+
+
+
+
+
+-- | Simplifications obtained by omitting all but 1 of the Int's, then re-adding one by one, omitting the original
+uidSimplifications :: UID -> [UID]
+uidSimplifications = map (mkUID . reverse) . drop 1 . init . inits . reverse . uidInts
+
+
+
+
+
+
+
+nextUnique = mkNewLevUID
+
+
+
+
+
+
+
+deriving instance Typeable UID
+deriving instance Data UID
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+instance Binary UID where
+  put (UID a b) = B.put a >> B.put b
+  get = liftM2 UID B.get B.get
+
+instance Serialize UID where
+  sput = sputShared
+  sget = sgetShared
+  sputNested = sputPlain
+  sgetNested = sgetPlain
+
+
+</pre>

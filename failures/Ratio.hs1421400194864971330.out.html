@@ -1,0 +1,312 @@
+<a href="Range.hs3617133821938090264.out.html">prev</a></br><a href="failures.html">home</a></br><a href="rbpatch.hs1489636641813852093.out.html">next</a></br></br><pre>29c29
+<   {-# MINIMAL (%), numerator, denominator #-}
+---
+>   {-# MINIMAL (%), numerator  denominator #-}
+152a153
+> 
+</pre></br><h2>original</h2></br><pre>{-# LANGUAGE DeriveDataTypeable #-}
+{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE FlexibleContexts #-}
+{- |
+Module      :  Fractal.RUFF.Types.Ratio
+Copyright   :  (c) Claude Heiland-Allen 2015
+License     :  BSD3
+
+Maintainer  :  claude@mathr.co.uk
+Stability   :  unstable
+Portability :  TypeFamilies
+
+Rational numbers with ruff-specific operations.
+-}
+
+module Fractal.RUFF.Types.Ratio
+  ( Q(..)
+  , Ratio(..)
+  , Rational
+  ) where
+
+import Data.Data (Data)
+import Data.Typeable (Typeable)
+import Prelude hiding (Rational)
+import qualified Data.Ratio as Ratio
+
+-- | Rational numbers with ruff-specific operations.
+class Q r where
+  {-# MINIMAL (%), numerator, denominator #-}
+
+  type Z r
+
+  infixl 7 %, %!
+
+  -- | smart constuctor
+  (%) :: Z r -> Z r -> r
+  -- | extract numerator
+  numerator :: r -> Z r
+  -- | extract denominator
+  denominator :: r -> Z r
+
+  -- | unsafe constructor
+  {-# INLINE (%!) #-}
+  (%!) :: Z r -> Z r -> r
+  (%!) = (%)
+
+  -- | 0
+  {-# INLINE zero #-}
+  zero :: Integral (Z r) => r
+  zero = 0 %! 1
+
+  -- | 1/2
+  {-# INLINE half #-}
+  half :: Integral (Z r) => r
+  half = 1 %! 2
+
+  -- | 1
+  {-# INLINE one #-}
+  one  :: Integral (Z r) => r
+  one  = 1 %! 1
+
+  -- | convert to Prelude.Rational
+  {-# INLINE fromQ #-}
+  fromQ :: Integral (Z r) => r -> Ratio.Rational
+  fromQ x = toInteger (numerator x) %! toInteger (denominator x)
+
+  -- | convert from Prelude.Rational
+  {-# INLINE toQ #-}
+  toQ :: Integral (Z r) => Ratio.Rational -> r
+  toQ x = fromInteger (Ratio.numerator x) %! fromInteger (Ratio.denominator x)
+
+  -- | wrap into [0,1)
+  {-# INLINE wrap #-}
+  wrap :: Integral (Z r) => r -> r
+  wrap x = (numerator x `mod` denominator x) %! denominator x
+
+  -- | doubling map to [0,1)
+  {-# INLINE doubleWrap #-}
+  doubleWrap :: Integral (Z r) => r -> r
+  doubleWrap = {-# SCC "doubleWrap" #-} double . wrap
+
+  -- | doubling map from [0,1) to [0,1)
+  {-# INLINE double #-}
+  double :: Integral (Z r) => r -> r
+  double x = {-# SCC "double" #-} case () of
+   _| even d    -> (if n < d' then n  else n - d') %  d'
+    | otherwise -> (if n' < d then n' else n' - d) %! d
+    where
+      d = denominator x
+      d' = d `div` 2
+      n = numerator x
+      n' = 2 * n
+
+  -- | doubling map from [0,1) to [0,1) for odd denominator
+  {-# INLINE doubleOdd #-}
+  doubleOdd :: Integral (Z r) => r -> r
+  doubleOdd x = {-# SCC "doubleOdd" #-} (if n' < d then n' else n' - d) %! d
+    where
+      d = denominator x
+      n = numerator x
+      n' = 2 * n
+
+  -- | doubling map preimages from [0,1) to [0,1)x[0,1)
+  {-# INLINE preimages #-}
+  preimages :: Integral (Z r) => r -> (r, r)
+  preimages x = (n % d', (n + d) % d')
+    where
+      n = numerator x
+      d = denominator x
+      d' = 2 * d
+
+
+instance Integral a => Q (Ratio.Ratio a) where
+  {-# SPECIALIZE instance Q Ratio.Rational #-}
+  type Z (Ratio.Ratio a) = a
+  {-# INLINE (%) #-}
+  (%) = (Ratio.%)
+  {-# INLINE numerator #-}
+  numerator = Ratio.numerator
+  {-# INLINE denominator #-}
+  denominator = Ratio.denominator
+
+
+-- | Ratio data structure
+data Ratio a = !a :% !a deriving (Eq, Data, Typeable)
+
+-- | Rational type
+type Rational = Ratio Integer
+
+instance Integral a => Q (Ratio a) where
+  {-# SPECIALIZE instance Q Rational #-}
+  type Z (Ratio a) = a
+  {-# INLINE (%) #-}
+  x % y = reduce (x * signum y) (abs y)
+    where reduce x' y' = (x' `quot` d) :% (y' `quot` d) where d = gcd x' y'
+  {-# INLINE (%!) #-}
+  x %! y = x :% y
+  {-# INLINE numerator #-}
+  numerator (x :% _) = x
+  {-# INLINE denominator #-}
+  denominator (_ :% y) = y
+
+instance Integral a => Ord (Ratio a) where
+  {-# SPECIALIZE instance Ord Rational #-}
+  (x:%y) <= (x':%y') = x * y' <= x' * y
+  (x:%y) <  (x':%y') = x * y' <  x' * y
+
+instance (Integral a, Read a) => Read (Ratio a) where
+  readsPrec p = map (\(x,y) -> (toQ x, y)) . readsPrec p
+
+instance (Integral a, Show a) => Show (Ratio a) where
+  showsPrec p = showsPrec p . fromQ
+</pre></br><h2>printed</h2></br><pre>{-# LANGUAGE DeriveDataTypeable #-}
+{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE FlexibleContexts #-}
+{- |
+Module      :  Fractal.RUFF.Types.Ratio
+Copyright   :  (c) Claude Heiland-Allen 2015
+License     :  BSD3
+
+Maintainer  :  claude@mathr.co.uk
+Stability   :  unstable
+Portability :  TypeFamilies
+
+Rational numbers with ruff-specific operations.
+-}
+
+module Fractal.RUFF.Types.Ratio
+  ( Q(..)
+  , Ratio(..)
+  , Rational
+  ) where
+
+import Data.Data (Data)
+import Data.Typeable (Typeable)
+import Prelude hiding (Rational)
+import qualified Data.Ratio as Ratio
+
+-- | Rational numbers with ruff-specific operations.
+class Q r where
+  {-# MINIMAL (%), numerator  denominator #-}
+
+  type Z r
+
+  infixl 7 %, %!
+
+  -- | smart constuctor
+  (%) :: Z r -> Z r -> r
+  -- | extract numerator
+  numerator :: r -> Z r
+  -- | extract denominator
+  denominator :: r -> Z r
+
+  -- | unsafe constructor
+  {-# INLINE (%!) #-}
+  (%!) :: Z r -> Z r -> r
+  (%!) = (%)
+
+  -- | 0
+  {-# INLINE zero #-}
+  zero :: Integral (Z r) => r
+  zero = 0 %! 1
+
+  -- | 1/2
+  {-# INLINE half #-}
+  half :: Integral (Z r) => r
+  half = 1 %! 2
+
+  -- | 1
+  {-# INLINE one #-}
+  one  :: Integral (Z r) => r
+  one  = 1 %! 1
+
+  -- | convert to Prelude.Rational
+  {-# INLINE fromQ #-}
+  fromQ :: Integral (Z r) => r -> Ratio.Rational
+  fromQ x = toInteger (numerator x) %! toInteger (denominator x)
+
+  -- | convert from Prelude.Rational
+  {-# INLINE toQ #-}
+  toQ :: Integral (Z r) => Ratio.Rational -> r
+  toQ x = fromInteger (Ratio.numerator x) %! fromInteger (Ratio.denominator x)
+
+  -- | wrap into [0,1)
+  {-# INLINE wrap #-}
+  wrap :: Integral (Z r) => r -> r
+  wrap x = (numerator x `mod` denominator x) %! denominator x
+
+  -- | doubling map to [0,1)
+  {-# INLINE doubleWrap #-}
+  doubleWrap :: Integral (Z r) => r -> r
+  doubleWrap = {-# SCC "doubleWrap" #-} double . wrap
+
+  -- | doubling map from [0,1) to [0,1)
+  {-# INLINE double #-}
+  double :: Integral (Z r) => r -> r
+  double x = {-# SCC "double" #-} case () of
+   _| even d    -> (if n < d' then n  else n - d') %  d'
+    | otherwise -> (if n' < d then n' else n' - d) %! d
+    where
+      d = denominator x
+      d' = d `div` 2
+      n = numerator x
+      n' = 2 * n
+
+  -- | doubling map from [0,1) to [0,1) for odd denominator
+  {-# INLINE doubleOdd #-}
+  doubleOdd :: Integral (Z r) => r -> r
+  doubleOdd x = {-# SCC "doubleOdd" #-} (if n' < d then n' else n' - d) %! d
+    where
+      d = denominator x
+      n = numerator x
+      n' = 2 * n
+
+  -- | doubling map preimages from [0,1) to [0,1)x[0,1)
+  {-# INLINE preimages #-}
+  preimages :: Integral (Z r) => r -> (r, r)
+  preimages x = (n % d', (n + d) % d')
+    where
+      n = numerator x
+      d = denominator x
+      d' = 2 * d
+
+
+instance Integral a => Q (Ratio.Ratio a) where
+  {-# SPECIALIZE instance Q Ratio.Rational #-}
+  type Z (Ratio.Ratio a) = a
+  {-# INLINE (%) #-}
+  (%) = (Ratio.%)
+  {-# INLINE numerator #-}
+  numerator = Ratio.numerator
+  {-# INLINE denominator #-}
+  denominator = Ratio.denominator
+
+
+-- | Ratio data structure
+data Ratio a = !a :% !a deriving (Eq, Data, Typeable)
+
+-- | Rational type
+type Rational = Ratio Integer
+
+instance Integral a => Q (Ratio a) where
+  {-# SPECIALIZE instance Q Rational #-}
+  type Z (Ratio a) = a
+  {-# INLINE (%) #-}
+  x % y = reduce (x * signum y) (abs y)
+    where reduce x' y' = (x' `quot` d) :% (y' `quot` d) where d = gcd x' y'
+  {-# INLINE (%!) #-}
+  x %! y = x :% y
+  {-# INLINE numerator #-}
+  numerator (x :% _) = x
+  {-# INLINE denominator #-}
+  denominator (_ :% y) = y
+
+instance Integral a => Ord (Ratio a) where
+  {-# SPECIALIZE instance Ord Rational #-}
+  (x:%y) <= (x':%y') = x * y' <= x' * y
+  (x:%y) <  (x':%y') = x * y' <  x' * y
+
+instance (Integral a, Read a) => Read (Ratio a) where
+  readsPrec p = map (\(x,y) -> (toQ x, y)) . readsPrec p
+
+instance (Integral a, Show a) => Show (Ratio a) where
+  showsPrec p = showsPrec p . fromQ
+
+</pre>

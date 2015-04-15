@@ -1,0 +1,497 @@
+<a href="Utils.hs10632735701227464303.out.html">prev</a></br><a href="failures.html">home</a></br><a href="Utils.hs1532649039166052708.out.html">next</a></br></br><pre>41c41
+< {-# LINE 46 "src/ehc/Core/Utils.chs" #-}
+---
+> 
+41a42
+> 
+41a43
+> 
+41a44
+> 
+41a45
+> 
+44c48
+< {-# LINE 62 "src/ehc/Core/Utils.chs" #-}
+---
+> 
+44a49
+> 
+44a50
+> 
+44a51
+> 
+44a52
+> 
+44a53
+> 
+44a54
+> 
+44a55
+> 
+44a56
+> 
+44a57
+> 
+44a58
+> 
+44a59
+> 
+44a60
+> 
+44a61
+> 
+77c94
+< {-# LINE 96 "src/ehc/Core/Utils.chs" #-}
+---
+> 
+77a95
+> 
+85c103
+< {-# LINE 109 "src/ehc/Core/Utils.chs" #-}
+---
+> 
+85a104
+> 
+85a105
+> 
+85a106
+> 
+85a107
+> 
+85a108
+> 
+110c133
+< {-# LINE 135 "src/ehc/Core/Utils.chs" #-}
+---
+> 
+110a134
+> 
+132c156
+< {-# LINE 162 "src/ehc/Core/Utils.chs" #-}
+---
+> 
+132a157
+> 
+132a158
+> 
+132a159
+> 
+132a160
+> 
+132a161
+> 
+155c184
+< {-# LINE 186 "src/ehc/Core/Utils.chs" #-}
+---
+> 
+155a185
+> 
+161c191
+< {-# LINE 199 "src/ehc/Core/Utils.chs" #-}
+---
+> 
+161a192
+> 
+161a193
+> 
+161a194
+> 
+161a195
+> 
+161a196
+> 
+161a197
+> 
+161a198
+> 
+175a213
+> 
+</pre></br><h2>original</h2></br><pre>module UHC.Light.Compiler.Core.Utils
+( module UHC.Light.Compiler.AbstractCore.Utils
+, RCEEnv
+, FieldUpdateL, fuL2ExprL, fuMap
+, fvsClosure, fvsTransClosure
+, fvLAsArg, mkFvNm, fvLArgRepl, fvVarRepl
+, FldOffset (..), foffMkOff, foffLabel
+, FieldSplitL, fsL2PatL
+, fsLReorder
+, fuMkCExpr )
+where
+import UHC.Light.Compiler.Base.HsName.Builtin
+import UHC.Light.Compiler.Opts
+import UHC.Light.Compiler.Base.Common
+import UHC.Light.Compiler.Base.TermLike
+import UHC.Light.Compiler.Ty
+import UHC.Light.Compiler.Core
+import UHC.Light.Compiler.Gam.Full
+import UHC.Light.Compiler.AbstractCore
+import UHC.Light.Compiler.AbstractCore.Utils
+import UHC.Light.Compiler.Core.Subst
+import UHC.Light.Compiler.VarMp
+import UHC.Light.Compiler.Substitutable
+import Data.List
+import Data.Maybe
+import qualified Data.Set as Set
+import Data.List
+import qualified Data.Map as Map
+import UHC.Util.Utils
+import UHC.Light.Compiler.Base.Debug
+import UHC.Util.Pretty
+import Control.Monad.State
+import Data.Array
+import qualified UHC.Util.FastSeq as Seq
+import UHC.Light.Compiler.Core.FvS
+import UHC.Light.Compiler.Core.ModAsMap
+import UHC.Light.Compiler.Core.ExtractFFE
+
+
+
+{-# LINE 46 "src/ehc/Core/Utils.chs" #-}
+type RCEEnv = RCEEnv' CExpr CMetaVal CBind CBound CTy
+
+{-# LINE 62 "src/ehc/Core/Utils.chs" #-}
+type FieldUpdateL e = AssocL HsName (e,Maybe Int)
+
+fuMap :: (HsName -> e -> (e',Int)) -> FieldUpdateL e -> FieldUpdateL e'
+fuMap f = map (\(l,(e,_)) -> let (e',o) = f l e in (l,(e',Just o)))
+
+fuL2ExprL' :: (e -> CExpr) -> FieldUpdateL e -> [CExpr]
+fuL2ExprL' f l = [ f e | (_,(e,_)) <- l ]
+
+fuL2ExprL :: FieldUpdateL CExpr -> [CExpr]
+fuL2ExprL = fuL2ExprL' cexprTupFld
+
+fuReorder :: EHCOpts -> [HsName] -> FieldUpdateL CExpr -> (CBindL,FieldUpdateL (CExpr -> CExpr))
+fuReorder opts nL fuL
+  =  let  (fuL',offL,_,_)
+            =  foldl
+                 (\(fuL,offL,exts,dels) (n,(_,(f,_)))
+                     ->  let  mkOff n lbl o
+                                =  let smaller l = rowLabCmp l lbl == LT
+                                       off = length (filter smaller dels) - length (filter smaller exts)
+                                   in  acoreBind1Cat CBindCateg_Plain n (acoreBuiltinAddInt opts o off)
+                              no = acoreVar n
+                         in   case f of
+                                 CExpr_TupIns _ t l o e -> ((l,(\r -> CExpr_TupIns r t l no e,Nothing)) : fuL,(mkOff n l o):offL,l:exts,dels  )
+                                 CExpr_TupUpd _ t l o e -> ((l,(\r -> CExpr_TupUpd r t l no e,Nothing)) : fuL,(mkOff n l o):offL,exts  ,dels  )
+                                 CExpr_TupDel _ t l o   -> ((l,(\r -> CExpr_TupDel r t l no  ,Nothing)) : fuL,(mkOff n l o):offL,exts  ,l:dels)
+                 )
+                 ([],[],[],[])
+            .  zip nL
+            $  fuL
+          cmpFU (n1,_ ) (n2,_) = rowLabCmp n1 n2
+     in   (offL, sortBy cmpFU fuL')
+
+{-# LINE 96 "src/ehc/Core/Utils.chs" #-}
+fuMkCExpr :: EHCOpts -> UID -> FieldUpdateL CExpr -> CExpr -> CExpr
+fuMkCExpr opts u fuL r
+  =  let  (n:nL) = map (uidHNm . uidChild) . mkNewUIDL (length fuL + 1) $ u
+          (oL,fuL') = fuReorder opts nL fuL
+          bL = acoreBind1Cat CBindCateg_Plain n r : oL
+     in   acoreLet CBindCateg_Strict bL $ foldl (\r (_,(f,_)) -> f r) (acoreVar n) $ fuL'
+
+{-# LINE 109 "src/ehc/Core/Utils.chs" #-}
+fvsClosure :: FvS -> FvS -> FvS -> FvSMp -> FvSMp -> (FvSMp,FvSMp)
+fvsClosure newS lamOuterS varOuterS fvmOuter fvmNew
+  =  let  fvmNew2  =  Map.filterWithKey (\n _ -> n `Set.member` newS) fvmNew
+          fvlam  s =  lamOuterS `Set.intersection` s
+          fvvar  s =  varOuterS `Set.intersection` s
+          fv     s =  fvvar s `Set.union` s'
+                   where s' = Set.unions $ map (\n -> Map.findWithDefault Set.empty n fvmOuter) $ Set.toList $ fvlam $ s
+     in   (Map.map fv fvmNew2,Map.map (`Set.intersection` newS) fvmNew2)
+
+fvsTransClosure :: FvSMp -> FvSMp -> FvSMp
+fvsTransClosure lamFvSMp varFvSMp
+  =  let  varFvSMp2 = Map.mapWithKey
+                       (\n s -> s `Set.union` (Set.unions
+                                               $ map (\n -> panicJust "fvsTransClosure.1" $ Map.lookup n $ varFvSMp)
+                                               $ Set.toList
+                                               $ panicJust "fvsTransClosure.2"
+                                               $ Map.lookup n lamFvSMp
+                       )                      )
+                       varFvSMp
+          sz = sum . map Set.size . Map.elems
+     in   if sz varFvSMp2 > sz varFvSMp
+          then fvsTransClosure lamFvSMp varFvSMp2
+          else varFvSMp
+
+{-# LINE 135 "src/ehc/Core/Utils.chs" #-}
+fvLAsArg :: CVarIntroMp -> FvS -> CVarIntroL
+fvLAsArg cvarIntroMp fvS
+  =  sortOn (cviLev . snd)
+     $ filter (\(_,cvi) -> cviLev cvi > cLevModule)
+     $ map (\n -> (n,cviLookup n cvarIntroMp))
+     $ Set.toList fvS
+
+mkFvNm :: Int -> HsName -> HsName
+mkFvNm i n = hsnUniqifyInt HsNameUniqifier_New i n -- hsnSuffix n ("~" ++ show i)
+
+fvLArgRepl :: Int -> CVarIntroL -> (CVarIntroL,CVarIntroL,CVarReplNmMp)
+fvLArgRepl uniq argLevL
+  =  let  argNL = zipWith (\u (n,i) -> (mkFvNm u n,i)) [uniq..] argLevL
+     in   ( argLevL
+          , argNL
+          , Map.fromList $ zipWith (\(o,_) (n,cvi) -> (o,(cvrFromCvi cvi) {cvrRepl = n})) argLevL argNL
+          )
+
+fvVarRepl :: CVarReplNmMp -> HsName -> CExpr
+fvVarRepl nMp n = maybe (acoreVar n) (acoreVar . cvrRepl) $ Map.lookup n nMp
+
+{-# LINE 162 "src/ehc/Core/Utils.chs" #-}
+data FldOffset
+  = FldKnownOffset      { foffLabel'     :: !HsName, foffOffset   :: !Int      }
+  | FldComputeOffset    { foffLabel'     :: !HsName, foffCExpr    :: !CExpr    }
+  | FldImplicitOffset
+
+instance Eq FldOffset where
+  (FldKnownOffset _ o1) == (FldKnownOffset _ o2) = o1 == o2
+  foff1                 == foff2                 = foffLabel foff1 == foffLabel foff2
+
+instance Ord FldOffset where
+  (FldKnownOffset _ o1) `compare` (FldKnownOffset _ o2) = o1 `compare` o2
+  foff1                 `compare` foff2                 = foffLabel foff1 `rowLabCmp` foffLabel foff2
+
+foffMkOff :: EHCOpts -> FldOffset -> Int -> (Int,CExpr)
+foffMkOff opts FldImplicitOffset      o = (o,acoreInt opts o)
+foffMkOff opts (FldKnownOffset   _ o) _ = (o,acoreInt opts o)
+foffMkOff _    (FldComputeOffset _ e) o = (o,e)
+
+foffLabel :: FldOffset -> HsName
+foffLabel FldImplicitOffset = hsnUnknown
+foffLabel foff              = foffLabel' foff
+
+{-# LINE 186 "src/ehc/Core/Utils.chs" #-}
+type FieldSplitL = AssocL FldOffset RPat
+
+fsL2PatL :: FieldSplitL -> [RPat]
+fsL2PatL = assocLElts
+
+{-# LINE 199 "src/ehc/Core/Utils.chs" #-}
+fsLReorder :: EHCOpts -> FieldSplitL -> FieldSplitL
+fsLReorder opts fsL
+  =  let  (fsL',_)
+            =  foldr
+                 (\(FldComputeOffset l o,p) (fsL,exts)
+                     ->  let  mkOff lbl exts o
+                                =  let nrSmaller = length . filter (\e -> rowLabCmp e lbl == LT) $ exts
+                                   in  acoreBuiltinAddInt opts o nrSmaller
+                         in   ((FldComputeOffset l (mkOff l exts o),p):fsL,l:exts)
+                 )
+                 ([],[])
+            $  fsL
+     in   rowCanonOrderBy compare fsL'
+
+</pre></br><h2>printed</h2></br><pre>module UHC.Light.Compiler.Core.Utils
+( module UHC.Light.Compiler.AbstractCore.Utils
+, RCEEnv
+, FieldUpdateL, fuL2ExprL, fuMap
+, fvsClosure, fvsTransClosure
+, fvLAsArg, mkFvNm, fvLArgRepl, fvVarRepl
+, FldOffset (..), foffMkOff, foffLabel
+, FieldSplitL, fsL2PatL
+, fsLReorder
+, fuMkCExpr )
+where
+import UHC.Light.Compiler.Base.HsName.Builtin
+import UHC.Light.Compiler.Opts
+import UHC.Light.Compiler.Base.Common
+import UHC.Light.Compiler.Base.TermLike
+import UHC.Light.Compiler.Ty
+import UHC.Light.Compiler.Core
+import UHC.Light.Compiler.Gam.Full
+import UHC.Light.Compiler.AbstractCore
+import UHC.Light.Compiler.AbstractCore.Utils
+import UHC.Light.Compiler.Core.Subst
+import UHC.Light.Compiler.VarMp
+import UHC.Light.Compiler.Substitutable
+import Data.List
+import Data.Maybe
+import qualified Data.Set as Set
+import Data.List
+import qualified Data.Map as Map
+import UHC.Util.Utils
+import UHC.Light.Compiler.Base.Debug
+import UHC.Util.Pretty
+import Control.Monad.State
+import Data.Array
+import qualified UHC.Util.FastSeq as Seq
+import UHC.Light.Compiler.Core.FvS
+import UHC.Light.Compiler.Core.ModAsMap
+import UHC.Light.Compiler.Core.ExtractFFE
+
+
+
+
+
+
+
+
+type RCEEnv = RCEEnv' CExpr CMetaVal CBind CBound CTy
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+type FieldUpdateL e = AssocL HsName (e,Maybe Int)
+
+fuMap :: (HsName -> e -> (e',Int)) -> FieldUpdateL e -> FieldUpdateL e'
+fuMap f = map (\(l,(e,_)) -> let (e',o) = f l e in (l,(e',Just o)))
+
+fuL2ExprL' :: (e -> CExpr) -> FieldUpdateL e -> [CExpr]
+fuL2ExprL' f l = [ f e | (_,(e,_)) <- l ]
+
+fuL2ExprL :: FieldUpdateL CExpr -> [CExpr]
+fuL2ExprL = fuL2ExprL' cexprTupFld
+
+fuReorder :: EHCOpts -> [HsName] -> FieldUpdateL CExpr -> (CBindL,FieldUpdateL (CExpr -> CExpr))
+fuReorder opts nL fuL
+  =  let  (fuL',offL,_,_)
+            =  foldl
+                 (\(fuL,offL,exts,dels) (n,(_,(f,_)))
+                     ->  let  mkOff n lbl o
+                                =  let smaller l = rowLabCmp l lbl == LT
+                                       off = length (filter smaller dels) - length (filter smaller exts)
+                                   in  acoreBind1Cat CBindCateg_Plain n (acoreBuiltinAddInt opts o off)
+                              no = acoreVar n
+                         in   case f of
+                                 CExpr_TupIns _ t l o e -> ((l,(\r -> CExpr_TupIns r t l no e,Nothing)) : fuL,(mkOff n l o):offL,l:exts,dels  )
+                                 CExpr_TupUpd _ t l o e -> ((l,(\r -> CExpr_TupUpd r t l no e,Nothing)) : fuL,(mkOff n l o):offL,exts  ,dels  )
+                                 CExpr_TupDel _ t l o   -> ((l,(\r -> CExpr_TupDel r t l no  ,Nothing)) : fuL,(mkOff n l o):offL,exts  ,l:dels)
+                 )
+                 ([],[],[],[])
+            .  zip nL
+            $  fuL
+          cmpFU (n1,_ ) (n2,_) = rowLabCmp n1 n2
+     in   (offL, sortBy cmpFU fuL')
+
+
+
+fuMkCExpr :: EHCOpts -> UID -> FieldUpdateL CExpr -> CExpr -> CExpr
+fuMkCExpr opts u fuL r
+  =  let  (n:nL) = map (uidHNm . uidChild) . mkNewUIDL (length fuL + 1) $ u
+          (oL,fuL') = fuReorder opts nL fuL
+          bL = acoreBind1Cat CBindCateg_Plain n r : oL
+     in   acoreLet CBindCateg_Strict bL $ foldl (\r (_,(f,_)) -> f r) (acoreVar n) $ fuL'
+
+
+
+
+
+
+
+fvsClosure :: FvS -> FvS -> FvS -> FvSMp -> FvSMp -> (FvSMp,FvSMp)
+fvsClosure newS lamOuterS varOuterS fvmOuter fvmNew
+  =  let  fvmNew2  =  Map.filterWithKey (\n _ -> n `Set.member` newS) fvmNew
+          fvlam  s =  lamOuterS `Set.intersection` s
+          fvvar  s =  varOuterS `Set.intersection` s
+          fv     s =  fvvar s `Set.union` s'
+                   where s' = Set.unions $ map (\n -> Map.findWithDefault Set.empty n fvmOuter) $ Set.toList $ fvlam $ s
+     in   (Map.map fv fvmNew2,Map.map (`Set.intersection` newS) fvmNew2)
+
+fvsTransClosure :: FvSMp -> FvSMp -> FvSMp
+fvsTransClosure lamFvSMp varFvSMp
+  =  let  varFvSMp2 = Map.mapWithKey
+                       (\n s -> s `Set.union` (Set.unions
+                                               $ map (\n -> panicJust "fvsTransClosure.1" $ Map.lookup n $ varFvSMp)
+                                               $ Set.toList
+                                               $ panicJust "fvsTransClosure.2"
+                                               $ Map.lookup n lamFvSMp
+                       )                      )
+                       varFvSMp
+          sz = sum . map Set.size . Map.elems
+     in   if sz varFvSMp2 > sz varFvSMp
+          then fvsTransClosure lamFvSMp varFvSMp2
+          else varFvSMp
+
+
+
+fvLAsArg :: CVarIntroMp -> FvS -> CVarIntroL
+fvLAsArg cvarIntroMp fvS
+  =  sortOn (cviLev . snd)
+     $ filter (\(_,cvi) -> cviLev cvi > cLevModule)
+     $ map (\n -> (n,cviLookup n cvarIntroMp))
+     $ Set.toList fvS
+
+mkFvNm :: Int -> HsName -> HsName
+mkFvNm i n = hsnUniqifyInt HsNameUniqifier_New i n -- hsnSuffix n ("~" ++ show i)
+
+fvLArgRepl :: Int -> CVarIntroL -> (CVarIntroL,CVarIntroL,CVarReplNmMp)
+fvLArgRepl uniq argLevL
+  =  let  argNL = zipWith (\u (n,i) -> (mkFvNm u n,i)) [uniq..] argLevL
+     in   ( argLevL
+          , argNL
+          , Map.fromList $ zipWith (\(o,_) (n,cvi) -> (o,(cvrFromCvi cvi) {cvrRepl = n})) argLevL argNL
+          )
+
+fvVarRepl :: CVarReplNmMp -> HsName -> CExpr
+fvVarRepl nMp n = maybe (acoreVar n) (acoreVar . cvrRepl) $ Map.lookup n nMp
+
+
+
+
+
+
+
+data FldOffset
+  = FldKnownOffset      { foffLabel'     :: !HsName, foffOffset   :: !Int      }
+  | FldComputeOffset    { foffLabel'     :: !HsName, foffCExpr    :: !CExpr    }
+  | FldImplicitOffset
+
+instance Eq FldOffset where
+  (FldKnownOffset _ o1) == (FldKnownOffset _ o2) = o1 == o2
+  foff1                 == foff2                 = foffLabel foff1 == foffLabel foff2
+
+instance Ord FldOffset where
+  (FldKnownOffset _ o1) `compare` (FldKnownOffset _ o2) = o1 `compare` o2
+  foff1                 `compare` foff2                 = foffLabel foff1 `rowLabCmp` foffLabel foff2
+
+foffMkOff :: EHCOpts -> FldOffset -> Int -> (Int,CExpr)
+foffMkOff opts FldImplicitOffset      o = (o,acoreInt opts o)
+foffMkOff opts (FldKnownOffset   _ o) _ = (o,acoreInt opts o)
+foffMkOff _    (FldComputeOffset _ e) o = (o,e)
+
+foffLabel :: FldOffset -> HsName
+foffLabel FldImplicitOffset = hsnUnknown
+foffLabel foff              = foffLabel' foff
+
+
+
+type FieldSplitL = AssocL FldOffset RPat
+
+fsL2PatL :: FieldSplitL -> [RPat]
+fsL2PatL = assocLElts
+
+
+
+
+
+
+
+
+
+fsLReorder :: EHCOpts -> FieldSplitL -> FieldSplitL
+fsLReorder opts fsL
+  =  let  (fsL',_)
+            =  foldr
+                 (\(FldComputeOffset l o,p) (fsL,exts)
+                     ->  let  mkOff lbl exts o
+                                =  let nrSmaller = length . filter (\e -> rowLabCmp e lbl == LT) $ exts
+                                   in  acoreBuiltinAddInt opts o nrSmaller
+                         in   ((FldComputeOffset l (mkOff l exts o),p):fsL,l:exts)
+                 )
+                 ([],[])
+            $  fsL
+     in   rowCanonOrderBy compare fsL'
+
+
+</pre>

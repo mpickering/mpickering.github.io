@@ -1,0 +1,774 @@
+<a href="Writer.hs1520045406937673930.out.html">prev</a></br><a href="failures.html">home</a></br><a href="XML.hs1306624513270415769.out.html">next</a></br></br><pre>295c295
+<          let setAction (local::(forall a. WxAct a -> ListenerM a))
+---
+>          let setAction (local::(       a  WxAct a -> ListenerM a))
+383a384
+> 
+</pre></br><h2>original</h2></br><pre>{-# LANGUAGE FlexibleContexts, FlexibleInstances, MultiParamTypeClasses
+  , OverlappingInstances, PatternSignatures, ScopedTypeVariables, RankNTypes
+  , TypeOperators, TypeSynonymInstances, UndecidableInstances #-}
+
+-- |An implementation of the AutoForm class for WxHaskell
+module Graphics.UI.AF.WxForm.WxFormImplementation
+    ( module Graphics.UI.AF.WxForm.WxConstants
+    , module EC -- module Graphics.UI.AF.WxForm.EditorComponent
+    , ComH
+    , mkComProxy, makeEC, mkComI', ECCreator, ECCreatorD, ecCreatorCtx
+    , wxParentProxy
+    , SatCxt
+    , enumeration
+    )
+where
+
+{- mkfifo
+http://wxhaskell.sourceforge.net/doc/Graphics.UI.WXCore.Process.html#v%3AprocessExecAsyncTimed
+ -}
+
+import Graphics.UI.AF.WxForm.WxConstants
+import Graphics.UI.AF.WxForm.EditorComponent as EC
+import Graphics.UI.AF.WxForm.ComIO as EC
+import Graphics.UI.AF.WxForm.GenericEC
+import Graphics.UI.AF.WxForm.WxEnumeration
+
+import qualified Graphics.UI.AF.General as AF
+import Graphics.UI.AF.General.MySYB
+
+import Graphics.UI.WX hiding ( command, label, value, entry, parent, Parent, items, enabled, close
+                             , dialog, errorDialog, menu, stop)
+import qualified Graphics.UI.WX as WX
+import Graphics.UI.WXCore.Process(processExecAsyncTimed)
+
+import Maybe
+import qualified Control.Monad.State as St
+import Control.Monad(liftM)
+
+import qualified Graphics.UI.AF.WxForm.WxM as WxM
+
+-- |Parameter for the Wx instance of AutoForm
+type SatCxt = ECCreatorD
+
+-- |A Parent type proxy
+wxParentProxy :: WxM ()
+wxParentProxy = error "Cannot be instantiated."
+
+-- instance Closeable (Dialog a) where
+--     close dialog = set dialog [ visible := False ]
+
+type ComH = InnerEC
+instance AF.AutoForm WxAct ComH WxM SatCxt EC where
+    defaultCom x     = (makeECD dict) x
+    builderToCom     = builderToCom'
+    addCom           = mkComI'
+    state s = guilessInnerEC "" s
+
+    postponeAction   = postponeAction'
+    button           = buttonI'
+    addTimer         = addTimer'
+    executeProcess   = executeProcess'
+    limit test message ec = updateComIO ec helper where
+        helper comIO = do pickAddLimit comIO doTest
+                          return comIO
+        doTest x     = do accept <- test x
+                          if accept
+                            then return Accepted
+                            else return $ Rejected message
+    label heading ec = updateLabel (bestLabel (PriLabel UserDefined heading)) ec
+    addListener wxAct innerEC
+        = do wxActToListenerM wxAct >>= io . addListener (getComIO innerEC)
+             return innerEC
+
+    command _ ec execute = startI "" $ AF.commandImpl ec execute
+    window com       = subWindow com
+    -- blockingWindow :: ((Maybe b -> action ()) -> com a ())
+    --                -> action (Maybe b)
+
+instance AF.Dialog WxAct ComH WxM SatCxt EC where
+    blockingWindow closeToEC =
+        do (Parent parent) <- getParentI
+           d <- liftIO $ WX.dialog parent [ resizeable := True ]
+           liftIO $ showModal d (\stop -> do let ec = closeToEC (\x -> do liftIO $ stop x)
+                                             (_, widAndGui) <- runWxM (runEC ec) parent (stop Nothing) parent
+                                             (lay, title) <- maybe nonEditableLayout (unboxedLayout . rootGui) (liftM snd widAndGui)
+                                             p <- panel d []
+                                             set p [ layout := lay ]
+                                             set d [ text := title ]
+                                             set d [ layout := dynamic $ fill $ widget p ]
+                                             return ()
+                                )
+
+
+----------------------------------------------------------------------------
+
+
+------------------------------------------------------------------------------
+
+-- |The dictionary type for the ECCreator class
+data ECCreatorD a = ECCreatorD { makeECD     :: MakeEC a
+                               , mkComProxyD :: MakeEC a
+                               , gToStringD  :: a -> String
+                               }
+
+-- |Instantiation of the Sat class
+instance ECCreator a => Sat (ECCreatorD a)
+  where  dict = ECCreatorD { makeECD      = makeEC
+                           , mkComProxyD  = mkComProxy
+                           , gToStringD   = gToString
+                           }
+
+-- |The context for generic autoform
+ecCreatorCtx :: Proxy ECCreatorD
+ecCreatorCtx = error "ecCreatorCtx"
+
+-- |A more constrained generic function   -- not needed anymore. But in the future?
+-- makeEC' :: Data ECCreatorD a => GuiForm -> a -> IO (ComIO a)
+-- makeEC' =  makeECD dict
+
+toString :: Sat (ECCreatorD a) => a -> String
+toString x = (gToStringD dict) x
+
+------------------------------------------------------------------------------
+-- A problem with a default implementation is that it becomes hard to spilt
+-- declaration from definition. For example, it would require circular dependencies
+-- to put enumeration into its own module.
+
+-- |Main class for generic construction of 'EC' - see also
+-- 'genericEC'. Instantiate this class to make custom construction of
+-- ECs.
+class ( Data ECCreatorD a, AF.GInstanceCreator a, Show a
+      , AF.TypePresentation a WxAct ComH WxM ECCreatorD EC)
+      => ECCreator a
+    where
+    mkComProxy :: MakeEC a
+    mkComProxy x = updateWxM (withMaxDepth (\d -> d-1)) (AF.mkCom x)
+
+    makeEC :: MakeEC a
+    makeEC x =
+        case enumerationFromType x of
+          Just ec -> ec
+          Nothing ->
+              case constrRep (toConstr ecCreatorCtx x) of
+                AlgConstr _      -> genericEC ecCreatorCtx (mkComProxyD dict) x
+                IntConstr _      -> entryForm ('-':['0'..'9']) "Int" x
+                FloatConstr _    -> entryForm ('-':'.':['0'..'9']) "Float" x
+                StringConstr [_] -> error "WxFormImplementation: Char not implemented yet" -- FIXME
+                StringConstr _   -> error "WxFormImplementation: No StringConstr constructors for other than Char."
+        where
+        -- widthFirstTraversal :: (ECCreator b) => b -> EC b ()
+        -- widthFirstTraversal = (mkComProxyD dict)
+        entryForm :: [Char] -> String -> MakeEC a
+        entryForm allowedChars label val = AF.builderToCom $
+            do Parent w <- getPanel
+               lastTextVal <- io $ varCreate ""
+               entry <- io $ textEntry w [ processEnter := True
+                                         , on anyKey := handleInput allowedChars
+                                         ]
+               let gui                 = singleGui (badConstrLabel label) entry hfill
+                   setGuiValue z       = do set entry [ text := show z ]
+                                            varSet lastTextVal (show z)
+               -- We check whether the textEntry has changed outselves, as
+               -- we do not want Eq to be a superclass of ECCreator.
+               -- Thus we use `addCustomGuiNoEquals`.
+               (comH, parms) <- addCustomGuiNoEquals val setGuiValue entry gui
+               let getGuiVal = do textVal <- get entry text
+                                  let maybeConstr = readConstr (dataTypeOf ecCreatorCtx val) textVal
+                                      maybeX = maybeConstr >>= (Just . fromConstr ecCreatorCtx)
+                                  return maybeX
+                   restore = pickGetVal (getComIO comH) >>= setGuiValue
+               let onFocus _ = do lastVal    <- varGet lastTextVal
+                                  currentVal <- get entry text
+                                  when (lastVal /= currentVal) $
+                                           do varSet lastTextVal currentVal
+                                              getGuiVal >>= maybe restore (testInputParm' parms SetOnReject)
+                                  propagateEvent
+               io $ set entry [ on focus := onFocus ]
+               return comH
+
+        handleInput chars (KeyChar c)
+            = if c `elem` chars
+              then do propagateEvent
+              else return()
+        handleInput _ _ = propagateEvent
+
+--------------------------------------------------------------------------------
+
+enumerationFromType :: (ECCreator a) => a -> Maybe (EC a)
+enumerationFromType x =
+    case constrRep (toConstr ecCreatorCtx x) of
+      AlgConstr _         -> do namesAndValues <- mapM enumConstr (constructors ecCreatorCtx x)
+                                if length namesAndValues > 1
+                                   then return (enumeration typeName namesAndValues x)
+                                   else Nothing
+      IntConstr _         -> Nothing
+      FloatConstr _       -> Nothing
+      StringConstr _      -> Nothing
+  where
+    typeName         = dataTypeName $ dataTypeOf ecCreatorCtx x
+    enumConstr constr = if numChildren' x constr > 0
+                        then Nothing
+                        else Just ( showConstr constr
+                                  , fromConstr ecCreatorCtx constr
+                                  , \y -> constr == toConstr ecCreatorCtx y
+                                  )
+
+    -- typeType is solely to satisfy the type checker.
+    numChildren' :: (ECCreator a) => a -> Constr -> Int
+    numChildren' typeType constr = ((numChildren typeType) . fromConstr ecCreatorCtx) constr
+    -- the first parameter is solely to satisfy the type checker.
+    numChildren :: (ECCreator a) => a -> a -> Int
+    numChildren _ y = sum $ gmapQ ecCreatorCtx (\_ -> 1) y
+
+------------------------------------------------------------------------------
+
+instance ECCreator Bool
+instance ECCreator Int
+instance ECCreator Char
+instance ECCreator Float
+instance ECCreator Double
+
+
+
+
+{- trash:
+
+    removeQualifiers xs = reverse (takeWhile (/= '.') (reverse xs))
+
+-}
+
+---------------------------------------------------------------------------------
+
+mkComI' :: EC a -> WxM (ComH a)
+mkComI' x = do (comIO, maybeGui) <- runEC x
+               case maybeGui of
+                 Just ((Widget wid), gui) -> addGui wid gui comIO
+                 _                        -> return $ guilessInnerEC' comIO
+
+buttonI' :: String -> WxAct() -> WxM (ComH ())
+buttonI' title act = helper >>= AF.addListener act
+    where helper =
+              do Parent p  <- getPanel
+                 comIO     <- liftIO $ staticComIO ()
+                 wid       <- liftIO $ button p
+                                [ text := title
+                                , on WX.command := unsafeSignalChange comIO
+                                ]
+                 let comIO' = comIO { pickSetEnabled = \enable -> do set wid [ WX.enabled := enable ]
+                                                                     pickSetEnabled comIO enable
+                                    }
+                 addGui wid (Buttons $ widget wid) comIO'
+
+-- FIXME: set parentwindow, ...
+subWindow :: EC a -> WxAct ()
+subWindow ec =
+    do (Parent parentWindow) <- getParentI
+       d <- io $ WX.dialog parentWindow [ resizeable := True ]
+       liftIO $ set d [ visible := True ]
+       let closeDialog = set d [ visible := False ]
+       io $ do
+         p <- panel d []
+         (_, widAndGui) <- runWxM (runEC ec) d closeDialog p
+         (lay, title) <- maybe nonEditableLayout (unboxedLayout . rootGui) (liftM snd widAndGui)
+         set p [ layout := lay ]
+         set d [ text := title ]
+         set d [ layout := dynamic $ fill $ widget p ]
+
+addTimer' :: Int -> WxAct () -> WxM ()
+addTimer' mili action =
+        do Parent parentWindow <- getFrame
+           actionIO <- wxActToListenerM action
+           io $ WX.timer parentWindow [ interval := mili
+                                      , on WX.command := unsafeRunListenerM actionIO
+                                      ]
+           return ()
+
+{-
+Reading these two:
+
+http://www.wxwidgets.org/manuals/stable/wx_wxinputstream.html#wxinputstreamcanread
+http://www.wxwidgets.org/manuals/stable/wx_wxinputstream.html#wxinputstreameof
+
+it seems that wxInputStream::Eof is the correct choice.
+
+-- See http://sourceforge.net/mailarchive/message.php?msg_id=54647.129.16.31.149.1111686341.squirrel%40webmail.chalmers.se-- for problem about on-end-process (check also Process.hs example with "ls -l" and "tail -f Process.hs" -examples.
+
+-}
+executeProcess' :: String
+                -> (Int -> WxAct ())
+                -> (String -> WxAct ())
+                -> (String -> WxAct ())
+                -> WxM ()
+executeProcess' command onEnd onStdOut onStdErr
+    = do Parent parentWindow <- getFrame
+         let setAction (local::(forall a. WxAct a -> ListenerM a))
+                 = do processExecAsyncTimed parentWindow command True
+                           (\exitCode -> local' $ onEnd exitCode)
+                           (\msg _    -> local' $ onStdOut msg)
+                           (\msg _    -> local' $ onStdErr msg)
+                      return ()
+                 where local' = unsafeRunListenerM . local
+         liftWxActToListenerM setAction
+
+
+{- Menus
+
+we need (Frame ()) in WxM to make it work, now we got just Window ().
+
+Maybe this could just be part of the WxM-monad.
+Pro: no need to tread variables though the monads
+     no need for yet another monad
+Con: if the programmer forgets to call addMenu, the menu will be titleless
+
+type MenuMonad a = St.StateT (Menu ()) IO a
+
+addMenu :: String -> MenuMonad a -> WxM a
+addMenu title menuMonad =
+    do pane <- io $ menuPane [text := title]
+       handles <- io $ St.evalStateT menuMonad pane
+       Parent parentWindow <- getFrame
+       io $ set parentWindow [ menuBar := [pane] ]
+       return handles
+
+menuItem :: String -> WxAct() -> MenuMonad (ComIO ())
+menuItem title action =
+    do pane   <- St.get
+       item   <- io $ WX.menuItem pane [ text := title ]
+       comIO  <- liftIO $ staticComIO ()
+       return $ comIO { pickSetEnabled = \enable -> do set item [ WX.enabled := enable ]
+                                                       pickSetEnabled comIO enable
+                      }
+subMenu :: String -> MenuMonad (ComIO ())
+seperator :: MenuMonad ()
+-}
+
+{-
+addMenu :: Menu (WxAct ())
+        -> WxM (WxAct ())
+addMenu Menu name items =
+        do (comIO, Widget widget, gui) <- f
+           (panes, actions) <- liftM (concatSnd . unzip) $ mapM addSubMenu menu
+           io $ set window [ menuBar := panes ]
+           let setAction action (local::(forall b. WxM b -> IO b))
+                   = WX.set window [ on (WX.menu $ AF.identity action) := applyAction comIO (AF.actionFun action) local
+                                   ]
+           mapM_ liftIO' $ map setAction actions
+           io $ addListener comIO (updateEnabled comIO actions)
+           io $ updateEnabled comIO actions
+           return (comIO, Widget widget, gui)
+    where
+      concatSnd (x, ys) = (x, concat ys)
+      addSubMenu :: AF.SubMenu a state WxM.WxM String -> WxM (Menu(), [AF.Action a state WxM.WxM (MenuItem())])
+      addSubMenu (name, items) =
+          do pane <- io $ menuPane [text := name]
+             items' <- mapM (addItem pane) items
+             return (pane, concat items')
+          where
+            addItem :: Menu() -> AF.MenuItem a state WxM.WxM String -> WxM [AF.Action a state WxM.WxM (MenuItem())]
+            addItem pane (AF.Sub subMenu) =
+                do (subPane, actions) <- addSubMenu subMenu
+                   io $ WX.menuSub pane subPane []
+                   return actions
+            addItem pane (AF.MenuItem action) =
+                do item <- io $ WX.menuItem pane [ text := AF.identity action ]
+                   return [action { AF.identity = item }]
+            addItem pane (AF.Seperator) =
+                do io $ WX.menuLine pane
+                   return []
+
+-}
+{-
+(comIO, Widget widget, gui) <- f
+         let setActions (local::(forall b. WxM b -> IO b))
+                   = do -- (send,process,pid) <-
+                        processExecAsyncTimed widget command True
+                                                  (\exitCode -> applyAction comIO (onEnd exitCode) local)
+                                                  (applyAction' local onStdOut) (applyAction' local onStdErr)
+                        return ()
+               applyAction' local action str _ = applyAction comIO (action str) local
+           liftIO' setActions
+           return (comIO, Widget widget, gui)
+-}
+
+</pre></br><h2>printed</h2></br><pre>{-# LANGUAGE FlexibleContexts, FlexibleInstances, MultiParamTypeClasses
+  , OverlappingInstances, PatternSignatures, ScopedTypeVariables, RankNTypes
+  , TypeOperators, TypeSynonymInstances, UndecidableInstances #-}
+
+-- |An implementation of the AutoForm class for WxHaskell
+module Graphics.UI.AF.WxForm.WxFormImplementation
+    ( module Graphics.UI.AF.WxForm.WxConstants
+    , module EC -- module Graphics.UI.AF.WxForm.EditorComponent
+    , ComH
+    , mkComProxy, makeEC, mkComI', ECCreator, ECCreatorD, ecCreatorCtx
+    , wxParentProxy
+    , SatCxt
+    , enumeration
+    )
+where
+
+{- mkfifo
+http://wxhaskell.sourceforge.net/doc/Graphics.UI.WXCore.Process.html#v%3AprocessExecAsyncTimed
+ -}
+
+import Graphics.UI.AF.WxForm.WxConstants
+import Graphics.UI.AF.WxForm.EditorComponent as EC
+import Graphics.UI.AF.WxForm.ComIO as EC
+import Graphics.UI.AF.WxForm.GenericEC
+import Graphics.UI.AF.WxForm.WxEnumeration
+
+import qualified Graphics.UI.AF.General as AF
+import Graphics.UI.AF.General.MySYB
+
+import Graphics.UI.WX hiding ( command, label, value, entry, parent, Parent, items, enabled, close
+                             , dialog, errorDialog, menu, stop)
+import qualified Graphics.UI.WX as WX
+import Graphics.UI.WXCore.Process(processExecAsyncTimed)
+
+import Maybe
+import qualified Control.Monad.State as St
+import Control.Monad(liftM)
+
+import qualified Graphics.UI.AF.WxForm.WxM as WxM
+
+-- |Parameter for the Wx instance of AutoForm
+type SatCxt = ECCreatorD
+
+-- |A Parent type proxy
+wxParentProxy :: WxM ()
+wxParentProxy = error "Cannot be instantiated."
+
+-- instance Closeable (Dialog a) where
+--     close dialog = set dialog [ visible := False ]
+
+type ComH = InnerEC
+instance AF.AutoForm WxAct ComH WxM SatCxt EC where
+    defaultCom x     = (makeECD dict) x
+    builderToCom     = builderToCom'
+    addCom           = mkComI'
+    state s = guilessInnerEC "" s
+
+    postponeAction   = postponeAction'
+    button           = buttonI'
+    addTimer         = addTimer'
+    executeProcess   = executeProcess'
+    limit test message ec = updateComIO ec helper where
+        helper comIO = do pickAddLimit comIO doTest
+                          return comIO
+        doTest x     = do accept <- test x
+                          if accept
+                            then return Accepted
+                            else return $ Rejected message
+    label heading ec = updateLabel (bestLabel (PriLabel UserDefined heading)) ec
+    addListener wxAct innerEC
+        = do wxActToListenerM wxAct >>= io . addListener (getComIO innerEC)
+             return innerEC
+
+    command _ ec execute = startI "" $ AF.commandImpl ec execute
+    window com       = subWindow com
+    -- blockingWindow :: ((Maybe b -> action ()) -> com a ())
+    --                -> action (Maybe b)
+
+instance AF.Dialog WxAct ComH WxM SatCxt EC where
+    blockingWindow closeToEC =
+        do (Parent parent) <- getParentI
+           d <- liftIO $ WX.dialog parent [ resizeable := True ]
+           liftIO $ showModal d (\stop -> do let ec = closeToEC (\x -> do liftIO $ stop x)
+                                             (_, widAndGui) <- runWxM (runEC ec) parent (stop Nothing) parent
+                                             (lay, title) <- maybe nonEditableLayout (unboxedLayout . rootGui) (liftM snd widAndGui)
+                                             p <- panel d []
+                                             set p [ layout := lay ]
+                                             set d [ text := title ]
+                                             set d [ layout := dynamic $ fill $ widget p ]
+                                             return ()
+                                )
+
+
+----------------------------------------------------------------------------
+
+
+------------------------------------------------------------------------------
+
+-- |The dictionary type for the ECCreator class
+data ECCreatorD a = ECCreatorD { makeECD     :: MakeEC a
+                               , mkComProxyD :: MakeEC a
+                               , gToStringD  :: a -> String
+                               }
+
+-- |Instantiation of the Sat class
+instance ECCreator a => Sat (ECCreatorD a)
+  where  dict = ECCreatorD { makeECD      = makeEC
+                           , mkComProxyD  = mkComProxy
+                           , gToStringD   = gToString
+                           }
+
+-- |The context for generic autoform
+ecCreatorCtx :: Proxy ECCreatorD
+ecCreatorCtx = error "ecCreatorCtx"
+
+-- |A more constrained generic function   -- not needed anymore. But in the future?
+-- makeEC' :: Data ECCreatorD a => GuiForm -> a -> IO (ComIO a)
+-- makeEC' =  makeECD dict
+
+toString :: Sat (ECCreatorD a) => a -> String
+toString x = (gToStringD dict) x
+
+------------------------------------------------------------------------------
+-- A problem with a default implementation is that it becomes hard to spilt
+-- declaration from definition. For example, it would require circular dependencies
+-- to put enumeration into its own module.
+
+-- |Main class for generic construction of 'EC' - see also
+-- 'genericEC'. Instantiate this class to make custom construction of
+-- ECs.
+class ( Data ECCreatorD a, AF.GInstanceCreator a, Show a
+      , AF.TypePresentation a WxAct ComH WxM ECCreatorD EC)
+      => ECCreator a
+    where
+    mkComProxy :: MakeEC a
+    mkComProxy x = updateWxM (withMaxDepth (\d -> d-1)) (AF.mkCom x)
+
+    makeEC :: MakeEC a
+    makeEC x =
+        case enumerationFromType x of
+          Just ec -> ec
+          Nothing ->
+              case constrRep (toConstr ecCreatorCtx x) of
+                AlgConstr _      -> genericEC ecCreatorCtx (mkComProxyD dict) x
+                IntConstr _      -> entryForm ('-':['0'..'9']) "Int" x
+                FloatConstr _    -> entryForm ('-':'.':['0'..'9']) "Float" x
+                StringConstr [_] -> error "WxFormImplementation: Char not implemented yet" -- FIXME
+                StringConstr _   -> error "WxFormImplementation: No StringConstr constructors for other than Char."
+        where
+        -- widthFirstTraversal :: (ECCreator b) => b -> EC b ()
+        -- widthFirstTraversal = (mkComProxyD dict)
+        entryForm :: [Char] -> String -> MakeEC a
+        entryForm allowedChars label val = AF.builderToCom $
+            do Parent w <- getPanel
+               lastTextVal <- io $ varCreate ""
+               entry <- io $ textEntry w [ processEnter := True
+                                         , on anyKey := handleInput allowedChars
+                                         ]
+               let gui                 = singleGui (badConstrLabel label) entry hfill
+                   setGuiValue z       = do set entry [ text := show z ]
+                                            varSet lastTextVal (show z)
+               -- We check whether the textEntry has changed outselves, as
+               -- we do not want Eq to be a superclass of ECCreator.
+               -- Thus we use `addCustomGuiNoEquals`.
+               (comH, parms) <- addCustomGuiNoEquals val setGuiValue entry gui
+               let getGuiVal = do textVal <- get entry text
+                                  let maybeConstr = readConstr (dataTypeOf ecCreatorCtx val) textVal
+                                      maybeX = maybeConstr >>= (Just . fromConstr ecCreatorCtx)
+                                  return maybeX
+                   restore = pickGetVal (getComIO comH) >>= setGuiValue
+               let onFocus _ = do lastVal    <- varGet lastTextVal
+                                  currentVal <- get entry text
+                                  when (lastVal /= currentVal) $
+                                           do varSet lastTextVal currentVal
+                                              getGuiVal >>= maybe restore (testInputParm' parms SetOnReject)
+                                  propagateEvent
+               io $ set entry [ on focus := onFocus ]
+               return comH
+
+        handleInput chars (KeyChar c)
+            = if c `elem` chars
+              then do propagateEvent
+              else return()
+        handleInput _ _ = propagateEvent
+
+--------------------------------------------------------------------------------
+
+enumerationFromType :: (ECCreator a) => a -> Maybe (EC a)
+enumerationFromType x =
+    case constrRep (toConstr ecCreatorCtx x) of
+      AlgConstr _         -> do namesAndValues <- mapM enumConstr (constructors ecCreatorCtx x)
+                                if length namesAndValues > 1
+                                   then return (enumeration typeName namesAndValues x)
+                                   else Nothing
+      IntConstr _         -> Nothing
+      FloatConstr _       -> Nothing
+      StringConstr _      -> Nothing
+  where
+    typeName         = dataTypeName $ dataTypeOf ecCreatorCtx x
+    enumConstr constr = if numChildren' x constr > 0
+                        then Nothing
+                        else Just ( showConstr constr
+                                  , fromConstr ecCreatorCtx constr
+                                  , \y -> constr == toConstr ecCreatorCtx y
+                                  )
+
+    -- typeType is solely to satisfy the type checker.
+    numChildren' :: (ECCreator a) => a -> Constr -> Int
+    numChildren' typeType constr = ((numChildren typeType) . fromConstr ecCreatorCtx) constr
+    -- the first parameter is solely to satisfy the type checker.
+    numChildren :: (ECCreator a) => a -> a -> Int
+    numChildren _ y = sum $ gmapQ ecCreatorCtx (\_ -> 1) y
+
+------------------------------------------------------------------------------
+
+instance ECCreator Bool
+instance ECCreator Int
+instance ECCreator Char
+instance ECCreator Float
+instance ECCreator Double
+
+
+
+
+{- trash:
+
+    removeQualifiers xs = reverse (takeWhile (/= '.') (reverse xs))
+
+-}
+
+---------------------------------------------------------------------------------
+
+mkComI' :: EC a -> WxM (ComH a)
+mkComI' x = do (comIO, maybeGui) <- runEC x
+               case maybeGui of
+                 Just ((Widget wid), gui) -> addGui wid gui comIO
+                 _                        -> return $ guilessInnerEC' comIO
+
+buttonI' :: String -> WxAct() -> WxM (ComH ())
+buttonI' title act = helper >>= AF.addListener act
+    where helper =
+              do Parent p  <- getPanel
+                 comIO     <- liftIO $ staticComIO ()
+                 wid       <- liftIO $ button p
+                                [ text := title
+                                , on WX.command := unsafeSignalChange comIO
+                                ]
+                 let comIO' = comIO { pickSetEnabled = \enable -> do set wid [ WX.enabled := enable ]
+                                                                     pickSetEnabled comIO enable
+                                    }
+                 addGui wid (Buttons $ widget wid) comIO'
+
+-- FIXME: set parentwindow, ...
+subWindow :: EC a -> WxAct ()
+subWindow ec =
+    do (Parent parentWindow) <- getParentI
+       d <- io $ WX.dialog parentWindow [ resizeable := True ]
+       liftIO $ set d [ visible := True ]
+       let closeDialog = set d [ visible := False ]
+       io $ do
+         p <- panel d []
+         (_, widAndGui) <- runWxM (runEC ec) d closeDialog p
+         (lay, title) <- maybe nonEditableLayout (unboxedLayout . rootGui) (liftM snd widAndGui)
+         set p [ layout := lay ]
+         set d [ text := title ]
+         set d [ layout := dynamic $ fill $ widget p ]
+
+addTimer' :: Int -> WxAct () -> WxM ()
+addTimer' mili action =
+        do Parent parentWindow <- getFrame
+           actionIO <- wxActToListenerM action
+           io $ WX.timer parentWindow [ interval := mili
+                                      , on WX.command := unsafeRunListenerM actionIO
+                                      ]
+           return ()
+
+{-
+Reading these two:
+
+http://www.wxwidgets.org/manuals/stable/wx_wxinputstream.html#wxinputstreamcanread
+http://www.wxwidgets.org/manuals/stable/wx_wxinputstream.html#wxinputstreameof
+
+it seems that wxInputStream::Eof is the correct choice.
+
+-- See http://sourceforge.net/mailarchive/message.php?msg_id=54647.129.16.31.149.1111686341.squirrel%40webmail.chalmers.se-- for problem about on-end-process (check also Process.hs example with "ls -l" and "tail -f Process.hs" -examples.
+
+-}
+executeProcess' :: String
+                -> (Int -> WxAct ())
+                -> (String -> WxAct ())
+                -> (String -> WxAct ())
+                -> WxM ()
+executeProcess' command onEnd onStdOut onStdErr
+    = do Parent parentWindow <- getFrame
+         let setAction (local::(       a  WxAct a -> ListenerM a))
+                 = do processExecAsyncTimed parentWindow command True
+                           (\exitCode -> local' $ onEnd exitCode)
+                           (\msg _    -> local' $ onStdOut msg)
+                           (\msg _    -> local' $ onStdErr msg)
+                      return ()
+                 where local' = unsafeRunListenerM . local
+         liftWxActToListenerM setAction
+
+
+{- Menus
+
+we need (Frame ()) in WxM to make it work, now we got just Window ().
+
+Maybe this could just be part of the WxM-monad.
+Pro: no need to tread variables though the monads
+     no need for yet another monad
+Con: if the programmer forgets to call addMenu, the menu will be titleless
+
+type MenuMonad a = St.StateT (Menu ()) IO a
+
+addMenu :: String -> MenuMonad a -> WxM a
+addMenu title menuMonad =
+    do pane <- io $ menuPane [text := title]
+       handles <- io $ St.evalStateT menuMonad pane
+       Parent parentWindow <- getFrame
+       io $ set parentWindow [ menuBar := [pane] ]
+       return handles
+
+menuItem :: String -> WxAct() -> MenuMonad (ComIO ())
+menuItem title action =
+    do pane   <- St.get
+       item   <- io $ WX.menuItem pane [ text := title ]
+       comIO  <- liftIO $ staticComIO ()
+       return $ comIO { pickSetEnabled = \enable -> do set item [ WX.enabled := enable ]
+                                                       pickSetEnabled comIO enable
+                      }
+subMenu :: String -> MenuMonad (ComIO ())
+seperator :: MenuMonad ()
+-}
+
+{-
+addMenu :: Menu (WxAct ())
+        -> WxM (WxAct ())
+addMenu Menu name items =
+        do (comIO, Widget widget, gui) <- f
+           (panes, actions) <- liftM (concatSnd . unzip) $ mapM addSubMenu menu
+           io $ set window [ menuBar := panes ]
+           let setAction action (local::(forall b. WxM b -> IO b))
+                   = WX.set window [ on (WX.menu $ AF.identity action) := applyAction comIO (AF.actionFun action) local
+                                   ]
+           mapM_ liftIO' $ map setAction actions
+           io $ addListener comIO (updateEnabled comIO actions)
+           io $ updateEnabled comIO actions
+           return (comIO, Widget widget, gui)
+    where
+      concatSnd (x, ys) = (x, concat ys)
+      addSubMenu :: AF.SubMenu a state WxM.WxM String -> WxM (Menu(), [AF.Action a state WxM.WxM (MenuItem())])
+      addSubMenu (name, items) =
+          do pane <- io $ menuPane [text := name]
+             items' <- mapM (addItem pane) items
+             return (pane, concat items')
+          where
+            addItem :: Menu() -> AF.MenuItem a state WxM.WxM String -> WxM [AF.Action a state WxM.WxM (MenuItem())]
+            addItem pane (AF.Sub subMenu) =
+                do (subPane, actions) <- addSubMenu subMenu
+                   io $ WX.menuSub pane subPane []
+                   return actions
+            addItem pane (AF.MenuItem action) =
+                do item <- io $ WX.menuItem pane [ text := AF.identity action ]
+                   return [action { AF.identity = item }]
+            addItem pane (AF.Seperator) =
+                do io $ WX.menuLine pane
+                   return []
+
+-}
+{-
+(comIO, Widget widget, gui) <- f
+         let setActions (local::(forall b. WxM b -> IO b))
+                   = do -- (send,process,pid) <-
+                        processExecAsyncTimed widget command True
+                                                  (\exitCode -> applyAction comIO (onEnd exitCode) local)
+                                                  (applyAction' local onStdOut) (applyAction' local onStdErr)
+                        return ()
+               applyAction' local action str _ = applyAction comIO (action str) local
+           liftIO' setActions
+           return (comIO, Widget widget, gui)
+-}
+
+
+</pre>

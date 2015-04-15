@@ -1,0 +1,665 @@
+<a href="Traversal.hs2128236579784558821.out.html">prev</a></br><a href="failures.html">home</a></br><a href="TrfUtils.hs16711327911937682871.out.html">next</a></br></br><pre>41c41
+< {-# LINE 79 "src/ehc/Core/Trf.chs" #-}
+---
+> 
+41a42
+> 
+41a43
+> 
+41a44
+> 
+41a45
+> 
+41a46
+> 
+41a47
+> 
+41a48
+> 
+41a49
+> 
+41a50
+> 
+41a51
+> 
+41a52
+> 
+41a53
+> 
+41a54
+> 
+41a55
+> 
+41a56
+> 
+41a57
+> 
+41a58
+> 
+41a59
+> 
+41a60
+> 
+41a61
+> 
+41a62
+> 
+41a63
+> 
+41a64
+> 
+41a65
+> 
+41a66
+> 
+41a67
+> 
+41a68
+> 
+41a69
+> 
+41a70
+> 
+41a71
+> 
+41a72
+> 
+41a73
+> 
+41a74
+> 
+41a75
+> 
+41a76
+> 
+41a77
+> 
+41a78
+> 
+47c84
+< {-# LINE 86 "src/ehc/Core/Trf.chs" #-}
+---
+> 
+47a85
+> 
+68c106
+< {-# LINE 124 "src/ehc/Core/Trf.chs" #-}
+---
+> 
+68a107
+> 
+68a108
+> 
+68a109
+> 
+68a110
+> 
+68a111
+> 
+68a112
+> 
+68a113
+> 
+68a114
+> 
+68a115
+> 
+68a116
+> 
+68a117
+> 
+68a118
+> 
+68a119
+> 
+68a120
+> 
+68a121
+> 
+68a122
+> 
+68a123
+> 
+242a298
+> 
+</pre></br><h2>original</h2></br><pre>module UHC.Light.Compiler.Core.Trf
+( TrfCore (..), emptyTrfCore
+, TrfCoreExtra (..), emptyTrfCoreExtra
+, trfCore )
+where
+import qualified Data.Map as Map
+import qualified Data.Set as Set
+import Control.Monad
+import Control.Monad.State
+import UHC.Light.Compiler.Base.Target
+import UHC.Light.Compiler.Base.Optimize
+import UHC.Light.Compiler.EHC.Common
+import UHC.Light.Compiler.CodeGen.ValAccess as VA
+import UHC.Light.Compiler.LamInfo
+import UHC.Light.Compiler.Core
+import UHC.Light.Compiler.Core.Check
+import UHC.Light.Compiler.Core.Trf.RenUniq
+import UHC.Light.Compiler.Core.Trf.ANormal
+import UHC.Light.Compiler.Core.Trf.InlineLetAlias
+import UHC.Light.Compiler.Core.Trf.LetUnrec
+import UHC.Light.Compiler.Core.Trf.LetDefBeforeUse
+import UHC.Light.Compiler.Core.Trf.LamGlobalAsArg
+import UHC.Light.Compiler.Core.Trf.CAFGlobalAsArg
+import UHC.Light.Compiler.Core.Trf.FloatToGlobal
+import UHC.Light.Compiler.Core.Trf.ConstProp
+import UHC.Light.Compiler.Core.Trf.EtaRed
+import UHC.Light.Compiler.Core.Trf.ElimTrivApp
+import UHC.Light.Compiler.Core.Trf.AnnBasedSimplify
+import UHC.Light.Compiler.Core.Trf.AnaRelevance
+import UHC.Light.Compiler.Core.Trf.LetFlattenStrict
+import UHC.Light.Compiler.Core.Trf.OptimizeStrictness
+import UHC.Light.Compiler.Core.Trf.EraseExtractTysigCore
+import UHC.Light.Compiler.Core.Trf.FixAfterParse
+import UHC.Light.Compiler.CodeGen.TrfUtils
+import UHC.Light.Compiler.Core.Trf.ExplicitStackTrace
+
+
+
+
+
+{-# LINE 79 "src/ehc/Core/Trf.chs" #-}
+type TrfCore = TrfState CModule TrfCoreExtra
+
+emptyTrfCore :: TrfCore
+emptyTrfCore = mkEmptyTrfState emptyCModule emptyTrfCoreExtra
+
+{-# LINE 86 "src/ehc/Core/Trf.chs" #-}
+data TrfCoreExtra
+  = TrfCoreExtra
+      { trfcoreInhLamMp         :: LamMp        -- from context, possibly overridden from gathered one
+      , trfcoreGathLamMp        :: !LamMp       -- gathered anew
+      , trfcoreExpNmOffMp       :: !HsName2FldMp
+      , trfcoreExtraExports     :: !FvS             -- extra exported names, introduced by transformations
+      , trfcoreECUState         :: !EHCompileUnitState
+      -- , trfcoreIsLamLifted      :: !Bool
+      , trfcoreNotYetTransformed:: !NotYetTransformedS
+      }
+
+emptyTrfCoreExtra :: TrfCoreExtra
+emptyTrfCoreExtra = TrfCoreExtra
+                       Map.empty Map.empty
+                       Map.empty
+                       Set.empty
+                       ECUS_Unknown
+                       -- False
+                       (Set.fromList [minBound .. maxBound])
+
+{-# LINE 124 "src/ehc/Core/Trf.chs" #-}
+-- | Perform Core transformations.
+--   The 'optScope' tells at which compilation phase (per module, whole program) the transformations are done, default only per module
+trfCore :: EHCOpts -> OptimizationScope -> DataGam -> HsName -> TrfCore -> TrfCore
+trfCore opts optimScope dataGam modNm trfcore
+  -- = execState trf trfcore
+  = runTrf opts modNm ehcOptDumpCoreStages (optimScope `elem`) trfcore trf
+  where isFromCoreSrc       = ecuStateIsCore $ trfcoreECUState $ trfstExtra trfcore
+        notYetTransformed   = trfcoreNotYetTransformed         $ trfstExtra trfcore
+        isNotLamLifted      = NotYetTransformed_LambdaLifted `Set.member` notYetTransformed
+        isNotANormal        = NotYetTransformed_ANormal      `Set.member` notYetTransformed
+        isLamLifted         = not isNotLamLifted
+        isANormal           = not isNotANormal
+        noOptims            = ehcOptOptimizationLevel opts <= OptimizationLevel_Off
+        isCoreTarget        = targetIsCoreVariation $ ehcOptTarget opts
+        isUnOptimCoreTarget = isCoreTarget && noOptims
+        trf
+          = do { -- initial is just to obtain Core for dumping stages
+                 t_initial
+
+               ; when isFromCoreSrc $ do
+                   { -- fix whatever needs to be fixed when read from Core src
+                     t_fix_postparse
+
+                   }
+
+
+               ; unless isFromCoreSrc $ do
+                   { unless noOptims $ do
+                       { -- removal of unnecessary constructs: simplifications based on annotations (experimential, temporary)
+                         t_ann_simpl
+                       }
+
+                     -- removal of unnecessary constructs: eta expansions
+                   ; t_eta_red
+
+                     -- erase type signatures, extract the core + ty combi at this stage
+                   ; unless (ehcOptCoreSysF opts)
+                       t_erase_ty
+                   }
+
+
+               ; unless isLamLifted $ do
+                   {
+                     -- make names unique
+                   ; unless isUnOptimCoreTarget $
+                       t_ren_uniq emptyRenUniqOpts
+                     -- from now on INVARIANT: keep all names globally unique
+                     --             ASSUME   : no need to shadow identifiers
+
+                     -- removal of unnecessary constructs: mutual recursiveness
+                   ; t_let_unrec
+                   }
+
+               ; when isFromCoreSrc $ do
+                   { -- ensure def before use ordering
+                     t_let_defbefuse
+
+                   }
+
+                 -- flattening of nested strictness
+               ; t_let_flatstr
+
+               ; unless noOptims $ do
+                   {
+                     -- removal of unnecessary constructs: aliases
+                   ; t_inl_letali
+
+                     -- removal of unnecessary constructs: trival function applications
+                   ; t_elim_trivapp
+                   }
+
+                 -- optionally modify to include explicit stack trace
+               ; when (ehcOptTargetFlavor opts == TargetFlavor_Debug)
+                      (do { t_expl_trace
+                            -- from now on INVARIANT: renaming of identifiers must also rename additional exported names here introduced
+
+                          ; t_let_unrec
+                          -- ; t_ren_uniq
+                          })
+
+               ; unless noOptims $ do
+                   {
+                     -- removal of unnecessary constructs: constants
+                   ; t_const_prop
+                   ; t_inl_letali
+                   ; t_elim_trivapp
+                   }
+
+               ; when (isUnOptimCoreTarget || isNotLamLifted || isNotANormal) $ do
+                   {
+                     -- put in A-normal form, where args to app only may be identifiers
+                   ; u1 <- freshInfUID
+                   ; t_anormal u1
+                   }
+
+
+               ; when (isNotLamLifted && not isUnOptimCoreTarget) $ do
+                   {
+                     -- pass all globals used in lambda explicit as argument
+                   ; t_lam_asarg
+
+                     -- pass all globals used in CAF explicit as argument
+                   ; t_caf_asarg
+                   ; t_let_unrec
+                   ; u2 <- freshInfUID
+                   ; t_anormal u2
+
+                     -- float lam/CAF to global level
+                   ; t_float_glob
+                     -- from now on INVARIANT: no local lambdas
+                     --             ASSUME   :
+                   }
+
+               ; when (ehcOptOptimizes Optimize_StrictnessAnalysis opts)
+                      (do { t_let_defbefuse
+                          ; t_ana_relev
+                          ; t_opt_strict
+                          })
+               ; when (ehcOptIsViaCoreJavaScript opts)
+                      (do { {- t_let_flatstr
+                          ; -} t_ren_uniq (emptyRenUniqOpts {renuniqOptResetOnlyInLam = True})
+                          })
+               ; when (not isCoreTarget) {- isFromCoreSrc -} $ do
+                   { -- ensure def before use ordering
+                     t_let_defbefuse' osmw
+
+                   }
+               }
+
+        lamMpPropagate l s@(TrfState {trfstExtra=e@(TrfCoreExtra{trfcoreGathLamMp=gl, trfcoreInhLamMp=il})})
+          = s {trfstExtra = e {trfcoreGathLamMp = gl', trfcoreInhLamMp = Map.union gl' il}}
+          where gl' = Map.union l gl
+
+        -- actual transformations
+        t_initial       = liftTrfModPlain  osmw "initial"           $ id
+        t_fix_postparse = liftTrfModPlain  osm "fix-postparse"      $ cmodTrfFixAfterParse dataGam
+        t_eta_red       = liftTrfModPlain  osm "eta-red"            $ cmodTrfEtaRed
+        t_erase_ty      = liftTrfModWithStateExtra osmw "erase-ty" lamMpPropagate
+                                                               $ \_ -> cmodTrfEraseExtractTysigCore opts
+        t_ann_simpl     = liftTrfModPlain  osm "ann-simpl"          $ cmodTrfAnnBasedSimplify opts
+        t_ren_uniq    o = liftTrfModPlain  osm "ren-uniq"           $ cmodTrfRenUniq o
+        t_let_unrec     = liftTrfModPlain  osm "let-unrec"          $ cmodTrfLetUnrec
+        t_let_defbefuse' os
+                        = liftTrfModPlain  os  "let-defbefuse"      $ cmodTrfLetDefBeforeUse
+        t_let_defbefuse = t_let_defbefuse' osm
+        t_let_flatstr   = liftTrfModPlain  osm "let-flatstr"        $ cmodTrfLetFlattenStrict
+        t_inl_letali    = liftTrfModPlain  osm "inl-letali"         $ cmodTrfInlineLetAlias
+                                                              (Map.keysSet $ trfcoreExpNmOffMp $ trfstExtra trfcore)
+        t_elim_trivapp  = liftTrfModPlain  osm "elim-trivapp"       $ cmodTrfElimTrivApp opts
+        t_const_prop    = liftTrfModPlain  osm "const-prop"         $ cmodTrfConstProp opts
+        t_anormal     u = liftTrfModPlain  osm "anormal"            $ cmodTrfANormal modNm u
+        t_lam_asarg     = liftTrfModPlain  osm "lam-asarg"          $ cmodTrfLamGlobalAsArg
+        t_caf_asarg     = liftTrfModPlain  osm "caf-asarg"          $ cmodTrfCAFGlobalAsArg
+        t_float_glob    = liftTrfModPlain  osm "float-glob"         $ cmodTrfFloatToGlobal
+        t_ana_relev     = liftTrfModWithStateExtra osm "ana-relev" lamMpPropagate
+                                                               $ \s -> cmodTrfAnaRelevance opts dataGam (trfcoreInhLamMp $ trfstExtra s)
+        t_opt_strict    = liftTrfModWithStateExtra osm "optim-strict" lamMpPropagate
+                                                               $ \s -> cmodTrfOptimizeStrictness opts (trfcoreInhLamMp $ trfstExtra s)
+        t_expl_trace    = liftTrfModWithStateExtra osm "expl-sttrace"
+                                                  (\m s@(TrfState {trfstExtra=e@(TrfCoreExtra {trfcoreExtraExports=exps})})
+                                                     -> (lamMpPropagate m s)
+                                                          { trfstExtra =
+                                                              e { trfcoreExtraExports   = exps `Set.union`
+                                                                                    Set.fromList [ n
+                                                                                                 | (n,LamInfo {laminfoStackTrace=(StackTraceInfo_IsStackTraceEquiv _)}) <- Map.toList m
+                                                                                                 ]
+                                                          }     }
+                                                  )            $ \s -> cmodTrfExplicitStackTrace opts (trfcoreInhLamMp $ trfstExtra s)
+        -- abbreviations for optimatisation scope
+        osm  = [OptimizationScope_PerModule]
+        osmw =
+               [OptimizationScope_WholeCore] ++
+               osm
+
+</pre></br><h2>printed</h2></br><pre>module UHC.Light.Compiler.Core.Trf
+( TrfCore (..), emptyTrfCore
+, TrfCoreExtra (..), emptyTrfCoreExtra
+, trfCore )
+where
+import qualified Data.Map as Map
+import qualified Data.Set as Set
+import Control.Monad
+import Control.Monad.State
+import UHC.Light.Compiler.Base.Target
+import UHC.Light.Compiler.Base.Optimize
+import UHC.Light.Compiler.EHC.Common
+import UHC.Light.Compiler.CodeGen.ValAccess as VA
+import UHC.Light.Compiler.LamInfo
+import UHC.Light.Compiler.Core
+import UHC.Light.Compiler.Core.Check
+import UHC.Light.Compiler.Core.Trf.RenUniq
+import UHC.Light.Compiler.Core.Trf.ANormal
+import UHC.Light.Compiler.Core.Trf.InlineLetAlias
+import UHC.Light.Compiler.Core.Trf.LetUnrec
+import UHC.Light.Compiler.Core.Trf.LetDefBeforeUse
+import UHC.Light.Compiler.Core.Trf.LamGlobalAsArg
+import UHC.Light.Compiler.Core.Trf.CAFGlobalAsArg
+import UHC.Light.Compiler.Core.Trf.FloatToGlobal
+import UHC.Light.Compiler.Core.Trf.ConstProp
+import UHC.Light.Compiler.Core.Trf.EtaRed
+import UHC.Light.Compiler.Core.Trf.ElimTrivApp
+import UHC.Light.Compiler.Core.Trf.AnnBasedSimplify
+import UHC.Light.Compiler.Core.Trf.AnaRelevance
+import UHC.Light.Compiler.Core.Trf.LetFlattenStrict
+import UHC.Light.Compiler.Core.Trf.OptimizeStrictness
+import UHC.Light.Compiler.Core.Trf.EraseExtractTysigCore
+import UHC.Light.Compiler.Core.Trf.FixAfterParse
+import UHC.Light.Compiler.CodeGen.TrfUtils
+import UHC.Light.Compiler.Core.Trf.ExplicitStackTrace
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+type TrfCore = TrfState CModule TrfCoreExtra
+
+emptyTrfCore :: TrfCore
+emptyTrfCore = mkEmptyTrfState emptyCModule emptyTrfCoreExtra
+
+
+
+data TrfCoreExtra
+  = TrfCoreExtra
+      { trfcoreInhLamMp         :: LamMp        -- from context, possibly overridden from gathered one
+      , trfcoreGathLamMp        :: !LamMp       -- gathered anew
+      , trfcoreExpNmOffMp       :: !HsName2FldMp
+      , trfcoreExtraExports     :: !FvS             -- extra exported names, introduced by transformations
+      , trfcoreECUState         :: !EHCompileUnitState
+      -- , trfcoreIsLamLifted      :: !Bool
+      , trfcoreNotYetTransformed:: !NotYetTransformedS
+      }
+
+emptyTrfCoreExtra :: TrfCoreExtra
+emptyTrfCoreExtra = TrfCoreExtra
+                       Map.empty Map.empty
+                       Map.empty
+                       Set.empty
+                       ECUS_Unknown
+                       -- False
+                       (Set.fromList [minBound .. maxBound])
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+-- | Perform Core transformations.
+--   The 'optScope' tells at which compilation phase (per module, whole program) the transformations are done, default only per module
+trfCore :: EHCOpts -> OptimizationScope -> DataGam -> HsName -> TrfCore -> TrfCore
+trfCore opts optimScope dataGam modNm trfcore
+  -- = execState trf trfcore
+  = runTrf opts modNm ehcOptDumpCoreStages (optimScope `elem`) trfcore trf
+  where isFromCoreSrc       = ecuStateIsCore $ trfcoreECUState $ trfstExtra trfcore
+        notYetTransformed   = trfcoreNotYetTransformed         $ trfstExtra trfcore
+        isNotLamLifted      = NotYetTransformed_LambdaLifted `Set.member` notYetTransformed
+        isNotANormal        = NotYetTransformed_ANormal      `Set.member` notYetTransformed
+        isLamLifted         = not isNotLamLifted
+        isANormal           = not isNotANormal
+        noOptims            = ehcOptOptimizationLevel opts <= OptimizationLevel_Off
+        isCoreTarget        = targetIsCoreVariation $ ehcOptTarget opts
+        isUnOptimCoreTarget = isCoreTarget && noOptims
+        trf
+          = do { -- initial is just to obtain Core for dumping stages
+                 t_initial
+
+               ; when isFromCoreSrc $ do
+                   { -- fix whatever needs to be fixed when read from Core src
+                     t_fix_postparse
+
+                   }
+
+
+               ; unless isFromCoreSrc $ do
+                   { unless noOptims $ do
+                       { -- removal of unnecessary constructs: simplifications based on annotations (experimential, temporary)
+                         t_ann_simpl
+                       }
+
+                     -- removal of unnecessary constructs: eta expansions
+                   ; t_eta_red
+
+                     -- erase type signatures, extract the core + ty combi at this stage
+                   ; unless (ehcOptCoreSysF opts)
+                       t_erase_ty
+                   }
+
+
+               ; unless isLamLifted $ do
+                   {
+                     -- make names unique
+                   ; unless isUnOptimCoreTarget $
+                       t_ren_uniq emptyRenUniqOpts
+                     -- from now on INVARIANT: keep all names globally unique
+                     --             ASSUME   : no need to shadow identifiers
+
+                     -- removal of unnecessary constructs: mutual recursiveness
+                   ; t_let_unrec
+                   }
+
+               ; when isFromCoreSrc $ do
+                   { -- ensure def before use ordering
+                     t_let_defbefuse
+
+                   }
+
+                 -- flattening of nested strictness
+               ; t_let_flatstr
+
+               ; unless noOptims $ do
+                   {
+                     -- removal of unnecessary constructs: aliases
+                   ; t_inl_letali
+
+                     -- removal of unnecessary constructs: trival function applications
+                   ; t_elim_trivapp
+                   }
+
+                 -- optionally modify to include explicit stack trace
+               ; when (ehcOptTargetFlavor opts == TargetFlavor_Debug)
+                      (do { t_expl_trace
+                            -- from now on INVARIANT: renaming of identifiers must also rename additional exported names here introduced
+
+                          ; t_let_unrec
+                          -- ; t_ren_uniq
+                          })
+
+               ; unless noOptims $ do
+                   {
+                     -- removal of unnecessary constructs: constants
+                   ; t_const_prop
+                   ; t_inl_letali
+                   ; t_elim_trivapp
+                   }
+
+               ; when (isUnOptimCoreTarget || isNotLamLifted || isNotANormal) $ do
+                   {
+                     -- put in A-normal form, where args to app only may be identifiers
+                   ; u1 <- freshInfUID
+                   ; t_anormal u1
+                   }
+
+
+               ; when (isNotLamLifted && not isUnOptimCoreTarget) $ do
+                   {
+                     -- pass all globals used in lambda explicit as argument
+                   ; t_lam_asarg
+
+                     -- pass all globals used in CAF explicit as argument
+                   ; t_caf_asarg
+                   ; t_let_unrec
+                   ; u2 <- freshInfUID
+                   ; t_anormal u2
+
+                     -- float lam/CAF to global level
+                   ; t_float_glob
+                     -- from now on INVARIANT: no local lambdas
+                     --             ASSUME   :
+                   }
+
+               ; when (ehcOptOptimizes Optimize_StrictnessAnalysis opts)
+                      (do { t_let_defbefuse
+                          ; t_ana_relev
+                          ; t_opt_strict
+                          })
+               ; when (ehcOptIsViaCoreJavaScript opts)
+                      (do { {- t_let_flatstr
+                          ; -} t_ren_uniq (emptyRenUniqOpts {renuniqOptResetOnlyInLam = True})
+                          })
+               ; when (not isCoreTarget) {- isFromCoreSrc -} $ do
+                   { -- ensure def before use ordering
+                     t_let_defbefuse' osmw
+
+                   }
+               }
+
+        lamMpPropagate l s@(TrfState {trfstExtra=e@(TrfCoreExtra{trfcoreGathLamMp=gl, trfcoreInhLamMp=il})})
+          = s {trfstExtra = e {trfcoreGathLamMp = gl', trfcoreInhLamMp = Map.union gl' il}}
+          where gl' = Map.union l gl
+
+        -- actual transformations
+        t_initial       = liftTrfModPlain  osmw "initial"           $ id
+        t_fix_postparse = liftTrfModPlain  osm "fix-postparse"      $ cmodTrfFixAfterParse dataGam
+        t_eta_red       = liftTrfModPlain  osm "eta-red"            $ cmodTrfEtaRed
+        t_erase_ty      = liftTrfModWithStateExtra osmw "erase-ty" lamMpPropagate
+                                                               $ \_ -> cmodTrfEraseExtractTysigCore opts
+        t_ann_simpl     = liftTrfModPlain  osm "ann-simpl"          $ cmodTrfAnnBasedSimplify opts
+        t_ren_uniq    o = liftTrfModPlain  osm "ren-uniq"           $ cmodTrfRenUniq o
+        t_let_unrec     = liftTrfModPlain  osm "let-unrec"          $ cmodTrfLetUnrec
+        t_let_defbefuse' os
+                        = liftTrfModPlain  os  "let-defbefuse"      $ cmodTrfLetDefBeforeUse
+        t_let_defbefuse = t_let_defbefuse' osm
+        t_let_flatstr   = liftTrfModPlain  osm "let-flatstr"        $ cmodTrfLetFlattenStrict
+        t_inl_letali    = liftTrfModPlain  osm "inl-letali"         $ cmodTrfInlineLetAlias
+                                                              (Map.keysSet $ trfcoreExpNmOffMp $ trfstExtra trfcore)
+        t_elim_trivapp  = liftTrfModPlain  osm "elim-trivapp"       $ cmodTrfElimTrivApp opts
+        t_const_prop    = liftTrfModPlain  osm "const-prop"         $ cmodTrfConstProp opts
+        t_anormal     u = liftTrfModPlain  osm "anormal"            $ cmodTrfANormal modNm u
+        t_lam_asarg     = liftTrfModPlain  osm "lam-asarg"          $ cmodTrfLamGlobalAsArg
+        t_caf_asarg     = liftTrfModPlain  osm "caf-asarg"          $ cmodTrfCAFGlobalAsArg
+        t_float_glob    = liftTrfModPlain  osm "float-glob"         $ cmodTrfFloatToGlobal
+        t_ana_relev     = liftTrfModWithStateExtra osm "ana-relev" lamMpPropagate
+                                                               $ \s -> cmodTrfAnaRelevance opts dataGam (trfcoreInhLamMp $ trfstExtra s)
+        t_opt_strict    = liftTrfModWithStateExtra osm "optim-strict" lamMpPropagate
+                                                               $ \s -> cmodTrfOptimizeStrictness opts (trfcoreInhLamMp $ trfstExtra s)
+        t_expl_trace    = liftTrfModWithStateExtra osm "expl-sttrace"
+                                                  (\m s@(TrfState {trfstExtra=e@(TrfCoreExtra {trfcoreExtraExports=exps})})
+                                                     -> (lamMpPropagate m s)
+                                                          { trfstExtra =
+                                                              e { trfcoreExtraExports   = exps `Set.union`
+                                                                                    Set.fromList [ n
+                                                                                                 | (n,LamInfo {laminfoStackTrace=(StackTraceInfo_IsStackTraceEquiv _)}) <- Map.toList m
+                                                                                                 ]
+                                                          }     }
+                                                  )            $ \s -> cmodTrfExplicitStackTrace opts (trfcoreInhLamMp $ trfstExtra s)
+        -- abbreviations for optimatisation scope
+        osm  = [OptimizationScope_PerModule]
+        osmw =
+               [OptimizationScope_WholeCore] ++
+               osm
+
+
+</pre>

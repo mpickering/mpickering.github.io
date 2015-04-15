@@ -1,0 +1,414 @@
+<a href="Custom.hs13055348377901842.out.html">prev</a></br><a href="failures.html">home</a></br><a href="CVar.hs973300198873488587.out.html">next</a></br></br><pre>115d114
+<         inc :: Float = (fromIntegral w) / (fromIntegral (length ps))
+116c115
+<         scale :: Float = (fromIntegral h) / (maximum ps)
+---
+>         inc    Float = (fromIntegral w) / (fromIntegral (length ps))
+116a116
+>         scale    Float = (fromIntegral h) / (maximum ps)
+201a202
+> 
+</pre></br><h2>original</h2></br><pre>{-#LANGUAGE ScopedTypeVariables, FlexibleInstances, FlexibleContexts,
+   UndecidableInstances, TypeSynonymInstances, OverlappingInstances,
+   TypeOperators#-}
+
+module Graphics.Tools.CV2WX (
+  WxImage(..), WxPaintable(..)
+) where
+
+import Graphics.UI.WXCore.Types
+import Graphics.UI.WXCore.Image
+import Graphics.UI.WX
+import Graphics.Tools.WX
+import Graphics.Tools.Bindings.Convert
+import CV.Image
+import CV.Operations hiding (set)
+import CV.Corners
+import CV.HoughTransform hiding (start, Line)
+import qualified CV.HoughTransform as HT
+import CV.DFT
+import Data.List(genericLength)
+
+instance WxImage (Image GrayScale D8) where
+  toImage i = cvToWx i c'cpy_ipl_d8_gray_to_d8_rgb
+  toSize i = do return $ sz w h
+    where (w,h) = getSize i
+
+instance WxImage (Image GrayScale D32) where
+  toImage i = cvToWx (unitNormalize i) c'cpy_ipl_f32_gray_to_d8_rgb
+  toSize i = do return $ sz w h
+    where (w,h) = getSize i
+
+instance WxImage (Image DFT D32) where
+  toImage i = cvToWx (logNormalize mag) c'cpy_ipl_f32_gray_to_d8_rgb
+    where
+      (mag,ang) = dftToPolar i
+  toSize i = do return $ sz w h
+    where
+      (w,h) = getSize i
+
+instance WxImage (Image RGB D8) where
+  toImage i = cvToWx i c'cpy_ipl_d8_rgb_to_d8_rgb
+  toSize i = do return $ sz w h
+    where (w,h) = getSize i
+
+instance WxImage (Image RGB D32) where
+  toImage i = cvToWx i c'cpy_ipl_f32_rgb_to_d8_rgb
+  toSize i = do return $ sz w h
+    where (w,h) = getSize i
+
+cvToWx img cpy = do
+    pb <- pixelBufferCreate (sz w h)
+    i <- imageCreateFromPixelBuffer pb
+    withImage img $ \cimg -> do
+      withImageData i $ cpy cimg
+    return i
+  where
+    (w,h) = getSize img
+
+instance (WxImage (Image c d)) => WxPaintable (Image c d) where
+  doPaint dc p i = do
+    img <- toImage $ i
+    drawImage dc img p []
+  paintSize i = sz w h
+    where (w,h) = getSize i
+
+instance (WxPaintable a, WxPaintable b) => WxPaintable (a, b) where
+  doPaint dc p (p1,p2) = do
+    doPaint dc p p1
+    doPaint dc np p2
+    where
+      (Size w _) = paintSize p1
+      np = (pointAdd p (point w 0))
+  paintSize (i1,i2) =
+    sz (w1+w2) (max h1 h2)
+    where
+      (Size w1 h1) = paintSize i1
+      (Size w2 h2) = paintSize i2
+
+instance (WxPaintable a, WxPaintable b, WxPaintable c) => WxPaintable (a,b,c) where
+  doPaint dc p (p1,p2,p3) = do
+    doPaint dc p p1
+    doPaint dc np1 p2
+    doPaint dc np2 p3
+    where
+      (Size w1 _) = paintSize p1
+      (Size w2 _) = paintSize p2
+      np1 = (pointAdd p (point w1 0))
+      np2 = (pointAdd np1 (point w2 0))
+  paintSize (i1,i2,i3) =
+    sz (w1+w2+w3) (maximum [h1,h2,h3])
+    where
+      (Size w1 h1) = paintSize i1
+      (Size w2 h2) = paintSize i2
+      (Size w3 h3) = paintSize i3
+
+instance WxPaintable [PaintableBox] where
+  doPaint dc p [] = return ()
+  doPaint dc p (b:bs) = do
+    doPaint dc p b
+    doPaint dc np bs
+    where
+      (Size _ h) = paintSize b
+      np = pointAdd p (point 0 h)
+  paintSize bs =
+    sz (maximum $ map (sizeW . paintSize) bs)  (sum $ map (sizeH . paintSize) bs)
+
+-- starting point
+-- area width
+-- area height
+-- points
+listToPoints :: Point -> Int -> Int -> [Float] -> [Point]
+listToPoints (Point x y) w h ps =
+  [ Point (x + (round i)) (y - (round j)) | (i,j) <- zip (map (* inc) [0..genericLength ps - 1]) (map (* scale) ps) ]
+  where
+        inc :: Float = (fromIntegral w) / (fromIntegral (length ps))
+        scale :: Float = (fromIntegral h) / (maximum ps)
+
+instance (WxPaintable (Image c d)) => WxPaintable ((Image c d), [Float]) where
+  doPaint dc p@(Point x y) (i,hs) = do
+    doPaint dc p i
+    set dc [penColor := red, brushColor := yellow, brushKind := BrushSolid]
+    polygon dc (listToPoints hp hw hh (concat [[0],hs,[0]])) []
+    where
+      (Size w h) = paintSize i
+      hw = round $ (fromIntegral w) * 0.9
+      dx = round $ (fromIntegral (w - hw)) / 2
+      hh = round $ (fromIntegral h) * 0.3
+      dy = 5
+      hx = (x + dx)
+      hy = (y + h - dy)
+      hp = (Point hx hy)
+  paintSize (i,h) = paintSize i
+
+instance (WxPaintable (Image c d)) => WxPaintable ((Image c d), (Float,Float), [Float]) where
+  doPaint dc p@(Point x y) (i,(a,s),hs) = do
+    doPaint dc p i
+    set dc [penColor := red, brushColor := yellow, brushKind := BrushSolid]
+    polygon dc (listToPoints hp hw hh (concat [[0],hs,[0]])) []
+    line dc (point ax (hy + ds)) (point ax (hy - hh - ds)) []
+    line dc (point sx (hy + ds)) (point (sx + sw) (hy + ds)) []
+    where
+      (Size w h) = paintSize i
+      hw = round $ (fromIntegral w) * 0.9
+      dx = round $ (fromIntegral (w - hw)) / 2
+      hh = round $ (fromIntegral h) * 0.3
+      dy = 5
+      hx = (x + dx)
+      hy = (y + h - dy)
+      hp = (Point hx hy)
+      ax = hx + (round $ a * (fromIntegral hw))
+      sx = ax - (round $ s * (fromIntegral hw))
+      sw = round $ 2 * s * (fromIntegral hw)
+      ds = 3
+  paintSize (i,s,h) = paintSize i
+
+instance WxColor HarrisDesc where
+  toColor d = colorRGB i i i
+    where i = round $ 255 * d
+
+instance WxColor HoughDesc where
+  toColor d = red
+
+instance (WxColor a) => WxPaintable (Corner a) where
+  doPaint dc p (Corner (x,y) d) = do
+    set dc [penColor := black, brushColor := toColor d]
+    drawRect dc (rect (point (x-5) (y-5)) (sz 10 10)) []
+
+instance WxPaintable HT.Segment where
+  doPaint dc p (HT.Segment (x1,y1) (x2,y2)) = do
+    set dc [penColor := red]
+    circle dc (point x1 y1) 5 []
+    circle dc (point x2 y2) 5 []
+    line dc (point x1 y1) (point x2 y2) []
+
+instance (WxColor a) => WxPaintable (ImageWithCorners a) where
+  doPaint dc p (ImageWithCorners i c) = do
+    doPaint dc p i
+    mapM_ (doPaint dc p) $ c
+  paintSize (ImageWithCorners i _) = sz w h
+    where (w,h) = getSize i
+
+instance (WxPaintable a, WxPaintable b) => WxPaintable (a `With` b) where
+  doPaint dc p (i `With` c) = do
+    doPaint dc p i
+    doPaint dc p $ c
+  paintSize (i `With` _) = paintSize i
+
+
+instance WxPaintable (HT.ImageWithLines) where
+  doPaint dc p (i `With` l) = do
+    doPaint dc p i
+    mapM_ (doPaint dc p) $ map (HT.lineToSegment (getSize i)) l
+  paintSize (i `With` l) = sz w h
+    where (w,h) = getSize i
+
+instance WxPaintable (HT.ImageWithSegments) where
+  doPaint dc p (i `With` l) = do
+    doPaint dc p i
+    mapM_ (doPaint dc p) $ l
+  paintSize (i `With` l) = sz w h
+    where (w,h) = getSize i
+</pre></br><h2>printed</h2></br><pre>{-#LANGUAGE ScopedTypeVariables, FlexibleInstances, FlexibleContexts,
+   UndecidableInstances, TypeSynonymInstances, OverlappingInstances,
+   TypeOperators#-}
+
+module Graphics.Tools.CV2WX (
+  WxImage(..), WxPaintable(..)
+) where
+
+import Graphics.UI.WXCore.Types
+import Graphics.UI.WXCore.Image
+import Graphics.UI.WX
+import Graphics.Tools.WX
+import Graphics.Tools.Bindings.Convert
+import CV.Image
+import CV.Operations hiding (set)
+import CV.Corners
+import CV.HoughTransform hiding (start, Line)
+import qualified CV.HoughTransform as HT
+import CV.DFT
+import Data.List(genericLength)
+
+instance WxImage (Image GrayScale D8) where
+  toImage i = cvToWx i c'cpy_ipl_d8_gray_to_d8_rgb
+  toSize i = do return $ sz w h
+    where (w,h) = getSize i
+
+instance WxImage (Image GrayScale D32) where
+  toImage i = cvToWx (unitNormalize i) c'cpy_ipl_f32_gray_to_d8_rgb
+  toSize i = do return $ sz w h
+    where (w,h) = getSize i
+
+instance WxImage (Image DFT D32) where
+  toImage i = cvToWx (logNormalize mag) c'cpy_ipl_f32_gray_to_d8_rgb
+    where
+      (mag,ang) = dftToPolar i
+  toSize i = do return $ sz w h
+    where
+      (w,h) = getSize i
+
+instance WxImage (Image RGB D8) where
+  toImage i = cvToWx i c'cpy_ipl_d8_rgb_to_d8_rgb
+  toSize i = do return $ sz w h
+    where (w,h) = getSize i
+
+instance WxImage (Image RGB D32) where
+  toImage i = cvToWx i c'cpy_ipl_f32_rgb_to_d8_rgb
+  toSize i = do return $ sz w h
+    where (w,h) = getSize i
+
+cvToWx img cpy = do
+    pb <- pixelBufferCreate (sz w h)
+    i <- imageCreateFromPixelBuffer pb
+    withImage img $ \cimg -> do
+      withImageData i $ cpy cimg
+    return i
+  where
+    (w,h) = getSize img
+
+instance (WxImage (Image c d)) => WxPaintable (Image c d) where
+  doPaint dc p i = do
+    img <- toImage $ i
+    drawImage dc img p []
+  paintSize i = sz w h
+    where (w,h) = getSize i
+
+instance (WxPaintable a, WxPaintable b) => WxPaintable (a, b) where
+  doPaint dc p (p1,p2) = do
+    doPaint dc p p1
+    doPaint dc np p2
+    where
+      (Size w _) = paintSize p1
+      np = (pointAdd p (point w 0))
+  paintSize (i1,i2) =
+    sz (w1+w2) (max h1 h2)
+    where
+      (Size w1 h1) = paintSize i1
+      (Size w2 h2) = paintSize i2
+
+instance (WxPaintable a, WxPaintable b, WxPaintable c) => WxPaintable (a,b,c) where
+  doPaint dc p (p1,p2,p3) = do
+    doPaint dc p p1
+    doPaint dc np1 p2
+    doPaint dc np2 p3
+    where
+      (Size w1 _) = paintSize p1
+      (Size w2 _) = paintSize p2
+      np1 = (pointAdd p (point w1 0))
+      np2 = (pointAdd np1 (point w2 0))
+  paintSize (i1,i2,i3) =
+    sz (w1+w2+w3) (maximum [h1,h2,h3])
+    where
+      (Size w1 h1) = paintSize i1
+      (Size w2 h2) = paintSize i2
+      (Size w3 h3) = paintSize i3
+
+instance WxPaintable [PaintableBox] where
+  doPaint dc p [] = return ()
+  doPaint dc p (b:bs) = do
+    doPaint dc p b
+    doPaint dc np bs
+    where
+      (Size _ h) = paintSize b
+      np = pointAdd p (point 0 h)
+  paintSize bs =
+    sz (maximum $ map (sizeW . paintSize) bs)  (sum $ map (sizeH . paintSize) bs)
+
+-- starting point
+-- area width
+-- area height
+-- points
+listToPoints :: Point -> Int -> Int -> [Float] -> [Point]
+listToPoints (Point x y) w h ps =
+  [ Point (x + (round i)) (y - (round j)) | (i,j) <- zip (map (* inc) [0..genericLength ps - 1]) (map (* scale) ps) ]
+  where
+        inc    Float = (fromIntegral w) / (fromIntegral (length ps))
+        scale    Float = (fromIntegral h) / (maximum ps)
+
+instance (WxPaintable (Image c d)) => WxPaintable ((Image c d), [Float]) where
+  doPaint dc p@(Point x y) (i,hs) = do
+    doPaint dc p i
+    set dc [penColor := red, brushColor := yellow, brushKind := BrushSolid]
+    polygon dc (listToPoints hp hw hh (concat [[0],hs,[0]])) []
+    where
+      (Size w h) = paintSize i
+      hw = round $ (fromIntegral w) * 0.9
+      dx = round $ (fromIntegral (w - hw)) / 2
+      hh = round $ (fromIntegral h) * 0.3
+      dy = 5
+      hx = (x + dx)
+      hy = (y + h - dy)
+      hp = (Point hx hy)
+  paintSize (i,h) = paintSize i
+
+instance (WxPaintable (Image c d)) => WxPaintable ((Image c d), (Float,Float), [Float]) where
+  doPaint dc p@(Point x y) (i,(a,s),hs) = do
+    doPaint dc p i
+    set dc [penColor := red, brushColor := yellow, brushKind := BrushSolid]
+    polygon dc (listToPoints hp hw hh (concat [[0],hs,[0]])) []
+    line dc (point ax (hy + ds)) (point ax (hy - hh - ds)) []
+    line dc (point sx (hy + ds)) (point (sx + sw) (hy + ds)) []
+    where
+      (Size w h) = paintSize i
+      hw = round $ (fromIntegral w) * 0.9
+      dx = round $ (fromIntegral (w - hw)) / 2
+      hh = round $ (fromIntegral h) * 0.3
+      dy = 5
+      hx = (x + dx)
+      hy = (y + h - dy)
+      hp = (Point hx hy)
+      ax = hx + (round $ a * (fromIntegral hw))
+      sx = ax - (round $ s * (fromIntegral hw))
+      sw = round $ 2 * s * (fromIntegral hw)
+      ds = 3
+  paintSize (i,s,h) = paintSize i
+
+instance WxColor HarrisDesc where
+  toColor d = colorRGB i i i
+    where i = round $ 255 * d
+
+instance WxColor HoughDesc where
+  toColor d = red
+
+instance (WxColor a) => WxPaintable (Corner a) where
+  doPaint dc p (Corner (x,y) d) = do
+    set dc [penColor := black, brushColor := toColor d]
+    drawRect dc (rect (point (x-5) (y-5)) (sz 10 10)) []
+
+instance WxPaintable HT.Segment where
+  doPaint dc p (HT.Segment (x1,y1) (x2,y2)) = do
+    set dc [penColor := red]
+    circle dc (point x1 y1) 5 []
+    circle dc (point x2 y2) 5 []
+    line dc (point x1 y1) (point x2 y2) []
+
+instance (WxColor a) => WxPaintable (ImageWithCorners a) where
+  doPaint dc p (ImageWithCorners i c) = do
+    doPaint dc p i
+    mapM_ (doPaint dc p) $ c
+  paintSize (ImageWithCorners i _) = sz w h
+    where (w,h) = getSize i
+
+instance (WxPaintable a, WxPaintable b) => WxPaintable (a `With` b) where
+  doPaint dc p (i `With` c) = do
+    doPaint dc p i
+    doPaint dc p $ c
+  paintSize (i `With` _) = paintSize i
+
+
+instance WxPaintable (HT.ImageWithLines) where
+  doPaint dc p (i `With` l) = do
+    doPaint dc p i
+    mapM_ (doPaint dc p) $ map (HT.lineToSegment (getSize i)) l
+  paintSize (i `With` l) = sz w h
+    where (w,h) = getSize i
+
+instance WxPaintable (HT.ImageWithSegments) where
+  doPaint dc p (i `With` l) = do
+    doPaint dc p i
+    mapM_ (doPaint dc p) $ l
+  paintSize (i `With` l) = sz w h
+    where (w,h) = getSize i
+
+</pre>

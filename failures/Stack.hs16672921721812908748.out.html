@@ -1,0 +1,548 @@
+<a href="sssp.hs14483749881111284571.out.html">prev</a></br><a href="failures.html">home</a></br><a href="StackJoin.hs19392988501436461431.out.html">next</a></br></br><pre>249c249
+<   let no :: Int = 20
+---
+>   let no    Int = 20
+270a271
+> 
+</pre></br><h2>original</h2></br><pre>
+{-# LANGUAGE ScopedTypeVariables, FlexibleInstances  #-}
+
+import IO
+import Control.Concurrent
+import Control.Concurrent.Chan
+import Control.Concurrent.STM
+
+import MultiSetRewrite.Base
+import MultiSetRewrite.RuleSyntax
+import MultiSetRewrite.RuleCompiler
+import MultiSetRewrite.StoreRepresentation
+
+
+-- a concurrent stack implemented via join-patterns which are
+-- built on top of multisetrewrite
+
+{-
+
+The rules
+
+  (r1) push x, pop y  <==> y:= x
+  (r2) push x, stack s <==> stack (x:s)
+  (r3) pop y, stack (x:s) <==> y:= x; stack s
+
+
+ (r3) pops the top-most element, stack must of course be non-empty
+ (r2) pushes element onto stack
+ (r1) the pop 'consumes' a concurrent push, so, there's no
+      need to go via the stack
+
+
+In the following we describe how to encode the above
+example in multisetrewrite
+
+-}
+
+
+------------------------------------------------------
+-- Boiler plate code to encode a concurrent stack
+-- + defining the syntax of messages (aka constraints)
+-- + defining the pattern matcher for the extended syntax
+
+
+-- message types (aka constraints)
+-- We use first-order syntax to represent pattern matching.
+-- The L constructor either takes values or (pattern) variables.
+-- Pop's argument is synchronous and is represented via an MVar.
+-- Once, pop's pattern variable is assigned to an actual value,
+-- we use the MVar functionality to unblock the waiting pop call.
+
+data Msg = Push (L Int)
+         | Pop (L (MVar Int))
+         | Stack (L [Int])
+
+-- simple static (hash) indexing scheme to locate
+-- constraints more efficiently
+
+valHashOpMsg = HashOp {numberOfTables = 3,
+                       hashMsg = let h (Push _)  = 1
+                                     h (Pop _)   = 2
+                                     h (Stack _) = 3
+                                 in h
+                      }
+
+-- extending the generic equality and pattern matcher
+
+instance Eq Msg where
+   (==) (Push x) (Push y) = x == y
+   (==) (Pop x) (Pop y) = x == y
+   (==) (Stack x) (Stack y) = x == y
+   (==) _ _ = False
+
+instance Show Msg
+instance Show (MVar Int)
+
+
+-- the EMatch class provides the pattern matching functionality
+-- among constraints (resp. their arguments)
+
+instance EMatch Msg where
+  match tags (Push x) (Push y) = match tags x y
+  match tags (Pop x) (Pop y) = match tags x y
+  match tags (Stack x) (Stack y) = match tags x y
+  match tags _ _ = return (False, tags)
+
+instance EMatch Int where
+  match tags x y = return (x==y, tags)
+
+instance EMatch [Int] where
+  match tags x y = return (x==y, tags)
+
+instance EMatch (MVar Int) where
+  match tags x y = return (x==y, tags)
+
+
+-- a more user-friendly constraint interface
+
+class Push a where
+  pushM :: a -> Msg
+
+instance Push (VAR Int) where
+  pushM x = Push (Var x)
+instance Push Int where
+  pushM x = Push (Val x)
+
+class Pop a where
+   popM :: a -> Msg
+
+instance Pop (VAR (MVar Int)) where
+   popM x = Pop (Var x)
+instance Pop (MVar Int) where
+   popM x = Pop (Val x)
+
+class Stack a where
+   stackM :: a -> Msg
+
+instance Stack (VAR [Int]) where
+   stackM x = Stack (Var x)
+instance Stack [Int] where
+   stackM x = Stack (Val x)
+
+-- some assignment shorthands
+-- x := y
+-- readVar is a multisetrewrite primitive
+assign x y = do
+   v_x <- readVar x
+   v_y <- readVar y
+   putMVar v_x v_y
+
+assign2 x v_y = do
+   v_x <- readVar x
+   putMVar v_x v_y
+
+
+-- guard shorthands
+isEmptyStack s = do
+   v_s <- readVar s
+   return (null v_s)
+
+isNotEmptyStack s = do
+   v_s <- readVar s
+   return (not (null v_s))
+
+
+--------------------------------------------------
+-- Concurrent stack rules and their execution
+
+-- The concurrent stack rules from above.
+-- We first invoke the rule compiler, e.g. building
+-- permutations of left-handsides such as
+-- [pushM x, popM y] and [popM y, pushM x] for the first rule.
+-- A smart compiler will try to schedule/test guards as early
+-- as possible (however, we currently use a naive scheme
+-- where all guards are tested last).
+-- Arguments x, y, s are pattern variables and
+-- storeObj is the constraint store object
+
+ruleStack x y s storeObj= do
+   compileRulePattern
+       [ [pushM x, popM y] .->. y `assign` x
+       , [pushM x, stackM s] .->.
+                do v_s <- readVar s
+                   v_x <- readVar x
+                   stack storeObj (v_x:v_s)
+                   --addMsg storeObj (stackM (v_x:v_s))
+                   -- is not enough, cause we must also
+                   -- invoke again the rule executer
+                   return ()
+       , [popM y, stackM s] `when` (isNotEmptyStack s) .->.
+                do (t:rest) <- readVar s
+                   y `assign2` t
+                   stack storeObj rest
+                   return ()
+       ]
+
+
+-- Execution of the above rules wrt to an active message (aka goal).
+-- The goal tries the rules from top to bottom and looks for
+-- constraints in the store to build a complete match of a rules
+-- left-hand side. If a match is found, the simplified components
+-- of the rules left-hand side are removed (atomically) and the
+-- rules right-hand side is returned (the action to be executed)
+
+runStack storeObj activeMsg = do
+  y <- newVar :: IO (VAR (MVar Int))
+  x <- newVar :: IO (VAR Int)
+  s <- newVar :: IO (VAR [Int])
+  let prog = ruleStack x y s storeObj
+  res <- executeRules storeObj activeMsg prog
+  case res of
+    Just action -> action
+    Nothing -> return ()
+
+
+-- Each constraint 'call' involves the following steps
+-- + add constraint to store which will yield an active message/goal
+-- + execute rules wrt active goal
+
+-- Constraint calls are always asynchronous, therefore, we spawn
+-- a new thread. Constraint arguments can be however synchronous,
+-- see the case of pop where we wait until the argument is bound
+-- to a value
+
+pop :: Store Msg -> IO Int
+pop storeObj = do
+  x <- newEmptyMVar
+  activeMsg <- addMsg storeObj (popM x)
+  forkIO (runStack storeObj activeMsg)
+  v <- readMVar x
+  return v
+
+
+push :: Store Msg -> Int -> IO ()
+push storeObj x = do
+  activeMsg <- addMsg storeObj (pushM x)
+  forkIO (runStack storeObj activeMsg)
+  return ()
+
+stack :: Store Msg -> [Int] -> IO ()
+stack storeObj x = do
+  activeMsg <- addMsg storeObj (stackM x)
+  forkIO (runStack storeObj activeMsg)
+  return ()
+
+
+
+-- same sample test code
+-- create empty stack
+-- call push 20 times
+-- call pop 20 times
+-- wait for all pops to succeed
+
+printOutput o = do
+   b <- isEmptyChan o
+   if b then return ()
+    else do w <- readChan o
+            putStrLn w
+            printOutput o
+
+main :: IO ()
+main = test1
+
+test1 = do
+  output <- newChan
+
+  -- we count the number of successful pops
+  cnt <- atomically $ newTVar 0
+  let no :: Int = 20
+
+  -- creates initial constraint store
+  j <- newStore valHashOpMsg
+
+  -- inits stack
+  stack j ([1] :: [Int])
+
+  mapM (\x -> forkIO $ push j x) ([1..no])
+
+  mapM (\_ -> forkIO ( do v :: Int <- pop j
+                          writeChan output $ show v
+                          atomically $ do i <- readTVar cnt
+                                          writeTVar cnt (i+1)))
+       [1..no]
+
+
+  atomically $ do i <- readTVar cnt
+                  if i >= no then return ()
+                   else retry
+
+  printOutput output
+</pre></br><h2>printed</h2></br><pre>
+{-# LANGUAGE ScopedTypeVariables, FlexibleInstances  #-}
+
+import IO
+import Control.Concurrent
+import Control.Concurrent.Chan
+import Control.Concurrent.STM
+
+import MultiSetRewrite.Base
+import MultiSetRewrite.RuleSyntax
+import MultiSetRewrite.RuleCompiler
+import MultiSetRewrite.StoreRepresentation
+
+
+-- a concurrent stack implemented via join-patterns which are
+-- built on top of multisetrewrite
+
+{-
+
+The rules
+
+  (r1) push x, pop y  <==> y:= x
+  (r2) push x, stack s <==> stack (x:s)
+  (r3) pop y, stack (x:s) <==> y:= x; stack s
+
+
+ (r3) pops the top-most element, stack must of course be non-empty
+ (r2) pushes element onto stack
+ (r1) the pop 'consumes' a concurrent push, so, there's no
+      need to go via the stack
+
+
+In the following we describe how to encode the above
+example in multisetrewrite
+
+-}
+
+
+------------------------------------------------------
+-- Boiler plate code to encode a concurrent stack
+-- + defining the syntax of messages (aka constraints)
+-- + defining the pattern matcher for the extended syntax
+
+
+-- message types (aka constraints)
+-- We use first-order syntax to represent pattern matching.
+-- The L constructor either takes values or (pattern) variables.
+-- Pop's argument is synchronous and is represented via an MVar.
+-- Once, pop's pattern variable is assigned to an actual value,
+-- we use the MVar functionality to unblock the waiting pop call.
+
+data Msg = Push (L Int)
+         | Pop (L (MVar Int))
+         | Stack (L [Int])
+
+-- simple static (hash) indexing scheme to locate
+-- constraints more efficiently
+
+valHashOpMsg = HashOp {numberOfTables = 3,
+                       hashMsg = let h (Push _)  = 1
+                                     h (Pop _)   = 2
+                                     h (Stack _) = 3
+                                 in h
+                      }
+
+-- extending the generic equality and pattern matcher
+
+instance Eq Msg where
+   (==) (Push x) (Push y) = x == y
+   (==) (Pop x) (Pop y) = x == y
+   (==) (Stack x) (Stack y) = x == y
+   (==) _ _ = False
+
+instance Show Msg
+instance Show (MVar Int)
+
+
+-- the EMatch class provides the pattern matching functionality
+-- among constraints (resp. their arguments)
+
+instance EMatch Msg where
+  match tags (Push x) (Push y) = match tags x y
+  match tags (Pop x) (Pop y) = match tags x y
+  match tags (Stack x) (Stack y) = match tags x y
+  match tags _ _ = return (False, tags)
+
+instance EMatch Int where
+  match tags x y = return (x==y, tags)
+
+instance EMatch [Int] where
+  match tags x y = return (x==y, tags)
+
+instance EMatch (MVar Int) where
+  match tags x y = return (x==y, tags)
+
+
+-- a more user-friendly constraint interface
+
+class Push a where
+  pushM :: a -> Msg
+
+instance Push (VAR Int) where
+  pushM x = Push (Var x)
+instance Push Int where
+  pushM x = Push (Val x)
+
+class Pop a where
+   popM :: a -> Msg
+
+instance Pop (VAR (MVar Int)) where
+   popM x = Pop (Var x)
+instance Pop (MVar Int) where
+   popM x = Pop (Val x)
+
+class Stack a where
+   stackM :: a -> Msg
+
+instance Stack (VAR [Int]) where
+   stackM x = Stack (Var x)
+instance Stack [Int] where
+   stackM x = Stack (Val x)
+
+-- some assignment shorthands
+-- x := y
+-- readVar is a multisetrewrite primitive
+assign x y = do
+   v_x <- readVar x
+   v_y <- readVar y
+   putMVar v_x v_y
+
+assign2 x v_y = do
+   v_x <- readVar x
+   putMVar v_x v_y
+
+
+-- guard shorthands
+isEmptyStack s = do
+   v_s <- readVar s
+   return (null v_s)
+
+isNotEmptyStack s = do
+   v_s <- readVar s
+   return (not (null v_s))
+
+
+--------------------------------------------------
+-- Concurrent stack rules and their execution
+
+-- The concurrent stack rules from above.
+-- We first invoke the rule compiler, e.g. building
+-- permutations of left-handsides such as
+-- [pushM x, popM y] and [popM y, pushM x] for the first rule.
+-- A smart compiler will try to schedule/test guards as early
+-- as possible (however, we currently use a naive scheme
+-- where all guards are tested last).
+-- Arguments x, y, s are pattern variables and
+-- storeObj is the constraint store object
+
+ruleStack x y s storeObj= do
+   compileRulePattern
+       [ [pushM x, popM y] .->. y `assign` x
+       , [pushM x, stackM s] .->.
+                do v_s <- readVar s
+                   v_x <- readVar x
+                   stack storeObj (v_x:v_s)
+                   --addMsg storeObj (stackM (v_x:v_s))
+                   -- is not enough, cause we must also
+                   -- invoke again the rule executer
+                   return ()
+       , [popM y, stackM s] `when` (isNotEmptyStack s) .->.
+                do (t:rest) <- readVar s
+                   y `assign2` t
+                   stack storeObj rest
+                   return ()
+       ]
+
+
+-- Execution of the above rules wrt to an active message (aka goal).
+-- The goal tries the rules from top to bottom and looks for
+-- constraints in the store to build a complete match of a rules
+-- left-hand side. If a match is found, the simplified components
+-- of the rules left-hand side are removed (atomically) and the
+-- rules right-hand side is returned (the action to be executed)
+
+runStack storeObj activeMsg = do
+  y <- newVar :: IO (VAR (MVar Int))
+  x <- newVar :: IO (VAR Int)
+  s <- newVar :: IO (VAR [Int])
+  let prog = ruleStack x y s storeObj
+  res <- executeRules storeObj activeMsg prog
+  case res of
+    Just action -> action
+    Nothing -> return ()
+
+
+-- Each constraint 'call' involves the following steps
+-- + add constraint to store which will yield an active message/goal
+-- + execute rules wrt active goal
+
+-- Constraint calls are always asynchronous, therefore, we spawn
+-- a new thread. Constraint arguments can be however synchronous,
+-- see the case of pop where we wait until the argument is bound
+-- to a value
+
+pop :: Store Msg -> IO Int
+pop storeObj = do
+  x <- newEmptyMVar
+  activeMsg <- addMsg storeObj (popM x)
+  forkIO (runStack storeObj activeMsg)
+  v <- readMVar x
+  return v
+
+
+push :: Store Msg -> Int -> IO ()
+push storeObj x = do
+  activeMsg <- addMsg storeObj (pushM x)
+  forkIO (runStack storeObj activeMsg)
+  return ()
+
+stack :: Store Msg -> [Int] -> IO ()
+stack storeObj x = do
+  activeMsg <- addMsg storeObj (stackM x)
+  forkIO (runStack storeObj activeMsg)
+  return ()
+
+
+
+-- same sample test code
+-- create empty stack
+-- call push 20 times
+-- call pop 20 times
+-- wait for all pops to succeed
+
+printOutput o = do
+   b <- isEmptyChan o
+   if b then return ()
+    else do w <- readChan o
+            putStrLn w
+            printOutput o
+
+main :: IO ()
+main = test1
+
+test1 = do
+  output <- newChan
+
+  -- we count the number of successful pops
+  cnt <- atomically $ newTVar 0
+  let no    Int = 20
+
+  -- creates initial constraint store
+  j <- newStore valHashOpMsg
+
+  -- inits stack
+  stack j ([1] :: [Int])
+
+  mapM (\x -> forkIO $ push j x) ([1..no])
+
+  mapM (\_ -> forkIO ( do v :: Int <- pop j
+                          writeChan output $ show v
+                          atomically $ do i <- readTVar cnt
+                                          writeTVar cnt (i+1)))
+       [1..no]
+
+
+  atomically $ do i <- readTVar cnt
+                  if i >= no then return ()
+                   else retry
+
+  printOutput output
+
+</pre>

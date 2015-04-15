@@ -1,0 +1,114 @@
+<a href="Authenticate.hs8849367161807130337.out.html">prev</a></br><a href="failures.html">home</a></br><a href="Balance.hs862627384516341991.out.html">next</a></br></br><pre>53c53
+< EC2VALUETRANSACTION(AuthorizeSecurityGroupIngress,"AuthorizeSecurityGroupIngressResponse")
+---
+> $(AuthorizeSecurityGroupIngress,"AuthorizeSecurityGroupIngressResponse")
+53a54
+> 
+</pre></br><h2>original</h2></br><pre>{-# LANGUAGE TypeFamilies
+           , MultiParamTypeClasses
+           , FlexibleInstances
+           , OverloadedStrings
+           , RecordWildCards
+           , TemplateHaskell
+           #-}
+
+module Aws.Ec2.Commands.AuthorizeSecurityGroupIngress where
+
+import qualified Network.HTTP.Types as HTTP
+import Data.Monoid (mconcat)
+import Data.Text (Text)
+import Data.ByteString.Char8 (pack, ByteString)
+import Aws.Ec2.TH
+
+data IpProtocol = TCP | UDP | ICMP | Proto Int | All
+
+instance Show IpProtocol where
+    show TCP = "tcp" -- 6
+    show UDP = "udp" -- 17
+    show ICMP = "icmp" -- 1
+    show (Proto i) = show i
+    show All = "-1"
+
+type CidrIp = Text
+
+data IpPermission = IpPermission IpProtocol (Maybe Int) (Maybe Int) [CidrIp]
+                deriving (Show)
+
+data AuthorizeSecurityGroupIngress = AuthorizeSecurityGroupIngress
+               { asi_groupId :: Text
+               , asi_permissions :: [IpPermission]
+               } deriving (Show)
+
+enumeratePermissions :: [IpPermission] -> HTTP.Query
+enumeratePermissions = enumerateLists "IpPermissions." . fmap unroll
+  where
+    unroll (IpPermission proto from to ips) = [ ("IpProtocol", qShow proto)
+                                              , ("FromPort", qShow $ maybe (-1) id from)
+                                              , ("ToPort", qShow $ maybe (-1) id to)
+                                              ] +++ [(mconcat [k, ".CidrIp"], v)| (k, v) <- enumerate "IpRanges" ips qArg]
+
+
+instance SignQuery AuthorizeSecurityGroupIngress where
+    type ServiceConfiguration AuthorizeSecurityGroupIngress = EC2Configuration
+    signQuery AuthorizeSecurityGroupIngress{..} = ec2SignQuery $
+                                           [ ("GroupId", qArg asi_groupId)
+                                           , ("Action", qArg "AuthorizeSecurityGroupIngress")
+                                           , defVersion
+                                           ] +++ enumeratePermissions asi_permissions
+
+EC2VALUETRANSACTION(AuthorizeSecurityGroupIngress,"AuthorizeSecurityGroupIngressResponse")
+</pre></br><h2>printed</h2></br><pre>{-# LANGUAGE TypeFamilies
+           , MultiParamTypeClasses
+           , FlexibleInstances
+           , OverloadedStrings
+           , RecordWildCards
+           , TemplateHaskell
+           #-}
+
+module Aws.Ec2.Commands.AuthorizeSecurityGroupIngress where
+
+import qualified Network.HTTP.Types as HTTP
+import Data.Monoid (mconcat)
+import Data.Text (Text)
+import Data.ByteString.Char8 (pack, ByteString)
+import Aws.Ec2.TH
+
+data IpProtocol = TCP | UDP | ICMP | Proto Int | All
+
+instance Show IpProtocol where
+    show TCP = "tcp" -- 6
+    show UDP = "udp" -- 17
+    show ICMP = "icmp" -- 1
+    show (Proto i) = show i
+    show All = "-1"
+
+type CidrIp = Text
+
+data IpPermission = IpPermission IpProtocol (Maybe Int) (Maybe Int) [CidrIp]
+                deriving (Show)
+
+data AuthorizeSecurityGroupIngress = AuthorizeSecurityGroupIngress
+               { asi_groupId :: Text
+               , asi_permissions :: [IpPermission]
+               } deriving (Show)
+
+enumeratePermissions :: [IpPermission] -> HTTP.Query
+enumeratePermissions = enumerateLists "IpPermissions." . fmap unroll
+  where
+    unroll (IpPermission proto from to ips) = [ ("IpProtocol", qShow proto)
+                                              , ("FromPort", qShow $ maybe (-1) id from)
+                                              , ("ToPort", qShow $ maybe (-1) id to)
+                                              ] +++ [(mconcat [k, ".CidrIp"], v)| (k, v) <- enumerate "IpRanges" ips qArg]
+
+
+instance SignQuery AuthorizeSecurityGroupIngress where
+    type ServiceConfiguration AuthorizeSecurityGroupIngress = EC2Configuration
+    signQuery AuthorizeSecurityGroupIngress{..} = ec2SignQuery $
+                                           [ ("GroupId", qArg asi_groupId)
+                                           , ("Action", qArg "AuthorizeSecurityGroupIngress")
+                                           , defVersion
+                                           ] +++ enumeratePermissions asi_permissions
+
+$(AuthorizeSecurityGroupIngress,"AuthorizeSecurityGroupIngressResponse")
+
+</pre>

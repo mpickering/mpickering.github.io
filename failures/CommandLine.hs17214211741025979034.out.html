@@ -1,0 +1,341 @@
+<a href="Command.hs744298440331637305.out.html">prev</a></br><a href="failures.html">home</a></br><a href="Common.hs2108804114600633910.out.html">next</a></br></br><pre>16c16
+< {-# LINE 26 "src/ehc/Opts/CommandLine.chs" #-}
+---
+> 
+16a17
+> 
+16a18
+> 
+16a19
+> 
+16a20
+> 
+16a21
+> 
+16a22
+> 
+16a23
+> 
+16a24
+> 
+16a25
+> 
+48c57
+< {-# LINE 63 "src/ehc/Opts/CommandLine.chs" #-}
+---
+> 
+48a58
+> 
+48a59
+> 
+48a60
+> 
+48a61
+> 
+48a62
+> 
+61c75
+< {-# LINE 77 "src/ehc/Opts/CommandLine.chs" #-}
+---
+> 
+61a76
+> 
+77c92
+< {-# LINE 98 "src/ehc/Opts/CommandLine.chs" #-}
+---
+> 
+77a93
+> 
+77a94
+> 
+77a95
+> 
+77a96
+> 
+77a97
+> 
+102c122
+< {-# LINE 128 "src/ehc/Opts/CommandLine.chs" #-}
+---
+> 
+102a123
+> 
+102a124
+> 
+102a125
+> 
+102a126
+> 
+102a127
+> 
+121a147
+> 
+</pre></br><h2>original</h2></br><pre>module UHC.Light.Compiler.Opts.CommandLine
+( CmdFlag (..), Cmd (..), CmdLineOpt (..), CmdLineOpts
+, cppOpt, cppOptF, cppOptI, cppArg
+, gccOpt, gccArg, gccOptF, gccOptOutput, gccOptLib
+, showCmdLineOpts, showCmdLineOpts'
+, parseCmdLineOpts )
+where
+import Data.List
+import Data.Typeable
+import Data.Generics (Data)
+import UHC.Util.Binary
+import UHC.Util.Serialize
+import Control.Monad
+
+
+{-# LINE 26 "src/ehc/Opts/CommandLine.chs" #-}
+data CmdFlag
+  = CmdFlag_Define          String      (Maybe String)
+  | CmdFlag_Undefine        String
+  | CmdFlag_Flag            String
+  | CmdFlag_KeyEqualsVal    String      String
+  | CmdFlag_KeyWithVal      String      String
+  | CmdFlag_IncludeDir      String
+  | CmdFlag_Lib             String
+
+  -- (plain) args
+  | CmdFlag_Arg             String
+
+  -- modifiers
+  | CmdFlag_ModfMin         CmdFlag     -- double '-'
+  deriving (Eq,Typeable,Data)
+
+data Cmd
+  = Cmd_CPP_Preprocessing
+  | Cmd_CPP
+  | Cmd_C
+  deriving (Eq,Ord,Enum,Bounded,Typeable,Data)
+
+data CmdLineOpt
+  = CmdLineOpt
+      { cloptForCmd     :: Cmd
+      , cloptFlag       :: CmdFlag
+      }
+  deriving (Eq,Typeable,Data)
+
+type CmdLineOpts = [CmdLineOpt]
+
+{-# LINE 63 "src/ehc/Opts/CommandLine.chs" #-}
+cppOpt :: CmdFlag -> CmdLineOpt
+cppOpt = CmdLineOpt Cmd_CPP
+
+cppArg :: String -> CmdLineOpt
+cppArg = cppOpt . CmdFlag_Arg
+
+cppOptF :: String -> CmdLineOpt
+cppOptF = cppOpt . CmdFlag_Flag
+
+cppOptI :: String -> CmdLineOpt
+cppOptI = cppOpt . CmdFlag_IncludeDir
+
+{-# LINE 77 "src/ehc/Opts/CommandLine.chs" #-}
+gccOpt :: CmdFlag -> CmdLineOpt
+gccOpt = CmdLineOpt Cmd_C
+
+gccArg :: String -> CmdLineOpt
+gccArg = gccOpt . CmdFlag_Arg
+
+gccOptF :: String -> CmdLineOpt
+gccOptF = gccOpt . CmdFlag_Flag
+
+gccOptOutput :: String -> CmdLineOpt
+gccOptOutput = gccOpt . CmdFlag_KeyWithVal "o"
+
+gccOptLib :: String -> CmdLineOpt
+gccOptLib = gccOpt . CmdFlag_Lib
+
+{-# LINE 98 "src/ehc/Opts/CommandLine.chs" #-}
+showCmdLineOpts' :: [Cmd] -> CmdLineOpts -> [String]
+showCmdLineOpts' forCmds opts = map show $ filter (\o -> cloptForCmd o `elem` forCmds) opts
+
+showCmdLineOpts :: CmdLineOpts -> String
+showCmdLineOpts = concat . intersperse " " . showCmdLineOpts' [minBound::Cmd .. maxBound]
+
+-- | Show key + value
+kv :: String -> String -> Maybe String -> String
+kv k sep mv = k ++ maybe "" (\v -> sep ++ v) mv
+
+instance Show CmdFlag where
+  show (CmdFlag_Define          k mv)       = "-D"  ++ kv k "=" mv
+  show (CmdFlag_Undefine        k   )       = "-U"  ++ k
+  show (CmdFlag_Flag            f   )       = "-"   ++ f
+  show (CmdFlag_KeyEqualsVal    k  v)       = "-"   ++ kv k "=" (Just v)
+  show (CmdFlag_KeyWithVal      k  v)       = "-"   ++ kv k " " (Just v)
+  show (CmdFlag_IncludeDir      d   )       = "-I"  ++ d
+  show (CmdFlag_Lib             l   )       = "-l"  ++ l
+  show (CmdFlag_Arg             a   )       =          a
+  show (CmdFlag_ModfMin         f   )       = "-"   ++ show f
+
+instance Show CmdLineOpt where
+  show = show . cloptFlag
+
+{-# LINE 128 "src/ehc/Opts/CommandLine.chs" #-}
+-- | Parse commandline options into CmdLineOpts
+parseCmdLineOpts :: Cmd -> String -> (CmdLineOpts,[String])
+parseCmdLineOpts cmd s
+  = ([ CmdLineOpt cmd $ pOpt o | ('-':o) <- opts ],rest)
+  where (opts,rest)    = partition isOpt $ words s
+        isOpt ('-':_)  = True
+        isOpt _        = False
+        pOpt ('-':opt) = CmdFlag_ModfMin $ pOpt opt
+        pOpt ('D':def) = uncurry CmdFlag_Define $ pDef def
+        pOpt ('I':dir) = CmdFlag_IncludeDir dir
+        pOpt ('l':lib) = CmdFlag_Lib lib
+        pOpt s         = case pDef s of
+                           (k, Just v) -> CmdFlag_KeyEqualsVal k v
+                           (k, _     ) -> CmdFlag_Flag        k
+        pDef s =
+          case break (== '=') s of
+            (k,'=':v) -> (k, Just v)
+            _         -> (s, Nothing)
+
+</pre></br><h2>printed</h2></br><pre>module UHC.Light.Compiler.Opts.CommandLine
+( CmdFlag (..), Cmd (..), CmdLineOpt (..), CmdLineOpts
+, cppOpt, cppOptF, cppOptI, cppArg
+, gccOpt, gccArg, gccOptF, gccOptOutput, gccOptLib
+, showCmdLineOpts, showCmdLineOpts'
+, parseCmdLineOpts )
+where
+import Data.List
+import Data.Typeable
+import Data.Generics (Data)
+import UHC.Util.Binary
+import UHC.Util.Serialize
+import Control.Monad
+
+
+
+
+
+
+
+
+
+
+
+
+data CmdFlag
+  = CmdFlag_Define          String      (Maybe String)
+  | CmdFlag_Undefine        String
+  | CmdFlag_Flag            String
+  | CmdFlag_KeyEqualsVal    String      String
+  | CmdFlag_KeyWithVal      String      String
+  | CmdFlag_IncludeDir      String
+  | CmdFlag_Lib             String
+
+  -- (plain) args
+  | CmdFlag_Arg             String
+
+  -- modifiers
+  | CmdFlag_ModfMin         CmdFlag     -- double '-'
+  deriving (Eq,Typeable,Data)
+
+data Cmd
+  = Cmd_CPP_Preprocessing
+  | Cmd_CPP
+  | Cmd_C
+  deriving (Eq,Ord,Enum,Bounded,Typeable,Data)
+
+data CmdLineOpt
+  = CmdLineOpt
+      { cloptForCmd     :: Cmd
+      , cloptFlag       :: CmdFlag
+      }
+  deriving (Eq,Typeable,Data)
+
+type CmdLineOpts = [CmdLineOpt]
+
+
+
+
+
+
+
+cppOpt :: CmdFlag -> CmdLineOpt
+cppOpt = CmdLineOpt Cmd_CPP
+
+cppArg :: String -> CmdLineOpt
+cppArg = cppOpt . CmdFlag_Arg
+
+cppOptF :: String -> CmdLineOpt
+cppOptF = cppOpt . CmdFlag_Flag
+
+cppOptI :: String -> CmdLineOpt
+cppOptI = cppOpt . CmdFlag_IncludeDir
+
+
+
+gccOpt :: CmdFlag -> CmdLineOpt
+gccOpt = CmdLineOpt Cmd_C
+
+gccArg :: String -> CmdLineOpt
+gccArg = gccOpt . CmdFlag_Arg
+
+gccOptF :: String -> CmdLineOpt
+gccOptF = gccOpt . CmdFlag_Flag
+
+gccOptOutput :: String -> CmdLineOpt
+gccOptOutput = gccOpt . CmdFlag_KeyWithVal "o"
+
+gccOptLib :: String -> CmdLineOpt
+gccOptLib = gccOpt . CmdFlag_Lib
+
+
+
+
+
+
+
+showCmdLineOpts' :: [Cmd] -> CmdLineOpts -> [String]
+showCmdLineOpts' forCmds opts = map show $ filter (\o -> cloptForCmd o `elem` forCmds) opts
+
+showCmdLineOpts :: CmdLineOpts -> String
+showCmdLineOpts = concat . intersperse " " . showCmdLineOpts' [minBound::Cmd .. maxBound]
+
+-- | Show key + value
+kv :: String -> String -> Maybe String -> String
+kv k sep mv = k ++ maybe "" (\v -> sep ++ v) mv
+
+instance Show CmdFlag where
+  show (CmdFlag_Define          k mv)       = "-D"  ++ kv k "=" mv
+  show (CmdFlag_Undefine        k   )       = "-U"  ++ k
+  show (CmdFlag_Flag            f   )       = "-"   ++ f
+  show (CmdFlag_KeyEqualsVal    k  v)       = "-"   ++ kv k "=" (Just v)
+  show (CmdFlag_KeyWithVal      k  v)       = "-"   ++ kv k " " (Just v)
+  show (CmdFlag_IncludeDir      d   )       = "-I"  ++ d
+  show (CmdFlag_Lib             l   )       = "-l"  ++ l
+  show (CmdFlag_Arg             a   )       =          a
+  show (CmdFlag_ModfMin         f   )       = "-"   ++ show f
+
+instance Show CmdLineOpt where
+  show = show . cloptFlag
+
+
+
+
+
+
+
+-- | Parse commandline options into CmdLineOpts
+parseCmdLineOpts :: Cmd -> String -> (CmdLineOpts,[String])
+parseCmdLineOpts cmd s
+  = ([ CmdLineOpt cmd $ pOpt o | ('-':o) <- opts ],rest)
+  where (opts,rest)    = partition isOpt $ words s
+        isOpt ('-':_)  = True
+        isOpt _        = False
+        pOpt ('-':opt) = CmdFlag_ModfMin $ pOpt opt
+        pOpt ('D':def) = uncurry CmdFlag_Define $ pDef def
+        pOpt ('I':dir) = CmdFlag_IncludeDir dir
+        pOpt ('l':lib) = CmdFlag_Lib lib
+        pOpt s         = case pDef s of
+                           (k, Just v) -> CmdFlag_KeyEqualsVal k v
+                           (k, _     ) -> CmdFlag_Flag        k
+        pDef s =
+          case break (== '=') s of
+            (k,'=':v) -> (k, Just v)
+            _         -> (s, Nothing)
+
+
+</pre>

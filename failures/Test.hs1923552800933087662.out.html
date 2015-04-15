@@ -1,0 +1,240 @@
+<a href="Test.hs18493859362098603321.out.html">prev</a></br><a href="failures.html">home</a></br><a href="Test.hs5714865401427408396.out.html">next</a></br></br><pre>34c34
+< pattern a :&: b = And a b
+---
+> pattern   :&:     b = And a b
+58c58
+<         , ('(:) , [e| [] |] , False)
+---
+>         , (': , [e| [] |] , False)
+60c60
+<         , ('(:) , [e| [1,2,3] |] , True)
+---
+>         , (': , [e| [1,2,3] |] , True)
+62d61
+<         , ('(:*:) , [e| Lit 3 :*: Lit 4 |] , True)
+63d61
+<         , ('(:&:) , [e| Lit True :&: Lit False |] , True)
+64c62
+<         , ('(:*:) , [e| Lit True :&: Lit False |] , False)
+---
+>         , (':*: , [e| Lit 3 :*: Lit 4 |] , True)
+64a63
+>         , (':&: , [e| Lit True :&: Lit False |] , True)
+64a64
+>         , (':*: , [e| Lit True :&: Lit False |] , False)
+86c86
+<     x `andThen` y = AppE (AppE (VarE '(>>)) x) y
+---
+>     x `andThen` y = AppE (AppE (VarE '>>) x) y
+104a105
+> 
+</pre></br><h2>original</h2></br><pre>{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE GADTs #-}
+{-# LANGUAGE PatternSynonyms #-}
+module Main where
+
+import Data.Generics.Is
+import Language.Haskell.TH
+import Control.Applicative
+import Control.Monad
+import System.Exit
+
+data TheType a b = A
+                 | B String Double ()
+                 | Int :+: Int
+                 | (:-:) Double
+                 | () `C` ()
+                 | D { field1 :: a, field2 :: b }
+                 | forall g. F g
+
+$(makePredicates ''TheType) ; $(makePredicatesNot ''TheType)
+
+newtype OtherType a = E Int
+$(makePredicatesAll ''OtherType)
+
+data E a where
+  Plus :: E Int -> E Int -> E Int
+  And  :: E Bool -> E Bool -> E Bool
+  Lit  :: a -> E a
+  Showable :: (Show a) => a -> E String
+  (:*:) :: (Num a) => E a -> E a -> E a
+$(makePredicatesAll ''E)
+
+pattern a :&: b = And a b
+
+assertEq :: String -> Bool -> Bool -> IO ()
+assertEq _ a b | a == b = return ()
+assertEq a_str a b = do
+  putStrLn $ a_str ++ " /= " ++ show b
+  exitFailure
+
+main :: IO ()
+main = $(
+  let
+    -- Test cases: pattern, expression, pattern matches expression
+    testCasesPat :: [(Q Pat, Q Exp, Bool)]
+    testCasesPat =
+        [ ([p| Just _ |]  , [e| Just "a" |] , True)
+        , ([p| [_,_,_] |] , [e| [1,2,3] |] , True)
+        , ([p| [_,_] |] , [e| [1,2,3] |] , False)
+        , ([p| Left{} |] , [e| Left 3 |] , True)
+        ]
+
+    -- Test cases: pattern, expression, constructor matches expression
+    testCasesName :: [(Name, Q Exp, Bool)]
+    testCasesName =
+        [ ('Just , [e| Just 'b' |] , True)
+        , ('(:) , [e| [] |] , False)
+        , ('[]  , [e| [] |] , True)
+        , ('(:) , [e| [1,2,3] |] , True)
+        , ('(,,,) , [e| (1,2,3,4) |] , True)
+        , ('(:*:) , [e| Lit 3 :*: Lit 4 |] , True)
+        , ('(:&:) , [e| Lit True :&: Lit False |] , True)
+        , ('(:*:) , [e| Lit True :&: Lit False |] , False)
+        ]
+
+    testCasesFun :: [(Name, Q Exp, Bool)]
+    testCasesFun =
+        [ ('isA, [e| A |], True)
+        , ('isD, [e| D 1 "a" |], True)
+        , ('isC, [e| D 1 "a" |], False)
+        , ('isNotF, [e| F "a" |], False)
+        , ('isLit, [e| Lit 3 |], True)
+        , ('isAnd, [e| Lit "Foo" |], False)
+        , ('isNotShowable, [e| Showable () |], False)
+        ]
+
+    -- Utility functions
+    assertEqTH :: Bool -> Exp -> Exp -> Exp
+    assertEqTH b f e = assertEqExpr (AppE f e) b
+
+    boolExp :: Bool -> Exp
+    boolExp b = if b then ConE 'True else ConE 'False
+
+    andThen :: Exp -> Exp -> Exp
+    x `andThen` y = AppE (AppE (VarE '(>>)) x) y
+
+    assertEqExpr :: Exp -> Bool -> Exp
+    assertEqExpr e b = AppE (AppE (AppE (VarE 'assertEq) (LitE (StringL (pprint e)))) e) (boolExp b)
+  in do
+    es1 <- forM testCasesPat $ \(p, e, b) ->
+      andThen <$> (assertEqTH b <$> isP p <*> e)
+              <*> (assertEqTH (not b) <$> isNotP p <*> e)
+
+    es2 <- forM testCasesName $ \(n, e, b) ->
+      andThen <$> (assertEqTH b <$> is n <*> e)
+              <*> (assertEqTH (not b) <$> isNot n <*> e)
+
+    es3 <- forM testCasesFun $ \(f, e, b) ->
+      assertEqTH b (VarE f) <$> e
+
+    return $ foldl1 andThen $ es1 ++ es2 ++ es3
+
+  )
+</pre></br><h2>printed</h2></br><pre>{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE GADTs #-}
+{-# LANGUAGE PatternSynonyms #-}
+module Main where
+
+import Data.Generics.Is
+import Language.Haskell.TH
+import Control.Applicative
+import Control.Monad
+import System.Exit
+
+data TheType a b = A
+                 | B String Double ()
+                 | Int :+: Int
+                 | (:-:) Double
+                 | () `C` ()
+                 | D { field1 :: a, field2 :: b }
+                 | forall g. F g
+
+$(makePredicates ''TheType) ; $(makePredicatesNot ''TheType)
+
+newtype OtherType a = E Int
+$(makePredicatesAll ''OtherType)
+
+data E a where
+  Plus :: E Int -> E Int -> E Int
+  And  :: E Bool -> E Bool -> E Bool
+  Lit  :: a -> E a
+  Showable :: (Show a) => a -> E String
+  (:*:) :: (Num a) => E a -> E a -> E a
+$(makePredicatesAll ''E)
+
+pattern   :&:     b = And a b
+
+assertEq :: String -> Bool -> Bool -> IO ()
+assertEq _ a b | a == b = return ()
+assertEq a_str a b = do
+  putStrLn $ a_str ++ " /= " ++ show b
+  exitFailure
+
+main :: IO ()
+main = $(
+  let
+    -- Test cases: pattern, expression, pattern matches expression
+    testCasesPat :: [(Q Pat, Q Exp, Bool)]
+    testCasesPat =
+        [ ([p| Just _ |]  , [e| Just "a" |] , True)
+        , ([p| [_,_,_] |] , [e| [1,2,3] |] , True)
+        , ([p| [_,_] |] , [e| [1,2,3] |] , False)
+        , ([p| Left{} |] , [e| Left 3 |] , True)
+        ]
+
+    -- Test cases: pattern, expression, constructor matches expression
+    testCasesName :: [(Name, Q Exp, Bool)]
+    testCasesName =
+        [ ('Just , [e| Just 'b' |] , True)
+        , (': , [e| [] |] , False)
+        , ('[]  , [e| [] |] , True)
+        , (': , [e| [1,2,3] |] , True)
+        , ('(,,,) , [e| (1,2,3,4) |] , True)
+        , (':*: , [e| Lit 3 :*: Lit 4 |] , True)
+        , (':&: , [e| Lit True :&: Lit False |] , True)
+        , (':*: , [e| Lit True :&: Lit False |] , False)
+        ]
+
+    testCasesFun :: [(Name, Q Exp, Bool)]
+    testCasesFun =
+        [ ('isA, [e| A |], True)
+        , ('isD, [e| D 1 "a" |], True)
+        , ('isC, [e| D 1 "a" |], False)
+        , ('isNotF, [e| F "a" |], False)
+        , ('isLit, [e| Lit 3 |], True)
+        , ('isAnd, [e| Lit "Foo" |], False)
+        , ('isNotShowable, [e| Showable () |], False)
+        ]
+
+    -- Utility functions
+    assertEqTH :: Bool -> Exp -> Exp -> Exp
+    assertEqTH b f e = assertEqExpr (AppE f e) b
+
+    boolExp :: Bool -> Exp
+    boolExp b = if b then ConE 'True else ConE 'False
+
+    andThen :: Exp -> Exp -> Exp
+    x `andThen` y = AppE (AppE (VarE '>>) x) y
+
+    assertEqExpr :: Exp -> Bool -> Exp
+    assertEqExpr e b = AppE (AppE (AppE (VarE 'assertEq) (LitE (StringL (pprint e)))) e) (boolExp b)
+  in do
+    es1 <- forM testCasesPat $ \(p, e, b) ->
+      andThen <$> (assertEqTH b <$> isP p <*> e)
+              <*> (assertEqTH (not b) <$> isNotP p <*> e)
+
+    es2 <- forM testCasesName $ \(n, e, b) ->
+      andThen <$> (assertEqTH b <$> is n <*> e)
+              <*> (assertEqTH (not b) <$> isNot n <*> e)
+
+    es3 <- forM testCasesFun $ \(f, e, b) ->
+      assertEqTH b (VarE f) <$> e
+
+    return $ foldl1 andThen $ es1 ++ es2 ++ es3
+
+  )
+
+</pre>

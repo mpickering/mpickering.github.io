@@ -1,0 +1,370 @@
+<a href="Types.hs88815536468372451.out.html">prev</a></br><a href="failures.html">home</a></br><a href="Types.hs9365095431008240338.out.html">next</a></br></br><pre>42c42
+<     let [names,info,wij] :: [Matrix String] = map toMatrix (splitString (lines (formatString input)))
+---
+>     let [names,info,wij]    [Matrix String] = map toMatrix (splitString (lines (formatString input)))
+181a182
+> 
+</pre></br><h2>original</h2></br><pre>{-# LANGUAGE ScopedTypeVariables #-}
+module Types where
+
+
+import System.Environment
+import System.Random
+import Control.Monad
+import System.Directory
+import System.Cmd
+import Data.Char
+import Data.Maybe
+import Data.List
+import Numeric
+import System.FilePath
+--maybe also contain basic utilities
+
+type Matrix a = [[a]]
+
+data Info = Info -- this says what is in the second input matrix
+    {deathRate :: Double
+    ,aeff :: Double
+    ,peff :: Double
+    ,biomass :: Double
+    } deriving Show
+
+data Foodweb = Foodweb
+     {names :: [String]
+     , info :: [Info]
+     , wij :: Matrix Double
+     ,cm :: Matrix Double
+     } deriving Show
+
+
+
+fileToFoodweb :: FilePath -> IO Foodweb
+fileToFoodweb = readFoodweb -- FIXME: Inline this everywhere
+
+
+readFoodweb :: FilePath -> IO Foodweb
+readFoodweb file = do
+    input <-readFile file
+    let [names,info,wij] :: [Matrix String] = map toMatrix (splitString (lines (formatString input)))
+    return $ Foodweb (matrixStringToListString names) (map toInfo (matrixStringToDouble info)) (matrixStringToDouble wij) undefined
+
+
+returnComponents :: FilePath -> IO [String]
+returnComponents fp = do
+    input <-readFile fp
+    output <- return $ splitString (lines (formatString input))
+    return(output)
+
+writeFoodweb :: FilePath -> Foodweb -> IO ()
+writeFoodweb file (Foodweb names info wij _) = writeFile file $ unlines $
+    names ++
+    [""] ++
+    map (intercalate "\t" . map show . infoToDouble) info ++
+    [""] ++
+    [outputMatrix (map2 show wij)]
+
+
+formatString :: String -> String
+formatString input =  unlines $ dropWhile null $ map (dropWhile isSpace) $ lines input
+-- unlines takes list of strings to string
+splitString :: [String] -> [String]
+splitString input =
+    if null xs then
+         []
+    else
+        (unlines y:splitString ys )
+    where xs = dropWhile null input
+          (y,ys) = break null xs
+
+--readFile :: FilePath -> IO String
+-- show stringyfys ints, doubles, lists of stuff, tuples , boolens, strings to strings
+splitAndWriteFile :: FilePath -> IO ()
+splitAndWriteFile file = do
+    input <- readFile file
+    output :: [Matrix String]<- return (map toMatrix (splitString (lines (formatString input))))
+    createDirectoryIfMissing True ("input")
+    names <- return [ ("input/" ++ dropExtension file ++ show i ++".txt")| i <- [1..] ]--return (dropExtension file ++ matrixNumber)
+    sequence $ map (uncurry writeFile) (zip names (map show output))
+    return ()
+ --uncurry takes a 2 input function and makes it accept a tuple instead
+
+
+--replace any non empty sequences of space with tab
+tabify (x:xs) | isSpace x = '\t' : tabify (dropWhile isSpace xs)
+              | otherwise = x : tabify xs
+tabify [] = []
+
+matrixFromList :: [[a]] -> Matrix a
+matrixFromList x = x
+
+
+toInfo :: [Double] -> Info
+toInfo [_,a,b,c,d] = Info a b c d
+
+show3dp :: Double -> String
+show3dp x = showFFloat (Just 3) x ""
+
+infoToMatrixDouble :: [Info] -> Matrix Double
+infoToMatrixDouble input = map infoToDouble input
+
+infoToDouble :: Info -> [Double]
+infoToDouble (Info a b c d) = [0,a,b,c,d]
+
+mean :: [Double] -> Double
+mean a = sum(a)/(fromIntegral (length(a))) --  cant' divide a double by an int
+
+functionToMatrix :: (Int -> Int -> Double) -> Int -> Matrix Double
+functionToMatrix f len = [[f i j | j <- [0..(len-1)]]| i <-[0..(len-1)]]
+
+outputMatrix :: Matrix String -> String
+outputMatrix = unlines . map (concat . intersperse "\t")
+
+toMatrix :: String -> Matrix String
+toMatrix input = map words (lines  input)
+
+matrixStringToListString :: Matrix String -> [String]
+matrixStringToListString = map head
+
+matrixStringToDouble :: Matrix String -> Matrix Double
+matrixStringToDouble input =  map (map read) input
+
+matrixDoubleToString :: Matrix Double -> Matrix String
+matrixDoubleToString input = map (map show) input
+
+stringsToMatrixDouble :: [String] -> Matrix Double
+stringsToMatrixDouble input = matrixStringToDouble $ map words input
+
+--applys a function to a matrix element, then returns the changed function
+mapInd :: (Int->a->b) -> [a] -> [b]
+mapInd f a = zipWith f [1..] a
+
+changeElemList :: Int -> (Double -> Double) -> [Double] -> [Double]
+changeElemList i f a = mapInd (\inew x -> if inew ==i then f x else x) a
+
+mapMatrixInd ::(Int->Int->a->b) ->  Matrix a -> Matrix b
+mapMatrixInd f xs = mapInd (\i x -> mapInd (f i) x) xs
+
+changeElem :: Int -> Int -> (Double -> Double) ->Matrix Double -> Matrix Double
+changeElem i j f m =  mapMatrixInd (\inew jnew x -> if inew== i && jnew == j then f x else x ) m
+
+--applys a function to a matrix element, then returns the changed function
+mapInd0 :: (Int->a->b) -> [a] -> [b]
+mapInd0 f a = zipWith f [0..] a
+
+mapMatrixInd0 ::(Int->Int->a->b) ->  Matrix a -> Matrix b
+mapMatrixInd0 f xs = mapInd0 (\i x -> mapInd0 (f i) x) xs
+
+
+
+-------------------------------------------------------------------
+
+--matrix :: Size -> (Int -> Int -> a) -> Matrix a
+--matrix _ m = m
+
+-------------------------------
+--vectorToList :: Size -> Vector a -> [a]
+--vectorToList n v = [v i | i <- [0..n-1]]
+
+--matrixToList :: Size -> Matrix a -> [[a]]
+--matrixToList n m = [vectorToList n $ m i | i <- [0..n-1]]
+
+--operation
+
+transposeMatrix m i j = m j i
+
+rowMatrix m i = m i
+
+colMatrix m j = \i -> m i j
+
+-- General
+
+map2 :: (a -> b) -> [[a]] -> [[b]]
+map2 f = map (map f)
+
+
+table :: String -> [[String]]
+table = map words . lines
+
+</pre></br><h2>printed</h2></br><pre>{-# LANGUAGE ScopedTypeVariables #-}
+module Types where
+
+
+import System.Environment
+import System.Random
+import Control.Monad
+import System.Directory
+import System.Cmd
+import Data.Char
+import Data.Maybe
+import Data.List
+import Numeric
+import System.FilePath
+--maybe also contain basic utilities
+
+type Matrix a = [[a]]
+
+data Info = Info -- this says what is in the second input matrix
+    {deathRate :: Double
+    ,aeff :: Double
+    ,peff :: Double
+    ,biomass :: Double
+    } deriving Show
+
+data Foodweb = Foodweb
+     {names :: [String]
+     , info :: [Info]
+     , wij :: Matrix Double
+     ,cm :: Matrix Double
+     } deriving Show
+
+
+
+fileToFoodweb :: FilePath -> IO Foodweb
+fileToFoodweb = readFoodweb -- FIXME: Inline this everywhere
+
+
+readFoodweb :: FilePath -> IO Foodweb
+readFoodweb file = do
+    input <-readFile file
+    let [names,info,wij]    [Matrix String] = map toMatrix (splitString (lines (formatString input)))
+    return $ Foodweb (matrixStringToListString names) (map toInfo (matrixStringToDouble info)) (matrixStringToDouble wij) undefined
+
+
+returnComponents :: FilePath -> IO [String]
+returnComponents fp = do
+    input <-readFile fp
+    output <- return $ splitString (lines (formatString input))
+    return(output)
+
+writeFoodweb :: FilePath -> Foodweb -> IO ()
+writeFoodweb file (Foodweb names info wij _) = writeFile file $ unlines $
+    names ++
+    [""] ++
+    map (intercalate "\t" . map show . infoToDouble) info ++
+    [""] ++
+    [outputMatrix (map2 show wij)]
+
+
+formatString :: String -> String
+formatString input =  unlines $ dropWhile null $ map (dropWhile isSpace) $ lines input
+-- unlines takes list of strings to string
+splitString :: [String] -> [String]
+splitString input =
+    if null xs then
+         []
+    else
+        (unlines y:splitString ys )
+    where xs = dropWhile null input
+          (y,ys) = break null xs
+
+--readFile :: FilePath -> IO String
+-- show stringyfys ints, doubles, lists of stuff, tuples , boolens, strings to strings
+splitAndWriteFile :: FilePath -> IO ()
+splitAndWriteFile file = do
+    input <- readFile file
+    output :: [Matrix String]<- return (map toMatrix (splitString (lines (formatString input))))
+    createDirectoryIfMissing True ("input")
+    names <- return [ ("input/" ++ dropExtension file ++ show i ++".txt")| i <- [1..] ]--return (dropExtension file ++ matrixNumber)
+    sequence $ map (uncurry writeFile) (zip names (map show output))
+    return ()
+ --uncurry takes a 2 input function and makes it accept a tuple instead
+
+
+--replace any non empty sequences of space with tab
+tabify (x:xs) | isSpace x = '\t' : tabify (dropWhile isSpace xs)
+              | otherwise = x : tabify xs
+tabify [] = []
+
+matrixFromList :: [[a]] -> Matrix a
+matrixFromList x = x
+
+
+toInfo :: [Double] -> Info
+toInfo [_,a,b,c,d] = Info a b c d
+
+show3dp :: Double -> String
+show3dp x = showFFloat (Just 3) x ""
+
+infoToMatrixDouble :: [Info] -> Matrix Double
+infoToMatrixDouble input = map infoToDouble input
+
+infoToDouble :: Info -> [Double]
+infoToDouble (Info a b c d) = [0,a,b,c,d]
+
+mean :: [Double] -> Double
+mean a = sum(a)/(fromIntegral (length(a))) --  cant' divide a double by an int
+
+functionToMatrix :: (Int -> Int -> Double) -> Int -> Matrix Double
+functionToMatrix f len = [[f i j | j <- [0..(len-1)]]| i <-[0..(len-1)]]
+
+outputMatrix :: Matrix String -> String
+outputMatrix = unlines . map (concat . intersperse "\t")
+
+toMatrix :: String -> Matrix String
+toMatrix input = map words (lines  input)
+
+matrixStringToListString :: Matrix String -> [String]
+matrixStringToListString = map head
+
+matrixStringToDouble :: Matrix String -> Matrix Double
+matrixStringToDouble input =  map (map read) input
+
+matrixDoubleToString :: Matrix Double -> Matrix String
+matrixDoubleToString input = map (map show) input
+
+stringsToMatrixDouble :: [String] -> Matrix Double
+stringsToMatrixDouble input = matrixStringToDouble $ map words input
+
+--applys a function to a matrix element, then returns the changed function
+mapInd :: (Int->a->b) -> [a] -> [b]
+mapInd f a = zipWith f [1..] a
+
+changeElemList :: Int -> (Double -> Double) -> [Double] -> [Double]
+changeElemList i f a = mapInd (\inew x -> if inew ==i then f x else x) a
+
+mapMatrixInd ::(Int->Int->a->b) ->  Matrix a -> Matrix b
+mapMatrixInd f xs = mapInd (\i x -> mapInd (f i) x) xs
+
+changeElem :: Int -> Int -> (Double -> Double) ->Matrix Double -> Matrix Double
+changeElem i j f m =  mapMatrixInd (\inew jnew x -> if inew== i && jnew == j then f x else x ) m
+
+--applys a function to a matrix element, then returns the changed function
+mapInd0 :: (Int->a->b) -> [a] -> [b]
+mapInd0 f a = zipWith f [0..] a
+
+mapMatrixInd0 ::(Int->Int->a->b) ->  Matrix a -> Matrix b
+mapMatrixInd0 f xs = mapInd0 (\i x -> mapInd0 (f i) x) xs
+
+
+
+-------------------------------------------------------------------
+
+--matrix :: Size -> (Int -> Int -> a) -> Matrix a
+--matrix _ m = m
+
+-------------------------------
+--vectorToList :: Size -> Vector a -> [a]
+--vectorToList n v = [v i | i <- [0..n-1]]
+
+--matrixToList :: Size -> Matrix a -> [[a]]
+--matrixToList n m = [vectorToList n $ m i | i <- [0..n-1]]
+
+--operation
+
+transposeMatrix m i j = m j i
+
+rowMatrix m i = m i
+
+colMatrix m j = \i -> m i j
+
+-- General
+
+map2 :: (a -> b) -> [[a]] -> [[b]]
+map2 f = map (map f)
+
+
+table :: String -> [[String]]
+table = map words . lines
+
+
+</pre>

@@ -1,0 +1,224 @@
+<a href="TH.hs301203980716335881.out.html">prev</a></br><a href="failures.html">home</a></br><a href="TH.hs5289261841227559555.out.html">next</a></br></br><pre>54d53
+<      ntpe = P.identifier tok >>= \x -> if (not.isUpper.head $ x) then (return x) else fail $ x ++" is not a valid field name"
+55c54
+<      tpe = P.identifier tok >>= \x -> if (isUpper.head $ x) then (return x) else fail $ "Identifier " ++ x ++ " does not name a type"
+---
+>      ntpe = P.identifier tok >>= \x -> if (not.isUpper.head $ x) then (return x) else fail $ x ++" is not a valid field name"
+55a55
+>      tpe = P.identifier tok >>= \x -> if (isUpper.head $ x) then (return x) else fail $ "Identifier " ++ x ++ " does not name a type"
+106a107
+> 
+</pre></br><h2>original</h2></br><pre>{-#LANGUAGE TemplateHaskell#-}
+{-| This module provides syntax for concise definitions of config files from
+    Data.ConfigFile through template haskell. For example, the following splice,
+
+@
+$(genConf "Example" [$conf|
+                  elbow/center -> ec :: Double
+                  elbow/min    -> emi :: Double
+                  elbow/max    -> ema :: Double
+                |])
+@
+    resolves into declaration of the following datatype
+
+@
+data Example = Example {ec  :: Double
+                       ,emi :: Double
+                       ,ema :: Double}
+@
+    and a function
+@
+loadExample :: (MonadIO m) => FilePath -> m (Either CPError Example) ,
+@
+     which uses Data.ConfigFile to read a values for the above struct from
+     a file.
+
+     Known bugs: Does not support comments in the quotes.
+
+
+-}
+module Data.ConfigFile.TH(genConf,conf) where
+
+
+import Language.Haskell.TH
+import Language.Haskell.TH.Syntax
+import Language.Haskell.TH.Quote
+
+import Control.Applicative hiding (many,(<|>))
+import Control.Monad (when,mzero)
+import Data.Char(isUpper,isSpace)
+import Text.Parsec.Char
+import Text.ParserCombinators.Parsec hiding (between)
+import qualified Text.Parsec.Token as P
+import Text.Parsec.Language
+
+
+
+tok = P.makeTokenParser haskellDef
+
+pCd = (,,,) <$> (spaces *> P.identifier tok)
+            <*> (char '/' *> P.identifier tok <* spaces)
+            <*> (string "->" *> spaces *> ntpe <* spaces)
+            <*> (string "::" *> spaces *> tpe <* spaces)
+    where
+     ntpe = P.identifier tok >>= \x -> if (not.isUpper.head $ x) then (return x) else fail $ x ++" is not a valid field name"
+     tpe = P.identifier tok >>= \x -> if (isUpper.head $ x) then (return x) else fail $ "Identifier " ++ x ++ " does not name a type"
+
+toList = ListE . map (TupE . map (LitE . StringL) . \(a,b,c,d) -> [a,b,c,d] )
+
+
+-- |Quasiquoter for quickly writing config-file specifications
+
+conf = QuasiQuoter undefined undefined undefined (sToExpQ)
+
+sToExpQ str = let
+                 hd':rst = filter (not.null) $  lines str
+                 hd      = takeWhile (not . isSpace) . dropWhile isSpace $ hd'
+              in genConf hd . map parseIt . filter (not.all isSpace)  $ rst
+
+parseIt :: [Char] -> (String, String, String, String)
+parseIt x = case runParser pCd  () "Quasiquote" x of
+                     Right x -> x
+                     Left  e -> error (show e++show x)
+
+-- | TH macro for generating a data type and corresponding code to load it from a config file.
+genConf :: Monad m => String -> [(String, String, String, String)] -> m [Dec]
+genConf name cs
+    = do
+       return $ decls
+    where
+       decls = [DataD [] (mkName name) [] [RecC (mkName name) fields] []
+               ,FunD (mkName $ "load"++name)
+                     [Clause [VarP (mkName "file")]
+                             (NormalB (AppE (var "runErrorT") (DoE loads)))
+                             []]
+               ]
+       loads = [BindS (pat "cp") open] ++ map load1 cs ++
+                [NoBindS $ AppE (var "return") (bind)]
+
+       bind = RecConE (mkName name) [(mkName nam,var nam) | (_,_,nam,_) <- cs]
+       open = AppE (var "join")
+                (AppE (var "liftIO")
+                   (appM "readfile" [var "emptyCP",var "file"]))
+
+       load1 (section,vname,name,tpe)  = BindS (VarP $ mkName name) $ appM "get"
+                                                               [var "cp"
+                                                               ,slit section
+                                                               ,slit vname]
+       field1 (section,var,name,tpe) = (mkName name,NotStrict,ConT (mkName tpe))
+
+       fields :: [Language.Haskell.TH.Syntax.VarStrictType]
+       fields = map field1 cs
+       slit = LitE . StringL
+       pat = VarP . mkName
+var = VarE . mkName
+appM a xs = foldl AppE (var a) xs
+
+</pre></br><h2>printed</h2></br><pre>{-#LANGUAGE TemplateHaskell#-}
+{-| This module provides syntax for concise definitions of config files from
+    Data.ConfigFile through template haskell. For example, the following splice,
+
+@
+$(genConf "Example" [$conf|
+                  elbow/center -> ec :: Double
+                  elbow/min    -> emi :: Double
+                  elbow/max    -> ema :: Double
+                |])
+@
+    resolves into declaration of the following datatype
+
+@
+data Example = Example {ec  :: Double
+                       ,emi :: Double
+                       ,ema :: Double}
+@
+    and a function
+@
+loadExample :: (MonadIO m) => FilePath -> m (Either CPError Example) ,
+@
+     which uses Data.ConfigFile to read a values for the above struct from
+     a file.
+
+     Known bugs: Does not support comments in the quotes.
+
+
+-}
+module Data.ConfigFile.TH(genConf,conf) where
+
+
+import Language.Haskell.TH
+import Language.Haskell.TH.Syntax
+import Language.Haskell.TH.Quote
+
+import Control.Applicative hiding (many,(<|>))
+import Control.Monad (when,mzero)
+import Data.Char(isUpper,isSpace)
+import Text.Parsec.Char
+import Text.ParserCombinators.Parsec hiding (between)
+import qualified Text.Parsec.Token as P
+import Text.Parsec.Language
+
+
+
+tok = P.makeTokenParser haskellDef
+
+pCd = (,,,) <$> (spaces *> P.identifier tok)
+            <*> (char '/' *> P.identifier tok <* spaces)
+            <*> (string "->" *> spaces *> ntpe <* spaces)
+            <*> (string "::" *> spaces *> tpe <* spaces)
+    where
+     ntpe = P.identifier tok >>= \x -> if (not.isUpper.head $ x) then (return x) else fail $ x ++" is not a valid field name"
+     tpe = P.identifier tok >>= \x -> if (isUpper.head $ x) then (return x) else fail $ "Identifier " ++ x ++ " does not name a type"
+
+toList = ListE . map (TupE . map (LitE . StringL) . \(a,b,c,d) -> [a,b,c,d] )
+
+
+-- |Quasiquoter for quickly writing config-file specifications
+
+conf = QuasiQuoter undefined undefined undefined (sToExpQ)
+
+sToExpQ str = let
+                 hd':rst = filter (not.null) $  lines str
+                 hd      = takeWhile (not . isSpace) . dropWhile isSpace $ hd'
+              in genConf hd . map parseIt . filter (not.all isSpace)  $ rst
+
+parseIt :: [Char] -> (String, String, String, String)
+parseIt x = case runParser pCd  () "Quasiquote" x of
+                     Right x -> x
+                     Left  e -> error (show e++show x)
+
+-- | TH macro for generating a data type and corresponding code to load it from a config file.
+genConf :: Monad m => String -> [(String, String, String, String)] -> m [Dec]
+genConf name cs
+    = do
+       return $ decls
+    where
+       decls = [DataD [] (mkName name) [] [RecC (mkName name) fields] []
+               ,FunD (mkName $ "load"++name)
+                     [Clause [VarP (mkName "file")]
+                             (NormalB (AppE (var "runErrorT") (DoE loads)))
+                             []]
+               ]
+       loads = [BindS (pat "cp") open] ++ map load1 cs ++
+                [NoBindS $ AppE (var "return") (bind)]
+
+       bind = RecConE (mkName name) [(mkName nam,var nam) | (_,_,nam,_) <- cs]
+       open = AppE (var "join")
+                (AppE (var "liftIO")
+                   (appM "readfile" [var "emptyCP",var "file"]))
+
+       load1 (section,vname,name,tpe)  = BindS (VarP $ mkName name) $ appM "get"
+                                                               [var "cp"
+                                                               ,slit section
+                                                               ,slit vname]
+       field1 (section,var,name,tpe) = (mkName name,NotStrict,ConT (mkName tpe))
+
+       fields :: [Language.Haskell.TH.Syntax.VarStrictType]
+       fields = map field1 cs
+       slit = LitE . StringL
+       pat = VarP . mkName
+var = VarE . mkName
+appM a xs = foldl AppE (var a) xs
+
+
+</pre>

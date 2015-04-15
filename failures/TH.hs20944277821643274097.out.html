@@ -1,0 +1,206 @@
+<a href="TH.hs20516216091606946231.out.html">prev</a></br><a href="failures.html">home</a></br><a href="TH.hs2119655641446138204.out.html">next</a></br></br><pre>79c79
+<                       | n == '(:) = PromotedConsT
+---
+>                       | n == ': = PromotedConsT
+99a100
+> 
+</pre></br><h2>original</h2></br><pre>{-# LANGUAGE TemplateHaskell #-}
+
+{- |
+
+Module      :  Type.Spine.TH
+Copyright   :  (c) The University of Kansas 2011
+License     :  BSD3
+
+Maintainer  :  nicolas.frisby@gmail.com
+Stability   :  experimental
+Portability :  see LANGUAGE pragmas (... GHC)
+
+Template Haskell in support of the spine-view on types.
+
+-}
+module Type.Spine.TH where
+
+import Language.Haskell.TH
+import Language.Haskell.TH.Syntax
+
+
+
+
+toNameG :: Name -> Q Name
+toNameG n = do
+  info <- reify n
+  let err = error "liftNameG expects a top-level named thing"
+      onDec dec = case dec of
+        FunD n _ -> n
+        ValD (VarP n) _ _ -> n
+        ValD (AsP n _) _ _ -> n
+        ValD {} -> err
+        DataD _ n _ _ _ -> n
+        NewtypeD _ n _ _ _ -> n
+        TySynD n _ _ -> n
+        ClassD _ n _ _ _ -> n
+        InstanceD {} -> err
+        SigD n _ -> n
+        ForeignD (ImportF _ _ _ n _) -> n
+        ForeignD (ExportF _ _ n _) -> n
+        InfixD _ n -> n
+        PragmaD {} -> err
+        FamilyD _ n _ _ -> n
+        DataInstD {} -> err
+        NewtypeInstD {} -> err
+        TySynInstD {} -> err
+  return $ case info of
+    ClassI dec _ -> onDec dec
+    ClassOpI n _ _ _ -> n
+    TyConI dec -> onDec dec
+    FamilyI dec _ -> onDec dec
+    PrimTyConI n _ _ -> n
+    DataConI n _ _ _ -> n
+    VarI {} -> err
+    TyVarI {} -> err
+
+-- | A Template Haskell-lifter for data constructors' 'NameG's.
+liftNameG_d :: Name -> Q Exp
+liftNameG_d n = do
+  Name occ (NameG _ pkg mod) <- toNameG n
+  [| mkNameG_d $(stringE $ pkgString pkg) $(stringE $ modString mod) $(stringE $ occString occ) |]
+
+
+-- | Returns the kinds of a type constructor's type parameters and range.
+tyConSignature :: Name -> Q ([Kind], Kind)
+tyConSignature n = do
+  i <- reify n
+  let bad = fail $ "Type.Spine.TH.tyConSignature expects the name of a data/newtype/data family; got " ++ show i
+  case i of
+    DataConI _ tys n _ -> return (getArgTypes tys, PromotedT n)
+      where -- NB first, drop quantification over the data types' parameters
+            getArgTypes (ForallT _ _ ty) = loop ty
+            getArgTypes ty = loop ty
+            -- TODO check that it's promotable...
+            loop (AppT (AppT ArrowT x) y) = promote x : loop y
+              where promote (VarT n) = VarT n
+                    promote (ConT n)
+                      | n == '[] = PromotedNilT
+                      | n == '(:) = PromotedConsT
+                      | otherwise = PromotedT n
+                    promote (AppT ty1 ty2) = AppT (promote ty1) (promote ty2)
+                    promote (TupleT i) = PromotedTupleT i
+                    promote ty =
+                      error $ "type-spine:tyConSignature: cannot promote " ++ show ty
+            loop _ = [] -- this is the ctor's codomain, so ignore it
+    TyConI dec -> case dec of
+      DataD _ _ tvbs _ _ -> return (map tvb_kind tvbs, StarT)
+      NewtypeD _ _ tvbs _ _ -> return (map tvb_kind tvbs, StarT)
+      _ -> bad
+    FamilyI (FamilyD DataFam _ tvbs mk) _ -> return (map tvb_kind tvbs, maybe StarT (peel tvbs) mk)
+        where peel [] k = k
+              peel (_ : l) (AppT (AppT ArrowT _) r) = peel l r
+              peel _ _ = error "Type.Spine.TH: bad FamilyD kind"
+    PrimTyConI _ i _ -> return (replicate i StarT, StarT)
+    _ -> bad
+
+tvb_kind :: TyVarBndr -> Kind
+tvb_kind (PlainTV _) = StarT
+tvb_kind (KindedTV _ k) = k
+</pre></br><h2>printed</h2></br><pre>{-# LANGUAGE TemplateHaskell #-}
+
+{- |
+
+Module      :  Type.Spine.TH
+Copyright   :  (c) The University of Kansas 2011
+License     :  BSD3
+
+Maintainer  :  nicolas.frisby@gmail.com
+Stability   :  experimental
+Portability :  see LANGUAGE pragmas (... GHC)
+
+Template Haskell in support of the spine-view on types.
+
+-}
+module Type.Spine.TH where
+
+import Language.Haskell.TH
+import Language.Haskell.TH.Syntax
+
+
+
+
+toNameG :: Name -> Q Name
+toNameG n = do
+  info <- reify n
+  let err = error "liftNameG expects a top-level named thing"
+      onDec dec = case dec of
+        FunD n _ -> n
+        ValD (VarP n) _ _ -> n
+        ValD (AsP n _) _ _ -> n
+        ValD {} -> err
+        DataD _ n _ _ _ -> n
+        NewtypeD _ n _ _ _ -> n
+        TySynD n _ _ -> n
+        ClassD _ n _ _ _ -> n
+        InstanceD {} -> err
+        SigD n _ -> n
+        ForeignD (ImportF _ _ _ n _) -> n
+        ForeignD (ExportF _ _ n _) -> n
+        InfixD _ n -> n
+        PragmaD {} -> err
+        FamilyD _ n _ _ -> n
+        DataInstD {} -> err
+        NewtypeInstD {} -> err
+        TySynInstD {} -> err
+  return $ case info of
+    ClassI dec _ -> onDec dec
+    ClassOpI n _ _ _ -> n
+    TyConI dec -> onDec dec
+    FamilyI dec _ -> onDec dec
+    PrimTyConI n _ _ -> n
+    DataConI n _ _ _ -> n
+    VarI {} -> err
+    TyVarI {} -> err
+
+-- | A Template Haskell-lifter for data constructors' 'NameG's.
+liftNameG_d :: Name -> Q Exp
+liftNameG_d n = do
+  Name occ (NameG _ pkg mod) <- toNameG n
+  [| mkNameG_d $(stringE $ pkgString pkg) $(stringE $ modString mod) $(stringE $ occString occ) |]
+
+
+-- | Returns the kinds of a type constructor's type parameters and range.
+tyConSignature :: Name -> Q ([Kind], Kind)
+tyConSignature n = do
+  i <- reify n
+  let bad = fail $ "Type.Spine.TH.tyConSignature expects the name of a data/newtype/data family; got " ++ show i
+  case i of
+    DataConI _ tys n _ -> return (getArgTypes tys, PromotedT n)
+      where -- NB first, drop quantification over the data types' parameters
+            getArgTypes (ForallT _ _ ty) = loop ty
+            getArgTypes ty = loop ty
+            -- TODO check that it's promotable...
+            loop (AppT (AppT ArrowT x) y) = promote x : loop y
+              where promote (VarT n) = VarT n
+                    promote (ConT n)
+                      | n == '[] = PromotedNilT
+                      | n == ': = PromotedConsT
+                      | otherwise = PromotedT n
+                    promote (AppT ty1 ty2) = AppT (promote ty1) (promote ty2)
+                    promote (TupleT i) = PromotedTupleT i
+                    promote ty =
+                      error $ "type-spine:tyConSignature: cannot promote " ++ show ty
+            loop _ = [] -- this is the ctor's codomain, so ignore it
+    TyConI dec -> case dec of
+      DataD _ _ tvbs _ _ -> return (map tvb_kind tvbs, StarT)
+      NewtypeD _ _ tvbs _ _ -> return (map tvb_kind tvbs, StarT)
+      _ -> bad
+    FamilyI (FamilyD DataFam _ tvbs mk) _ -> return (map tvb_kind tvbs, maybe StarT (peel tvbs) mk)
+        where peel [] k = k
+              peel (_ : l) (AppT (AppT ArrowT _) r) = peel l r
+              peel _ _ = error "Type.Spine.TH: bad FamilyD kind"
+    PrimTyConI _ i _ -> return (replicate i StarT, StarT)
+    _ -> bad
+
+tvb_kind :: TyVarBndr -> Kind
+tvb_kind (PlainTV _) = StarT
+tvb_kind (KindedTV _ k) = k
+
+</pre>
