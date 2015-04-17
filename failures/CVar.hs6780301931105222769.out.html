@@ -1,0 +1,706 @@
+<a href="CSPM.hs462851407957828015.out.html">prev</a></br><a href="failures.html">home</a></br><a href="DataGam.hs1893015680944303455.out.html">next</a></br></br><pre>28c28
+< {-# LINE 32 "src/ehc/CodeGen/CVar.chs" #-}
+---
+> 
+28a29
+> 
+28a30
+> 
+28a31
+> 
+72c75
+< {-# LINE 77 "src/ehc/CodeGen/CVar.chs" #-}
+---
+> 
+72a76
+> 
+86c90
+< {-# LINE 92 "src/ehc/CodeGen/CVar.chs" #-}
+---
+> 
+86a91
+> 
+93c98
+< {-# LINE 100 "src/ehc/CodeGen/CVar.chs" #-}
+---
+> 
+93a99
+> 
+109c115
+< {-# LINE 117 "src/ehc/CodeGen/CVar.chs" #-}
+---
+> 
+109a116
+> 
+118c125
+< {-# LINE 127 "src/ehc/CodeGen/CVar.chs" #-}
+---
+> 
+118a126
+> 
+128c136
+< {-# LINE 138 "src/ehc/CodeGen/CVar.chs" #-}
+---
+> 
+128a137
+> 
+135c144
+< {-# LINE 150 "src/ehc/CodeGen/CVar.chs" #-}
+---
+> 
+135a145
+> 
+135a146
+> 
+135a147
+> 
+135a148
+> 
+135a149
+> 
+145c159
+< {-# LINE 161 "src/ehc/CodeGen/CVar.chs" #-}
+---
+> 
+145a160
+> 
+224c239
+< {-# LINE 241 "src/ehc/CodeGen/CVar.chs" #-}
+---
+> 
+224a240
+> 
+254c270
+< {-# LINE 291 "src/ehc/CodeGen/CVar.chs" #-}
+---
+> 
+254a271
+> 
+254a272
+> 
+254a273
+> 
+254a274
+> 
+254a275
+> 
+254a276
+> 
+254a277
+> 
+254a278
+> 
+254a279
+> 
+254a280
+> 
+254a281
+> 
+254a282
+> 
+254a283
+> 
+254a284
+> 
+254a285
+> 
+254a286
+> 
+254a287
+> 
+254a288
+> 
+254a289
+> 
+254a290
+> 
+275a312
+> 
+</pre></br><h2>original</h2></br><pre>module UHC.Light.Compiler.CodeGen.CVar
+( CVarInfo' (..)
+, cvarShowKind
+, CVarMp' (..), cvarMpLookup
+, cvarLoc, cvarArg
+, cvarIsLocOrArg, cvarIsGlobExt
+, cvarGlob
+, CVarNmModuleCfg (..), emptyCVarNmModuleCfg
+, cvarToDef, cvarToRef
+, cvarToDefHsName
+, hsnJavaLikeVar )
+where
+import qualified Data.Map as Map
+import Data.Bits
+import Data.List
+import Data.Char
+import UHC.Light.Compiler.Base.HsName.Builtin
+import UHC.Light.Compiler.CodeGen.BuiltinSizeInfo
+import UHC.Util.Pretty
+import UHC.Util.Utils
+import qualified UHC.Util.FastSeq as Seq
+import UHC.Light.Compiler.Opts.Base
+import UHC.Light.Compiler.Base.HsName
+import UHC.Light.Compiler.Base.Common
+import UHC.Light.Compiler.CodeGen.BasicAnnot
+import UHC.Light.Compiler.Foreign.Extract
+
+{-# LINE 32 "src/ehc/CodeGen/CVar.chs" #-}
+data CVarInfo' tag ty varref datafldref tupfldref
+  = CVar_This                           -- this object
+      { cvarType            :: ty
+      }
+  | CVar_Local                          -- a local (on the stack)
+      { cvarType            :: ty
+      , cvarOffset          :: !varref
+      }
+  | CVar_Arg                            -- an argument (on the stack), usually the same as Local
+      { cvarType            :: ty
+      , cvarOffset          :: !varref
+      }
+  | CVar_DataFld                        -- a field of a datatype alternative
+      { cvarType            :: ty
+      , cvarData            :: !(CVarInfo' tag ty varref datafldref tupfldref)
+      , cvarTag             :: !tag
+      , cvarFld             :: !datafldref
+      }
+  | CVar_DataTag                        -- the tag of a datatype alternative
+      { cvarType            :: ty
+      , cvarData            :: !(CVarInfo' tag ty varref datafldref tupfldref)
+      }
+  | CVar_TupFld                         -- a field of a tuple
+      { cvarType            :: ty
+      , cvarTuple           :: !(CVarInfo' tag ty varref datafldref tupfldref)
+      , cvarInx             :: !(Either tupfldref HsName)
+      }
+  | CVar_GlobalExtern                         -- a global, external
+      { cvarType            :: ty
+      , cvarModNm           :: !HsName
+      , cvarFldNm           :: !HsName
+      }
+  | CVar_GlobalIntern                         -- a global, internal to current module
+      { cvarType            :: ty
+      , cvarMbModNm         :: !(Maybe HsName)
+      , cvarFldNm           :: !HsName
+      }
+  | CVar_None
+  | CVar_Error
+      { cvarNm              :: HsName
+      }
+  deriving (Eq,Ord)
+
+{-# LINE 77 "src/ehc/CodeGen/CVar.chs" #-}
+cvarShowKind :: CVarInfo' tag ty varref datafldref tupfldref -> String
+cvarShowKind cvi = case cvi of
+  CVar_This {}          -> "Th"
+  CVar_Local {}         -> "Lc"
+  CVar_Arg {}           -> "Ar"
+  CVar_DataFld {}       -> "DtFl"
+  CVar_DataTag {}       -> "DtTg"
+  CVar_TupFld {}        -> "TpFl"
+  CVar_GlobalExtern {}  -> "GlEx"
+  CVar_GlobalIntern {}  -> "GlIn"
+  CVar_None             -> "No"
+  CVar_Error {}         -> "Er"
+
+{-# LINE 92 "src/ehc/CodeGen/CVar.chs" #-}
+type CVarMp' tag ty varref datafldref tupfldref = Map.Map HsName (CVarInfo' tag ty varref datafldref tupfldref)
+
+cvarMpLookup :: HsName -> CVarMp' tag ty varref datafldref tupfldref -> Maybe (CVarInfo' tag ty varref datafldref tupfldref)
+cvarMpLookup = Map.lookup
+{-# INLINE cvarMpLookup #-}
+
+{-# LINE 100 "src/ehc/CodeGen/CVar.chs" #-}
+instance (Show datafldref, Show tupfldref, Show varref) => Show (CVarInfo' tag ty varref datafldref tupfldref) where
+  show (CVar_This           {                                   })  = "this"
+  show (CVar_Local          {                     cvarOffset=n  })  = show n
+  show (CVar_Arg            {                     cvarOffset=n  })  = show n
+  show (CVar_DataFld        {cvarData=d         , cvarFld=n     })  = show d ++ "." ++ show n
+  show (CVar_DataTag        {cvarData=d                         })  = show d ++ ".tag"
+  show (CVar_TupFld         {cvarTuple=d        , cvarInx=n     })  = show d ++ "." ++ either show show n
+  show (CVar_GlobalExtern   {cvarModNm=m        , cvarFldNm=n   })  = show m ++ "." ++ show n
+  show (CVar_GlobalIntern   {cvarMbModNm=mbm    , cvarFldNm=n   })  = maybe "" (\m -> show m ++ ".") mbm ++ show n
+  show (CVar_Error          {                     cvarNm=n      })  = "#ERRREF#" ++ show n
+  show _                                                            = "?CVar?"
+
+instance (Show datafldref, Show tupfldref, Show varref) => PP (CVarInfo' tag ty varref datafldref tupfldref) where
+  pp = pp . show
+
+{-# LINE 117 "src/ehc/CodeGen/CVar.chs" #-}
+-- | basic construction: local reference
+cvarLoc :: ty -> varref -> CVarInfo' tag ty varref datafldref tupfldref
+cvarLoc = CVar_Local
+
+-- | basic construction: argument reference
+cvarArg :: ty -> varref -> CVarInfo' tag ty varref datafldref tupfldref
+cvarArg = CVar_Arg
+
+{-# LINE 127 "src/ehc/CodeGen/CVar.chs" #-}
+-- | Is a CVar_Local or Arg?
+cvarIsLocOrArg (CVar_Local {}) = True
+cvarIsLocOrArg (CVar_Arg   {}) = True
+cvarIsLocOrArg _               = False
+
+-- | Is a CVar_GlobalExtern?
+cvarIsGlobExt (CVar_GlobalExtern {}) = True
+cvarIsGlobExt _                      = False
+
+{-# LINE 138 "src/ehc/CodeGen/CVar.chs" #-}
+-- | global reference
+cvarGlob :: CVarNmModuleCfg -> ty -> HsName -> HsName -> CVarInfo' tag ty varref datafldref tupfldref
+cvarGlob cfg ty mbModNm varNm
+  = CVar_GlobalExtern ty clNm' varNm
+  where clNm' = maybe (cvnmcfgModInTop cfg) (\m -> hsnSetQual m $ hsnQualified m) $ hsnQualifier mbModNm
+
+{-# LINE 150 "src/ehc/CodeGen/CVar.chs" #-}
+-- | Per module name configuration used by name generation to take into account differences between local, global, etc
+data CVarNmModuleCfg = CVarNmModuleCfg
+  { cvnmcfgPkg          :: HsName
+  , cvnmcfgTopInPkg     :: HsName
+  , cvnmcfgModInTop     :: HsName
+  }
+
+emptyCVarNmModuleCfg = CVarNmModuleCfg hsnUnknown hsnUnknown hsnUnknown
+
+{-# LINE 161 "src/ehc/CodeGen/CVar.chs" #-}
+-- | Generate ref, used to convert when used for referring to names
+cvarToRef
+  :: ( HsName -> e                      -- erroneous reference,
+     , ty -> e                          -- make for 'this',
+     , ty -> varref -> e                -- local,
+     , ty -> varref -> e                -- arg,
+     , ty -> HsName -> HsName -> e      -- global external, additionally getting a safe name variant
+     , ty -> Maybe HsName -> HsName -> e    -- global internal, additionally getting a safe name variant
+     , ty -> e -> taginfo -> datafldref -> e    -- data field,
+     , ty -> e -> e                     -- data constr tag,
+     ,       e -> e -> e                -- tuple field
+     , tupfldref -> e                   -- offset
+     , CVarNmModuleCfg -> tag -> taginfo
+     , CVarNmModuleCfg -> Bool -> HsName -> HsName
+     )
+     -> CVarNmModuleCfg
+     -> CVarMp'   tag ty varref datafldref tupfldref
+     -> CVarInfo' tag ty varref datafldref tupfldref
+     -> e
+
+-- | Generate def, used to convert when used for introducing names
+cvarToDef
+  :: ( HsName -> e                      -- erroneous reference,
+     , ty -> varref -> e                -- local,
+     , ty -> varref -> e                -- arg,
+     , ty ->       HsName -> HsName -> e        -- global external, additionally getting a safe name variant
+     , ty -> Maybe HsName -> HsName -> e        -- global internal, additionally getting a safe name variant
+     , ty -> e -> taginfo -> datafldref -> e    -- data field,
+     , ty -> e -> e                     -- data constr tag,
+     ,       e -> e -> e                -- tuple field
+     , tupfldref -> e                   -- offset
+     , CVarNmModuleCfg -> tag -> taginfo
+     , CVarNmModuleCfg -> Bool -> HsName -> HsName
+     )
+     -> CVarNmModuleCfg
+     -> CVarMp'   tag ty varref datafldref tupfldref
+     -> CVarInfo' tag ty varref datafldref tupfldref
+     -> e
+
+(cvarToDef, cvarToRef)
+  = ( \(mkErrorRef,mkLocal,mkArg,mkGlobalExt,mkGlobalInt,mkDataFld,mkDataTag,mkTupFld,mkOffset,mkTag,mkSafeName)
+        cfg cvarMp vi -> let ref vi
+                               = case vi of
+                                   CVar_This   t            -> panic "CVar.cvarToDef.CVar_This"
+                                   CVar_Local   t o         -> mkLocal t o
+                                   CVar_Arg     t o         -> mkArg t o
+                                   CVar_GlobalExtern  t m f -> mkGlEx mkGlobalExt cfg mkSafeName t m f
+                                   CVar_GlobalIntern  t m f -> mkGlIn mkGlobalInt cfg mkSafeName t m f
+                                   CVar_DataFld t cvid cl f -> mkDtFl ref cfg mkDataFld mkTag t cvid cl f
+                                   CVar_DataTag t cvid      -> mkDtTg ref mkDataTag t cvid
+                                   CVar_TupFld  t cvit f    -> mkTpFl ref cvarMp mkTupFld mkOffset t cvit f
+                                   CVar_None                -> panic "CVar.cvarToDef.CVar_None"
+                                   CVar_Error n             -> mkErrorRef n
+                         in ref vi
+    , \(mkErrorRef,mkThis,mkLocal,mkArg,mkGlobalExt,mkGlobalInt,mkDataFld,mkDataTag,mkTupFld,mkOffset,mkTag,mkSafeName)
+        cfg cvarMp vi -> let ref vi
+                               = case vi of
+                                   CVar_This   t            -> mkThis t
+                                   CVar_Local   t o         -> mkLocal t o
+                                   CVar_Arg     t o         -> mkArg t o
+                                   CVar_GlobalExtern  t m f -> mkGlEx mkGlobalExt cfg mkSafeName t m f
+                                   CVar_GlobalIntern  t m f -> mkGlIn mkGlobalInt cfg mkSafeName t m f
+                                   CVar_DataFld t cvid cl f -> mkDtFl ref cfg mkDataFld mkTag t cvid cl f
+                                   CVar_DataTag t cvid      -> mkDtTg ref mkDataTag t cvid
+                                   CVar_TupFld  t cvit f    -> mkTpFl ref cvarMp mkTupFld mkOffset t cvit f
+                                   CVar_None                -> panic "CVar.cvarToRef.CVar_None"
+                                   CVar_Error n             -> mkErrorRef n
+                         in ref vi
+    )
+  where mkGlIn mkGlobal cfg mkSafeName t m f = mkGlobal t m (mkSafeName cfg True f)
+        mkGlEx = mkGlIn
+        mkDtFl ref cfg mkDataFld mkTag t cvid cl f = mkDataFld t (ref cvid) (mkTag cfg cl) f
+        mkDtTg ref mkDataTag t cvid = mkDataTag t (ref cvid)
+        mkTpFl ref cvarMp mkTupFld mkOffset t cvit f = mkTupFld (ref cvit) o
+          where o = case f of
+                      Left  o -> mkOffset o
+                      Right n -> ref $ panicJust "CVar.cvarTo{RD}ef.CVar_TupFld" $ cvarMpLookup n cvarMp
+
+{-# LINE 241 "src/ehc/CodeGen/CVar.chs" #-}
+cvarToDefHsName
+  :: ( String -> HsName
+     , varref -> HsName
+     , datafldref -> HsName
+     , tupfldref -> HsName
+     , CVarNmModuleCfg -> tag -> taginfo
+     , CVarNmModuleCfg -> Bool -> HsName -> HsName
+     )
+     -> CVarNmModuleCfg
+     -> CVarMp'   tag ty varref datafldref tupfldref
+     -> CVarInfo' tag ty varref datafldref tupfldref
+     -> HsName
+cvarToDefHsName
+  (mkError,mkLocal,mkDataFld,mkTupFld,mkTag,mkSafeName)
+  = cvarToDef
+      ( \r -> mkError $ "cvarToDefHsName.mkErrorRef: " ++ show r
+      , mkLocArg
+      , mkLocArg
+      , \_ _ r -> r
+      , \_ _ r -> r
+      , \_ _ _ r -> mkDataFld r
+      , \_ _ -> mkError "cannot cvarToDefHsName.mkDataTag"
+      , \_ _ -> mkError "cannot cvarToDefHsName.mkTupFld"
+      , mkTupFld
+      , mkTag
+      , mkSafeName
+      )
+  where mkLocArg = \_ r -> mkLocal r
+
+{-# LINE 291 "src/ehc/CodeGen/CVar.chs" #-}
+-- safe name of a variable
+hsnJavaLikeVar
+  :: ( Bool -> HsName -> HsName     -- adapt for particular platform, before mangling here
+     , HsName -> HsName             -- post prefix
+     , String -> String             -- adapt module qualifiers
+     )
+     -> CVarNmModuleCfg
+     -> Bool                        -- is a global name?
+     -> HsName
+     -> HsName
+hsnJavaLikeVar (preadapt, postprefix, updqual) cfg isglob v
+  = postprefix $ hsnSafeJavaLike $ handleUpper $ qual $ preadapt isglob v
+  where handleUpper v
+          = case hsnBaseUnpack v of
+               Just (s@(c:vs), mk) | isUpper c -> mk (s ++ "_")
+               _ -> v
+        qual v
+          = case hsnBaseUnpack' v of
+               Just (q, s, mk) -> mk (map updqual q) s
+               _ -> v
+
+</pre></br><h2>printed</h2></br><pre>module UHC.Light.Compiler.CodeGen.CVar
+( CVarInfo' (..)
+, cvarShowKind
+, CVarMp' (..), cvarMpLookup
+, cvarLoc, cvarArg
+, cvarIsLocOrArg, cvarIsGlobExt
+, cvarGlob
+, CVarNmModuleCfg (..), emptyCVarNmModuleCfg
+, cvarToDef, cvarToRef
+, cvarToDefHsName
+, hsnJavaLikeVar )
+where
+import qualified Data.Map as Map
+import Data.Bits
+import Data.List
+import Data.Char
+import UHC.Light.Compiler.Base.HsName.Builtin
+import UHC.Light.Compiler.CodeGen.BuiltinSizeInfo
+import UHC.Util.Pretty
+import UHC.Util.Utils
+import qualified UHC.Util.FastSeq as Seq
+import UHC.Light.Compiler.Opts.Base
+import UHC.Light.Compiler.Base.HsName
+import UHC.Light.Compiler.Base.Common
+import UHC.Light.Compiler.CodeGen.BasicAnnot
+import UHC.Light.Compiler.Foreign.Extract
+
+
+
+
+
+data CVarInfo' tag ty varref datafldref tupfldref
+  = CVar_This                           -- this object
+      { cvarType            :: ty
+      }
+  | CVar_Local                          -- a local (on the stack)
+      { cvarType            :: ty
+      , cvarOffset          :: !varref
+      }
+  | CVar_Arg                            -- an argument (on the stack), usually the same as Local
+      { cvarType            :: ty
+      , cvarOffset          :: !varref
+      }
+  | CVar_DataFld                        -- a field of a datatype alternative
+      { cvarType            :: ty
+      , cvarData            :: !(CVarInfo' tag ty varref datafldref tupfldref)
+      , cvarTag             :: !tag
+      , cvarFld             :: !datafldref
+      }
+  | CVar_DataTag                        -- the tag of a datatype alternative
+      { cvarType            :: ty
+      , cvarData            :: !(CVarInfo' tag ty varref datafldref tupfldref)
+      }
+  | CVar_TupFld                         -- a field of a tuple
+      { cvarType            :: ty
+      , cvarTuple           :: !(CVarInfo' tag ty varref datafldref tupfldref)
+      , cvarInx             :: !(Either tupfldref HsName)
+      }
+  | CVar_GlobalExtern                         -- a global, external
+      { cvarType            :: ty
+      , cvarModNm           :: !HsName
+      , cvarFldNm           :: !HsName
+      }
+  | CVar_GlobalIntern                         -- a global, internal to current module
+      { cvarType            :: ty
+      , cvarMbModNm         :: !(Maybe HsName)
+      , cvarFldNm           :: !HsName
+      }
+  | CVar_None
+  | CVar_Error
+      { cvarNm              :: HsName
+      }
+  deriving (Eq,Ord)
+
+
+
+cvarShowKind :: CVarInfo' tag ty varref datafldref tupfldref -> String
+cvarShowKind cvi = case cvi of
+  CVar_This {}          -> "Th"
+  CVar_Local {}         -> "Lc"
+  CVar_Arg {}           -> "Ar"
+  CVar_DataFld {}       -> "DtFl"
+  CVar_DataTag {}       -> "DtTg"
+  CVar_TupFld {}        -> "TpFl"
+  CVar_GlobalExtern {}  -> "GlEx"
+  CVar_GlobalIntern {}  -> "GlIn"
+  CVar_None             -> "No"
+  CVar_Error {}         -> "Er"
+
+
+
+type CVarMp' tag ty varref datafldref tupfldref = Map.Map HsName (CVarInfo' tag ty varref datafldref tupfldref)
+
+cvarMpLookup :: HsName -> CVarMp' tag ty varref datafldref tupfldref -> Maybe (CVarInfo' tag ty varref datafldref tupfldref)
+cvarMpLookup = Map.lookup
+{-# INLINE cvarMpLookup #-}
+
+
+
+instance (Show datafldref, Show tupfldref, Show varref) => Show (CVarInfo' tag ty varref datafldref tupfldref) where
+  show (CVar_This           {                                   })  = "this"
+  show (CVar_Local          {                     cvarOffset=n  })  = show n
+  show (CVar_Arg            {                     cvarOffset=n  })  = show n
+  show (CVar_DataFld        {cvarData=d         , cvarFld=n     })  = show d ++ "." ++ show n
+  show (CVar_DataTag        {cvarData=d                         })  = show d ++ ".tag"
+  show (CVar_TupFld         {cvarTuple=d        , cvarInx=n     })  = show d ++ "." ++ either show show n
+  show (CVar_GlobalExtern   {cvarModNm=m        , cvarFldNm=n   })  = show m ++ "." ++ show n
+  show (CVar_GlobalIntern   {cvarMbModNm=mbm    , cvarFldNm=n   })  = maybe "" (\m -> show m ++ ".") mbm ++ show n
+  show (CVar_Error          {                     cvarNm=n      })  = "#ERRREF#" ++ show n
+  show _                                                            = "?CVar?"
+
+instance (Show datafldref, Show tupfldref, Show varref) => PP (CVarInfo' tag ty varref datafldref tupfldref) where
+  pp = pp . show
+
+
+
+-- | basic construction: local reference
+cvarLoc :: ty -> varref -> CVarInfo' tag ty varref datafldref tupfldref
+cvarLoc = CVar_Local
+
+-- | basic construction: argument reference
+cvarArg :: ty -> varref -> CVarInfo' tag ty varref datafldref tupfldref
+cvarArg = CVar_Arg
+
+
+
+-- | Is a CVar_Local or Arg?
+cvarIsLocOrArg (CVar_Local {}) = True
+cvarIsLocOrArg (CVar_Arg   {}) = True
+cvarIsLocOrArg _               = False
+
+-- | Is a CVar_GlobalExtern?
+cvarIsGlobExt (CVar_GlobalExtern {}) = True
+cvarIsGlobExt _                      = False
+
+
+
+-- | global reference
+cvarGlob :: CVarNmModuleCfg -> ty -> HsName -> HsName -> CVarInfo' tag ty varref datafldref tupfldref
+cvarGlob cfg ty mbModNm varNm
+  = CVar_GlobalExtern ty clNm' varNm
+  where clNm' = maybe (cvnmcfgModInTop cfg) (\m -> hsnSetQual m $ hsnQualified m) $ hsnQualifier mbModNm
+
+
+
+
+
+
+
+-- | Per module name configuration used by name generation to take into account differences between local, global, etc
+data CVarNmModuleCfg = CVarNmModuleCfg
+  { cvnmcfgPkg          :: HsName
+  , cvnmcfgTopInPkg     :: HsName
+  , cvnmcfgModInTop     :: HsName
+  }
+
+emptyCVarNmModuleCfg = CVarNmModuleCfg hsnUnknown hsnUnknown hsnUnknown
+
+
+
+-- | Generate ref, used to convert when used for referring to names
+cvarToRef
+  :: ( HsName -> e                      -- erroneous reference,
+     , ty -> e                          -- make for 'this',
+     , ty -> varref -> e                -- local,
+     , ty -> varref -> e                -- arg,
+     , ty -> HsName -> HsName -> e      -- global external, additionally getting a safe name variant
+     , ty -> Maybe HsName -> HsName -> e    -- global internal, additionally getting a safe name variant
+     , ty -> e -> taginfo -> datafldref -> e    -- data field,
+     , ty -> e -> e                     -- data constr tag,
+     ,       e -> e -> e                -- tuple field
+     , tupfldref -> e                   -- offset
+     , CVarNmModuleCfg -> tag -> taginfo
+     , CVarNmModuleCfg -> Bool -> HsName -> HsName
+     )
+     -> CVarNmModuleCfg
+     -> CVarMp'   tag ty varref datafldref tupfldref
+     -> CVarInfo' tag ty varref datafldref tupfldref
+     -> e
+
+-- | Generate def, used to convert when used for introducing names
+cvarToDef
+  :: ( HsName -> e                      -- erroneous reference,
+     , ty -> varref -> e                -- local,
+     , ty -> varref -> e                -- arg,
+     , ty ->       HsName -> HsName -> e        -- global external, additionally getting a safe name variant
+     , ty -> Maybe HsName -> HsName -> e        -- global internal, additionally getting a safe name variant
+     , ty -> e -> taginfo -> datafldref -> e    -- data field,
+     , ty -> e -> e                     -- data constr tag,
+     ,       e -> e -> e                -- tuple field
+     , tupfldref -> e                   -- offset
+     , CVarNmModuleCfg -> tag -> taginfo
+     , CVarNmModuleCfg -> Bool -> HsName -> HsName
+     )
+     -> CVarNmModuleCfg
+     -> CVarMp'   tag ty varref datafldref tupfldref
+     -> CVarInfo' tag ty varref datafldref tupfldref
+     -> e
+
+(cvarToDef, cvarToRef)
+  = ( \(mkErrorRef,mkLocal,mkArg,mkGlobalExt,mkGlobalInt,mkDataFld,mkDataTag,mkTupFld,mkOffset,mkTag,mkSafeName)
+        cfg cvarMp vi -> let ref vi
+                               = case vi of
+                                   CVar_This   t            -> panic "CVar.cvarToDef.CVar_This"
+                                   CVar_Local   t o         -> mkLocal t o
+                                   CVar_Arg     t o         -> mkArg t o
+                                   CVar_GlobalExtern  t m f -> mkGlEx mkGlobalExt cfg mkSafeName t m f
+                                   CVar_GlobalIntern  t m f -> mkGlIn mkGlobalInt cfg mkSafeName t m f
+                                   CVar_DataFld t cvid cl f -> mkDtFl ref cfg mkDataFld mkTag t cvid cl f
+                                   CVar_DataTag t cvid      -> mkDtTg ref mkDataTag t cvid
+                                   CVar_TupFld  t cvit f    -> mkTpFl ref cvarMp mkTupFld mkOffset t cvit f
+                                   CVar_None                -> panic "CVar.cvarToDef.CVar_None"
+                                   CVar_Error n             -> mkErrorRef n
+                         in ref vi
+    , \(mkErrorRef,mkThis,mkLocal,mkArg,mkGlobalExt,mkGlobalInt,mkDataFld,mkDataTag,mkTupFld,mkOffset,mkTag,mkSafeName)
+        cfg cvarMp vi -> let ref vi
+                               = case vi of
+                                   CVar_This   t            -> mkThis t
+                                   CVar_Local   t o         -> mkLocal t o
+                                   CVar_Arg     t o         -> mkArg t o
+                                   CVar_GlobalExtern  t m f -> mkGlEx mkGlobalExt cfg mkSafeName t m f
+                                   CVar_GlobalIntern  t m f -> mkGlIn mkGlobalInt cfg mkSafeName t m f
+                                   CVar_DataFld t cvid cl f -> mkDtFl ref cfg mkDataFld mkTag t cvid cl f
+                                   CVar_DataTag t cvid      -> mkDtTg ref mkDataTag t cvid
+                                   CVar_TupFld  t cvit f    -> mkTpFl ref cvarMp mkTupFld mkOffset t cvit f
+                                   CVar_None                -> panic "CVar.cvarToRef.CVar_None"
+                                   CVar_Error n             -> mkErrorRef n
+                         in ref vi
+    )
+  where mkGlIn mkGlobal cfg mkSafeName t m f = mkGlobal t m (mkSafeName cfg True f)
+        mkGlEx = mkGlIn
+        mkDtFl ref cfg mkDataFld mkTag t cvid cl f = mkDataFld t (ref cvid) (mkTag cfg cl) f
+        mkDtTg ref mkDataTag t cvid = mkDataTag t (ref cvid)
+        mkTpFl ref cvarMp mkTupFld mkOffset t cvit f = mkTupFld (ref cvit) o
+          where o = case f of
+                      Left  o -> mkOffset o
+                      Right n -> ref $ panicJust "CVar.cvarTo{RD}ef.CVar_TupFld" $ cvarMpLookup n cvarMp
+
+
+
+cvarToDefHsName
+  :: ( String -> HsName
+     , varref -> HsName
+     , datafldref -> HsName
+     , tupfldref -> HsName
+     , CVarNmModuleCfg -> tag -> taginfo
+     , CVarNmModuleCfg -> Bool -> HsName -> HsName
+     )
+     -> CVarNmModuleCfg
+     -> CVarMp'   tag ty varref datafldref tupfldref
+     -> CVarInfo' tag ty varref datafldref tupfldref
+     -> HsName
+cvarToDefHsName
+  (mkError,mkLocal,mkDataFld,mkTupFld,mkTag,mkSafeName)
+  = cvarToDef
+      ( \r -> mkError $ "cvarToDefHsName.mkErrorRef: " ++ show r
+      , mkLocArg
+      , mkLocArg
+      , \_ _ r -> r
+      , \_ _ r -> r
+      , \_ _ _ r -> mkDataFld r
+      , \_ _ -> mkError "cannot cvarToDefHsName.mkDataTag"
+      , \_ _ -> mkError "cannot cvarToDefHsName.mkTupFld"
+      , mkTupFld
+      , mkTag
+      , mkSafeName
+      )
+  where mkLocArg = \_ r -> mkLocal r
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+-- safe name of a variable
+hsnJavaLikeVar
+  :: ( Bool -> HsName -> HsName     -- adapt for particular platform, before mangling here
+     , HsName -> HsName             -- post prefix
+     , String -> String             -- adapt module qualifiers
+     )
+     -> CVarNmModuleCfg
+     -> Bool                        -- is a global name?
+     -> HsName
+     -> HsName
+hsnJavaLikeVar (preadapt, postprefix, updqual) cfg isglob v
+  = postprefix $ hsnSafeJavaLike $ handleUpper $ qual $ preadapt isglob v
+  where handleUpper v
+          = case hsnBaseUnpack v of
+               Just (s@(c:vs), mk) | isUpper c -> mk (s ++ "_")
+               _ -> v
+        qual v
+          = case hsnBaseUnpack' v of
+               Just (q, s, mk) -> mk (map updqual q) s
+               _ -> v
+
+
+</pre>

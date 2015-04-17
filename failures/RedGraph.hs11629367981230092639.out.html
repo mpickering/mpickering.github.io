@@ -1,0 +1,368 @@
+<a href="RealTime.hs14834229031751072698.out.html">prev</a></br><a href="failures.html">home</a></br><a href="RefGenerator.hs3419140042029909503.out.html">next</a></br></br><pre>27c27
+< {-# LINE 34 "src/ehc/Pred/RedGraph.chs" #-}
+---
+> 
+27a28
+> 
+27a29
+> 
+27a30
+> 
+27a31
+> 
+27a32
+> 
+27a33
+> 
+44c50
+< {-# LINE 52 "src/ehc/Pred/RedGraph.chs" #-}
+---
+> 
+44a51
+> 
+50c57
+< {-# LINE 59 "src/ehc/Pred/RedGraph.chs" #-}
+---
+> 
+50a58
+> 
+57c65
+< {-# LINE 67 "src/ehc/Pred/RedGraph.chs" #-}
+---
+> 
+57a66
+> 
+64c73
+< {-# LINE 75 "src/ehc/Pred/RedGraph.chs" #-}
+---
+> 
+64a74
+> 
+73c83
+< {-# LINE 85 "src/ehc/Pred/RedGraph.chs" #-}
+---
+> 
+73a84
+> 
+78c89
+< {-# LINE 95 "src/ehc/Pred/RedGraph.chs" #-}
+---
+> 
+78a90
+> 
+78a91
+> 
+78a92
+> 
+78a93
+> 
+78a94
+> 
+83c99
+< {-# LINE 101 "src/ehc/Pred/RedGraph.chs" #-}
+---
+> 
+83a100
+> 
+93c110
+< {-# LINE 119 "src/ehc/Pred/RedGraph.chs" #-}
+---
+> 
+93a111
+> 
+93a112
+> 
+93a113
+> 
+93a114
+> 
+93a115
+> 
+93a116
+> 
+93a117
+> 
+93a118
+> 
+105c130
+< {-# LINE 136 "src/ehc/Pred/RedGraph.chs" #-}
+---
+> 
+105a131
+> 
+105a132
+> 
+105a133
+> 
+105a134
+> 
+105a135
+> 
+117a148
+> 
+</pre></br><h2>original</h2></br><pre>module UHC.Light.Compiler.Pred.RedGraph
+( module UHC.Util.AGraph
+, RedNode (..)
+, RedGraph, emptyRedGraph
+, mkRedGraphFromReductions, addToRedGraphFromReductions
+, addToRedGraphFromAssumes, mkRedGraphFromAssumes
+, ppRedGraph
+, addAssumption
+, addReduction
+, redPruneReductionsUntil
+, redAlternatives )
+where
+import UHC.Light.Compiler.Base.Common
+import UHC.Light.Compiler.Ty
+import UHC.Light.Compiler.VarMp
+import Data.Maybe
+import UHC.Light.Compiler.CHR.Constraint
+import UHC.Light.Compiler.CHR.Constraint
+import UHC.Light.Compiler.Pred.Heuristics
+import qualified Data.Map as Map
+import qualified Data.Set as Set
+import UHC.Util.AGraph
+import UHC.Util.Pretty
+import Data.Graph.Inductive.Graph
+import UHC.Util.Utils
+
+{-# LINE 34 "src/ehc/Pred/RedGraph.chs" #-}
+data RedNode p
+  =  Red_Pred { rednodePred     ::  !p      }
+  |  Red_And  { rednodePreds    ::  ![p]    }
+  deriving (Eq, Ord)
+
+mkRedNode :: [p] -> RedNode p
+mkRedNode [p] = Red_Pred p
+mkRedNode ps  = Red_And ps
+
+redNodePreds :: RedNode p -> [p]
+redNodePreds (Red_Pred  q) = [q]
+redNodePreds (Red_And  qs) = qs
+
+true  ::  RedNode p
+true  =   mkRedNode []
+
+{-# LINE 52 "src/ehc/Pred/RedGraph.chs" #-}
+type RedGraph p info = AGraph (RedNode p) info
+
+emptyRedGraph :: Ord p => RedGraph p i
+emptyRedGraph = emptyAGraph
+
+{-# LINE 59 "src/ehc/Pred/RedGraph.chs" #-}
+addToRedGraphFromReductions :: Ord p => [Constraint p info] -> RedGraph p info -> RedGraph p info
+addToRedGraphFromReductions cs g = foldr addReduction g cs
+
+mkRedGraphFromReductions :: Ord p => [Constraint p info] -> RedGraph p info
+mkRedGraphFromReductions cs = addToRedGraphFromReductions cs emptyRedGraph
+
+{-# LINE 67 "src/ehc/Pred/RedGraph.chs" #-}
+addToRedGraphFromAssumes :: Ord p => ConstraintToInfoMap p info -> RedGraph p info -> RedGraph p info
+addToRedGraphFromAssumes cm g = Map.foldrWithKey addAssumption g cm
+
+mkRedGraphFromAssumes :: Ord p => ConstraintToInfoMap p info -> RedGraph p info
+mkRedGraphFromAssumes cm = addToRedGraphFromAssumes cm emptyRedGraph
+
+{-# LINE 75 "src/ehc/Pred/RedGraph.chs" #-}
+instance PP p => Show (RedNode p) where
+  show = showPP . pp
+
+instance PP p => PP (RedNode p) where
+  pp (Red_Pred p)    = pp p
+  pp (Red_And [])    = pp "True"
+  pp (Red_And _ )    = pp "And"
+
+{-# LINE 85 "src/ehc/Pred/RedGraph.chs" #-}
+ppRedGraph :: (PP p, PP i) => RedGraph p i -> PP_Doc
+ppRedGraph ag = "RedGraph" >-< indent 2 ((ppBracketsCommasBlock $ nodes g) >-< (ppBracketsCommasBlock $ edges g) >-< pp (show g))
+  where g = agraphGraph ag
+
+{-# LINE 95 "src/ehc/Pred/RedGraph.chs" #-}
+addAssumption :: Ord p => Constraint p info -> [info] -> RedGraph p info -> RedGraph p info
+addAssumption (Assume  p)  is  = insertEdges (zip3 (repeat (Red_Pred p)) (repeat true) is)
+addAssumption _            _   = id
+
+{-# LINE 101 "src/ehc/Pred/RedGraph.chs" #-}
+addReduction :: Ord p => Constraint p info -> RedGraph p info -> RedGraph p info
+addReduction (Reduction {cnstrPred=p, cnstrInfo=i, cnstrFromPreds=[q]})
+                                    =  insertEdge (Red_Pred p, Red_Pred q  , i)
+addReduction (Reduction {cnstrPred=p, cnstrInfo=i, cnstrFromPreds=ps})
+                                    =  let  andNd  = Red_And ps
+                                            edges  = map (\q -> (andNd, Red_Pred q, i)) ps
+                                       in   insertEdges ((Red_Pred p, andNd, i) : edges)
+addReduction _                      =  id
+
+{-# LINE 119 "src/ehc/Pred/RedGraph.chs" #-}
+redPruneReductionsUntil :: (Ord p) => [p] -> (p -> Bool) -> RedGraph p info -> RedGraph p info
+redPruneReductionsUntil leaves stop gr
+  = dels (map Red_Pred leaves) gr
+  where dels leaves g = foldr del g leaves
+        del  leaf   g | all (not . stop)
+                        $ redNodePreds leaf = dels (map snd pres)
+                                              $ deleteNode leaf
+                                              $ foldr (\(_,from) g -> deleteEdge (from,leaf) g) g pres
+                      | otherwise           = g
+          where pres = predecessors g leaf
+
+{-# LINE 136 "src/ehc/Pred/RedGraph.chs" #-}
+redAlternatives :: (Ord p {-, PP p, PP info debug -}) => RedGraph p info -> p -> HeurAlts p info
+redAlternatives gr
+  = recOr Set.empty
+  where  recOr visited p = HeurAlts p (map (recAnd visited') (successors gr (Red_Pred p)))
+           where visited' = Set.insert p visited
+
+         recAnd visited (i, n)
+           = HeurRed i (map mk qs)
+           where qs = redNodePreds n
+                 mk q | Set.member q visited = HeurAlts q [HeurRed_Rec q]
+                      | otherwise            = recOr visited q
+
+</pre></br><h2>printed</h2></br><pre>module UHC.Light.Compiler.Pred.RedGraph
+( module UHC.Util.AGraph
+, RedNode (..)
+, RedGraph, emptyRedGraph
+, mkRedGraphFromReductions, addToRedGraphFromReductions
+, addToRedGraphFromAssumes, mkRedGraphFromAssumes
+, ppRedGraph
+, addAssumption
+, addReduction
+, redPruneReductionsUntil
+, redAlternatives )
+where
+import UHC.Light.Compiler.Base.Common
+import UHC.Light.Compiler.Ty
+import UHC.Light.Compiler.VarMp
+import Data.Maybe
+import UHC.Light.Compiler.CHR.Constraint
+import UHC.Light.Compiler.CHR.Constraint
+import UHC.Light.Compiler.Pred.Heuristics
+import qualified Data.Map as Map
+import qualified Data.Set as Set
+import UHC.Util.AGraph
+import UHC.Util.Pretty
+import Data.Graph.Inductive.Graph
+import UHC.Util.Utils
+
+
+
+
+
+
+
+
+data RedNode p
+  =  Red_Pred { rednodePred     ::  !p      }
+  |  Red_And  { rednodePreds    ::  ![p]    }
+  deriving (Eq, Ord)
+
+mkRedNode :: [p] -> RedNode p
+mkRedNode [p] = Red_Pred p
+mkRedNode ps  = Red_And ps
+
+redNodePreds :: RedNode p -> [p]
+redNodePreds (Red_Pred  q) = [q]
+redNodePreds (Red_And  qs) = qs
+
+true  ::  RedNode p
+true  =   mkRedNode []
+
+
+
+type RedGraph p info = AGraph (RedNode p) info
+
+emptyRedGraph :: Ord p => RedGraph p i
+emptyRedGraph = emptyAGraph
+
+
+
+addToRedGraphFromReductions :: Ord p => [Constraint p info] -> RedGraph p info -> RedGraph p info
+addToRedGraphFromReductions cs g = foldr addReduction g cs
+
+mkRedGraphFromReductions :: Ord p => [Constraint p info] -> RedGraph p info
+mkRedGraphFromReductions cs = addToRedGraphFromReductions cs emptyRedGraph
+
+
+
+addToRedGraphFromAssumes :: Ord p => ConstraintToInfoMap p info -> RedGraph p info -> RedGraph p info
+addToRedGraphFromAssumes cm g = Map.foldrWithKey addAssumption g cm
+
+mkRedGraphFromAssumes :: Ord p => ConstraintToInfoMap p info -> RedGraph p info
+mkRedGraphFromAssumes cm = addToRedGraphFromAssumes cm emptyRedGraph
+
+
+
+instance PP p => Show (RedNode p) where
+  show = showPP . pp
+
+instance PP p => PP (RedNode p) where
+  pp (Red_Pred p)    = pp p
+  pp (Red_And [])    = pp "True"
+  pp (Red_And _ )    = pp "And"
+
+
+
+ppRedGraph :: (PP p, PP i) => RedGraph p i -> PP_Doc
+ppRedGraph ag = "RedGraph" >-< indent 2 ((ppBracketsCommasBlock $ nodes g) >-< (ppBracketsCommasBlock $ edges g) >-< pp (show g))
+  where g = agraphGraph ag
+
+
+
+
+
+
+
+addAssumption :: Ord p => Constraint p info -> [info] -> RedGraph p info -> RedGraph p info
+addAssumption (Assume  p)  is  = insertEdges (zip3 (repeat (Red_Pred p)) (repeat true) is)
+addAssumption _            _   = id
+
+
+
+addReduction :: Ord p => Constraint p info -> RedGraph p info -> RedGraph p info
+addReduction (Reduction {cnstrPred=p, cnstrInfo=i, cnstrFromPreds=[q]})
+                                    =  insertEdge (Red_Pred p, Red_Pred q  , i)
+addReduction (Reduction {cnstrPred=p, cnstrInfo=i, cnstrFromPreds=ps})
+                                    =  let  andNd  = Red_And ps
+                                            edges  = map (\q -> (andNd, Red_Pred q, i)) ps
+                                       in   insertEdges ((Red_Pred p, andNd, i) : edges)
+addReduction _                      =  id
+
+
+
+
+
+
+
+
+
+
+redPruneReductionsUntil :: (Ord p) => [p] -> (p -> Bool) -> RedGraph p info -> RedGraph p info
+redPruneReductionsUntil leaves stop gr
+  = dels (map Red_Pred leaves) gr
+  where dels leaves g = foldr del g leaves
+        del  leaf   g | all (not . stop)
+                        $ redNodePreds leaf = dels (map snd pres)
+                                              $ deleteNode leaf
+                                              $ foldr (\(_,from) g -> deleteEdge (from,leaf) g) g pres
+                      | otherwise           = g
+          where pres = predecessors g leaf
+
+
+
+
+
+
+
+redAlternatives :: (Ord p {-, PP p, PP info debug -}) => RedGraph p info -> p -> HeurAlts p info
+redAlternatives gr
+  = recOr Set.empty
+  where  recOr visited p = HeurAlts p (map (recAnd visited') (successors gr (Red_Pred p)))
+           where visited' = Set.insert p visited
+
+         recAnd visited (i, n)
+           = HeurRed i (map mk qs)
+           where qs = redNodePreds n
+                 mk q | Set.member q visited = HeurAlts q [HeurRed_Rec q]
+                      | otherwise            = recOr visited q
+
+
+</pre>

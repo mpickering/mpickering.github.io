@@ -1,0 +1,367 @@
+<a href="Matrix.hs495149352476026939.out.html">prev</a></br><a href="failures.html">home</a></br><a href="Merge.hs1324160811797716616.out.html">next</a></br></br><pre>19c19
+< {-# LINE 31 "src/ehc/Module/Merge.chs" #-}
+---
+> 
+19a20
+> 
+19a21
+> 
+19a22
+> 
+19a23
+> 
+19a24
+> 
+19a25
+> 
+19a26
+> 
+19a27
+> 
+19a28
+> 
+19a29
+> 
+19a30
+> 
+24c35
+< {-# LINE 37 "src/ehc/Module/Merge.chs" #-}
+---
+> 
+24a36
+> 
+28c40
+< {-# LINE 46 "src/ehc/Module/Merge.chs" #-}
+---
+> 
+28a41
+> 
+28a42
+> 
+28a43
+> 
+28a44
+> 
+28a45
+> 
+56c73
+< {-# LINE 79 "src/ehc/Module/Merge.chs" #-}
+---
+> 
+56a74
+> 
+56a75
+> 
+56a76
+> 
+56a77
+> 
+56a78
+> 
+67c89
+< {-# LINE 91 "src/ehc/Module/Merge.chs" #-}
+---
+> 
+67a90
+> 
+70c93
+< {-# LINE 95 "src/ehc/Module/Merge.chs" #-}
+---
+> 
+70a94
+> 
+121c145
+< {-# LINE 147 "src/ehc/Module/Merge.chs" #-}
+---
+> 
+121a146
+> 
+130a156
+> 
+</pre></br><h2>original</h2></br><pre>module UHC.Light.Compiler.Module.Merge
+( ModDbBindLetInfo''
+, ModDbBindArray'
+, ModPuller (..)
+, modMergeByPullingInM
+, modMergeByPullingIn )
+where
+import UHC.Light.Compiler.Base.Common
+import Data.List
+import Data.Maybe
+import qualified Data.Set as Set
+import qualified Data.Map as Map
+import UHC.Util.Utils
+import Control.Monad.Identity
+import Control.Monad.State
+import Data.Array
+import qualified UHC.Util.FastSeq as Seq
+
+{-# LINE 31 "src/ehc/Module/Merge.chs" #-}
+-- | the binding info required for let bind
+type ModDbBindLetInfo'' f cat bind = (cat,f bind)
+type ModDbBindLetInfo'2   cat bind = ModDbBindLetInfo'' [] cat            bind
+
+{-# LINE 37 "src/ehc/Module/Merge.chs" #-}
+-- | actual bindings stored in separate array to allow for sharing
+type ModDbBindArray' cat bind = Array Int (ModDbBindLetInfo'' (Array Int) cat bind)
+
+{-# LINE 46 "src/ehc/Module/Merge.chs" #-}
+-- | Abstraction of how pulling from a module to something else is done
+class ModPuller modFr modsDb modsRem modTo expr cat bind
+{- 20140928 TBD: not properly refactored yet, in particular the functional dpds are too restrictive...
+-}
+    | modFr -> expr cat bind modsRem modsDb modTo
+    , expr -> modFr
+    , cat -> modFr
+    , bind -> modFr
+    , modsRem -> modFr
+    , modsDb -> modFr
+    , modTo -> modFr
+  where
+    -- | Split main + imported into (1) root expr, (2) root bindings also visible and to be included, (3) part on which merging takes place and (4) a remainder
+    mpullSplit :: modFr -> [modFr] -> (expr, Maybe (cat,[(bind,HsNameS)]), modsDb, modsRem)
+
+    -- | Extract bindings for a name, consisting of a category, set of bindings, and the bound names (including the one asked for) pulled in.
+    mpullUsedBindings :: Monad m => HsName -> modsDb -> m (Maybe (cat, [bind], HsNameS))
+
+    -- | Extract expr's relevant for inducing further pullins
+    mpullRelevantExprs :: bind -> [expr]
+
+    -- | Extract free names/vars from expr
+    mpullFreeVars :: expr -> HsNameS
+
+    -- | Combine bindings + root expr into result module
+    mpullBindingsAddToMod :: modsRem -> expr -> [(cat,[bind])] -> modTo -> modTo
+
+{-# LINE 79 "src/ehc/Module/Merge.chs" #-}
+data PullState cat bind
+  = PullState
+      { pullstBinds     :: Seq.Seq (ModDbBindLetInfo'2 cat bind)    -- ^ pulled in bindings
+      , pullstPulledNmS :: !HsNameS                                 -- ^ pulled in names
+      , pullstToDo      :: ![HsName]                                -- ^ names todo
+      }
+
+emptyPullState :: PullState cat bind
+emptyPullState = PullState Seq.empty Set.empty []
+
+{-# LINE 91 "src/ehc/Module/Merge.chs" #-}
+type ModMergeT cat bind m a = StateT (PullState cat bind) m a
+
+{-# LINE 95 "src/ehc/Module/Merge.chs" #-}
+-- | merge by pulling in that which is required only, monadically
+modMergeByPullingInM
+  :: ( ModPuller modFr modsDb modsRem modTo expr cat bind
+     , Monad m
+     )
+  => (modFr, [modFr])               -- ^ main and imported
+     -> ModMergeT cat bind m
+          ( (modTo -> modTo)        -- conversion of resulting module
+          , HsNameS                 -- modules from which something was taken
+          )
+modMergeByPullingInM (modMain,modImpL) = do
+    let (rootExpr,mbExports,modDb,modRem) = mpullSplit modMain modImpL
+    put $ emptyPullState {pullstToDo = Set.toList $ Set.unions $ mpullFreeVars rootExpr : (maybe [] (map snd . snd) mbExports)}
+    pull modDb
+    when (isJust mbExports) $
+      let (Just (exportCateg,rootExports)) = mbExports
+      in  modify $ \st -> st {pullstBinds = pullstBinds st `Seq.union` Seq.fromList [ (exportCateg,[b]) | (b,_) <- rootExports ]}
+    final <- get
+    return
+      ( mpullBindingsAddToMod modRem rootExpr (Seq.toList $ pullstBinds final)
+      , Set.map (panicJust "modMergeByPullingInM" . hsnQualifier) $ pullstPulledNmS final
+      )
+  where
+    pull modDb = do
+      s <- get
+      case pullstToDo s of
+        (nm:nmRest)
+          | nm `Set.notMember` pullstPulledNmS s {- && isJust mbPull -} -> do
+              mbPull@(~(Just (cat,binds,pulled))) <- lift $ mpullUsedBindings nm modDb
+              if isJust mbPull
+                then do
+                  let pulledNms = pullstPulledNmS s `Set.union` pulled
+                      newNms
+                        = (Set.unions $ map (Set.unions . map mpullFreeVars . mpullRelevantExprs) binds)
+                          `Set.difference` pulledNms
+                  put $
+                    s { pullstToDo = Set.toList newNms ++ nmRest
+                      , pullstBinds = Seq.singleton (cat,binds) `Seq.union` pullstBinds s
+                      , pullstPulledNmS = pulledNms
+                      }
+                  pull modDb
+                else
+                  dfltContinue
+          | otherwise -> dfltContinue
+          where -- mbPull@(~(Just (cat,binds,pulled))) = pullIn nm
+                dfltContinue = do
+                  put $ s { pullstToDo = nmRest }
+                  pull modDb
+        _ -> return ()
+
+{-# LINE 147 "src/ehc/Module/Merge.chs" #-}
+-- | merge by pulling in that which is required only
+modMergeByPullingIn
+  :: ModPuller modFr modsDb modsRem modTo expr cat bind
+  => (modFr, [modFr])               -- ^ main and imported
+     -> ( (modTo -> modTo)          -- conversion of resulting module
+        , HsNameS                   -- modules from which something was taken
+        )
+modMergeByPullingIn mods = flip evalState emptyPullState $ modMergeByPullingInM mods
+
+</pre></br><h2>printed</h2></br><pre>module UHC.Light.Compiler.Module.Merge
+( ModDbBindLetInfo''
+, ModDbBindArray'
+, ModPuller (..)
+, modMergeByPullingInM
+, modMergeByPullingIn )
+where
+import UHC.Light.Compiler.Base.Common
+import Data.List
+import Data.Maybe
+import qualified Data.Set as Set
+import qualified Data.Map as Map
+import UHC.Util.Utils
+import Control.Monad.Identity
+import Control.Monad.State
+import Data.Array
+import qualified UHC.Util.FastSeq as Seq
+
+
+
+
+
+
+
+
+
+
+
+
+
+-- | the binding info required for let bind
+type ModDbBindLetInfo'' f cat bind = (cat,f bind)
+type ModDbBindLetInfo'2   cat bind = ModDbBindLetInfo'' [] cat            bind
+
+
+
+-- | actual bindings stored in separate array to allow for sharing
+type ModDbBindArray' cat bind = Array Int (ModDbBindLetInfo'' (Array Int) cat bind)
+
+
+
+
+
+
+
+-- | Abstraction of how pulling from a module to something else is done
+class ModPuller modFr modsDb modsRem modTo expr cat bind
+{- 20140928 TBD: not properly refactored yet, in particular the functional dpds are too restrictive...
+-}
+    | modFr -> expr cat bind modsRem modsDb modTo
+    , expr -> modFr
+    , cat -> modFr
+    , bind -> modFr
+    , modsRem -> modFr
+    , modsDb -> modFr
+    , modTo -> modFr
+  where
+    -- | Split main + imported into (1) root expr, (2) root bindings also visible and to be included, (3) part on which merging takes place and (4) a remainder
+    mpullSplit :: modFr -> [modFr] -> (expr, Maybe (cat,[(bind,HsNameS)]), modsDb, modsRem)
+
+    -- | Extract bindings for a name, consisting of a category, set of bindings, and the bound names (including the one asked for) pulled in.
+    mpullUsedBindings :: Monad m => HsName -> modsDb -> m (Maybe (cat, [bind], HsNameS))
+
+    -- | Extract expr's relevant for inducing further pullins
+    mpullRelevantExprs :: bind -> [expr]
+
+    -- | Extract free names/vars from expr
+    mpullFreeVars :: expr -> HsNameS
+
+    -- | Combine bindings + root expr into result module
+    mpullBindingsAddToMod :: modsRem -> expr -> [(cat,[bind])] -> modTo -> modTo
+
+
+
+
+
+
+
+data PullState cat bind
+  = PullState
+      { pullstBinds     :: Seq.Seq (ModDbBindLetInfo'2 cat bind)    -- ^ pulled in bindings
+      , pullstPulledNmS :: !HsNameS                                 -- ^ pulled in names
+      , pullstToDo      :: ![HsName]                                -- ^ names todo
+      }
+
+emptyPullState :: PullState cat bind
+emptyPullState = PullState Seq.empty Set.empty []
+
+
+
+type ModMergeT cat bind m a = StateT (PullState cat bind) m a
+
+
+
+-- | merge by pulling in that which is required only, monadically
+modMergeByPullingInM
+  :: ( ModPuller modFr modsDb modsRem modTo expr cat bind
+     , Monad m
+     )
+  => (modFr, [modFr])               -- ^ main and imported
+     -> ModMergeT cat bind m
+          ( (modTo -> modTo)        -- conversion of resulting module
+          , HsNameS                 -- modules from which something was taken
+          )
+modMergeByPullingInM (modMain,modImpL) = do
+    let (rootExpr,mbExports,modDb,modRem) = mpullSplit modMain modImpL
+    put $ emptyPullState {pullstToDo = Set.toList $ Set.unions $ mpullFreeVars rootExpr : (maybe [] (map snd . snd) mbExports)}
+    pull modDb
+    when (isJust mbExports) $
+      let (Just (exportCateg,rootExports)) = mbExports
+      in  modify $ \st -> st {pullstBinds = pullstBinds st `Seq.union` Seq.fromList [ (exportCateg,[b]) | (b,_) <- rootExports ]}
+    final <- get
+    return
+      ( mpullBindingsAddToMod modRem rootExpr (Seq.toList $ pullstBinds final)
+      , Set.map (panicJust "modMergeByPullingInM" . hsnQualifier) $ pullstPulledNmS final
+      )
+  where
+    pull modDb = do
+      s <- get
+      case pullstToDo s of
+        (nm:nmRest)
+          | nm `Set.notMember` pullstPulledNmS s {- && isJust mbPull -} -> do
+              mbPull@(~(Just (cat,binds,pulled))) <- lift $ mpullUsedBindings nm modDb
+              if isJust mbPull
+                then do
+                  let pulledNms = pullstPulledNmS s `Set.union` pulled
+                      newNms
+                        = (Set.unions $ map (Set.unions . map mpullFreeVars . mpullRelevantExprs) binds)
+                          `Set.difference` pulledNms
+                  put $
+                    s { pullstToDo = Set.toList newNms ++ nmRest
+                      , pullstBinds = Seq.singleton (cat,binds) `Seq.union` pullstBinds s
+                      , pullstPulledNmS = pulledNms
+                      }
+                  pull modDb
+                else
+                  dfltContinue
+          | otherwise -> dfltContinue
+          where -- mbPull@(~(Just (cat,binds,pulled))) = pullIn nm
+                dfltContinue = do
+                  put $ s { pullstToDo = nmRest }
+                  pull modDb
+        _ -> return ()
+
+
+
+-- | merge by pulling in that which is required only
+modMergeByPullingIn
+  :: ModPuller modFr modsDb modsRem modTo expr cat bind
+  => (modFr, [modFr])               -- ^ main and imported
+     -> ( (modTo -> modTo)          -- conversion of resulting module
+        , HsNameS                   -- modules from which something was taken
+        )
+modMergeByPullingIn mods = flip evalState emptyPullState $ modMergeByPullingInM mods
+
+
+</pre>

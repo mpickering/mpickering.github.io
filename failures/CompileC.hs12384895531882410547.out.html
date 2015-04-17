@@ -1,0 +1,549 @@
+<a href="CommonCHR.hs222122669889119397.out.html">prev</a></br><a href="failures.html">home</a></br><a href="CompileGroup.hs9449758251567121210.out.html">next</a></br></br><pre>21c21
+< {-# LINE 50 "src/ehc/EHC/CompilePhase/CompileC.chs" #-}
+---
+> 
+21a22
+> 
+21a23
+> 
+21a24
+> 
+21a25
+> 
+21a26
+> 
+21a27
+> 
+21a28
+> 
+21a29
+> 
+21a30
+> 
+21a31
+> 
+21a32
+> 
+21a33
+> 
+21a34
+> 
+21a35
+> 
+21a36
+> 
+21a37
+> 
+21a38
+> 
+21a39
+> 
+21a40
+> 
+21a41
+> 
+21a42
+> 
+21a43
+> 
+21a44
+> 
+21a45
+> 
+21a46
+> 
+21a47
+> 
+21a48
+> 
+21a49
+> 
+34c62
+< {-# LINE 64 "src/ehc/EHC/CompilePhase/CompileC.chs" #-}
+---
+> 
+34a63
+> 
+39c68
+< {-# LINE 77 "src/ehc/EHC/CompilePhase/CompileC.chs" #-}
+---
+> 
+39a69
+> 
+39a70
+> 
+39a71
+> 
+39a72
+> 
+39a73
+> 
+39a74
+> 
+39a75
+> 
+39a76
+> 
+126c163
+< {-# LINE 196 "src/ehc/EHC/CompilePhase/CompileC.chs" #-}
+---
+> 
+126a164
+> 
+126a165
+> 
+126a166
+> 
+126a167
+> 
+126a168
+> 
+126a169
+> 
+126a170
+> 
+126a171
+> 
+126a172
+> 
+126a173
+> 
+126a174
+> 
+126a175
+> 
+126a176
+> 
+126a177
+> 
+126a178
+> 
+126a179
+> 
+126a180
+> 
+126a181
+> 
+126a182
+> 
+126a183
+> 
+126a184
+> 
+126a185
+> 
+126a186
+> 
+126a187
+> 
+126a188
+> 
+126a189
+> 
+126a190
+> 
+126a191
+> 
+126a192
+> 
+126a193
+> 
+126a194
+> 
+126a195
+> 
+161a231
+> 
+</pre></br><h2>original</h2></br><pre>module UHC.Light.Compiler.EHC.CompilePhase.CompileC
+( cpCompileWithGCC
+, cpPreprocessWithCPP )
+where
+import Data.Char
+import Data.Maybe
+import Control.Monad.State
+import qualified Data.Map as Map
+import UHC.Light.Compiler.EHC.Common
+import UHC.Light.Compiler.EHC.CompileUnit
+import UHC.Light.Compiler.EHC.CompileRun
+import UHC.Light.Compiler.Opts.CommandLine
+import qualified UHC.Light.Compiler.Config as Cfg
+import UHC.Light.Compiler.EHC.Environment
+import UHC.Light.Compiler.Base.Target
+import UHC.Light.Compiler.Base.FileSearchLocation
+import UHC.Light.Compiler.Base.PackageDatabase
+
+
+
+{-# LINE 50 "src/ehc/EHC/CompilePhase/CompileC.chs" #-}
+gccDefs :: EHCOpts -> [String] -> CmdLineOpts
+gccDefs opts builds
+  = map (\(d,mbval) -> cppOpt $ CmdFlag_Define ("__UHC" ++ d ++ "__") mbval)
+      $  [ (""                                                    , Just (Cfg.verAsNumber Cfg.version))
+         , ("_TARGET_" ++ (map toUpper $ show $ ehcOptTarget opts), Nothing                           )
+         ]
+      ++ map (\x -> ("_BUILDS_" ++ x, Nothing))
+             builds
+      ++ map (\x -> (x,Nothing))
+             [ "_" ++ map (\c -> case c of {'.' -> '_'; c -> c}) (Cfg.verFull Cfg.version) ]
+
+
+{-# LINE 64 "src/ehc/EHC/CompilePhase/CompileC.chs" #-}
+gccInclDirs :: EHCOpts -> [PkgModulePartition] -> [FilePath]
+gccInclDirs opts pkgKeyDirL = ds ++ (map fst $ Map.elems pdmp)
+  where (ds,pdmp) = pkgPartInclDirs opts pkgKeyDirL
+
+{-# LINE 77 "src/ehc/EHC/CompilePhase/CompileC.chs" #-}
+cpCompileWithGCC :: EHCCompileRunner m => FinalCompileHow -> [HsName] -> HsName -> EHCompilePhaseT m ()
+cpCompileWithGCC how othModNmL modNm
+  =  do  {  cr <- get
+         ;  let  (ecu,crsi,opts,fp) = crBaseInfo modNm cr
+                 fpC    = case ecuStateToKind $ ecuState ecu of
+                            EHCUKind_C -> fp
+                            _          -> mkOutputFPath opts modNm fp "c"
+                 fpO m f = mkPerModuleOutputFPath opts False m f "o"
+                 fpExec = mkPerExecOutputFPath opts modNm fp (fmap (flip (,) False) Cfg.mbSuffixExec)
+                 variant= Cfg.installVariant opts
+                 (fpTarg,targOpt,linkOpts,linkLibOpt,dotOFilesOpt,genOFiles
+                  ,pgmExec
+                  )
+                        = case how of
+                            FinalCompile_Exec
+                              -> ( fpExec
+                                 ,    ( if ehcOptOptimizationLevel opts >= OptimizationLevel_Much then [gccOptF "O2"] else if ehcOptOptimizationLevel opts >= OptimizationLevel_Normal then [gccOptF "O1"] else [] )
+                                   ++ Cfg.gccOpts ++ [gccOptOutput $ fpathToStr fpExec]
+                                 , Cfg.ehcGccOptsStatic'
+                                 ,
+                                      map (mkl2 Cfg.INST_LIB_PKG2)
+                                          (if ehcOptWholeProgOptimizationScope opts then [] else map tup123to12 pkgKeyDirL)
+                                   ++
+                                      map (mkl Cfg.INST_LIB)
+                                          Cfg.libnamesRts
+                                   ++ map (\l -> gccArg $ Cfg.mkInstallFilePrefix opts Cfg.INST_LIB_SHARED variant "" ++ Cfg.mkCLibFilename "" l) (Cfg.libnamesGcc opts)
+                                   ++ map gccOptLib Cfg.libnamesGccEhcExtraExternalLibs
+                                 ,
+                                   if   ehcOptWholeProgOptimizationScope opts
+                                   then [ ]
+                                   else
+                                        [ gccArg $ fpathToStr $ fpO m fp | m <- othModNmL2, let (_,_,_,fp) = crBaseInfo m cr ]
+                                 , []
+                                 , PgmExec_Linker
+                                 )
+                              where -- mkl  how l = Cfg.mkCLibFilename (Cfg.mkInstallFilePrefix opts how variant l) l
+                                    mkl how l = gccArg $ Cfg.mkInstalledRts opts Cfg.mkCLibFilename how variant l
+                                    mkl2 how (l,d)
+                                               = gccArg $
+                                                 Cfg.mkCLibFilename (d ++ "/")
+                                                                    (showPkgKey l)
+                                               {-
+                                               = Cfg.mkCLibFilename (Cfg.mkInstallFilePrefix opts how variant (showPkgKey l) ++ "/" ++
+                                                                       mkInternalPkgFileBase l (Cfg.installVariant opts)
+                                                                         (ehcOptTarget opts) (ehcOptTargetFlavor opts) ++ "/")
+                                                                    (showPkgKey l)
+                                               -}
+                            FinalCompile_Module
+                              -> (o, Cfg.gccOpts ++ [gccOptF "c", gccOptOutput $ fpathToStr o ], Cfg.ehcGccOptsStatic', [], [], [o]
+                                 , PgmExec_C
+                                 )
+                              where o = fpO modNm fp
+                 (pkgKeyDirL,othModNmL2) = crPartitionIntoPkgAndOthers cr othModNmL
+                 pkgKeyL = map tup123to1 pkgKeyDirL
+         ;  when (targetIsC (ehcOptTarget opts))
+                 (do { let compileC
+                             = mkShellCmd' [Cmd_CPP, Cmd_C]
+                                 (Cfg.shellCmdOverride opts
+                                  Cfg.shellCmdGcc
+                                  pgmExec)
+                                 (  gccDefs opts ["O"]
+                                 ++ [ cppOptI $ Cfg.mkInstallFilePrefix opts Cfg.INST_INCLUDE variant "" ]
+                                 ++ [ cppOptI $ Cfg.mkInstallFilePrefix opts Cfg.INST_INCLUDE_SHARED variant "" ]
+                                 ++ [ cppOptI d | d <- gccInclDirs opts pkgKeyDirL ]
+                                 ++ linkOpts
+                                 ++ targOpt
+                                 ++ ehcOptCmdLineOpts opts
+                                 ++ dotOFilesOpt
+                                 ++ [ gccArg $ fpathToStr fpC ]
+                                 ++ linkLibOpt
+                                 )
+                     ; when (ehcOptVerbosity opts >= VerboseALot)
+                            (do { cpMsg' modNm VerboseALot "GCC" Nothing fpTarg
+                                ; liftIO $ putStrLn $ showShellCmd compileC
+                                })
+                     ; when (ehcOptVerbosity opts >= VerboseDebug)
+                            (do { liftIO $ putStrLn ("pkgs : " ++ show pkgKeyL)
+                                ; liftIO $ putStrLn ("pkgdirs : " ++ show pkgKeyDirL)
+                                ; liftIO $ putStrLn ("other: " ++ show othModNmL2)
+                                })
+                     ; cpSeq [ cpSystem' Nothing compileC
+                             , cpUpdCU modNm (ecuStoreGenCodeFiles genOFiles)
+                             ]
+                     })
+         }
+
+{-# LINE 196 "src/ehc/EHC/CompilePhase/CompileC.chs" #-}
+cpPreprocessWithCPP :: EHCCompileRunner m => [PkgModulePartition] -> HsName -> EHCompilePhaseT m ()
+cpPreprocessWithCPP pkgKeyDirL modNm
+  = do { cr <- get
+       ; let  (ecu,crsi,opts,fp) = crBaseInfo modNm cr
+              fpCPP = fpathSetSuff {- mkOutputFPath opts modNm fp -} (maybe "" (\s -> s ++ "-") (fpathMbSuff fp) ++ "cpp") fp
+       ; {- when (  ehcOptCPP opts
+              || modNm == hsnModIntlBase      -- 20080211, AD: builtin hack to preprocess EHC.Prelude with cpp, for now, to avoid implementation of pragmas
+              ) -}
+              (do { let shellCmdCpp = Cfg.shellCmdOverride opts Cfg.shellCmdCpp PgmExec_CPP
+                        shellCmdCppOpts = execOptsPlain $ Map.findWithDefault [] shellCmdCpp $ ehcOptExecOptsMp opts
+                        preCPP  = mkShellCmd' [Cmd_CPP,Cmd_CPP_Preprocessing] shellCmdCpp
+                                    (  Cfg.cppOpts ++ gccDefs opts ["CPP"]
+                                    ++ map cppOptF shellCmdCppOpts -- [ {- "traditional-cpp", -} {- "std=gnu99", -} "fno-show-column", "P" ]
+                                    ++ [ cppOptI d | d <- gccInclDirs opts pkgKeyDirL ]
+                                    ++ ehcOptCmdLineOpts opts
+                                    ++ map (cppArg . fpathToStr) [ fp ] -- , fpCPP ]
+                                    )
+                  ; when (ehcOptVerbosity opts >= VerboseALot)
+                         (do { cpMsg modNm VerboseALot "CPP"
+                             -- ; liftIO $ putStrLn ("pkg db: " ++ show (ehcOptPkgDb opts))
+                             -- ; liftIO $ putStrLn ("pkg srch filter: " ++ (show $ ehcOptPackageSearchFilter opts))
+                             -- ; liftIO $ putStrLn ("exposed pkgs: " ++ show (pkgExposedPackages $ ehcOptPkgDb opts))
+                             -- ; liftIO $ putStrLn ("pkgKeyDirL: " ++ show pkgKeyDirL)
+                             ; liftIO $ putStrLn $ showShellCmd preCPP
+                             })
+                  ; when (crModCanCompile modNm cr)
+                         (do { liftIO $ fpathEnsureExists fpCPP
+                             ; cpSystem' (Just $ fpathToStr fpCPP) preCPP
+                             ; cpRegisterFilesToRm [fpCPP]
+                             })
+                  -- ; cpUpdCU modNm (ecuStoreSrcFilePath fpCPP)
+                  ; cpUpdCU modNm (ecuStoreCppFilePath fpCPP)
+                  })
+       }
+
+</pre></br><h2>printed</h2></br><pre>module UHC.Light.Compiler.EHC.CompilePhase.CompileC
+( cpCompileWithGCC
+, cpPreprocessWithCPP )
+where
+import Data.Char
+import Data.Maybe
+import Control.Monad.State
+import qualified Data.Map as Map
+import UHC.Light.Compiler.EHC.Common
+import UHC.Light.Compiler.EHC.CompileUnit
+import UHC.Light.Compiler.EHC.CompileRun
+import UHC.Light.Compiler.Opts.CommandLine
+import qualified UHC.Light.Compiler.Config as Cfg
+import UHC.Light.Compiler.EHC.Environment
+import UHC.Light.Compiler.Base.Target
+import UHC.Light.Compiler.Base.FileSearchLocation
+import UHC.Light.Compiler.Base.PackageDatabase
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+gccDefs :: EHCOpts -> [String] -> CmdLineOpts
+gccDefs opts builds
+  = map (\(d,mbval) -> cppOpt $ CmdFlag_Define ("__UHC" ++ d ++ "__") mbval)
+      $  [ (""                                                    , Just (Cfg.verAsNumber Cfg.version))
+         , ("_TARGET_" ++ (map toUpper $ show $ ehcOptTarget opts), Nothing                           )
+         ]
+      ++ map (\x -> ("_BUILDS_" ++ x, Nothing))
+             builds
+      ++ map (\x -> (x,Nothing))
+             [ "_" ++ map (\c -> case c of {'.' -> '_'; c -> c}) (Cfg.verFull Cfg.version) ]
+
+
+
+
+gccInclDirs :: EHCOpts -> [PkgModulePartition] -> [FilePath]
+gccInclDirs opts pkgKeyDirL = ds ++ (map fst $ Map.elems pdmp)
+  where (ds,pdmp) = pkgPartInclDirs opts pkgKeyDirL
+
+
+
+
+
+
+
+
+
+
+cpCompileWithGCC :: EHCCompileRunner m => FinalCompileHow -> [HsName] -> HsName -> EHCompilePhaseT m ()
+cpCompileWithGCC how othModNmL modNm
+  =  do  {  cr <- get
+         ;  let  (ecu,crsi,opts,fp) = crBaseInfo modNm cr
+                 fpC    = case ecuStateToKind $ ecuState ecu of
+                            EHCUKind_C -> fp
+                            _          -> mkOutputFPath opts modNm fp "c"
+                 fpO m f = mkPerModuleOutputFPath opts False m f "o"
+                 fpExec = mkPerExecOutputFPath opts modNm fp (fmap (flip (,) False) Cfg.mbSuffixExec)
+                 variant= Cfg.installVariant opts
+                 (fpTarg,targOpt,linkOpts,linkLibOpt,dotOFilesOpt,genOFiles
+                  ,pgmExec
+                  )
+                        = case how of
+                            FinalCompile_Exec
+                              -> ( fpExec
+                                 ,    ( if ehcOptOptimizationLevel opts >= OptimizationLevel_Much then [gccOptF "O2"] else if ehcOptOptimizationLevel opts >= OptimizationLevel_Normal then [gccOptF "O1"] else [] )
+                                   ++ Cfg.gccOpts ++ [gccOptOutput $ fpathToStr fpExec]
+                                 , Cfg.ehcGccOptsStatic'
+                                 ,
+                                      map (mkl2 Cfg.INST_LIB_PKG2)
+                                          (if ehcOptWholeProgOptimizationScope opts then [] else map tup123to12 pkgKeyDirL)
+                                   ++
+                                      map (mkl Cfg.INST_LIB)
+                                          Cfg.libnamesRts
+                                   ++ map (\l -> gccArg $ Cfg.mkInstallFilePrefix opts Cfg.INST_LIB_SHARED variant "" ++ Cfg.mkCLibFilename "" l) (Cfg.libnamesGcc opts)
+                                   ++ map gccOptLib Cfg.libnamesGccEhcExtraExternalLibs
+                                 ,
+                                   if   ehcOptWholeProgOptimizationScope opts
+                                   then [ ]
+                                   else
+                                        [ gccArg $ fpathToStr $ fpO m fp | m <- othModNmL2, let (_,_,_,fp) = crBaseInfo m cr ]
+                                 , []
+                                 , PgmExec_Linker
+                                 )
+                              where -- mkl  how l = Cfg.mkCLibFilename (Cfg.mkInstallFilePrefix opts how variant l) l
+                                    mkl how l = gccArg $ Cfg.mkInstalledRts opts Cfg.mkCLibFilename how variant l
+                                    mkl2 how (l,d)
+                                               = gccArg $
+                                                 Cfg.mkCLibFilename (d ++ "/")
+                                                                    (showPkgKey l)
+                                               {-
+                                               = Cfg.mkCLibFilename (Cfg.mkInstallFilePrefix opts how variant (showPkgKey l) ++ "/" ++
+                                                                       mkInternalPkgFileBase l (Cfg.installVariant opts)
+                                                                         (ehcOptTarget opts) (ehcOptTargetFlavor opts) ++ "/")
+                                                                    (showPkgKey l)
+                                               -}
+                            FinalCompile_Module
+                              -> (o, Cfg.gccOpts ++ [gccOptF "c", gccOptOutput $ fpathToStr o ], Cfg.ehcGccOptsStatic', [], [], [o]
+                                 , PgmExec_C
+                                 )
+                              where o = fpO modNm fp
+                 (pkgKeyDirL,othModNmL2) = crPartitionIntoPkgAndOthers cr othModNmL
+                 pkgKeyL = map tup123to1 pkgKeyDirL
+         ;  when (targetIsC (ehcOptTarget opts))
+                 (do { let compileC
+                             = mkShellCmd' [Cmd_CPP, Cmd_C]
+                                 (Cfg.shellCmdOverride opts
+                                  Cfg.shellCmdGcc
+                                  pgmExec)
+                                 (  gccDefs opts ["O"]
+                                 ++ [ cppOptI $ Cfg.mkInstallFilePrefix opts Cfg.INST_INCLUDE variant "" ]
+                                 ++ [ cppOptI $ Cfg.mkInstallFilePrefix opts Cfg.INST_INCLUDE_SHARED variant "" ]
+                                 ++ [ cppOptI d | d <- gccInclDirs opts pkgKeyDirL ]
+                                 ++ linkOpts
+                                 ++ targOpt
+                                 ++ ehcOptCmdLineOpts opts
+                                 ++ dotOFilesOpt
+                                 ++ [ gccArg $ fpathToStr fpC ]
+                                 ++ linkLibOpt
+                                 )
+                     ; when (ehcOptVerbosity opts >= VerboseALot)
+                            (do { cpMsg' modNm VerboseALot "GCC" Nothing fpTarg
+                                ; liftIO $ putStrLn $ showShellCmd compileC
+                                })
+                     ; when (ehcOptVerbosity opts >= VerboseDebug)
+                            (do { liftIO $ putStrLn ("pkgs : " ++ show pkgKeyL)
+                                ; liftIO $ putStrLn ("pkgdirs : " ++ show pkgKeyDirL)
+                                ; liftIO $ putStrLn ("other: " ++ show othModNmL2)
+                                })
+                     ; cpSeq [ cpSystem' Nothing compileC
+                             , cpUpdCU modNm (ecuStoreGenCodeFiles genOFiles)
+                             ]
+                     })
+         }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+cpPreprocessWithCPP :: EHCCompileRunner m => [PkgModulePartition] -> HsName -> EHCompilePhaseT m ()
+cpPreprocessWithCPP pkgKeyDirL modNm
+  = do { cr <- get
+       ; let  (ecu,crsi,opts,fp) = crBaseInfo modNm cr
+              fpCPP = fpathSetSuff {- mkOutputFPath opts modNm fp -} (maybe "" (\s -> s ++ "-") (fpathMbSuff fp) ++ "cpp") fp
+       ; {- when (  ehcOptCPP opts
+              || modNm == hsnModIntlBase      -- 20080211, AD: builtin hack to preprocess EHC.Prelude with cpp, for now, to avoid implementation of pragmas
+              ) -}
+              (do { let shellCmdCpp = Cfg.shellCmdOverride opts Cfg.shellCmdCpp PgmExec_CPP
+                        shellCmdCppOpts = execOptsPlain $ Map.findWithDefault [] shellCmdCpp $ ehcOptExecOptsMp opts
+                        preCPP  = mkShellCmd' [Cmd_CPP,Cmd_CPP_Preprocessing] shellCmdCpp
+                                    (  Cfg.cppOpts ++ gccDefs opts ["CPP"]
+                                    ++ map cppOptF shellCmdCppOpts -- [ {- "traditional-cpp", -} {- "std=gnu99", -} "fno-show-column", "P" ]
+                                    ++ [ cppOptI d | d <- gccInclDirs opts pkgKeyDirL ]
+                                    ++ ehcOptCmdLineOpts opts
+                                    ++ map (cppArg . fpathToStr) [ fp ] -- , fpCPP ]
+                                    )
+                  ; when (ehcOptVerbosity opts >= VerboseALot)
+                         (do { cpMsg modNm VerboseALot "CPP"
+                             -- ; liftIO $ putStrLn ("pkg db: " ++ show (ehcOptPkgDb opts))
+                             -- ; liftIO $ putStrLn ("pkg srch filter: " ++ (show $ ehcOptPackageSearchFilter opts))
+                             -- ; liftIO $ putStrLn ("exposed pkgs: " ++ show (pkgExposedPackages $ ehcOptPkgDb opts))
+                             -- ; liftIO $ putStrLn ("pkgKeyDirL: " ++ show pkgKeyDirL)
+                             ; liftIO $ putStrLn $ showShellCmd preCPP
+                             })
+                  ; when (crModCanCompile modNm cr)
+                         (do { liftIO $ fpathEnsureExists fpCPP
+                             ; cpSystem' (Just $ fpathToStr fpCPP) preCPP
+                             ; cpRegisterFilesToRm [fpCPP]
+                             })
+                  -- ; cpUpdCU modNm (ecuStoreSrcFilePath fpCPP)
+                  ; cpUpdCU modNm (ecuStoreCppFilePath fpCPP)
+                  })
+       }
+
+
+</pre>

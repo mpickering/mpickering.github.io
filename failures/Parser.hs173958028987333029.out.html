@@ -1,0 +1,623 @@
+<a href="Parser.hs17090870112031615252.out.html">prev</a></br><a href="failures.html">home</a></br><a href="Parser.hs2069048048287846865.out.html">next</a></br></br><pre>20c20
+< {-# LINE 31 "src/ehc/Core/Parser.chs" #-}
+---
+> 
+20a21
+> 
+20a22
+> 
+20a23
+> 
+20a24
+> 
+20a25
+> 
+20a26
+> 
+20a27
+> 
+20a28
+> 
+20a29
+> 
+20a30
+> 
+26c36
+< {-# LINE 38 "src/ehc/Core/Parser.chs" #-}
+---
+> 
+26a37
+> 
+41c52
+< {-# LINE 60 "src/ehc/Core/Parser.chs" #-}
+---
+> 
+41a53
+> 
+41a54
+> 
+41a55
+> 
+41a56
+> 
+41a57
+> 
+41a58
+> 
+41a59
+> 
+50c68
+< {-# LINE 70 "src/ehc/Core/Parser.chs" #-}
+---
+> 
+50a69
+> 
+273a293
+> 
+</pre></br><h2>original</h2></br><pre>module UHC.Light.Compiler.Core.Parser
+( pCModule, pCExpr )
+where
+import UHC.Light.Compiler.Base.Common
+import UHC.Light.Compiler.Base.HsName.Builtin
+import UHC.Util.ScanUtils
+import UHC.Light.Compiler.Scanner.Common
+import UHC.Light.Compiler.Scanner.Scanner
+import UU.Parsing as P
+import UHC.Util.ParseUtils
+import UHC.Light.Compiler.Base.Parser
+import UHC.Light.Compiler.Ty.Parser
+import Data.Maybe
+import UHC.Light.Compiler.AbstractCore
+import UHC.Light.Compiler.Core
+import UHC.Light.Compiler.Ty
+import UHC.Light.Compiler.Foreign.Parser
+
+
+{-# LINE 31 "src/ehc/Core/Parser.chs" #-}
+type CParser       hp     =    PlainParser Token hp
+
+pS :: CParser String
+pS = pStr
+
+{-# LINE 38 "src/ehc/Core/Parser.chs" #-}
+pINT        ,
+  pINTEGER  ,
+  pCHAR
+    :: CParser HsName
+pINT = tokMkQName <$> pKeyTk "Int" -- pKeywHsNname hsnInt
+pCHAR = tokMkQName <$> pKeyTk "Char" -- pKeywHsNname hsnChar
+pINTEGER = tokMkQName <$> pKeyTk "Integer" -- pKeywHsNname hsnInteger
+
+pCTy :: CParser Ty
+pCTy
+  = pTy' (   pDollNm <|> pINT <|> pCHAR
+         <|> pINTEGER
+         )
+
+{-# LINE 60 "src/ehc/Core/Parser.chs" #-}
+-- | Parse something which is semicolon terminated
+pSemiTerminated :: CParser x -> CParser x
+pSemiTerminated p = p <* pSEMI
+
+-- | Parse list of something which is semicolon terminated
+pListSemiTerminated :: CParser x -> CParser [x]
+pListSemiTerminated p = pList (pSemiTerminated p)
+
+{-# LINE 70 "src/ehc/Core/Parser.chs" #-}
+pCModule :: CParser CModule
+pCModule
+  = CModule_Mod
+    <$  pMODULE <*> pDollNm <* pSEMI
+    <*> pE
+    <*> pI
+    <*> pM
+    <*> pCExpr -- <*> pA (pA pCTag)
+  where pM    = pList pCDeclMeta -- pMaybe [] id $ pOCURLY *> pListSep pSEMI pCDeclMeta <* pCCURLY
+        pI    = pList pCImport
+        pE    = pList pCExport
+
+pCExport :: CParser CExport
+pCExport
+  -- =   CExport_Export <$ pEXPORT <*> pDollNm <* pSEMI
+  = pEXPORT *>
+        (   CExport_ExportData <$ pDATA <*> pDollNm <*> pMb (pParens_pCommas pDollNm)
+        <|> CExport_Export              <$> pDollNm
+        )
+    <* pSEMI
+
+pCImport :: CParser CImport
+pCImport
+  =   CImport_Import <$ pIMPORT <*> pDollNm <* pSEMI
+
+pCDeclMeta :: CParser CDeclMeta
+pCDeclMeta
+  =   CDeclMeta_Data <$ pDATA <*> pDollNm <* pEQUAL <*> pListSep pCOMMA pCDataCon <* pSEMI
+
+pCDataCon :: CParser CDataCon
+pCDataCon = CDataCon_Con <$> pDollNm <* pEQUAL <* pOCURLY <*> pInt <* pCOMMA <*> pInt <* pCCURLY
+
+pCTagTag :: CParser CTag
+pCTagTag = pKeyTk "Tag" *> pCTag
+
+pCTagOnly :: CParser CTag
+pCTagOnly = pHASH *> pCTagTag
+
+pCNumber :: CParser CExpr
+pCNumber
+  =    pHASH
+       *> (   (   (CExpr_Int     . read) <$ pINT
+              <|> (CExpr_Char    . head) <$ pCHAR
+              <|> (CExpr_String        ) <$ pKeyTk "String"
+              <|> (CExpr_Integer . read) <$ pINTEGER
+              )
+              <*> (tokMkStr <$> pStringTk)
+          <|> CExpr_Tup <$ pKeyTk "Tag" <*> pCTag
+          )
+
+{-
+pCExprAnn :: CParser (CExpr -> CExpr)
+pCExprAnn
+  =   CExpr_Ann
+      <$> (pDCOLON *> (CExprAnn_Ty <$> pTy)
+          )
+  <|> pSucceed id
+-}
+
+pCExprBase :: CParser CExpr
+pCExprBase
+  =   acoreVar <$> pDollNm
+  <|> pCNumber
+  <|> pOPAREN *> (pCExpr {- <**> pCExprAnn -}) <* pCPAREN
+
+{-
+pCExprBaseMeta :: CParser (CExpr,CMetaVal)
+pCExprBaseMeta
+  =   (\v m -> (acoreVar v, m))<$> pDollNm <*> pCMetaValOpt
+  <|> (\n   -> (n, CMetaVal_Val)  ) <$> pCNumber
+  <|> pOPAREN *> pCExpr P.<+> pCMetaValOpt <* pCPAREN
+
+pCExprSelSuffix :: CParser (CExpr -> CExpr)
+pCExprSelSuffix
+  =   (\(t,o,l)    e -> CExpr_TupDel e t l o   ) <$ pKeyTk "-=" <*> pS
+  <|> (\(t,o,l) e' e -> CExpr_TupIns e t l o e') <$ pKeyTk "+=" <*> pS <*> pCExprBase
+  <|> (\(t,o,l) e' e -> CExpr_TupUpd e t l o e') <$ pKeyTk ":=" <*> pS <*> pCExprBase
+  where pS = (,,) <$ pOCURLY <*> pCTagOnly <* pCOMMA <*> pCExpr <* pCOMMA <*> pDollNm <* pCCURLY
+
+pCExprSelSuffixMeta :: CParser ((CExpr,CMetaVal) -> (CExpr,CMetaVal))
+pCExprSelSuffixMeta
+  = (\f (e,m) -> (f e,m)) <$> pCExprSelSuffix
+
+pCExprSelMeta :: CParser (CExpr,CMetaVal)
+pCExprSelMeta = pCExprBaseMeta <??> pCExprSelSuffixMeta
+-}
+
+pCExprSel :: CParser CExpr
+pCExprSel = pCExprBase -- <??> pCExprSelSuffix
+
+pCExpr :: CParser CExpr
+pCExpr
+{-
+  =   (\f as -> acoreApp f (map fst as))
+                     <$> pCExprSel <*> pList pCExprSelMeta
+-}
+  =   (\f as -> acoreApp f as)
+                     <$> pCExprSel <*> pList pCExprSel -- pCExprSelMeta
+  <|> mkLam          <$  pLAM <*> pList1 (pDollNm) <* pRARROW <*> pCExpr
+  <|> CExpr_Let      <$  pLET <*> pMaybe CBindCateg_Plain id pCBindCateg <*> pListSemiTerminated pCBind <* pIN <*> pCExpr
+  <|> (\(c,_) s i t -> CExpr_FFI c s (mkImpEnt c i) t)
+                     <$  pFOREIGN <* pOCURLY <*> pFFIWay <* pCOMMA <*> pS <* pCOMMA <*> pS <* pCOMMA <*> pTy <* pCCURLY
+  <|> CExpr_Case <$ pCASE <*> pCExpr <* pOF
+      <*> pListSemiTerminated pCAlt
+      <* pDEFAULT <*> {- pMb -} pSemiTerminated pCExpr
+  where pCBindCateg
+          =   CBindCateg_Rec    <$ pKeyTk "rec"
+          <|> CBindCateg_FFI    <$ pFOREIGN
+          <|> CBindCateg_FFE    <$ pKeyTk "foreignexport"
+          <|> CBindCateg_Strict <$ pBANG
+        -- mkLam = acoreLam -- not used to avoid spurious intro of error type info
+        mkLam as e = foldr (\n e -> CExpr_Lam (CBind_Bind n []) e) e as
+        mkEnt d c e = fst $ parseForeignEnt d c Nothing e
+        mkImpEnt c e = mkEnt ForeignDirection_Import c e
+
+
+{-
+pTrack          ::   CParser Track
+pTrack          =    (\x -> TrackVarApply x [])  <$> pDollNm     -- TODO: this is just a mockup, should do real track parsing
+-}
+
+{-
+pMbDollNm :: CParser (Maybe HsName)
+pMbDollNm
+  =  f <$> pDollNm
+    where f n | isJust ms && m == "_"
+                      = Nothing
+                      where ms@(~(Just m)) = hsnMbBaseString n
+          f x         = Just x
+
+pManyDollNm :: CParser [HsName]
+pManyDollNm
+  =  f <$> pList pDollNm
+    where -- for backward compatibility with libraries created before 20090917
+          f [n] | isJust ms && m == "_"
+                      = []
+                      where ms@(~(Just m)) = hsnMbBaseString n
+          f ns        = ns
+-}
+
+{-
+pCMetas :: CParser CMetas
+pCMetas
+  =   (,) <$ pOCURLY <*> pCMetaBind <* pCOMMA <*> pCMetaVal <* pCCURLY
+
+pCMetasOpt :: CParser CMetas
+pCMetasOpt
+  =   pMaybe cmetasDefault id pCMetas
+
+pCMetaBind :: CParser CMetaBind
+pCMetaBind
+  =   CMetaBind_Plain       <$ pKeyTk "BINDPLAIN"
+  <|> CMetaBind_Function0   <$ pKeyTk "BINDFUNCTION0"
+  <|> CMetaBind_Function1   <$ pKeyTk "BINDFUNCTION1"
+  <|> CMetaBind_Apply0      <$ pKeyTk "BINDAPPLY0"
+
+pCMetaVal :: CParser CMetaVal
+pCMetaVal
+  =   CMetaVal_Val          <$ pKeyTk "VAL"
+  <|> CMetaVal_Dict         <$ pKeyTk "DICT"
+  <|> CMetaVal_DictClass    <$ pKeyTk "DICTCLASS"    <* pOCURLY <*> pListSep pCOMMA pTrack <* pCCURLY
+  <|> CMetaVal_DictInstance <$ pKeyTk "DICTINSTANCE" <* pOCURLY <*> pList1Sep pCOMMA pTrack <* pCCURLY
+  -- TODO: parse Track
+
+pCMetaValOpt :: CParser CMetaVal
+pCMetaValOpt
+  =   pMaybe CMetaVal_Val id (pCOLON *> pCMetaVal)
+-}
+
+pCBound :: CParser CBound
+pCBound
+  = CBound_Bind cmetasDefault <$> pCExpr
+
+pCBind :: CParser CBind
+pCBind
+  = (\n b -> CBind_Bind n [b]) <$> pDollNm <* pEQUAL <*> pCBound
+
+{-
+-- 20100806 AD: due to intro of CBound not consistent with pretty printing anymore, just patched it to have it compiled
+pCBind :: CParser CBind
+pCBind
+  = (  (pDollNm P.<+> pCMetasOpt) <* pEQUAL)
+    <**> (   (\e (n,m)        -> CBind_Bind n [CBound_Bind m e]) <$> pCExpr
+         <|> (\(c,_) s i t (n,m)  -> CBind_Bind n [CBound_Bind m $ CExpr_FFI c s (mkImpEnt c i) t])
+             <$ pFOREIGN <* pOCURLY <*> pFFIWay <* pCOMMA <*> pS <* pCOMMA <*> pS <* pCOMMA <*> pTy <* pCCURLY
+         <|> (\(c,_) e en t (n,m) -> CBind_Bind n [CBound_FFE c (mkEnt ForeignDirection_Export c e) en t])
+             <$ pKeyTk "foreignexport" <* pOCURLY <*> pFFIWay <* pCOMMA <*> pS <* pCOMMA <*> pCExpr {- pDollNm -} <* pCOMMA <*> pTy <* pCCURLY
+         )
+  where pS = tokMkStr <$> pStringTk
+        mkEnt d c e = fst $ parseForeignEnt d c Nothing e
+        mkImpEnt c e = mkEnt ForeignDirection_Import c e
+-}
+
+pCAlt :: CParser CAlt
+pCAlt
+  =   (\p e -> CAlt_Alt p e) <$> pCPat <* pRARROW <*> pCExpr
+
+pCPat :: CParser CPat
+pCPat
+  =   pHASH
+       *> (   (   (CPat_Int  . read) <$ pINT
+              <|> (CPat_Char . head) <$ pCHAR
+              )
+              <*> (tokMkStr <$> pStringTk)
+          -- <|> (\t r fs -> CPat_Con t r $ zipWith (\o (mf,n) -> acorePatFldTy (acoreTyErr "pCPatFld") (maybe (n, CExpr_Int o) id mf) n) [0..] fs)     -- TODO, use refGen instead of baked in 0.. ...
+          <|>
+              -- TODO, use refGen instead of baked in 0.. ...
+              (\t r fs -> CPat_Con t r $ zipWith (\o (mf,n) -> let (lbl',o') = fromMaybe (n, CExpr_Int o) mf
+                                                                in CPatFld_Fld lbl' o' (CBind_Bind n []) []) [0..] fs)
+              <$> pCTagTag
+              <*  pOCURLY <*> pCPatRest <*> pListSep pCOMMA pCPatFld <* pCCURLY
+          )
+  <|> CPat_Var <$> pDollNm
+  where -- pRPatNm = RPatNmOrig <$> pDollNm <|> RPatNmUniq <$ pKeyTk "uniq" <*> pDollNm
+        pCPatRest = pMaybe CPatRest_Empty CPatRest_Var (pDollNm <* pVBAR)
+
+-- pCPatFld :: CParser CPatFld
+pCPatFld :: CParser (Maybe (HsName,CExpr),HsName)
+pCPatFld
+  -- = (\l o n -> CPatFld_Fld l o n []) <$ pOCURLY <*> pDollNm <* pCOMMA <*> pCExpr <* pCCURLY <* pEQUAL <*> pCBind -- pCPat
+  -- = (\l o n -> acorePatFldTy (acoreTyErr "pCPatFld") (l, o) n) <$ pOCURLY <*> pDollNm <* pCOMMA <*> pCExpr <* pCCURLY <* pEQUAL <*> pDollNm -- pCPat
+  = pLblOff <+> pDollNm -- pCPat
+  where pLblOff = pMb $ (,) <$ pOCURLY <*> pDollNm <* pCOMMA <*> pCExpr <* pCCURLY <* pEQUAL
+</pre></br><h2>printed</h2></br><pre>module UHC.Light.Compiler.Core.Parser
+( pCModule, pCExpr )
+where
+import UHC.Light.Compiler.Base.Common
+import UHC.Light.Compiler.Base.HsName.Builtin
+import UHC.Util.ScanUtils
+import UHC.Light.Compiler.Scanner.Common
+import UHC.Light.Compiler.Scanner.Scanner
+import UU.Parsing as P
+import UHC.Util.ParseUtils
+import UHC.Light.Compiler.Base.Parser
+import UHC.Light.Compiler.Ty.Parser
+import Data.Maybe
+import UHC.Light.Compiler.AbstractCore
+import UHC.Light.Compiler.Core
+import UHC.Light.Compiler.Ty
+import UHC.Light.Compiler.Foreign.Parser
+
+
+
+
+
+
+
+
+
+
+
+
+
+type CParser       hp     =    PlainParser Token hp
+
+pS :: CParser String
+pS = pStr
+
+
+
+pINT        ,
+  pINTEGER  ,
+  pCHAR
+    :: CParser HsName
+pINT = tokMkQName <$> pKeyTk "Int" -- pKeywHsNname hsnInt
+pCHAR = tokMkQName <$> pKeyTk "Char" -- pKeywHsNname hsnChar
+pINTEGER = tokMkQName <$> pKeyTk "Integer" -- pKeywHsNname hsnInteger
+
+pCTy :: CParser Ty
+pCTy
+  = pTy' (   pDollNm <|> pINT <|> pCHAR
+         <|> pINTEGER
+         )
+
+
+
+
+
+
+
+
+
+-- | Parse something which is semicolon terminated
+pSemiTerminated :: CParser x -> CParser x
+pSemiTerminated p = p <* pSEMI
+
+-- | Parse list of something which is semicolon terminated
+pListSemiTerminated :: CParser x -> CParser [x]
+pListSemiTerminated p = pList (pSemiTerminated p)
+
+
+
+pCModule :: CParser CModule
+pCModule
+  = CModule_Mod
+    <$  pMODULE <*> pDollNm <* pSEMI
+    <*> pE
+    <*> pI
+    <*> pM
+    <*> pCExpr -- <*> pA (pA pCTag)
+  where pM    = pList pCDeclMeta -- pMaybe [] id $ pOCURLY *> pListSep pSEMI pCDeclMeta <* pCCURLY
+        pI    = pList pCImport
+        pE    = pList pCExport
+
+pCExport :: CParser CExport
+pCExport
+  -- =   CExport_Export <$ pEXPORT <*> pDollNm <* pSEMI
+  = pEXPORT *>
+        (   CExport_ExportData <$ pDATA <*> pDollNm <*> pMb (pParens_pCommas pDollNm)
+        <|> CExport_Export              <$> pDollNm
+        )
+    <* pSEMI
+
+pCImport :: CParser CImport
+pCImport
+  =   CImport_Import <$ pIMPORT <*> pDollNm <* pSEMI
+
+pCDeclMeta :: CParser CDeclMeta
+pCDeclMeta
+  =   CDeclMeta_Data <$ pDATA <*> pDollNm <* pEQUAL <*> pListSep pCOMMA pCDataCon <* pSEMI
+
+pCDataCon :: CParser CDataCon
+pCDataCon = CDataCon_Con <$> pDollNm <* pEQUAL <* pOCURLY <*> pInt <* pCOMMA <*> pInt <* pCCURLY
+
+pCTagTag :: CParser CTag
+pCTagTag = pKeyTk "Tag" *> pCTag
+
+pCTagOnly :: CParser CTag
+pCTagOnly = pHASH *> pCTagTag
+
+pCNumber :: CParser CExpr
+pCNumber
+  =    pHASH
+       *> (   (   (CExpr_Int     . read) <$ pINT
+              <|> (CExpr_Char    . head) <$ pCHAR
+              <|> (CExpr_String        ) <$ pKeyTk "String"
+              <|> (CExpr_Integer . read) <$ pINTEGER
+              )
+              <*> (tokMkStr <$> pStringTk)
+          <|> CExpr_Tup <$ pKeyTk "Tag" <*> pCTag
+          )
+
+{-
+pCExprAnn :: CParser (CExpr -> CExpr)
+pCExprAnn
+  =   CExpr_Ann
+      <$> (pDCOLON *> (CExprAnn_Ty <$> pTy)
+          )
+  <|> pSucceed id
+-}
+
+pCExprBase :: CParser CExpr
+pCExprBase
+  =   acoreVar <$> pDollNm
+  <|> pCNumber
+  <|> pOPAREN *> (pCExpr {- <**> pCExprAnn -}) <* pCPAREN
+
+{-
+pCExprBaseMeta :: CParser (CExpr,CMetaVal)
+pCExprBaseMeta
+  =   (\v m -> (acoreVar v, m))<$> pDollNm <*> pCMetaValOpt
+  <|> (\n   -> (n, CMetaVal_Val)  ) <$> pCNumber
+  <|> pOPAREN *> pCExpr P.<+> pCMetaValOpt <* pCPAREN
+
+pCExprSelSuffix :: CParser (CExpr -> CExpr)
+pCExprSelSuffix
+  =   (\(t,o,l)    e -> CExpr_TupDel e t l o   ) <$ pKeyTk "-=" <*> pS
+  <|> (\(t,o,l) e' e -> CExpr_TupIns e t l o e') <$ pKeyTk "+=" <*> pS <*> pCExprBase
+  <|> (\(t,o,l) e' e -> CExpr_TupUpd e t l o e') <$ pKeyTk ":=" <*> pS <*> pCExprBase
+  where pS = (,,) <$ pOCURLY <*> pCTagOnly <* pCOMMA <*> pCExpr <* pCOMMA <*> pDollNm <* pCCURLY
+
+pCExprSelSuffixMeta :: CParser ((CExpr,CMetaVal) -> (CExpr,CMetaVal))
+pCExprSelSuffixMeta
+  = (\f (e,m) -> (f e,m)) <$> pCExprSelSuffix
+
+pCExprSelMeta :: CParser (CExpr,CMetaVal)
+pCExprSelMeta = pCExprBaseMeta <??> pCExprSelSuffixMeta
+-}
+
+pCExprSel :: CParser CExpr
+pCExprSel = pCExprBase -- <??> pCExprSelSuffix
+
+pCExpr :: CParser CExpr
+pCExpr
+{-
+  =   (\f as -> acoreApp f (map fst as))
+                     <$> pCExprSel <*> pList pCExprSelMeta
+-}
+  =   (\f as -> acoreApp f as)
+                     <$> pCExprSel <*> pList pCExprSel -- pCExprSelMeta
+  <|> mkLam          <$  pLAM <*> pList1 (pDollNm) <* pRARROW <*> pCExpr
+  <|> CExpr_Let      <$  pLET <*> pMaybe CBindCateg_Plain id pCBindCateg <*> pListSemiTerminated pCBind <* pIN <*> pCExpr
+  <|> (\(c,_) s i t -> CExpr_FFI c s (mkImpEnt c i) t)
+                     <$  pFOREIGN <* pOCURLY <*> pFFIWay <* pCOMMA <*> pS <* pCOMMA <*> pS <* pCOMMA <*> pTy <* pCCURLY
+  <|> CExpr_Case <$ pCASE <*> pCExpr <* pOF
+      <*> pListSemiTerminated pCAlt
+      <* pDEFAULT <*> {- pMb -} pSemiTerminated pCExpr
+  where pCBindCateg
+          =   CBindCateg_Rec    <$ pKeyTk "rec"
+          <|> CBindCateg_FFI    <$ pFOREIGN
+          <|> CBindCateg_FFE    <$ pKeyTk "foreignexport"
+          <|> CBindCateg_Strict <$ pBANG
+        -- mkLam = acoreLam -- not used to avoid spurious intro of error type info
+        mkLam as e = foldr (\n e -> CExpr_Lam (CBind_Bind n []) e) e as
+        mkEnt d c e = fst $ parseForeignEnt d c Nothing e
+        mkImpEnt c e = mkEnt ForeignDirection_Import c e
+
+
+{-
+pTrack          ::   CParser Track
+pTrack          =    (\x -> TrackVarApply x [])  <$> pDollNm     -- TODO: this is just a mockup, should do real track parsing
+-}
+
+{-
+pMbDollNm :: CParser (Maybe HsName)
+pMbDollNm
+  =  f <$> pDollNm
+    where f n | isJust ms && m == "_"
+                      = Nothing
+                      where ms@(~(Just m)) = hsnMbBaseString n
+          f x         = Just x
+
+pManyDollNm :: CParser [HsName]
+pManyDollNm
+  =  f <$> pList pDollNm
+    where -- for backward compatibility with libraries created before 20090917
+          f [n] | isJust ms && m == "_"
+                      = []
+                      where ms@(~(Just m)) = hsnMbBaseString n
+          f ns        = ns
+-}
+
+{-
+pCMetas :: CParser CMetas
+pCMetas
+  =   (,) <$ pOCURLY <*> pCMetaBind <* pCOMMA <*> pCMetaVal <* pCCURLY
+
+pCMetasOpt :: CParser CMetas
+pCMetasOpt
+  =   pMaybe cmetasDefault id pCMetas
+
+pCMetaBind :: CParser CMetaBind
+pCMetaBind
+  =   CMetaBind_Plain       <$ pKeyTk "BINDPLAIN"
+  <|> CMetaBind_Function0   <$ pKeyTk "BINDFUNCTION0"
+  <|> CMetaBind_Function1   <$ pKeyTk "BINDFUNCTION1"
+  <|> CMetaBind_Apply0      <$ pKeyTk "BINDAPPLY0"
+
+pCMetaVal :: CParser CMetaVal
+pCMetaVal
+  =   CMetaVal_Val          <$ pKeyTk "VAL"
+  <|> CMetaVal_Dict         <$ pKeyTk "DICT"
+  <|> CMetaVal_DictClass    <$ pKeyTk "DICTCLASS"    <* pOCURLY <*> pListSep pCOMMA pTrack <* pCCURLY
+  <|> CMetaVal_DictInstance <$ pKeyTk "DICTINSTANCE" <* pOCURLY <*> pList1Sep pCOMMA pTrack <* pCCURLY
+  -- TODO: parse Track
+
+pCMetaValOpt :: CParser CMetaVal
+pCMetaValOpt
+  =   pMaybe CMetaVal_Val id (pCOLON *> pCMetaVal)
+-}
+
+pCBound :: CParser CBound
+pCBound
+  = CBound_Bind cmetasDefault <$> pCExpr
+
+pCBind :: CParser CBind
+pCBind
+  = (\n b -> CBind_Bind n [b]) <$> pDollNm <* pEQUAL <*> pCBound
+
+{-
+-- 20100806 AD: due to intro of CBound not consistent with pretty printing anymore, just patched it to have it compiled
+pCBind :: CParser CBind
+pCBind
+  = (  (pDollNm P.<+> pCMetasOpt) <* pEQUAL)
+    <**> (   (\e (n,m)        -> CBind_Bind n [CBound_Bind m e]) <$> pCExpr
+         <|> (\(c,_) s i t (n,m)  -> CBind_Bind n [CBound_Bind m $ CExpr_FFI c s (mkImpEnt c i) t])
+             <$ pFOREIGN <* pOCURLY <*> pFFIWay <* pCOMMA <*> pS <* pCOMMA <*> pS <* pCOMMA <*> pTy <* pCCURLY
+         <|> (\(c,_) e en t (n,m) -> CBind_Bind n [CBound_FFE c (mkEnt ForeignDirection_Export c e) en t])
+             <$ pKeyTk "foreignexport" <* pOCURLY <*> pFFIWay <* pCOMMA <*> pS <* pCOMMA <*> pCExpr {- pDollNm -} <* pCOMMA <*> pTy <* pCCURLY
+         )
+  where pS = tokMkStr <$> pStringTk
+        mkEnt d c e = fst $ parseForeignEnt d c Nothing e
+        mkImpEnt c e = mkEnt ForeignDirection_Import c e
+-}
+
+pCAlt :: CParser CAlt
+pCAlt
+  =   (\p e -> CAlt_Alt p e) <$> pCPat <* pRARROW <*> pCExpr
+
+pCPat :: CParser CPat
+pCPat
+  =   pHASH
+       *> (   (   (CPat_Int  . read) <$ pINT
+              <|> (CPat_Char . head) <$ pCHAR
+              )
+              <*> (tokMkStr <$> pStringTk)
+          -- <|> (\t r fs -> CPat_Con t r $ zipWith (\o (mf,n) -> acorePatFldTy (acoreTyErr "pCPatFld") (maybe (n, CExpr_Int o) id mf) n) [0..] fs)     -- TODO, use refGen instead of baked in 0.. ...
+          <|>
+              -- TODO, use refGen instead of baked in 0.. ...
+              (\t r fs -> CPat_Con t r $ zipWith (\o (mf,n) -> let (lbl',o') = fromMaybe (n, CExpr_Int o) mf
+                                                                in CPatFld_Fld lbl' o' (CBind_Bind n []) []) [0..] fs)
+              <$> pCTagTag
+              <*  pOCURLY <*> pCPatRest <*> pListSep pCOMMA pCPatFld <* pCCURLY
+          )
+  <|> CPat_Var <$> pDollNm
+  where -- pRPatNm = RPatNmOrig <$> pDollNm <|> RPatNmUniq <$ pKeyTk "uniq" <*> pDollNm
+        pCPatRest = pMaybe CPatRest_Empty CPatRest_Var (pDollNm <* pVBAR)
+
+-- pCPatFld :: CParser CPatFld
+pCPatFld :: CParser (Maybe (HsName,CExpr),HsName)
+pCPatFld
+  -- = (\l o n -> CPatFld_Fld l o n []) <$ pOCURLY <*> pDollNm <* pCOMMA <*> pCExpr <* pCCURLY <* pEQUAL <*> pCBind -- pCPat
+  -- = (\l o n -> acorePatFldTy (acoreTyErr "pCPatFld") (l, o) n) <$ pOCURLY <*> pDollNm <* pCOMMA <*> pCExpr <* pCCURLY <* pEQUAL <*> pDollNm -- pCPat
+  = pLblOff <+> pDollNm -- pCPat
+  where pLblOff = pMb $ (,) <$ pOCURLY <*> pDollNm <* pCOMMA <*> pCExpr <* pCCURLY <* pEQUAL
+
+</pre>

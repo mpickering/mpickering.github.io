@@ -1,0 +1,106 @@
+<a href="Safe.hs8162898791258459317.out.html">prev</a></br><a href="failures.html">home</a></br><a href="Saferoute.hs35930151656564048.out.html">next</a></br></br><pre>24c24
+<   {-# MINIMAL getRoute, (resourceList | routeResourceMap) #-}
+---
+>   {-# MINIMAL getRoute,  resourceList | routeResourceMap  #-}
+49a50
+> 
+</pre></br><h2>original</h2></br><pre>-- |
+-- Module       : Web.Saferoute
+-- Description  : Type-safe routing for web applications.
+-- Copyright    : 2014, Peter Harpending.
+-- License      : BSD3
+-- Maintainer   : Peter Harpending <pharpend2@gmail.com>
+-- Stability    : experimental
+-- Portability  : archlinux
+--
+
+module Web.Saferoute where
+
+import qualified Data.Map.Lazy  as M
+import qualified Data.Text as S
+import qualified Text.Blaze.Html5 as H
+
+-- |The type for a route - just an alias for 'S.Text'
+type Route = S.Text
+type RoutePart = S.Text
+type ForeignResource = H.AttributeValue
+
+-- |The type class for a resource.
+class Eq r => Resource r where
+  {-# MINIMAL getRoute, (resourceList | routeResourceMap) #-}
+
+  -- Get the 'Route' for a 'Resource'. This is in place to avoid
+  -- @fmap@ stuff. Giving a 'Resource' to this function will
+  -- invariably return a 'Route', as opposed to 'Maybe Route', which
+  -- would be the case if I used a 'M.Map' lookup.
+  getRoute :: r -> Route
+
+  -- |A list of all of the constructors for your resource type.
+  resourceList :: [r]
+  resourceList = M.elems routeResourceMap
+
+  -- |A map from a route to it's resource.
+  routeResourceMap :: M.Map Route r
+  routeResourceMap = M.fromList [(route, resource) | resource <- resourceList,
+                                                     let route = getRoute resource ]
+
+  -- |Given a 'Route', find the 'Resource' behind it. If the route
+  -- isn't associated with any 'Resource', this returns 'Nothing'.
+  lookupRoute :: Route -> Maybe r
+  lookupRoute route = M.lookup route routeResourceMap
+
+  -- |Given a 'Resource', get the URL for it.
+  getUrl :: r -> H.AttributeValue
+  getUrl = H.toValue . getRoute
+
+</pre></br><h2>printed</h2></br><pre>-- |
+-- Module       : Web.Saferoute
+-- Description  : Type-safe routing for web applications.
+-- Copyright    : 2014, Peter Harpending.
+-- License      : BSD3
+-- Maintainer   : Peter Harpending <pharpend2@gmail.com>
+-- Stability    : experimental
+-- Portability  : archlinux
+--
+
+module Web.Saferoute where
+
+import qualified Data.Map.Lazy  as M
+import qualified Data.Text as S
+import qualified Text.Blaze.Html5 as H
+
+-- |The type for a route - just an alias for 'S.Text'
+type Route = S.Text
+type RoutePart = S.Text
+type ForeignResource = H.AttributeValue
+
+-- |The type class for a resource.
+class Eq r => Resource r where
+  {-# MINIMAL getRoute,  resourceList | routeResourceMap  #-}
+
+  -- Get the 'Route' for a 'Resource'. This is in place to avoid
+  -- @fmap@ stuff. Giving a 'Resource' to this function will
+  -- invariably return a 'Route', as opposed to 'Maybe Route', which
+  -- would be the case if I used a 'M.Map' lookup.
+  getRoute :: r -> Route
+
+  -- |A list of all of the constructors for your resource type.
+  resourceList :: [r]
+  resourceList = M.elems routeResourceMap
+
+  -- |A map from a route to it's resource.
+  routeResourceMap :: M.Map Route r
+  routeResourceMap = M.fromList [(route, resource) | resource <- resourceList,
+                                                     let route = getRoute resource ]
+
+  -- |Given a 'Route', find the 'Resource' behind it. If the route
+  -- isn't associated with any 'Resource', this returns 'Nothing'.
+  lookupRoute :: Route -> Maybe r
+  lookupRoute route = M.lookup route routeResourceMap
+
+  -- |Given a 'Resource', get the URL for it.
+  getUrl :: r -> H.AttributeValue
+  getUrl = H.toValue . getRoute
+
+
+</pre>

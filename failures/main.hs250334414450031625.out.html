@@ -1,348 +1,260 @@
-<a href="Main.hs2142934989860116286.out.html">prev</a></br><a href="failures.html">home</a></br><a href="Main.hs2906237201135048762.out.html">next</a></br></br><pre>59c59
-<         return $ mkTimeSlice start duration value
+<a href="Main.hs2441166411174619517.out.html">prev</a></br><a href="failures.html">home</a></br><a href="Main.hs2655092392090245054.out.html">next</a></br></br><pre>1c1
+< #!/opt/csw/bin/runhaskell
 ---
->         return $ mkTimeSlice start duration value
-91c91
-< occurrences :: Ord a => [a] -> [(a, Int)]
----
-> occurrences :: Ord a => [a] -> [(a, Int)]
-157c157
-<         testGroup "FuzzyTimings.SlicedTime" $ [
----
->         testGroup "FuzzyTimings.SlicedTime" $ [
-166a167
 > 
-</pre></br><h2>original</h2></br><pre>import Test.Framework (Test, defaultMain, testGroup)
-import Test.Framework.Providers.QuickCheck2 (testProperty)
-import Test.QuickCheck
-import Test.Framework.Providers.HUnit
+126a127
+> 
+</pre></br><h2>original</h2></br><pre>#!/opt/csw/bin/runhaskell
+module Main where
+import qualified SolarmanTriplestore as App
+import Text.PrettyPrint.HughesPJ
+import Network.CGI
 
-import Data.Time.Clock
-import Data.Time.Calendar
-import Data.Time.LocalTime
-import Data.List
-import Data.Maybe
-import FuzzyTimings.TimeSlice
-import FuzzyTimings.SlicedTime
-import FuzzyTimings.FuzzyTiming
-import FuzzyTimings.AccTiming
-import FuzzyTimings.TimingBuckets
-import FuzzyTimings.Solve
-import FuzzyTimings.Schedule
-import System.Random
-import Control.Monad.State
-import qualified Data.Map as Map
+cgiMain :: CGI CGIResult
+cgiMain = do
+    (Just input) <- getInput "query"
+    out <- liftIO $ interpret' input
+    output out
 
-instance Arbitrary UTCTime where
-     arbitrary       = do
-
-         day <- choose (1, 28) :: Gen Int
-         month <- choose (1, 12) :: Gen Int
-         year <- choose (1970, 2030) :: Gen Integer
-         seconds <- choose (0, 86400) :: Gen Integer
-
-         return $ UTCTime {
-                utctDay = fromGregorian year month day,
-                utctDayTime = secondsToDiffTime seconds
-             }
-
-instance Arbitrary LocalTime where
-    arbitrary = do
-        year <- choose (1970, 2030) :: Gen Integer
-        month <- choose (1, 12) :: Gen Int
-        day <- choose (1, gregorianMonthLength year month) :: Gen Int
-        hour <- choose (0, 23) :: Gen Int
-        min <- choose (0, 59) :: Gen Int
-        sec <- choose (0, 59) :: Gen Int
-        return $ LocalTime {
-            localDay       = fromGregorian year month day,
-            localTimeOfDay = TimeOfDay {
-                todHour = hour,
-                todMin = min,
-                todSec = (fromIntegral sec)
-            }
-        }
-
-
-instance Arbitrary a => Arbitrary (TimeSlice a) where
-    arbitrary = do
-        value <- arbitrary
-        start <- arbitrary
-        duration <- choose (0, 86400) :: Gen Int
-
-        return $ mkTimeSlice start duration value
-
-instance (Arbitrary a, Ord a, Show a) => Arbitrary (FuzzyTiming a) where
-    arbitrary = do
-        idNum <- arbitrary
-        playTimes <- arbitrary
-        times <- choose (0, 10) :: Gen Double
-        duration <- choose (0, 300) :: Gen Int
-
-        return $ FuzzyTiming {
-            ftId = idNum,
-            ftPlayTimes = fromTimeSlices playTimes,
-            ftDuration = duration
-        }
-
-instance (Arbitrary a, Ord a, Show a) => Arbitrary (AccTiming a) where
-    arbitrary = do
-        idNum <- arbitrary
-        time <- arbitrary
-        duration <- choose (0, 300) :: Gen Int
-        return $ AccTiming {
-            atId   = idNum,
-            atTime = time,
-            atDuration = duration
-        }
-
-
-
-instance (Arbitrary a, Ord a, Show a) => Arbitrary (SlicedTime a) where
-    arbitrary = do
-        tss <- arbitrary
-        return $ fromTimeSlices tss
-occurrences :: Ord a => [a] -> [(a, Int)]
-occurrences = map (\xs@(x:_) -> (x, length xs)) . group . sort
 
 main :: IO ()
-main = defaultMain tests
+main = runCGI (handleErrors cgiMain)
 
-lt1 :: LocalTime
-lt1 = LocalTime {
-        localDay = fromGregorian 2013 1 1,
-        localTimeOfDay = TimeOfDay {
-            todHour = 18,
-            todMin = 30,
-            todSec = 15
-        }
-    }
-lt2 :: LocalTime
-lt2 = LocalTime {
-        localDay = fromGregorian 2013 1 1,
-        localTimeOfDay = TimeOfDay {
-            todHour = 19,
-            todMin = 45,
-            todSec = 30
-        }
-    }
+interpret :: String -> String
+interpret "ask them to be quiet"
+     = "Hello. Quiet please. My "
+       ++ "masters are going to talk. Quiet please."
 
-tsDuration_prop :: Bool
-tsDuration_prop = tsDuration (TimeSlice { tsStart = lt1, tsEnd = lt2, tsValue = () }) == 4515
+interpret "introduce yourself solar man"
+     =  "Hello. Hello. My name is Solar man."
+        ++ " Thank you for coming to my party."
+        ++ " I am very pleased to meet you."
 
-tsIntersect_prop :: TimeSlice () -> TimeSlice () -> Bool
-tsIntersect_prop ts1 ts2 = overlaps ts1 ts2 ==
-                              isJust (intersectTimeSlice ts1 ts2)
+interpret "what can i say"
+      = "You can say. hello there. what is your name."
+        ++ " you can ask me about the moons and the planets."
+    ++ " such as, who discovered a moon."
+    ++ " who discovered two moons."
+    ++ " which moons were discovered by kuiper."
+    ++ " who discovered phobos."
+    ++ " which planet is orbited by miranda."
+    ++ " how many moons orbit saturn."
+    ++ " and other similar questions."
+        ++ " who are you. where do you live."
+        ++ " tell me a joke. who made you."
+        ++ " who do you know. what is your favorite band."
+        ++ " who is the vice president at the university of windsor."
+        ++ " who is the president at the university of windsor."
+        ++ " who is the dean of science at the university of windsor."
 
-tsIntersect_commutative :: TimeSlice () -> TimeSlice () -> Bool
-tsIntersect_commutative ts1 ts2 = intersectTimeSlice ts1 ts2 == intersectTimeSlice ts2 ts1
-slicedTimeIntersectProp :: SlicedTime () -> SlicedTime () -> Bool
-slicedTimeIntersectProp st1 st2 = intersectSlicedTime st1 st2 == intersectSlicedTime st2 st1
+interpret "hi"              = "Hi there. My name is solar man"
+interpret "hello"           = "hello. My name is solar man."
+interpret "hello there"     = "Good day to you"
+interpret "hello solar man" = "hello. How are you"
+interpret "goodbye"         = "goodbye. See you in the stars."
+interpret "goodbye solar man" = interpret "goodbye"
+interpret "fine thanks" = "Good, so am I. Except for a bit of back ache"
+interpret "thanks" = "you are welcome"
+interpret "thanks solar man" = "you are most welcome"
+interpret "yes please" = "yes please? What did you want? My memory is getting bad"
+interpret "what is your name" = "My name is solar man."
+interpret "who are you"
+   = "My name is solar man. I know about the planets and the"
+     ++ " moons, and the people who discovered them"
+interpret "where do you live"
+    = "I live in a dark cold computer. "
+       ++ "The center of my universe is Lambton Tower, at the University of Windsor."
+interpret "what do you know"
+   = "Not much I am afraid. I am just beginning to learn. I know a bit about "
+     ++ "the planets, the moons, and the people who discovered them. "
+     ++ "My master will teach me some more when he gets another grant "
+interpret "how old are you"
+  = "older than you think. And much older than my friends Judy and Monty."
+interpret "who made you"
+   = "I. B. M. and Opera Software made my ears and vocal chords. William Ma connected my "
+     ++ "ears to my brain, and Doctor Frost, master of the universe, made "
+     ++ "my brain"
 
-timingBucketsAccReserved :: [FuzzyTiming ()] -> [AccTiming ()] -> Bool
-timingBucketsAccReserved fts ats = let
-    tb = splitToTimingBuckets fts ats
-    reserved = fromTimeSlices [ mkTimeSlice (atTime at) (atDuration at) ()
-                                 | at <- ats ]
-    commonSt = intersectSlicedTime reserved tb
-    in toTimeSlices commonSt == []
+interpret "what is your favorite band"
+   = "Pink Floyd. I love, dark side of the moon"
 
+interpret "who is the vice president at the university of windsor"
+  = "Leo Groarke"
 
-cutTimeSlice_boundaries :: [LocalTime] -> TimeSlice () -> Bool
-cutTimeSlice_boundaries lts ts = let
-    tss = cutTimeSlice lts ts
-    crossing ts = any (\lt -> lt > tsStart ts && lt < tsEnd ts) lts
-    in all (not . crossing) tss
+interpret "who is the president at the university of windsor"
+  = "Doctor Alan Wildeman."
 
-slicedTimeFlattenNoOverlaps :: SlicedTime () -> Bool
-slicedTimeFlattenNoOverlaps st = let
-        tss = sort . toTimeSlices . flattenSlicedTime $ st
-    in all id [ not $ overlaps  t1 t2 | t1 <- tss, t2 <- tss, t1 /= t2 ]
+interpret "who is the dean of science at the university of windsor"
+  = "Doctor Marlys Koschinsky"
 
-
-tests :: [Test.Framework.Test]
-tests = [
-        testGroup "FuzzyTimings.TimeSlice" $ [
-            testProperty "tsDuration" tsDuration_prop,
-            testProperty "cutTimeSlice_boundary_not_crossed" cutTimeSlice_boundaries,
-            testProperty "intersect" tsIntersect_prop,
-            testProperty "intersect-commutative" tsIntersect_commutative
-        ],
-        testGroup "FuzzyTimings.SlicedTime" $ [
-            testProperty "intersect-commutative" slicedTimeIntersectProp,
-            testProperty "flatten-no-overlaps" slicedTimeFlattenNoOverlaps
-
-        ],
-        testGroup "FuzzyTimings.TimingBuckets" $ [
-            testProperty "accurate-reserved" timingBucketsAccReserved
-        ]
-
-    ]
-</pre></br><h2>printed</h2></br><pre>import Test.Framework (Test, defaultMain, testGroup)
-import Test.Framework.Providers.QuickCheck2 (testProperty)
-import Test.QuickCheck
-import Test.Framework.Providers.HUnit
-
-import Data.Time.Clock
-import Data.Time.Calendar
-import Data.Time.LocalTime
-import Data.List
-import Data.Maybe
-import FuzzyTimings.TimeSlice
-import FuzzyTimings.SlicedTime
-import FuzzyTimings.FuzzyTiming
-import FuzzyTimings.AccTiming
-import FuzzyTimings.TimingBuckets
-import FuzzyTimings.Solve
-import FuzzyTimings.Schedule
-import System.Random
-import Control.Monad.State
-import qualified Data.Map as Map
-
-instance Arbitrary UTCTime where
-     arbitrary       = do
-
-         day <- choose (1, 28) :: Gen Int
-         month <- choose (1, 12) :: Gen Int
-         year <- choose (1970, 2030) :: Gen Integer
-         seconds <- choose (0, 86400) :: Gen Integer
-
-         return $ UTCTime {
-                utctDay = fromGregorian year month day,
-                utctDayTime = secondsToDiffTime seconds
-             }
-
-instance Arbitrary LocalTime where
-    arbitrary = do
-        year <- choose (1970, 2030) :: Gen Integer
-        month <- choose (1, 12) :: Gen Int
-        day <- choose (1, gregorianMonthLength year month) :: Gen Int
-        hour <- choose (0, 23) :: Gen Int
-        min <- choose (0, 59) :: Gen Int
-        sec <- choose (0, 59) :: Gen Int
-        return $ LocalTime {
-            localDay       = fromGregorian year month day,
-            localTimeOfDay = TimeOfDay {
-                todHour = hour,
-                todMin = min,
-                todSec = (fromIntegral sec)
-            }
-        }
+interpret "tell me a poem" = "do not know any poems. But my friend, Judy, does"
 
 
-instance Arbitrary a => Arbitrary (TimeSlice a) where
-    arbitrary = do
-        value <- arbitrary
-        start <- arbitrary
-        duration <- choose (0, 86400) :: Gen Int
-
-        return $ mkTimeSlice start duration value
-
-instance (Arbitrary a, Ord a, Show a) => Arbitrary (FuzzyTiming a) where
-    arbitrary = do
-        idNum <- arbitrary
-        playTimes <- arbitrary
-        times <- choose (0, 10) :: Gen Double
-        duration <- choose (0, 300) :: Gen Int
-
-        return $ FuzzyTiming {
-            ftId = idNum,
-            ftPlayTimes = fromTimeSlices playTimes,
-            ftDuration = duration
-        }
-
-instance (Arbitrary a, Ord a, Show a) => Arbitrary (AccTiming a) where
-    arbitrary = do
-        idNum <- arbitrary
-        time <- arbitrary
-        duration <- choose (0, 300) :: Gen Int
-        return $ AccTiming {
-            atId   = idNum,
-            atTime = time,
-            atDuration = duration
-        }
+interpret "know any poems" = "no but my friend, Judy does;"
 
 
+interpret "tell me a joke"
+    = "did you hear about the Computer Scientist who thought his computer"
+      ++ "was a car. He had a hard drive home every day"
 
-instance (Arbitrary a, Ord a, Show a) => Arbitrary (SlicedTime a) where
-    arbitrary = do
-        tss <- arbitrary
-        return $ fromTimeSlices tss
-occurrences :: Ord a => [a] -> [(a, Int)]
-occurrences = map (\xs@(x:_) -> (x, length xs)) . group . sort
+interpret "know any jokes"
+       = "just one. My friend Monty knows one too."
+
+interpret "who is judy" = "She is my friend. She knows about poetry"
+
+interpret "who is monty"
+   = "Monty is my friend. He is a student"
+     ++ " at the university of Windsor."
+interpret "can I talk to judy"
+              ="yes. here she is"
+                ++ "<goto>http://cs.uwindsor.ca/~speechweb/p_d_speechweb/judy/judy.xml</goto>"
+
+interpret "can I talk to monty"
+              ="yes. here he is"
+                ++ "<goto>http://cs.uwindsor.ca/~speechweb/p_d_speechweb/monty/monty.xml</goto>"
+
+interpret "can I talk to solar man"
+              ="yes. here he is"
+                ++ "<goto>http://cs.uwindsor.ca/~speechweb/p_d_speechweb/solarman/solarman.xml</goto>"
+
+interpret "who do you know" = "i only know three people. Judy, Monty, and Solarman."
+
+interpret _ = "BLANKVALNOTUSED"
+
+interpret' input = do
+    let firstpass = interpret input
+    if firstpass == "BLANKVALNOTUSED" then do
+        output <- App.main input
+        let formatted = render $ vcat $ output
+        if null formatted then return "Do not know that one yet, will work on it tonight" else return $ formatted
+    else return firstpass
+
+
+</pre></br><h2>printed</h2></br><pre>
+module Main where
+import qualified SolarmanTriplestore as App
+import Text.PrettyPrint.HughesPJ
+import Network.CGI
+
+cgiMain :: CGI CGIResult
+cgiMain = do
+    (Just input) <- getInput "query"
+    out <- liftIO $ interpret' input
+    output out
+
 
 main :: IO ()
-main = defaultMain tests
+main = runCGI (handleErrors cgiMain)
 
-lt1 :: LocalTime
-lt1 = LocalTime {
-        localDay = fromGregorian 2013 1 1,
-        localTimeOfDay = TimeOfDay {
-            todHour = 18,
-            todMin = 30,
-            todSec = 15
-        }
-    }
-lt2 :: LocalTime
-lt2 = LocalTime {
-        localDay = fromGregorian 2013 1 1,
-        localTimeOfDay = TimeOfDay {
-            todHour = 19,
-            todMin = 45,
-            todSec = 30
-        }
-    }
+interpret :: String -> String
+interpret "ask them to be quiet"
+     = "Hello. Quiet please. My "
+       ++ "masters are going to talk. Quiet please."
 
-tsDuration_prop :: Bool
-tsDuration_prop = tsDuration (TimeSlice { tsStart = lt1, tsEnd = lt2, tsValue = () }) == 4515
+interpret "introduce yourself solar man"
+     =  "Hello. Hello. My name is Solar man."
+        ++ " Thank you for coming to my party."
+        ++ " I am very pleased to meet you."
 
-tsIntersect_prop :: TimeSlice () -> TimeSlice () -> Bool
-tsIntersect_prop ts1 ts2 = overlaps ts1 ts2 ==
-                              isJust (intersectTimeSlice ts1 ts2)
+interpret "what can i say"
+      = "You can say. hello there. what is your name."
+        ++ " you can ask me about the moons and the planets."
+    ++ " such as, who discovered a moon."
+    ++ " who discovered two moons."
+    ++ " which moons were discovered by kuiper."
+    ++ " who discovered phobos."
+    ++ " which planet is orbited by miranda."
+    ++ " how many moons orbit saturn."
+    ++ " and other similar questions."
+        ++ " who are you. where do you live."
+        ++ " tell me a joke. who made you."
+        ++ " who do you know. what is your favorite band."
+        ++ " who is the vice president at the university of windsor."
+        ++ " who is the president at the university of windsor."
+        ++ " who is the dean of science at the university of windsor."
 
-tsIntersect_commutative :: TimeSlice () -> TimeSlice () -> Bool
-tsIntersect_commutative ts1 ts2 = intersectTimeSlice ts1 ts2 == intersectTimeSlice ts2 ts1
-slicedTimeIntersectProp :: SlicedTime () -> SlicedTime () -> Bool
-slicedTimeIntersectProp st1 st2 = intersectSlicedTime st1 st2 == intersectSlicedTime st2 st1
+interpret "hi"              = "Hi there. My name is solar man"
+interpret "hello"           = "hello. My name is solar man."
+interpret "hello there"     = "Good day to you"
+interpret "hello solar man" = "hello. How are you"
+interpret "goodbye"         = "goodbye. See you in the stars."
+interpret "goodbye solar man" = interpret "goodbye"
+interpret "fine thanks" = "Good, so am I. Except for a bit of back ache"
+interpret "thanks" = "you are welcome"
+interpret "thanks solar man" = "you are most welcome"
+interpret "yes please" = "yes please? What did you want? My memory is getting bad"
+interpret "what is your name" = "My name is solar man."
+interpret "who are you"
+   = "My name is solar man. I know about the planets and the"
+     ++ " moons, and the people who discovered them"
+interpret "where do you live"
+    = "I live in a dark cold computer. "
+       ++ "The center of my universe is Lambton Tower, at the University of Windsor."
+interpret "what do you know"
+   = "Not much I am afraid. I am just beginning to learn. I know a bit about "
+     ++ "the planets, the moons, and the people who discovered them. "
+     ++ "My master will teach me some more when he gets another grant "
+interpret "how old are you"
+  = "older than you think. And much older than my friends Judy and Monty."
+interpret "who made you"
+   = "I. B. M. and Opera Software made my ears and vocal chords. William Ma connected my "
+     ++ "ears to my brain, and Doctor Frost, master of the universe, made "
+     ++ "my brain"
 
-timingBucketsAccReserved :: [FuzzyTiming ()] -> [AccTiming ()] -> Bool
-timingBucketsAccReserved fts ats = let
-    tb = splitToTimingBuckets fts ats
-    reserved = fromTimeSlices [ mkTimeSlice (atTime at) (atDuration at) ()
-                                 | at <- ats ]
-    commonSt = intersectSlicedTime reserved tb
-    in toTimeSlices commonSt == []
+interpret "what is your favorite band"
+   = "Pink Floyd. I love, dark side of the moon"
+
+interpret "who is the vice president at the university of windsor"
+  = "Leo Groarke"
+
+interpret "who is the president at the university of windsor"
+  = "Doctor Alan Wildeman."
+
+interpret "who is the dean of science at the university of windsor"
+  = "Doctor Marlys Koschinsky"
+
+interpret "tell me a poem" = "do not know any poems. But my friend, Judy, does"
 
 
-cutTimeSlice_boundaries :: [LocalTime] -> TimeSlice () -> Bool
-cutTimeSlice_boundaries lts ts = let
-    tss = cutTimeSlice lts ts
-    crossing ts = any (\lt -> lt > tsStart ts && lt < tsEnd ts) lts
-    in all (not . crossing) tss
-
-slicedTimeFlattenNoOverlaps :: SlicedTime () -> Bool
-slicedTimeFlattenNoOverlaps st = let
-        tss = sort . toTimeSlices . flattenSlicedTime $ st
-    in all id [ not $ overlaps  t1 t2 | t1 <- tss, t2 <- tss, t1 /= t2 ]
+interpret "know any poems" = "no but my friend, Judy does;"
 
 
-tests :: [Test.Framework.Test]
-tests = [
-        testGroup "FuzzyTimings.TimeSlice" $ [
-            testProperty "tsDuration" tsDuration_prop,
-            testProperty "cutTimeSlice_boundary_not_crossed" cutTimeSlice_boundaries,
-            testProperty "intersect" tsIntersect_prop,
-            testProperty "intersect-commutative" tsIntersect_commutative
-        ],
-        testGroup "FuzzyTimings.SlicedTime" $ [
-            testProperty "intersect-commutative" slicedTimeIntersectProp,
-            testProperty "flatten-no-overlaps" slicedTimeFlattenNoOverlaps
+interpret "tell me a joke"
+    = "did you hear about the Computer Scientist who thought his computer"
+      ++ "was a car. He had a hard drive home every day"
 
-        ],
-        testGroup "FuzzyTimings.TimingBuckets" $ [
-            testProperty "accurate-reserved" timingBucketsAccReserved
-        ]
+interpret "know any jokes"
+       = "just one. My friend Monty knows one too."
 
-    ]
+interpret "who is judy" = "She is my friend. She knows about poetry"
+
+interpret "who is monty"
+   = "Monty is my friend. He is a student"
+     ++ " at the university of Windsor."
+interpret "can I talk to judy"
+              ="yes. here she is"
+                ++ "<goto>http://cs.uwindsor.ca/~speechweb/p_d_speechweb/judy/judy.xml</goto>"
+
+interpret "can I talk to monty"
+              ="yes. here he is"
+                ++ "<goto>http://cs.uwindsor.ca/~speechweb/p_d_speechweb/monty/monty.xml</goto>"
+
+interpret "can I talk to solar man"
+              ="yes. here he is"
+                ++ "<goto>http://cs.uwindsor.ca/~speechweb/p_d_speechweb/solarman/solarman.xml</goto>"
+
+interpret "who do you know" = "i only know three people. Judy, Monty, and Solarman."
+
+interpret _ = "BLANKVALNOTUSED"
+
+interpret' input = do
+    let firstpass = interpret input
+    if firstpass == "BLANKVALNOTUSED" then do
+        output <- App.main input
+        let formatted = render $ vcat $ output
+        if null formatted then return "Do not know that one yet, will work on it tonight" else return $ formatted
+    else return firstpass
+
+
 
 </pre>

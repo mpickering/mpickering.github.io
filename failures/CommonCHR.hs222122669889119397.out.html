@@ -1,0 +1,636 @@
+<a href="Common.hs21198788182049590396.out.html">prev</a></br><a href="failures.html">home</a></br><a href="CompileC.hs12384895531882410547.out.html">next</a></br></br><pre>27c27
+< {-# LINE 37 "src/ehc/Pred/CommonCHR.chs" #-}
+---
+> 
+27a28
+> 
+27a29
+> 
+27a30
+> 
+27a31
+> 
+27a32
+> 
+27a33
+> 
+27a34
+> 
+27a35
+> 
+27a36
+> 
+41c50
+< {-# LINE 67 "src/ehc/Pred/CommonCHR.chs" #-}
+---
+> 
+41a51
+> 
+41a52
+> 
+41a53
+> 
+41a54
+> 
+41a55
+> 
+41a56
+> 
+41a57
+> 
+41a58
+> 
+41a59
+> 
+41a60
+> 
+41a61
+> 
+41a62
+> 
+41a63
+> 
+41a64
+> 
+41a65
+> 
+41a66
+> 
+46c71
+< {-# LINE 73 "src/ehc/Pred/CommonCHR.chs" #-}
+---
+> 
+46a72
+> 
+50c76
+< {-# LINE 78 "src/ehc/Pred/CommonCHR.chs" #-}
+---
+> 
+50a77
+> 
+60c87
+< {-# LINE 106 "src/ehc/Pred/CommonCHR.chs" #-}
+---
+> 
+60a88
+> 
+60a89
+> 
+60a90
+> 
+60a91
+> 
+60a92
+> 
+60a93
+> 
+60a94
+> 
+60a95
+> 
+60a96
+> 
+60a97
+> 
+60a98
+> 
+60a99
+> 
+60a100
+> 
+60a101
+> 
+60a102
+> 
+60a103
+> 
+60a104
+> 
+60a105
+> 
+67c112
+< {-# LINE 118 "src/ehc/Pred/CommonCHR.chs" #-}
+---
+> 
+67a113
+> 
+67a114
+> 
+67a115
+> 
+67a116
+> 
+67a117
+> 
+94c144
+< {-# LINE 166 "src/ehc/Pred/CommonCHR.chs" #-}
+---
+> 
+94a145
+> 
+94a146
+> 
+94a147
+> 
+94a148
+> 
+94a149
+> 
+94a150
+> 
+94a151
+> 
+94a152
+> 
+94a153
+> 
+94a154
+> 
+94a155
+> 
+94a156
+> 
+94a157
+> 
+94a158
+> 
+94a159
+> 
+94a160
+> 
+94a161
+> 
+94a162
+> 
+94a163
+> 
+94a164
+> 
+94a165
+> 
+107c178
+< {-# LINE 180 "src/ehc/Pred/CommonCHR.chs" #-}
+---
+> 
+107a179
+> 
+114c186
+< {-# LINE 192 "src/ehc/Pred/CommonCHR.chs" #-}
+---
+> 
+114a187
+> 
+114a188
+> 
+114a189
+> 
+114a190
+> 
+114a191
+> 
+118c195
+< {-# LINE 197 "src/ehc/Pred/CommonCHR.chs" #-}
+---
+> 
+118a196
+> 
+125c203
+< {-# LINE 205 "src/ehc/Pred/CommonCHR.chs" #-}
+---
+> 
+125a204
+> 
+137c216
+< {-# LINE 222 "src/ehc/Pred/CommonCHR.chs" #-}
+---
+> 
+137a217
+> 
+137a218
+> 
+137a219
+> 
+137a220
+> 
+137a221
+> 
+166a251
+> 
+</pre></br><h2>original</h2></br><pre>module UHC.Light.Compiler.Pred.CommonCHR
+( module UHC.Light.Compiler.CHR, module UHC.Light.Compiler.CHR.Constraint
+, RedHowAnnotation (..)
+, CHRConstraint, CHRIntermediateUntilAssume
+, ByScopeRedHow (..)
+, patchToAssumeConstraint
+, CHRPredOccCnstrTraceMp, CHRPredOccCnstrMp
+, gathPredLToProveCnstrMp, gathPredLToAssumeCnstrMp
+, predOccCnstrMpLiftScope
+, rhaMbId
+, mkProveConstraint, mkAssumeConstraint, mkAssumeConstraint' )
+where
+import UHC.Light.Compiler.CHR
+import UHC.Light.Compiler.CHR.Constraint
+import qualified Data.Map as Map
+import qualified Data.Set as Set
+import UHC.Util.Pretty
+import UHC.Light.Compiler.Base.Common
+import UHC.Light.Compiler.Ty
+import UHC.Light.Compiler.VarMp
+import Control.Monad
+import UHC.Util.Binary
+import UHC.Util.Serialize
+
+
+
+{-# LINE 37 "src/ehc/Pred/CommonCHR.chs" #-}
+data RedHowAnnotation
+  =  RedHow_ByInstance    !HsName  !Pred  !PredScope        -- inst name, for pred, in scope
+  |  RedHow_BySuperClass  !HsName  !Int   !CTag                     -- field name, offset, tag info of dict
+  |  RedHow_ProveObl      !UID  !PredScope
+  |  RedHow_Assumption    !VarUIDHsName  !PredScope
+  |  RedHow_ByScope       !ByScopeRedHow                            -- variant, for distinguishing during debugging
+  |  RedHow_ByLabel       !Label !LabelOffset !PredScope
+  |  RedHow_Lambda        !UID !PredScope
+  deriving
+    ( Eq, Ord
+    , Typeable, Data
+    )
+
+{-# LINE 67 "src/ehc/Pred/CommonCHR.chs" #-}
+rhaMbId :: RedHowAnnotation -> Maybe UID
+rhaMbId (RedHow_ProveObl i _) = Just i
+rhaMbId _                     = Nothing
+
+{-# LINE 73 "src/ehc/Pred/CommonCHR.chs" #-}
+instance Show RedHowAnnotation where
+  show = showPP . pp
+
+{-# LINE 78 "src/ehc/Pred/CommonCHR.chs" #-}
+instance PP RedHowAnnotation where
+  pp (RedHow_ByInstance   s p sc)       =    "inst"   >#< {- ppParens (vm >#< "`varUpd`") >#< -} ppParensCommas [pp p, pp s, pp sc]
+  pp (RedHow_BySuperClass s _ _ )       =    "super"  >#< s
+  pp (RedHow_ProveObl     i   sc)       =    "prove"  >#< i >#< sc
+  pp (RedHow_Assumption   vun sc)       =    "assume" >#< ppParensCommas [pp vun, pp sc]
+  pp (RedHow_ByScope      v     )       =    "scope"  >|< ppParens v
+  pp (RedHow_ByLabel      l o sc)       =    "label"  >#< l >|< "@" >|< o >|< sc
+  pp (RedHow_Lambda       i   sc)       =    "lambda" >#< i >#< sc
+
+{-# LINE 106 "src/ehc/Pred/CommonCHR.chs" #-}
+-- | Constraint specialized to scoped predicates with reduction info
+type CHRConstraint    = Constraint CHRPredOcc RedHowAnnotation
+
+-- | intermediate structure for holding constraint and related info until it can safely be assumed
+type CHRIntermediateUntilAssume = (CHRPredOcc,(PredScope,CHRPredOccCnstrTraceMp))
+
+{-# LINE 118 "src/ehc/Pred/CommonCHR.chs" #-}
+data ByScopeRedHow
+  = ByScopeRedHow_Prove                         -- scope reduction based on Prove
+  | ByScopeRedHow_Assume                        -- scope reduction based on Assume
+  | ByScopeRedHow_Other (AlwaysEq String)       -- other reason
+  deriving
+    ( Eq, Ord
+    , Typeable, Data
+    )
+
+-- equality plays no role ??
+{-
+instance Eq ByScopeRedHow where
+  _ == _ = True
+
+instance Ord ByScopeRedHow where
+  _ `compare` _ = EQ
+-}
+
+instance Show ByScopeRedHow where
+  show ByScopeRedHow_Prove     = "prv"
+  show ByScopeRedHow_Assume    = "ass"
+  show (ByScopeRedHow_Other s) = show s
+
+instance PP ByScopeRedHow where
+  pp = pp . show
+
+{-# LINE 166 "src/ehc/Pred/CommonCHR.chs" #-}
+mkProveConstraint :: Range -> Pred -> UID -> PredScope -> (CHRConstraint,RedHowAnnotation)
+mkProveConstraint r pr i sc =  (Prove (mkCHRPredOccRng r pr sc),RedHow_ProveObl i sc)
+
+mkAssumeConstraint'' :: Range -> Pred -> VarUIDHsName -> PredScope -> (CHRConstraint,RedHowAnnotation)
+mkAssumeConstraint'' r pr vun sc =  (Assume (mkCHRPredOccRng r pr sc),RedHow_Assumption vun sc)
+
+mkAssumeConstraint' :: Range -> Pred -> UID -> HsName -> PredScope -> (CHRConstraint,RedHowAnnotation)
+mkAssumeConstraint' r pr i n sc =  mkAssumeConstraint'' r pr (VarUIDHs_Name i n) sc
+
+mkAssumeConstraint :: Range -> Pred -> UID -> PredScope -> (CHRConstraint,RedHowAnnotation)
+mkAssumeConstraint r pr i sc =  mkAssumeConstraint'' r pr (VarUIDHs_UID i) sc
+
+{-# LINE 180 "src/ehc/Pred/CommonCHR.chs" #-}
+patchToAssumeConstraint :: UID -> PredScope -> (PredScope -> RedHowAnnotation -> x -> x) -> (CHRConstraint,x) -> (CHRConstraint,x)
+patchToAssumeConstraint i sc set (c,x)
+  = (Assume (pr {cpoCxt = cx {cpocxScope = sc}}), set sc (RedHow_Assumption (VarUIDHs_UID i) sc) x)
+  where pr = cnstrPred c
+        cx = cpoCxt pr
+
+{-# LINE 192 "src/ehc/Pred/CommonCHR.chs" #-}
+type CHRPredOccCnstrTraceMp = ConstraintToInfoTraceMp CHRPredOcc RedHowAnnotation
+type CHRPredOccCnstrMp      = ConstraintToInfoMap     CHRPredOcc RedHowAnnotation
+
+{-# LINE 197 "src/ehc/Pred/CommonCHR.chs" #-}
+gathPredLToProveCnstrMp :: [PredOcc] -> CHRPredOccCnstrMp
+gathPredLToProveCnstrMp l = cnstrMpFromList [ rngLift (poRange po) mkProveConstraint (poPr po) (poId po) (poScope po) | po <- l ]
+
+gathPredLToAssumeCnstrMp :: [PredOcc] -> CHRPredOccCnstrMp
+gathPredLToAssumeCnstrMp l = cnstrMpFromList [ rngLift (poRange po) mkAssumeConstraint (poPr po) (poId po) (poScope po) | po <- l ]
+
+{-# LINE 205 "src/ehc/Pred/CommonCHR.chs" #-}
+-- | Lift predicate occurrences to new scope, used to lift unproven predicates to an outer scope.
+predOccCnstrMpLiftScope :: PredScope -> CHRPredOccCnstrMp -> CHRPredOccCnstrMp
+predOccCnstrMpLiftScope sc
+  = Map.mapKeysWith (++) c . Map.map (map i)
+  where c (Prove o@(CHRPredOcc {cpoCxt=cx}))
+            = Prove (o {cpoCxt = cx {cpocxScope = sc}})
+        c x = x
+        i (RedHow_ProveObl id _)
+            = RedHow_ProveObl id sc
+        i x = x
+
+{-# LINE 222 "src/ehc/Pred/CommonCHR.chs" #-}
+instance Serialize ByScopeRedHow where
+  sput (ByScopeRedHow_Prove          ) = sputWord8 0
+  sput (ByScopeRedHow_Assume         ) = sputWord8 1
+  sput (ByScopeRedHow_Other a        ) = sputWord8 2 >> sput a
+  sget = do
+    t <- sgetWord8
+    case t of
+      0 -> return ByScopeRedHow_Prove
+      1 -> return ByScopeRedHow_Assume
+      2 -> liftM  ByScopeRedHow_Other   sget
+
+instance Serialize RedHowAnnotation where
+  sput (RedHow_ByInstance       a b c  ) = sputWord8 0  >> sput a >> sput b >> sput c -- >> sput d
+  sput (RedHow_BySuperClass     a b c  ) = sputWord8 1  >> sput a >> sput b >> sput c
+  sput (RedHow_ProveObl         a b    ) = sputWord8 2  >> sput a >> sput b
+  sput (RedHow_Assumption       a b    ) = sputWord8 3  >> sput a >> sput b
+  sput (RedHow_ByScope          a      ) = sputWord8 4  >> sput a
+  sput (RedHow_ByLabel          a b c  ) = sputWord8 5  >> sput a >> sput b >> sput c
+  sput (RedHow_Lambda           a b    ) = sputWord8 6  >> sput a >> sput b
+  sget = do t <- sgetWord8
+            case t of
+              0  -> liftM3 RedHow_ByInstance       sget sget sget -- sget
+              1  -> liftM3 RedHow_BySuperClass     sget sget sget
+              2  -> liftM2 RedHow_ProveObl         sget sget
+              3  -> liftM2 RedHow_Assumption       sget sget
+              4  -> liftM  RedHow_ByScope          sget
+              5  -> liftM3 RedHow_ByLabel          sget sget sget
+              6  -> liftM2 RedHow_Lambda           sget sget
+
+</pre></br><h2>printed</h2></br><pre>module UHC.Light.Compiler.Pred.CommonCHR
+( module UHC.Light.Compiler.CHR, module UHC.Light.Compiler.CHR.Constraint
+, RedHowAnnotation (..)
+, CHRConstraint, CHRIntermediateUntilAssume
+, ByScopeRedHow (..)
+, patchToAssumeConstraint
+, CHRPredOccCnstrTraceMp, CHRPredOccCnstrMp
+, gathPredLToProveCnstrMp, gathPredLToAssumeCnstrMp
+, predOccCnstrMpLiftScope
+, rhaMbId
+, mkProveConstraint, mkAssumeConstraint, mkAssumeConstraint' )
+where
+import UHC.Light.Compiler.CHR
+import UHC.Light.Compiler.CHR.Constraint
+import qualified Data.Map as Map
+import qualified Data.Set as Set
+import UHC.Util.Pretty
+import UHC.Light.Compiler.Base.Common
+import UHC.Light.Compiler.Ty
+import UHC.Light.Compiler.VarMp
+import Control.Monad
+import UHC.Util.Binary
+import UHC.Util.Serialize
+
+
+
+
+
+
+
+
+
+
+
+
+
+data RedHowAnnotation
+  =  RedHow_ByInstance    !HsName  !Pred  !PredScope        -- inst name, for pred, in scope
+  |  RedHow_BySuperClass  !HsName  !Int   !CTag                     -- field name, offset, tag info of dict
+  |  RedHow_ProveObl      !UID  !PredScope
+  |  RedHow_Assumption    !VarUIDHsName  !PredScope
+  |  RedHow_ByScope       !ByScopeRedHow                            -- variant, for distinguishing during debugging
+  |  RedHow_ByLabel       !Label !LabelOffset !PredScope
+  |  RedHow_Lambda        !UID !PredScope
+  deriving
+    ( Eq, Ord
+    , Typeable, Data
+    )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+rhaMbId :: RedHowAnnotation -> Maybe UID
+rhaMbId (RedHow_ProveObl i _) = Just i
+rhaMbId _                     = Nothing
+
+
+
+instance Show RedHowAnnotation where
+  show = showPP . pp
+
+
+
+instance PP RedHowAnnotation where
+  pp (RedHow_ByInstance   s p sc)       =    "inst"   >#< {- ppParens (vm >#< "`varUpd`") >#< -} ppParensCommas [pp p, pp s, pp sc]
+  pp (RedHow_BySuperClass s _ _ )       =    "super"  >#< s
+  pp (RedHow_ProveObl     i   sc)       =    "prove"  >#< i >#< sc
+  pp (RedHow_Assumption   vun sc)       =    "assume" >#< ppParensCommas [pp vun, pp sc]
+  pp (RedHow_ByScope      v     )       =    "scope"  >|< ppParens v
+  pp (RedHow_ByLabel      l o sc)       =    "label"  >#< l >|< "@" >|< o >|< sc
+  pp (RedHow_Lambda       i   sc)       =    "lambda" >#< i >#< sc
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+-- | Constraint specialized to scoped predicates with reduction info
+type CHRConstraint    = Constraint CHRPredOcc RedHowAnnotation
+
+-- | intermediate structure for holding constraint and related info until it can safely be assumed
+type CHRIntermediateUntilAssume = (CHRPredOcc,(PredScope,CHRPredOccCnstrTraceMp))
+
+
+
+
+
+
+
+data ByScopeRedHow
+  = ByScopeRedHow_Prove                         -- scope reduction based on Prove
+  | ByScopeRedHow_Assume                        -- scope reduction based on Assume
+  | ByScopeRedHow_Other (AlwaysEq String)       -- other reason
+  deriving
+    ( Eq, Ord
+    , Typeable, Data
+    )
+
+-- equality plays no role ??
+{-
+instance Eq ByScopeRedHow where
+  _ == _ = True
+
+instance Ord ByScopeRedHow where
+  _ `compare` _ = EQ
+-}
+
+instance Show ByScopeRedHow where
+  show ByScopeRedHow_Prove     = "prv"
+  show ByScopeRedHow_Assume    = "ass"
+  show (ByScopeRedHow_Other s) = show s
+
+instance PP ByScopeRedHow where
+  pp = pp . show
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+mkProveConstraint :: Range -> Pred -> UID -> PredScope -> (CHRConstraint,RedHowAnnotation)
+mkProveConstraint r pr i sc =  (Prove (mkCHRPredOccRng r pr sc),RedHow_ProveObl i sc)
+
+mkAssumeConstraint'' :: Range -> Pred -> VarUIDHsName -> PredScope -> (CHRConstraint,RedHowAnnotation)
+mkAssumeConstraint'' r pr vun sc =  (Assume (mkCHRPredOccRng r pr sc),RedHow_Assumption vun sc)
+
+mkAssumeConstraint' :: Range -> Pred -> UID -> HsName -> PredScope -> (CHRConstraint,RedHowAnnotation)
+mkAssumeConstraint' r pr i n sc =  mkAssumeConstraint'' r pr (VarUIDHs_Name i n) sc
+
+mkAssumeConstraint :: Range -> Pred -> UID -> PredScope -> (CHRConstraint,RedHowAnnotation)
+mkAssumeConstraint r pr i sc =  mkAssumeConstraint'' r pr (VarUIDHs_UID i) sc
+
+
+
+patchToAssumeConstraint :: UID -> PredScope -> (PredScope -> RedHowAnnotation -> x -> x) -> (CHRConstraint,x) -> (CHRConstraint,x)
+patchToAssumeConstraint i sc set (c,x)
+  = (Assume (pr {cpoCxt = cx {cpocxScope = sc}}), set sc (RedHow_Assumption (VarUIDHs_UID i) sc) x)
+  where pr = cnstrPred c
+        cx = cpoCxt pr
+
+
+
+
+
+
+
+type CHRPredOccCnstrTraceMp = ConstraintToInfoTraceMp CHRPredOcc RedHowAnnotation
+type CHRPredOccCnstrMp      = ConstraintToInfoMap     CHRPredOcc RedHowAnnotation
+
+
+
+gathPredLToProveCnstrMp :: [PredOcc] -> CHRPredOccCnstrMp
+gathPredLToProveCnstrMp l = cnstrMpFromList [ rngLift (poRange po) mkProveConstraint (poPr po) (poId po) (poScope po) | po <- l ]
+
+gathPredLToAssumeCnstrMp :: [PredOcc] -> CHRPredOccCnstrMp
+gathPredLToAssumeCnstrMp l = cnstrMpFromList [ rngLift (poRange po) mkAssumeConstraint (poPr po) (poId po) (poScope po) | po <- l ]
+
+
+
+-- | Lift predicate occurrences to new scope, used to lift unproven predicates to an outer scope.
+predOccCnstrMpLiftScope :: PredScope -> CHRPredOccCnstrMp -> CHRPredOccCnstrMp
+predOccCnstrMpLiftScope sc
+  = Map.mapKeysWith (++) c . Map.map (map i)
+  where c (Prove o@(CHRPredOcc {cpoCxt=cx}))
+            = Prove (o {cpoCxt = cx {cpocxScope = sc}})
+        c x = x
+        i (RedHow_ProveObl id _)
+            = RedHow_ProveObl id sc
+        i x = x
+
+
+
+
+
+
+
+instance Serialize ByScopeRedHow where
+  sput (ByScopeRedHow_Prove          ) = sputWord8 0
+  sput (ByScopeRedHow_Assume         ) = sputWord8 1
+  sput (ByScopeRedHow_Other a        ) = sputWord8 2 >> sput a
+  sget = do
+    t <- sgetWord8
+    case t of
+      0 -> return ByScopeRedHow_Prove
+      1 -> return ByScopeRedHow_Assume
+      2 -> liftM  ByScopeRedHow_Other   sget
+
+instance Serialize RedHowAnnotation where
+  sput (RedHow_ByInstance       a b c  ) = sputWord8 0  >> sput a >> sput b >> sput c -- >> sput d
+  sput (RedHow_BySuperClass     a b c  ) = sputWord8 1  >> sput a >> sput b >> sput c
+  sput (RedHow_ProveObl         a b    ) = sputWord8 2  >> sput a >> sput b
+  sput (RedHow_Assumption       a b    ) = sputWord8 3  >> sput a >> sput b
+  sput (RedHow_ByScope          a      ) = sputWord8 4  >> sput a
+  sput (RedHow_ByLabel          a b c  ) = sputWord8 5  >> sput a >> sput b >> sput c
+  sput (RedHow_Lambda           a b    ) = sputWord8 6  >> sput a >> sput b
+  sget = do t <- sgetWord8
+            case t of
+              0  -> liftM3 RedHow_ByInstance       sget sget sget -- sget
+              1  -> liftM3 RedHow_BySuperClass     sget sget sget
+              2  -> liftM2 RedHow_ProveObl         sget sget
+              3  -> liftM2 RedHow_Assumption       sget sget
+              4  -> liftM  RedHow_ByScope          sget
+              5  -> liftM3 RedHow_ByLabel          sget sget sget
+              6  -> liftM2 RedHow_Lambda           sget sget
+
+
+</pre>

@@ -1,0 +1,283 @@
+<a href="Transform.hs2458322992092396112.out.html">prev</a></br><a href="failures.html">home</a></br><a href="Translations.hs7889743901728536152.out.html">next</a></br></br><pre>29c29
+< {-# LINE 71 "src/ehc/EHC/CompilePhase/Transformations.chs" #-}
+---
+> 
+29a30
+> 
+29a31
+> 
+29a32
+> 
+29a33
+> 
+29a34
+> 
+29a35
+> 
+29a36
+> 
+29a37
+> 
+29a38
+> 
+29a39
+> 
+29a40
+> 
+29a41
+> 
+29a42
+> 
+29a43
+> 
+29a44
+> 
+29a45
+> 
+29a46
+> 
+29a47
+> 
+29a48
+> 
+29a49
+> 
+29a50
+> 
+29a51
+> 
+29a52
+> 
+29a53
+> 
+29a54
+> 
+29a55
+> 
+29a56
+> 
+29a57
+> 
+29a58
+> 
+29a59
+> 
+29a60
+> 
+29a61
+> 
+29a62
+> 
+29a63
+> 
+29a64
+> 
+29a65
+> 
+29a66
+> 
+29a67
+> 
+29a68
+> 
+29a69
+> 
+29a70
+> 
+76a118
+> 
+</pre></br><h2>original</h2></br><pre>module UHC.Light.Compiler.EHC.CompilePhase.Transformations
+( cpTransformCore )
+where
+import qualified Data.Map as Map
+import qualified Data.Set as Set
+import Control.Monad.State
+import UHC.Light.Compiler.EHC.Common
+import UHC.Light.Compiler.Base.Optimize
+import UHC.Light.Compiler.EHC.CompileUnit
+import UHC.Light.Compiler.EHC.CompileRun
+import qualified UHC.Light.Compiler.Config as Cfg
+import UHC.Light.Compiler.CodeGen.TrfUtils
+import UHC.Light.Compiler.Core.Trf
+import UHC.Light.Compiler.EHC.CompilePhase.Output
+import qualified UHC.Light.Compiler.Core.ToGrin as Core2GrSem
+import qualified UHC.Light.Compiler.HI as HI
+import qualified UHC.Light.Compiler.Core.Check as Core2ChkSem
+import UHC.Light.Compiler.EHC.CompilePhase.Module(cpUpdHiddenExports)
+
+
+
+
+
+
+
+
+
+
+{-# LINE 71 "src/ehc/EHC/CompilePhase/Transformations.chs" #-}
+cpTransformCore :: EHCCompileRunner m => OptimizationScope -> HsName -> EHCompilePhaseT m ()
+cpTransformCore optimScope modNm
+  = do { cr <- get
+       ; let  (ecu,crsi,opts,fp) = crBaseInfo modNm cr
+       ; cpMsg' modNm VerboseALot "Transforming Core ..." Nothing fp
+
+         -- transform
+       ; let  mbCore     = ecuMbCore ecu
+              coreInh    = crsiCoreInh crsi
+              trfcoreIn  = emptyTrfCore
+                             { trfstMod                 = panicJust "cpTransformCore" mbCore
+                             , trfstUniq                = crsiNextUID crsi
+                             , trfstExtra = emptyTrfCoreExtra
+                                 { trfcoreECUState      = ecuState ecu
+                                 -- , trfcoreIsLamLifted    = maybe False Core2ChkSem.isLamLifted_Syn_CodeAGItf $ ecuMbCoreSemMod ecu
+                                 , trfcoreNotYetTransformed
+                                                        = maybe (trfcoreNotYetTransformed emptyTrfCoreExtra) Core2ChkSem.notYetTransformed_Syn_CodeAGItf $ ecuMbCoreSemMod ecu
+                                 , trfcoreExpNmOffMp    = crsiExpNmOffMpDbg "cpTransformCore" modNm crsi
+                                 , trfcoreInhLamMp      = Core2GrSem.lamMp_Inh_CodeAGItf $ crsiCoreInh crsi
+                                 }
+                             }
+              trfcoreOut = trfCore opts optimScope (Core2GrSem.dataGam_Inh_CodeAGItf $ crsiCoreInh crsi) modNm trfcoreIn
+
+       -- ; liftIO $ putStrLn $ "cpTransformCore trfcoreNotYetTransformed: " ++ show (trfcoreNotYetTransformed $ trfstExtra trfcoreIn)
+         -- put back result: Core
+       ; cpUpdCU modNm $! ecuStoreCore (trfstMod trfcoreOut)
+
+         -- put back result: unique counter
+       ; cpSetUID (trfstUniq trfcoreOut)
+
+         -- put back result: call info map (lambda arity, ...)
+       ; let hii   = ecuHIInfo ecu
+             lamMp = HI.hiiLamMp hii
+       ; cpUpdCU modNm
+           ( ecuStoreHIInfo
+               (hii { HI.hiiLamMp = (trfcoreGathLamMp $ trfstExtra trfcoreOut) `Map.union` lamMp
+                    })
+           )
+         -- put back result: additional hidden exports, it should be in a cpFlowXX variant
+       ; cpUpdHiddenExports modNm $ zip (Set.toList $ trfcoreExtraExports $ trfstExtra trfcoreOut) (repeat IdOcc_Val)
+
+         -- dump intermediate stages, print errors, if any
+       ; let (nms,mcs,errs) = unzip3 $ trfstModStages trfcoreOut
+       ; cpOutputCoreModules CPOutputCoreHow_Text [{- CoreOpt_DumpAlsoNonParseable -}] (\n nm -> "-" ++ show optimScope ++ "-" ++ show n ++ "-" ++ nm) Cfg.suffixDotlessOutputTextualCore modNm [ (n,nm) | (n, Just nm) <- zip nms mcs ]
+       ; cpSeq $ zipWith (\nm err -> cpSetLimitErrsWhen 5 ("Core errors: " ++ nm) err) nms errs
+       }
+
+</pre></br><h2>printed</h2></br><pre>module UHC.Light.Compiler.EHC.CompilePhase.Transformations
+( cpTransformCore )
+where
+import qualified Data.Map as Map
+import qualified Data.Set as Set
+import Control.Monad.State
+import UHC.Light.Compiler.EHC.Common
+import UHC.Light.Compiler.Base.Optimize
+import UHC.Light.Compiler.EHC.CompileUnit
+import UHC.Light.Compiler.EHC.CompileRun
+import qualified UHC.Light.Compiler.Config as Cfg
+import UHC.Light.Compiler.CodeGen.TrfUtils
+import UHC.Light.Compiler.Core.Trf
+import UHC.Light.Compiler.EHC.CompilePhase.Output
+import qualified UHC.Light.Compiler.Core.ToGrin as Core2GrSem
+import qualified UHC.Light.Compiler.HI as HI
+import qualified UHC.Light.Compiler.Core.Check as Core2ChkSem
+import UHC.Light.Compiler.EHC.CompilePhase.Module(cpUpdHiddenExports)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+cpTransformCore :: EHCCompileRunner m => OptimizationScope -> HsName -> EHCompilePhaseT m ()
+cpTransformCore optimScope modNm
+  = do { cr <- get
+       ; let  (ecu,crsi,opts,fp) = crBaseInfo modNm cr
+       ; cpMsg' modNm VerboseALot "Transforming Core ..." Nothing fp
+
+         -- transform
+       ; let  mbCore     = ecuMbCore ecu
+              coreInh    = crsiCoreInh crsi
+              trfcoreIn  = emptyTrfCore
+                             { trfstMod                 = panicJust "cpTransformCore" mbCore
+                             , trfstUniq                = crsiNextUID crsi
+                             , trfstExtra = emptyTrfCoreExtra
+                                 { trfcoreECUState      = ecuState ecu
+                                 -- , trfcoreIsLamLifted    = maybe False Core2ChkSem.isLamLifted_Syn_CodeAGItf $ ecuMbCoreSemMod ecu
+                                 , trfcoreNotYetTransformed
+                                                        = maybe (trfcoreNotYetTransformed emptyTrfCoreExtra) Core2ChkSem.notYetTransformed_Syn_CodeAGItf $ ecuMbCoreSemMod ecu
+                                 , trfcoreExpNmOffMp    = crsiExpNmOffMpDbg "cpTransformCore" modNm crsi
+                                 , trfcoreInhLamMp      = Core2GrSem.lamMp_Inh_CodeAGItf $ crsiCoreInh crsi
+                                 }
+                             }
+              trfcoreOut = trfCore opts optimScope (Core2GrSem.dataGam_Inh_CodeAGItf $ crsiCoreInh crsi) modNm trfcoreIn
+
+       -- ; liftIO $ putStrLn $ "cpTransformCore trfcoreNotYetTransformed: " ++ show (trfcoreNotYetTransformed $ trfstExtra trfcoreIn)
+         -- put back result: Core
+       ; cpUpdCU modNm $! ecuStoreCore (trfstMod trfcoreOut)
+
+         -- put back result: unique counter
+       ; cpSetUID (trfstUniq trfcoreOut)
+
+         -- put back result: call info map (lambda arity, ...)
+       ; let hii   = ecuHIInfo ecu
+             lamMp = HI.hiiLamMp hii
+       ; cpUpdCU modNm
+           ( ecuStoreHIInfo
+               (hii { HI.hiiLamMp = (trfcoreGathLamMp $ trfstExtra trfcoreOut) `Map.union` lamMp
+                    })
+           )
+         -- put back result: additional hidden exports, it should be in a cpFlowXX variant
+       ; cpUpdHiddenExports modNm $ zip (Set.toList $ trfcoreExtraExports $ trfstExtra trfcoreOut) (repeat IdOcc_Val)
+
+         -- dump intermediate stages, print errors, if any
+       ; let (nms,mcs,errs) = unzip3 $ trfstModStages trfcoreOut
+       ; cpOutputCoreModules CPOutputCoreHow_Text [{- CoreOpt_DumpAlsoNonParseable -}] (\n nm -> "-" ++ show optimScope ++ "-" ++ show n ++ "-" ++ nm) Cfg.suffixDotlessOutputTextualCore modNm [ (n,nm) | (n, Just nm) <- zip nms mcs ]
+       ; cpSeq $ zipWith (\nm err -> cpSetLimitErrsWhen 5 ("Core errors: " ++ nm) err) nms errs
+       }
+
+
+</pre>

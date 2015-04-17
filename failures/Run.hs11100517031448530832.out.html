@@ -1,0 +1,327 @@
+<a href="rss2irc.hs12057771061840127450.out.html">prev</a></br><a href="failures.html">home</a></br><a href="Run.hs15830710321499932141.out.html">next</a></br></br><pre>18c18
+< {-# LINE 45 "src/ehc/EHC/CompilePhase/Run.chs" #-}
+---
+> 
+18a19
+> 
+18a20
+> 
+18a21
+> 
+18a22
+> 
+18a23
+> 
+18a24
+> 
+18a25
+> 
+18a26
+> 
+18a27
+> 
+18a28
+> 
+18a29
+> 
+18a30
+> 
+18a31
+> 
+18a32
+> 
+18a33
+> 
+18a34
+> 
+18a35
+> 
+18a36
+> 
+18a37
+> 
+18a38
+> 
+18a39
+> 
+18a40
+> 
+18a41
+> 
+18a42
+> 
+18a43
+> 
+18a44
+> 
+31c57
+<         (\(e :: SomeException) -> hFlush stdout >> (return $ Left $ strMsg $ "cpRunCoreRun: " ++ show e))
+---
+>         (\(                  ) -> hFlush stdout >> (return $ Left $ strMsg $ "cpRunCoreRun: " ++ show e))
+36c62
+< {-# LINE 72 "src/ehc/EHC/CompilePhase/Run.chs" #-}
+---
+> 
+36a63
+> 
+36a64
+> 
+36a65
+> 
+36a66
+> 
+36a67
+> 
+36a68
+> 
+36a69
+> 
+36a70
+> 
+36a71
+> 
+58c93
+<       (\(e :: SomeException) -> hFlush stdout >> (return $ Left $ strMsg $ "cpRunCoreRun: " ++ show e))
+---
+>       (\(                  ) -> hFlush stdout >> (return $ Left $ strMsg $ "cpRunCoreRun: " ++ show e))
+63c98
+< {-# LINE 109 "src/ehc/EHC/CompilePhase/Run.chs" #-}
+---
+> 
+63a99
+> 
+63a100
+> 
+63a101
+> 
+63a102
+> 
+63a103
+> 
+63a104
+> 
+63a105
+> 
+63a106
+> 
+63a107
+> 
+63a108
+> 
+78c123
+<       (\(e :: SomeException) -> hFlush stdout >> (return $ Left $ strMsg $ "cpRunCoreRun: " ++ show e))
+---
+>       (\(                  ) -> hFlush stdout >> (return $ Left $ strMsg $ "cpRunCoreRun: " ++ show e))
+82a128
+> 
+</pre></br><h2>original</h2></br><pre>module UHC.Light.Compiler.EHC.CompilePhase.Run
+( cpRunCoreRun
+, cpRunCoreRun2
+, cpRunCoreRun3 )
+where
+import UHC.Light.Compiler.EHC.Common
+import UHC.Light.Compiler.EHC.CompileUnit
+import UHC.Light.Compiler.EHC.CompileRun
+import Data.Maybe
+import Control.Monad.State
+import Control.Exception
+import UHC.Light.Compiler.EHC.CompilePhase.Parsers
+import UHC.Light.Compiler.Core.ToCoreRun
+import UHC.Light.Compiler.CoreRun
+import UHC.Light.Compiler.CoreRun.Run
+import UHC.Light.Compiler.CoreRun.Run.Val.RunExplStk as RE
+
+{-# LINE 45 "src/ehc/EHC/CompilePhase/Run.chs" #-}
+-- | Run CoreRun.
+-- TBD: fix dependence on whole program linked
+cpRunCoreRun :: EHCCompileRunner m => HsName -> EHCompilePhaseT m ()
+cpRunCoreRun modNm = do
+    cr <- get
+    let (ecu,_,opts,_) = crBaseInfo modNm cr
+        mbCore = ecuMbCore ecu
+    cpMsg modNm VerboseNormal "Run Core"
+    when (isJust mbCore) $ do
+      let mod = cmod2CoreRun $ fromJust mbCore
+      res <- liftIO $ catch
+        (runCoreRun opts [] mod $ cmodRun opts mod)
+        (\(e :: SomeException) -> hFlush stdout >> (return $ Left $ strMsg $ "cpRunCoreRun: " ++ show e))
+      either (\e -> cpSetLimitErrsWhen 1 "Run Core(Run) errors" [e])
+             (\_ -> return ())
+             res
+
+{-# LINE 72 "src/ehc/EHC/CompilePhase/Run.chs" #-}
+-- | Run CoreRun.
+-- 20150130: TBD: does not work yet
+cpRunCoreRun2 :: EHCCompileRunner m => HsName -> EHCompilePhaseT m ()
+cpRunCoreRun2 modNm = do
+    cr <- get
+    let (ecu,_,opts,_) = crBaseInfo modNm cr
+        mbCore = ecuMbCore ecu
+    let hasMain = ecuHasMain ecu
+    (impModL, mainMod) <- fmap (fromJust . initlast) $
+      case crPartitionMainAndImported cr $ map head $ crCompileOrder cr of
+        (_, impl) -> do
+          cores <- forM (impl ++ [modNm]) cpGetPrevCore
+          return $ flip evalState emptyNm2RefMp $ do
+            forM (zip cores [0..]) $ \(cr,modnr) -> do
+              prevNm2Ref <- get
+              let (m,nm2ref,_) = cmod2CoreRun' opts hasMain modnr prevNm2Ref cr
+              put $ nm2refUnion nm2ref prevNm2Ref
+              return m
+    cpMsg modNm VerboseNormal "Run Core"
+    res <- liftIO $ catch
+      (runCoreRun opts impModL mainMod $ cmodRun opts mainMod)
+      (\(e :: SomeException) -> hFlush stdout >> (return $ Left $ strMsg $ "cpRunCoreRun: " ++ show e))
+    either (\e -> cpSetLimitErrsWhen 1 "Run Core(Run) errors" [e])
+           (\_ -> return ())
+           res
+
+{-# LINE 109 "src/ehc/EHC/CompilePhase/Run.chs" #-}
+-- | Run CoreRun.
+cpRunCoreRun3 :: EHCCompileRunner m => HsName -> EHCompilePhaseT m ()
+cpRunCoreRun3 modNm = do
+    cr <- get
+    let (ecu,_,opts,_) = crBaseInfo modNm cr
+        mbCore = ecuMbCore ecu
+    let hasMain = ecuHasMain ecu
+    (impModL, mainMod) <- fmap (fromJust . initlast) $
+      case crPartitionMainAndImported cr $ map head $ crCompileOrder cr of
+        (_, impl) -> do
+          forM (impl ++ [modNm]) cpGetPrevCoreRun
+    cpMsg modNm VerboseNormal "Run Core"
+    res <- liftIO $ catch
+      (runCoreRun opts impModL mainMod $ cmodRun opts mainMod)
+      (\(e :: SomeException) -> hFlush stdout >> (return $ Left $ strMsg $ "cpRunCoreRun: " ++ show e))
+    either (\e -> cpSetLimitErrsWhen 1 "Run Core(Run) errors" [e])
+           (\_ -> return ())
+           res
+
+</pre></br><h2>printed</h2></br><pre>module UHC.Light.Compiler.EHC.CompilePhase.Run
+( cpRunCoreRun
+, cpRunCoreRun2
+, cpRunCoreRun3 )
+where
+import UHC.Light.Compiler.EHC.Common
+import UHC.Light.Compiler.EHC.CompileUnit
+import UHC.Light.Compiler.EHC.CompileRun
+import Data.Maybe
+import Control.Monad.State
+import Control.Exception
+import UHC.Light.Compiler.EHC.CompilePhase.Parsers
+import UHC.Light.Compiler.Core.ToCoreRun
+import UHC.Light.Compiler.CoreRun
+import UHC.Light.Compiler.CoreRun.Run
+import UHC.Light.Compiler.CoreRun.Run.Val.RunExplStk as RE
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+-- | Run CoreRun.
+-- TBD: fix dependence on whole program linked
+cpRunCoreRun :: EHCCompileRunner m => HsName -> EHCompilePhaseT m ()
+cpRunCoreRun modNm = do
+    cr <- get
+    let (ecu,_,opts,_) = crBaseInfo modNm cr
+        mbCore = ecuMbCore ecu
+    cpMsg modNm VerboseNormal "Run Core"
+    when (isJust mbCore) $ do
+      let mod = cmod2CoreRun $ fromJust mbCore
+      res <- liftIO $ catch
+        (runCoreRun opts [] mod $ cmodRun opts mod)
+        (\(                  ) -> hFlush stdout >> (return $ Left $ strMsg $ "cpRunCoreRun: " ++ show e))
+      either (\e -> cpSetLimitErrsWhen 1 "Run Core(Run) errors" [e])
+             (\_ -> return ())
+             res
+
+
+
+
+
+
+
+
+
+
+
+-- | Run CoreRun.
+-- 20150130: TBD: does not work yet
+cpRunCoreRun2 :: EHCCompileRunner m => HsName -> EHCompilePhaseT m ()
+cpRunCoreRun2 modNm = do
+    cr <- get
+    let (ecu,_,opts,_) = crBaseInfo modNm cr
+        mbCore = ecuMbCore ecu
+    let hasMain = ecuHasMain ecu
+    (impModL, mainMod) <- fmap (fromJust . initlast) $
+      case crPartitionMainAndImported cr $ map head $ crCompileOrder cr of
+        (_, impl) -> do
+          cores <- forM (impl ++ [modNm]) cpGetPrevCore
+          return $ flip evalState emptyNm2RefMp $ do
+            forM (zip cores [0..]) $ \(cr,modnr) -> do
+              prevNm2Ref <- get
+              let (m,nm2ref,_) = cmod2CoreRun' opts hasMain modnr prevNm2Ref cr
+              put $ nm2refUnion nm2ref prevNm2Ref
+              return m
+    cpMsg modNm VerboseNormal "Run Core"
+    res <- liftIO $ catch
+      (runCoreRun opts impModL mainMod $ cmodRun opts mainMod)
+      (\(                  ) -> hFlush stdout >> (return $ Left $ strMsg $ "cpRunCoreRun: " ++ show e))
+    either (\e -> cpSetLimitErrsWhen 1 "Run Core(Run) errors" [e])
+           (\_ -> return ())
+           res
+
+
+
+
+
+
+
+
+
+
+
+
+-- | Run CoreRun.
+cpRunCoreRun3 :: EHCCompileRunner m => HsName -> EHCompilePhaseT m ()
+cpRunCoreRun3 modNm = do
+    cr <- get
+    let (ecu,_,opts,_) = crBaseInfo modNm cr
+        mbCore = ecuMbCore ecu
+    let hasMain = ecuHasMain ecu
+    (impModL, mainMod) <- fmap (fromJust . initlast) $
+      case crPartitionMainAndImported cr $ map head $ crCompileOrder cr of
+        (_, impl) -> do
+          forM (impl ++ [modNm]) cpGetPrevCoreRun
+    cpMsg modNm VerboseNormal "Run Core"
+    res <- liftIO $ catch
+      (runCoreRun opts impModL mainMod $ cmodRun opts mainMod)
+      (\(                  ) -> hFlush stdout >> (return $ Left $ strMsg $ "cpRunCoreRun: " ++ show e))
+    either (\e -> cpSetLimitErrsWhen 1 "Run Core(Run) errors" [e])
+           (\_ -> return ())
+           res
+
+
+</pre>

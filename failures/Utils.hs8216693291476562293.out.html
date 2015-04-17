@@ -1,0 +1,378 @@
+<a href="Utils.hs771761420192958060.out.html">prev</a></br><a href="failures.html">home</a></br><a href="Utils1.hs3077388201025725764.out.html">next</a></br></br><pre>18c18
+< {-# LINE 34 "src/ehc/EHC/Main/Utils.chs" #-}
+---
+> 
+18a19
+> 
+18a20
+> 
+18a21
+> 
+18a22
+> 
+18a23
+> 
+18a24
+> 
+18a25
+> 
+18a26
+> 
+18a27
+> 
+18a28
+> 
+18a29
+> 
+18a30
+> 
+18a31
+> 
+18a32
+> 
+18a33
+> 
+71c86
+< {-# LINE 107 "src/ehc/EHC/Main/Utils.chs" #-}
+---
+> 
+71a87
+> 
+71a88
+> 
+71a89
+> 
+71a90
+> 
+71a91
+> 
+71a92
+> 
+71a93
+> 
+71a94
+> 
+71a95
+> 
+71a96
+> 
+71a97
+> 
+71a98
+> 
+71a99
+> 
+71a100
+> 
+71a101
+> 
+71a102
+> 
+71a103
+> 
+71a104
+> 
+71a105
+> 
+71a106
+> 
+97c132
+< {-# LINE 150 "src/ehc/EHC/Main/Utils.chs" #-}
+---
+> 
+97a133
+> 
+97a134
+> 
+97a135
+> 
+97a136
+> 
+97a137
+> 
+97a138
+> 
+97a139
+> 
+97a140
+> 
+97a141
+> 
+97a142
+> 
+97a143
+> 
+97a144
+> 
+97a145
+> 
+97a146
+> 
+97a147
+> 
+97a148
+> 
+97a149
+> 
+103a156
+> 
+</pre></br><h2>original</h2></br><pre>module UHC.Light.Compiler.EHC.Main.Utils
+( module UHC.Light.Compiler.Opts
+, handleImmQuitOption
+, FileSuffMp, mkFileSuffMpHs, fileSuffMpHsNoSuff )
+where
+import UHC.Light.Compiler.EHC.Common
+import qualified UHC.Light.Compiler.Config as Cfg
+import UHC.Light.Compiler.Opts
+import System.Console.GetOpt
+import System.Environment
+import UHC.Light.Compiler.Base.Target
+import UHC.Light.Compiler.Base.Optimize (allOptimizeMp)
+import qualified UHC.Light.Compiler.SourceCodeSig as Sig
+
+
+
+
+{-# LINE 34 "src/ehc/EHC/Main/Utils.chs" #-}
+-- | Handle a commandline option directly
+handleImmQuitOption :: GetOptCmdLineOpts -> [String] -> ImmediateQuitOption -> EHCOpts -> IO ()
+handleImmQuitOption cmdLineOpts inputSuffixes immq opts
+  = case immq of
+      ImmediateQuitOption_Help
+        -> do {
+                let progName = fpathToStr (ehcProgName opts)
+              ; putStrLn (usageInfo (  "version: " ++ Cfg.verInfo Cfg.version ++ ", aspects: " ++ ehcOptAspects opts
+                                    ++ "\n\nUsage: " ++ progName ++ " [options] [file[" ++ (concat $ intersperse "|" $ map ('.':) inputSuffixes) ++ "] ...]\n\noptions:"
+                                    )
+                                    cmdLineOpts)
+              }
+      ImmediateQuitOption_Version
+        -> putStrLn $ Cfg.verInfo Cfg.version
+                      ++ ", timestamp " ++ Sig.timestamp
+      ImmediateQuitOption_Meta_Variant
+        -> putStrLn Cfg.ehcDefaultVariant
+      ImmediateQuitOption_Meta_Targets
+        -> putStr showSupportedTargets
+      ImmediateQuitOption_Meta_TargetDefault
+        -> putStr (show defaultTarget)
+      ImmediateQuitOption_Meta_Optimizations
+        -> putStr (showStringMapKeys allOptimizeMp " ")
+      ImmediateQuitOption_VersionDotted
+        -> putStrLn (Cfg.verFull Cfg.version)
+      ImmediateQuitOption_VersionAsNumber
+        -> putStrLn (Cfg.verAsNumber Cfg.version)
+{-
+      ImmediateQuitOption_Meta_ExportEnv mvEnvOpt
+        -> exportEHCEnvironment
+             (mkEhcenvKey (Cfg.verFull Cfg.version) (fpathToStr $ ehcProgName opts) Cfg.ehcDefaultVariant)
+             (env {ehcenvInstallRoot = installRootDir, ehcenvVariant = variant})
+        where env = ehcOptEnvironment opts
+              (installRootDir,variant)
+                = case fmap (wordsBy (`elem` ",;")) mvEnvOpt of
+                    Just (d:v:_) -> (d,v)
+                    Just (d:_)   -> (d,ehcenvVariant env)
+                    _            -> (ehcenvInstallRoot env,ehcenvVariant env)
+      ImmediateQuitOption_Meta_DirEnv
+        -> do { d <- ehcenvDir (mkEhcenvKey (Cfg.verFull Cfg.version) (fpathToStr $ ehcProgName opts) Cfg.ehcDefaultVariant)
+              ; putStrLn d
+              }
+-}
+      ImmediateQuitOption_Meta_Pkgdir_System
+        -> do { let d = Cfg.mkInstallPkgdirSystem opts
+              ; putStrLn d
+              }
+      ImmediateQuitOption_Meta_Pkgdir_User
+        -> do { let d = Cfg.mkInstallPkgdirUser opts
+              ; putStrLn d
+              }
+
+{-# LINE 107 "src/ehc/EHC/Main/Utils.chs" #-}
+type FileSuffMp =
+  [( FileSuffix             -- suffix
+   , EHCompileUnitState     -- initial state
+   , Bool                   -- visible from commandline
+   )]
+
+-- | Allowed suffixes, order is significant.
+mkFileSuffMpHs :: EHCOpts -> FileSuffMp
+mkFileSuffMpHs opts
+  = [ ( Just "hs"  , ECUS_Haskell HSStart, True )
+    , ( Just "lhs" , ECUS_Haskell LHSStart, True )
+    , ( Just "eh"  , ECUS_Eh EHStart, True )
+    , ( Just "hi"  , ECUS_Haskell HIStart, False )
+    , ( Just Cfg.suffixDotlessBinaryCoreRun , ECUS_CoreRun CRRStartBinary, True )
+    , ( Just Cfg.suffixDotlessInputOutputTextualCore, ECUS_Core CRStartText, True   )
+    , ( Just Cfg.suffixDotlessInputOutputBinaryCore , ECUS_Core CRStartBinary, True )
+    , ( Just Cfg.suffixDotlessBinaryCore , ECUS_Core CRStartBinary, False )
+    ]
+    ++ (if targetIsOnUnixAndOrC (ehcOptTarget opts)
+        then [ ( Just "c"   , ECUS_C CStart, True )
+             , ( Just "o"   , ECUS_O OStart, True )
+             ]
+        else []
+       )
+
+{-# LINE 150 "src/ehc/EHC/Main/Utils.chs" #-}
+-- Suffix map for empty suffix, defaults to .hs
+fileSuffMpHsNoSuff :: FileSuffMp
+fileSuffMpHsNoSuff
+  = [ ( Nothing  , ECUS_Haskell HSStart, False )
+    ]
+
+</pre></br><h2>printed</h2></br><pre>module UHC.Light.Compiler.EHC.Main.Utils
+( module UHC.Light.Compiler.Opts
+, handleImmQuitOption
+, FileSuffMp, mkFileSuffMpHs, fileSuffMpHsNoSuff )
+where
+import UHC.Light.Compiler.EHC.Common
+import qualified UHC.Light.Compiler.Config as Cfg
+import UHC.Light.Compiler.Opts
+import System.Console.GetOpt
+import System.Environment
+import UHC.Light.Compiler.Base.Target
+import UHC.Light.Compiler.Base.Optimize (allOptimizeMp)
+import qualified UHC.Light.Compiler.SourceCodeSig as Sig
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+-- | Handle a commandline option directly
+handleImmQuitOption :: GetOptCmdLineOpts -> [String] -> ImmediateQuitOption -> EHCOpts -> IO ()
+handleImmQuitOption cmdLineOpts inputSuffixes immq opts
+  = case immq of
+      ImmediateQuitOption_Help
+        -> do {
+                let progName = fpathToStr (ehcProgName opts)
+              ; putStrLn (usageInfo (  "version: " ++ Cfg.verInfo Cfg.version ++ ", aspects: " ++ ehcOptAspects opts
+                                    ++ "\n\nUsage: " ++ progName ++ " [options] [file[" ++ (concat $ intersperse "|" $ map ('.':) inputSuffixes) ++ "] ...]\n\noptions:"
+                                    )
+                                    cmdLineOpts)
+              }
+      ImmediateQuitOption_Version
+        -> putStrLn $ Cfg.verInfo Cfg.version
+                      ++ ", timestamp " ++ Sig.timestamp
+      ImmediateQuitOption_Meta_Variant
+        -> putStrLn Cfg.ehcDefaultVariant
+      ImmediateQuitOption_Meta_Targets
+        -> putStr showSupportedTargets
+      ImmediateQuitOption_Meta_TargetDefault
+        -> putStr (show defaultTarget)
+      ImmediateQuitOption_Meta_Optimizations
+        -> putStr (showStringMapKeys allOptimizeMp " ")
+      ImmediateQuitOption_VersionDotted
+        -> putStrLn (Cfg.verFull Cfg.version)
+      ImmediateQuitOption_VersionAsNumber
+        -> putStrLn (Cfg.verAsNumber Cfg.version)
+{-
+      ImmediateQuitOption_Meta_ExportEnv mvEnvOpt
+        -> exportEHCEnvironment
+             (mkEhcenvKey (Cfg.verFull Cfg.version) (fpathToStr $ ehcProgName opts) Cfg.ehcDefaultVariant)
+             (env {ehcenvInstallRoot = installRootDir, ehcenvVariant = variant})
+        where env = ehcOptEnvironment opts
+              (installRootDir,variant)
+                = case fmap (wordsBy (`elem` ",;")) mvEnvOpt of
+                    Just (d:v:_) -> (d,v)
+                    Just (d:_)   -> (d,ehcenvVariant env)
+                    _            -> (ehcenvInstallRoot env,ehcenvVariant env)
+      ImmediateQuitOption_Meta_DirEnv
+        -> do { d <- ehcenvDir (mkEhcenvKey (Cfg.verFull Cfg.version) (fpathToStr $ ehcProgName opts) Cfg.ehcDefaultVariant)
+              ; putStrLn d
+              }
+-}
+      ImmediateQuitOption_Meta_Pkgdir_System
+        -> do { let d = Cfg.mkInstallPkgdirSystem opts
+              ; putStrLn d
+              }
+      ImmediateQuitOption_Meta_Pkgdir_User
+        -> do { let d = Cfg.mkInstallPkgdirUser opts
+              ; putStrLn d
+              }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+type FileSuffMp =
+  [( FileSuffix             -- suffix
+   , EHCompileUnitState     -- initial state
+   , Bool                   -- visible from commandline
+   )]
+
+-- | Allowed suffixes, order is significant.
+mkFileSuffMpHs :: EHCOpts -> FileSuffMp
+mkFileSuffMpHs opts
+  = [ ( Just "hs"  , ECUS_Haskell HSStart, True )
+    , ( Just "lhs" , ECUS_Haskell LHSStart, True )
+    , ( Just "eh"  , ECUS_Eh EHStart, True )
+    , ( Just "hi"  , ECUS_Haskell HIStart, False )
+    , ( Just Cfg.suffixDotlessBinaryCoreRun , ECUS_CoreRun CRRStartBinary, True )
+    , ( Just Cfg.suffixDotlessInputOutputTextualCore, ECUS_Core CRStartText, True   )
+    , ( Just Cfg.suffixDotlessInputOutputBinaryCore , ECUS_Core CRStartBinary, True )
+    , ( Just Cfg.suffixDotlessBinaryCore , ECUS_Core CRStartBinary, False )
+    ]
+    ++ (if targetIsOnUnixAndOrC (ehcOptTarget opts)
+        then [ ( Just "c"   , ECUS_C CStart, True )
+             , ( Just "o"   , ECUS_O OStart, True )
+             ]
+        else []
+       )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+-- Suffix map for empty suffix, defaults to .hs
+fileSuffMpHsNoSuff :: FileSuffMp
+fileSuffMpHsNoSuff
+  = [ ( Nothing  , ECUS_Haskell HSStart, False )
+    ]
+
+
+</pre>

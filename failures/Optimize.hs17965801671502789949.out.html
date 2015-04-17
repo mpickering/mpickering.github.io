@@ -1,0 +1,722 @@
+<a href="Ops.hs18723571251628320384.out.html">prev</a></br><a href="failures.html">home</a></br><a href="Opts.hs8355004762008416046.out.html">next</a></br></br><pre>29d28
+< {-# LINE 29 "src/ehc/Base/Optimize.chs" #-}
+36c35
+< {-# LINE 46 "src/ehc/Base/Optimize.chs" #-}
+---
+> 
+36a36
+> 
+36a37
+> 
+36a38
+> 
+36a39
+> 
+36a40
+> 
+36a41
+> 
+36a42
+> 
+36a43
+> 
+36a44
+> 
+36a45
+> 
+44c53
+< {-# LINE 72 "src/ehc/Base/Optimize.chs" #-}
+---
+> 
+44a54
+> 
+44a55
+> 
+44a56
+> 
+44a57
+> 
+44a58
+> 
+44a59
+> 
+44a60
+> 
+44a61
+> 
+44a62
+> 
+44a63
+> 
+44a64
+> 
+44a65
+> 
+44a66
+> 
+44a67
+> 
+44a68
+> 
+44a69
+> 
+44a70
+> 
+44a71
+> 
+50c77
+< {-# LINE 83 "src/ehc/Base/Optimize.chs" #-}
+---
+> 
+50a78
+> 
+50a79
+> 
+50a80
+> 
+50a81
+> 
+50a82
+> 
+58c90
+< {-# LINE 96 "src/ehc/Base/Optimize.chs" #-}
+---
+> 
+58a91
+> 
+58a92
+> 
+58a93
+> 
+58a94
+> 
+58a95
+> 
+63c100
+< {-# LINE 102 "src/ehc/Base/Optimize.chs" #-}
+---
+> 
+63a101
+> 
+67c105
+< {-# LINE 107 "src/ehc/Base/Optimize.chs" #-}
+---
+> 
+67a106
+> 
+76c115
+< {-# LINE 130 "src/ehc/Base/Optimize.chs" #-}
+---
+> 
+76a116
+> 
+76a117
+> 
+76a118
+> 
+76a119
+> 
+76a120
+> 
+76a121
+> 
+76a122
+> 
+76a123
+> 
+76a124
+> 
+76a125
+> 
+76a126
+> 
+76a127
+> 
+76a128
+> 
+76a129
+> 
+95c148
+< {-# LINE 154 "src/ehc/Base/Optimize.chs" #-}
+---
+> 
+95a149
+> 
+95a150
+> 
+95a151
+> 
+95a152
+> 
+95a153
+> 
+108c166
+< {-# LINE 176 "src/ehc/Base/Optimize.chs" #-}
+---
+> 
+108a167
+> 
+108a168
+> 
+108a169
+> 
+108a170
+> 
+108a171
+> 
+108a172
+> 
+108a173
+> 
+108a174
+> 
+108a175
+> 
+116c183
+< {-# LINE 185 "src/ehc/Base/Optimize.chs" #-}
+---
+> 
+116a184
+> 
+130c198
+< {-# LINE 214 "src/ehc/Base/Optimize.chs" #-}
+---
+> 
+130a199
+> 
+130a200
+> 
+130a201
+> 
+130a202
+> 
+130a203
+> 
+130a204
+> 
+130a205
+> 
+130a206
+> 
+130a207
+> 
+130a208
+> 
+130a209
+> 
+130a210
+> 
+130a211
+> 
+130a212
+> 
+130a213
+> 
+133c216
+< {-# LINE 218 "src/ehc/Base/Optimize.chs" #-}
+---
+> 
+133a217
+> 
+142c226
+< {-# LINE 232 "src/ehc/Base/Optimize.chs" #-}
+---
+> 
+142a227
+> 
+142a228
+> 
+142a229
+> 
+142a230
+> 
+142a231
+> 
+153c242
+< {-# LINE 248 "src/ehc/Base/Optimize.chs" #-}
+---
+> 
+153a243
+> 
+153a244
+> 
+153a245
+> 
+153a246
+> 
+153a247
+> 
+156c250
+< {-# LINE 252 "src/ehc/Base/Optimize.chs" #-}
+---
+> 
+156a251
+> 
+160c255
+< {-# LINE 257 "src/ehc/Base/Optimize.chs" #-}
+---
+> 
+160a256
+> 
+181a278
+> 
+</pre></br><h2>original</h2></br><pre>module UHC.Light.Compiler.Base.Optimize
+( Optimize (..)
+, allOptimizeMp
+, OptimizeOption (..)
+, OptimizeOptionValue (..)
+, OptimizeOptionMp
+, optimizeOptionMpSingleton
+, optimizeOptionStictnessAnalysisQuant
+, allOptimizeOptionMp
+, allOptimizeOptionMpAnyOption
+, OptimizationLevel (..)
+, OptimizationScope (..), allOptimScopeMp
+, optimizeRequiresClosure
+, OptimizeS
+, OptimizationLevelMp
+, optimizationLevelMp )
+where
+import UHC.Light.Compiler.Base.Common
+import qualified Data.Set as Set
+import qualified Data.Map as Map
+import Data.List
+import UHC.Util.AssocL
+import UHC.Util.Pretty
+import UHC.Util.Utils
+import UHC.Util.Binary
+import UHC.Util.Serialize
+
+
+{-# LINE 29 "src/ehc/Base/Optimize.chs" #-}
+-- | individual optimizations, unit of turning off/on. (Assumption) Names of alternatives must start with Optimize_
+data Optimize
+  = Optimize_GrinLocal                          -- Grin: local base optimizations
+  | Optimize_StrictnessAnalysis                 -- Core: relevance analysis
+  deriving (Eq,Ord,Enum,Show,Bounded)
+
+{-# LINE 46 "src/ehc/Base/Optimize.chs" #-}
+-- | All optimizations, mapped to from string representation derived via show.
+-- | See also Optimize def for assumption.
+allOptimizeMp :: Map.Map String Optimize
+allOptimizeMp
+  = Map.fromList [ (drop lenPrefix $ show o, o) | o <- [minBound .. maxBound] ]
+  where lenPrefix = length "Optimize_"
+
+{-# LINE 72 "src/ehc/Base/Optimize.chs" #-}
+-- | extra optimization specific flags/config/tuning/option/etc
+data OptimizeOption
+  = OptimizeOption_StrictnessAnalysisQuant
+  deriving (Eq,Ord,Show)
+
+{-# LINE 83 "src/ehc/Base/Optimize.chs" #-}
+-- | extra optimization specific flags/config/tuning/option/etc
+data OptimizeOptionValue
+  = OptimizeOptionValue_StrictnessAnalysis_NoQuant                  -- no quantification of relevance type
+  | OptimizeOptionValue_StrictnessAnalysis_Quant                    -- (default) quantification of relevance type
+  | OptimizeOptionValue_StrictnessAnalysis_QuantInstantiate         -- quant + later instantiation
+  deriving (Eq,Ord,Show,Enum)
+
+{-# LINE 96 "src/ehc/Base/Optimize.chs" #-}
+-- | the map which holds for each optimization additional (optional) configuration
+type OptimizeOptionMp' val = Map.Map Optimize (Map.Map OptimizeOption val)
+type OptimizeOptionMp      = OptimizeOptionMp' OptimizeOptionValue
+
+{-# LINE 102 "src/ehc/Base/Optimize.chs" #-}
+optimizeOptionMpSingleton :: Optimize -> OptimizeOption -> OptimizeOptionValue -> OptimizeOptionMp
+optimizeOptionMpSingleton o oo v = Map.singleton o (Map.singleton oo v)
+
+{-# LINE 107 "src/ehc/Base/Optimize.chs" #-}
+-- | quantification options related to strictness analysis
+optimizeOptionStictnessAnalysisQuant :: OptimizeOptionMp -> OptimizeOptionValue
+optimizeOptionStictnessAnalysisQuant m
+  = case mapLookup2 Optimize_StrictnessAnalysis OptimizeOption_StrictnessAnalysisQuant m of
+      Just oo -> maybe OptimizeOptionValue_StrictnessAnalysis_Quant id $ extr oo
+      _       ->       OptimizeOptionValue_StrictnessAnalysis_Quant
+  where extr = Just
+
+{-# LINE 130 "src/ehc/Base/Optimize.chs" #-}
+-- | All optimization options, map from optimize flag to allowed range of
+allOptimizeOptionMp
+  :: OptimizeOptionMp'
+       ( OptimizeOptionValue                            -- default
+       , (OptimizeOptionValue, OptimizeOptionValue)     -- min, max
+       )
+allOptimizeOptionMp
+  = Map.fromList $ assocLMapElt Map.fromList
+      [ ( Optimize_StrictnessAnalysis
+        , [ ( OptimizeOption_StrictnessAnalysisQuant
+            , ( OptimizeOptionValue_StrictnessAnalysis_Quant
+              , (OptimizeOptionValue_StrictnessAnalysis_NoQuant, OptimizeOptionValue_StrictnessAnalysis_QuantInstantiate)
+              )
+            )
+          ]
+        )
+      ]
+
+{-# LINE 154 "src/ehc/Base/Optimize.chs" #-}
+-- | Just get any optimize option (if available) with default
+allOptimizeOptionMpAnyOption :: Optimize -> (OptimizeOption, OptimizeOptionValue)
+allOptimizeOptionMpAnyOption o
+  = panicJust "allOptimizeOptionMpAnyOption"
+    $ do { om <- Map.lookup o allOptimizeOptionMp
+         ; if Map.null om
+           then panic ("allOptimizeOptionMpAnyOption: " ++ show o)
+           else do { let (oo,(dflt,_)) = Map.findMin om
+                   ; return (oo,dflt)
+                   }
+         }
+
+{-# LINE 176 "src/ehc/Base/Optimize.chs" #-}
+data OptimizationLevel
+  = OptimizationLevel_Off               -- no optimizations                 : -O0
+  | OptimizationLevel_Normal            -- easy and cheap optimizations     : -O1 (default)
+  | OptimizationLevel_Much              -- more and expensive optimizations : -O2
+  | OptimizationLevel_Full              -- throw everything in it           : -O3
+  deriving (Eq,Ord,Show,Enum,Bounded)
+
+{-# LINE 185 "src/ehc/Base/Optimize.chs" #-}
+-- | Scope of optimizations, increasingly more global
+data OptimizationScope
+  = OptimizationScope_PerModule         -- per module
+  | OptimizationScope_WholeCore         -- whole program, starting with Core
+  deriving (Eq,Ord,Enum,Bounded)
+
+instance Show OptimizationScope where
+  show OptimizationScope_PerModule = "permodule"
+  show OptimizationScope_WholeCore = "perwholecore"
+
+allOptimScopeMp :: Map.Map String OptimizationScope
+allOptimScopeMp = str2stMp
+
+{-# LINE 214 "src/ehc/Base/Optimize.chs" #-}
+type OptimizeRequiresMp = Map.Map Optimize OptimizeS
+
+{-# LINE 218 "src/ehc/Base/Optimize.chs" #-}
+optimizeRequiresMp :: OptimizeRequiresMp
+optimizeRequiresMp
+  = Map.map Set.fromList $ Map.fromList
+      [ ( Optimize_StrictnessAnalysis
+        , [  ]
+        )
+      ]
+
+{-# LINE 232 "src/ehc/Base/Optimize.chs" #-}
+-- | transitive closure of required optimizations
+optimizeRequiresClosure :: OptimizeS -> OptimizeS
+optimizeRequiresClosure os
+  = closes Set.empty os
+  where close o os
+          = closes (Set.insert o os)
+            $ Map.findWithDefault Set.empty o optimizeRequiresMp
+              `Set.difference` os
+        closes = Set.fold close
+
+{-# LINE 248 "src/ehc/Base/Optimize.chs" #-}
+type OptimizeS = Set.Set Optimize
+
+{-# LINE 252 "src/ehc/Base/Optimize.chs" #-}
+-- | mapping to group of optimizations
+type OptimizationLevelMp = Map.Map OptimizationLevel OptimizeS
+
+{-# LINE 257 "src/ehc/Base/Optimize.chs" #-}
+-- | map from level to optimizations, specified as increments relative to previous in Enum ordering of level
+optimizationLevelMp :: OptimizationLevelMp
+optimizationLevelMp
+  =   (\m -> fst $
+             foldl (\(m,s) (l,o) -> let s' = Set.union s o in (Map.insert l s' m, s'))
+                   (m, Set.empty)
+                   [ (l, Map.findWithDefault Set.empty l m) | l <- [minBound .. maxBound] ]
+      )
+    $ Map.map Set.fromList
+    $ Map.fromList
+    $ [ ( OptimizationLevel_Off
+        , [  ]
+        )
+      , ( OptimizationLevel_Much
+        , [  ]
+        )
+      , ( OptimizationLevel_Full
+        , [] -- [ Optimize_StrictnessAnalysis ]
+        )
+      ]
+
+</pre></br><h2>printed</h2></br><pre>module UHC.Light.Compiler.Base.Optimize
+( Optimize (..)
+, allOptimizeMp
+, OptimizeOption (..)
+, OptimizeOptionValue (..)
+, OptimizeOptionMp
+, optimizeOptionMpSingleton
+, optimizeOptionStictnessAnalysisQuant
+, allOptimizeOptionMp
+, allOptimizeOptionMpAnyOption
+, OptimizationLevel (..)
+, OptimizationScope (..), allOptimScopeMp
+, optimizeRequiresClosure
+, OptimizeS
+, OptimizationLevelMp
+, optimizationLevelMp )
+where
+import UHC.Light.Compiler.Base.Common
+import qualified Data.Set as Set
+import qualified Data.Map as Map
+import Data.List
+import UHC.Util.AssocL
+import UHC.Util.Pretty
+import UHC.Util.Utils
+import UHC.Util.Binary
+import UHC.Util.Serialize
+
+
+-- | individual optimizations, unit of turning off/on. (Assumption) Names of alternatives must start with Optimize_
+data Optimize
+  = Optimize_GrinLocal                          -- Grin: local base optimizations
+  | Optimize_StrictnessAnalysis                 -- Core: relevance analysis
+  deriving (Eq,Ord,Enum,Show,Bounded)
+
+
+
+
+
+
+
+
+
+
+
+
+-- | All optimizations, mapped to from string representation derived via show.
+-- | See also Optimize def for assumption.
+allOptimizeMp :: Map.Map String Optimize
+allOptimizeMp
+  = Map.fromList [ (drop lenPrefix $ show o, o) | o <- [minBound .. maxBound] ]
+  where lenPrefix = length "Optimize_"
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+-- | extra optimization specific flags/config/tuning/option/etc
+data OptimizeOption
+  = OptimizeOption_StrictnessAnalysisQuant
+  deriving (Eq,Ord,Show)
+
+
+
+
+
+
+
+-- | extra optimization specific flags/config/tuning/option/etc
+data OptimizeOptionValue
+  = OptimizeOptionValue_StrictnessAnalysis_NoQuant                  -- no quantification of relevance type
+  | OptimizeOptionValue_StrictnessAnalysis_Quant                    -- (default) quantification of relevance type
+  | OptimizeOptionValue_StrictnessAnalysis_QuantInstantiate         -- quant + later instantiation
+  deriving (Eq,Ord,Show,Enum)
+
+
+
+
+
+
+
+-- | the map which holds for each optimization additional (optional) configuration
+type OptimizeOptionMp' val = Map.Map Optimize (Map.Map OptimizeOption val)
+type OptimizeOptionMp      = OptimizeOptionMp' OptimizeOptionValue
+
+
+
+optimizeOptionMpSingleton :: Optimize -> OptimizeOption -> OptimizeOptionValue -> OptimizeOptionMp
+optimizeOptionMpSingleton o oo v = Map.singleton o (Map.singleton oo v)
+
+
+
+-- | quantification options related to strictness analysis
+optimizeOptionStictnessAnalysisQuant :: OptimizeOptionMp -> OptimizeOptionValue
+optimizeOptionStictnessAnalysisQuant m
+  = case mapLookup2 Optimize_StrictnessAnalysis OptimizeOption_StrictnessAnalysisQuant m of
+      Just oo -> maybe OptimizeOptionValue_StrictnessAnalysis_Quant id $ extr oo
+      _       ->       OptimizeOptionValue_StrictnessAnalysis_Quant
+  where extr = Just
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+-- | All optimization options, map from optimize flag to allowed range of
+allOptimizeOptionMp
+  :: OptimizeOptionMp'
+       ( OptimizeOptionValue                            -- default
+       , (OptimizeOptionValue, OptimizeOptionValue)     -- min, max
+       )
+allOptimizeOptionMp
+  = Map.fromList $ assocLMapElt Map.fromList
+      [ ( Optimize_StrictnessAnalysis
+        , [ ( OptimizeOption_StrictnessAnalysisQuant
+            , ( OptimizeOptionValue_StrictnessAnalysis_Quant
+              , (OptimizeOptionValue_StrictnessAnalysis_NoQuant, OptimizeOptionValue_StrictnessAnalysis_QuantInstantiate)
+              )
+            )
+          ]
+        )
+      ]
+
+
+
+
+
+
+
+-- | Just get any optimize option (if available) with default
+allOptimizeOptionMpAnyOption :: Optimize -> (OptimizeOption, OptimizeOptionValue)
+allOptimizeOptionMpAnyOption o
+  = panicJust "allOptimizeOptionMpAnyOption"
+    $ do { om <- Map.lookup o allOptimizeOptionMp
+         ; if Map.null om
+           then panic ("allOptimizeOptionMpAnyOption: " ++ show o)
+           else do { let (oo,(dflt,_)) = Map.findMin om
+                   ; return (oo,dflt)
+                   }
+         }
+
+
+
+
+
+
+
+
+
+
+
+data OptimizationLevel
+  = OptimizationLevel_Off               -- no optimizations                 : -O0
+  | OptimizationLevel_Normal            -- easy and cheap optimizations     : -O1 (default)
+  | OptimizationLevel_Much              -- more and expensive optimizations : -O2
+  | OptimizationLevel_Full              -- throw everything in it           : -O3
+  deriving (Eq,Ord,Show,Enum,Bounded)
+
+
+
+-- | Scope of optimizations, increasingly more global
+data OptimizationScope
+  = OptimizationScope_PerModule         -- per module
+  | OptimizationScope_WholeCore         -- whole program, starting with Core
+  deriving (Eq,Ord,Enum,Bounded)
+
+instance Show OptimizationScope where
+  show OptimizationScope_PerModule = "permodule"
+  show OptimizationScope_WholeCore = "perwholecore"
+
+allOptimScopeMp :: Map.Map String OptimizationScope
+allOptimScopeMp = str2stMp
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+type OptimizeRequiresMp = Map.Map Optimize OptimizeS
+
+
+
+optimizeRequiresMp :: OptimizeRequiresMp
+optimizeRequiresMp
+  = Map.map Set.fromList $ Map.fromList
+      [ ( Optimize_StrictnessAnalysis
+        , [  ]
+        )
+      ]
+
+
+
+
+
+
+
+-- | transitive closure of required optimizations
+optimizeRequiresClosure :: OptimizeS -> OptimizeS
+optimizeRequiresClosure os
+  = closes Set.empty os
+  where close o os
+          = closes (Set.insert o os)
+            $ Map.findWithDefault Set.empty o optimizeRequiresMp
+              `Set.difference` os
+        closes = Set.fold close
+
+
+
+
+
+
+
+type OptimizeS = Set.Set Optimize
+
+
+
+-- | mapping to group of optimizations
+type OptimizationLevelMp = Map.Map OptimizationLevel OptimizeS
+
+
+
+-- | map from level to optimizations, specified as increments relative to previous in Enum ordering of level
+optimizationLevelMp :: OptimizationLevelMp
+optimizationLevelMp
+  =   (\m -> fst $
+             foldl (\(m,s) (l,o) -> let s' = Set.union s o in (Map.insert l s' m, s'))
+                   (m, Set.empty)
+                   [ (l, Map.findWithDefault Set.empty l m) | l <- [minBound .. maxBound] ]
+      )
+    $ Map.map Set.fromList
+    $ Map.fromList
+    $ [ ( OptimizationLevel_Off
+        , [  ]
+        )
+      , ( OptimizationLevel_Much
+        , [  ]
+        )
+      , ( OptimizationLevel_Full
+        , [] -- [ Optimize_StrictnessAnalysis ]
+        )
+      ]
+
+
+</pre>
