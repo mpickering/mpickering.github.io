@@ -1,0 +1,296 @@
+<a href="Bug294.hs178448449274243042.out.html">prev</a></br><a href="failures.html">home</a></br><a href="Char.hs144128232716531729.out.html">next</a></br></br><pre>1c1
+< #!/usr/bin/env runhaskell
+---
+> 
+144a145
+> 
+</pre></br><h2>original</h2></br><pre>#!/usr/bin/env runhaskell
+-- Copyright (c) 2014 Sebastian Wiesner <swiesner@lunaryorn.com>
+
+-- Permission is hereby granted, free of charge, to any person obtaining a copy
+-- of this software and associated documentation files (the "Software"), to deal
+-- in the Software without restriction, including without limitation the rights
+-- to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+-- copies of the Software, and to permit persons to whom the Software is
+-- furnished to do so, subject to the following conditions:
+
+-- The above copyright notice and this permission notice shall be included in all
+-- copies or substantial portions of the Software.
+
+-- THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+-- IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+-- FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+-- AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+-- LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+-- OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+-- SOFTWARE.
+
+{-# LANGUAGE OverloadedStrings #-}
+
+module Main (main) where
+
+import           Codec.Archive.Zip (Archive,ZipOption(OptLocation),
+                                    emptyArchive,fromArchive,
+                                    addFilesToArchive)
+import           Control.Exception (catch,throwIO)
+import           Control.Monad (liftM)
+import qualified Data.ByteString.Lazy as LBS
+import           Data.Char (isSpace)
+import           Data.Default (Default(def))
+import           Data.List (intercalate,foldl')
+import           Data.List.Split (splitOn)
+import           Data.Maybe (fromMaybe)
+import           Data.Version (showVersion)
+import           Development.Shake
+import           Development.Shake.FilePath ((</>))
+import           Distribution.Package (PackageName(PackageName),
+                                       pkgName,pkgVersion)
+import           Distribution.PackageDescription (packageDescription,package)
+import           Distribution.PackageDescription.Parse (readPackageDescription)
+import           Distribution.Simple.BuildPaths (defaultDistPref)
+import           Distribution.System (OS(OSX,Linux),buildOS)
+import           Distribution.Verbosity (silent)
+import           System.Console.GetOpt (OptDescr(Option),ArgDescr(ReqArg))
+import           System.Directory (getHomeDirectory,removeFile)
+import           System.Environment (unsetEnv)
+import           System.IO.Error (isDoesNotExistError)
+import           System.Info (arch)
+import           System.Process (readProcess)
+
+getOSXVersion :: IO String
+getOSXVersion = liftM (takeWhile (not.isSpace))
+                      (readProcess "sw_vers" ["-productVersion"] "")
+
+getPlatformInfo :: IO String
+getPlatformInfo = case buildOS of
+  Linux -> return ("linux-" ++ arch)
+  OSX -> do
+    version <- getOSXVersion
+    let major = intercalate "." (take 2 (splitOn "." version))
+    return ("osx-" ++ major)
+  os -> ioError (userError ("Unsupported operating system " ++ show os))
+
+archiveName :: String -> String -> String -> FilePath
+archiveName name version platform =
+  intercalate "-" [name, version, platform] ++ ".zip"
+
+writeArchive' :: FilePath -> Archive -> Action ()
+writeArchive' dest archive = do
+  liftIO (LBS.writeFile dest (fromArchive archive))
+  trackWrite [dest]
+
+addToArchive' :: FilePath -> String -> Archive -> Action Archive
+addToArchive' source name archive = do
+  need [source]
+  liftIO (addFilesToArchive [OptLocation name False] archive [source])
+
+data Flags = Prefix String deriving (Eq, Show)
+
+confFlags :: [OptDescr (Either String Flags)]
+confFlags = [Option [] ["--prefix" ] (ReqArg (Right . Prefix) "PREFIX")
+         "Installation prefix (default ~)"]
+
+data BuildConfig = BuildConfig { confPrefix :: Maybe String }
+
+instance Default BuildConfig where
+  def = BuildConfig Nothing
+
+addFlags :: BuildConfig -> [Flags] -> BuildConfig
+addFlags = foldl' addFlag
+  where addFlag conf (Prefix p) = conf{confPrefix = Just p}
+
+handleExists :: IOError -> IO ()
+handleExists e | isDoesNotExistError e = return ()
+               | otherwise = throwIO e
+
+
+main :: IO ()
+main = do
+  -- We need to get out of cabal exec, because cabal build doesn't like it
+  unsetEnv "GHC_PACKAGE_PATH"
+  -- Read the package description
+  desc <- readPackageDescription silent "marmalade-upload.cabal"
+  -- Obtain platform information
+  platform <- getPlatformInfo
+  homeDir <- getHomeDirectory
+  -- Start Shake to process our rules
+  let opts = shakeOptions{shakeFiles=defaultDistPref </> "shake"}
+  shakeArgsWith opts confFlags $ \flags targets -> return $ Just $ do
+    want (if null targets then ["build"] else targets)
+    let config = addFlags def flags
+    let prefix = fromMaybe homeDir (confPrefix config)
+
+    -- Extract meta information from the package description
+    let pkgId = package (packageDescription desc)
+    let (PackageName name) = pkgName pkgId
+    let bin = defaultDistPref </> "build" </> name </> name
+
+    -- Build the binary.  Use a phony rule because cabal has its own dependency
+    -- tracking anyway
+    "build" ~> command_ [] "cabal" ["build"]
+    bin ~> need ["build"]
+
+    -- Install and uninstall the binary
+    let binInstall = prefix </> "bin" </> name
+    "install" ~> need [binInstall]
+    binInstall *> copyFile' bin
+
+    "uninstall" ~> do
+      liftIO (removeFile binInstall `catch` handleExists)
+      putLoud ("Removing " ++ binInstall)
+
+    -- Create binary archives for releases
+    let binDistFile = defaultDistPref </>
+                      archiveName name (showVersion (pkgVersion pkgId)) platform
+
+    "bindist" ~> need [binDistFile]
+
+    binDistFile *> \dest -> do
+      archive <- addToArchive' bin name emptyArchive
+      writeArchive' dest archive
+</pre></br><h2>printed</h2></br><pre>
+-- Copyright (c) 2014 Sebastian Wiesner <swiesner@lunaryorn.com>
+
+-- Permission is hereby granted, free of charge, to any person obtaining a copy
+-- of this software and associated documentation files (the "Software"), to deal
+-- in the Software without restriction, including without limitation the rights
+-- to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+-- copies of the Software, and to permit persons to whom the Software is
+-- furnished to do so, subject to the following conditions:
+
+-- The above copyright notice and this permission notice shall be included in all
+-- copies or substantial portions of the Software.
+
+-- THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+-- IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+-- FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+-- AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+-- LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+-- OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+-- SOFTWARE.
+
+{-# LANGUAGE OverloadedStrings #-}
+
+module Main (main) where
+
+import           Codec.Archive.Zip (Archive,ZipOption(OptLocation),
+                                    emptyArchive,fromArchive,
+                                    addFilesToArchive)
+import           Control.Exception (catch,throwIO)
+import           Control.Monad (liftM)
+import qualified Data.ByteString.Lazy as LBS
+import           Data.Char (isSpace)
+import           Data.Default (Default(def))
+import           Data.List (intercalate,foldl')
+import           Data.List.Split (splitOn)
+import           Data.Maybe (fromMaybe)
+import           Data.Version (showVersion)
+import           Development.Shake
+import           Development.Shake.FilePath ((</>))
+import           Distribution.Package (PackageName(PackageName),
+                                       pkgName,pkgVersion)
+import           Distribution.PackageDescription (packageDescription,package)
+import           Distribution.PackageDescription.Parse (readPackageDescription)
+import           Distribution.Simple.BuildPaths (defaultDistPref)
+import           Distribution.System (OS(OSX,Linux),buildOS)
+import           Distribution.Verbosity (silent)
+import           System.Console.GetOpt (OptDescr(Option),ArgDescr(ReqArg))
+import           System.Directory (getHomeDirectory,removeFile)
+import           System.Environment (unsetEnv)
+import           System.IO.Error (isDoesNotExistError)
+import           System.Info (arch)
+import           System.Process (readProcess)
+
+getOSXVersion :: IO String
+getOSXVersion = liftM (takeWhile (not.isSpace))
+                      (readProcess "sw_vers" ["-productVersion"] "")
+
+getPlatformInfo :: IO String
+getPlatformInfo = case buildOS of
+  Linux -> return ("linux-" ++ arch)
+  OSX -> do
+    version <- getOSXVersion
+    let major = intercalate "." (take 2 (splitOn "." version))
+    return ("osx-" ++ major)
+  os -> ioError (userError ("Unsupported operating system " ++ show os))
+
+archiveName :: String -> String -> String -> FilePath
+archiveName name version platform =
+  intercalate "-" [name, version, platform] ++ ".zip"
+
+writeArchive' :: FilePath -> Archive -> Action ()
+writeArchive' dest archive = do
+  liftIO (LBS.writeFile dest (fromArchive archive))
+  trackWrite [dest]
+
+addToArchive' :: FilePath -> String -> Archive -> Action Archive
+addToArchive' source name archive = do
+  need [source]
+  liftIO (addFilesToArchive [OptLocation name False] archive [source])
+
+data Flags = Prefix String deriving (Eq, Show)
+
+confFlags :: [OptDescr (Either String Flags)]
+confFlags = [Option [] ["--prefix" ] (ReqArg (Right . Prefix) "PREFIX")
+         "Installation prefix (default ~)"]
+
+data BuildConfig = BuildConfig { confPrefix :: Maybe String }
+
+instance Default BuildConfig where
+  def = BuildConfig Nothing
+
+addFlags :: BuildConfig -> [Flags] -> BuildConfig
+addFlags = foldl' addFlag
+  where addFlag conf (Prefix p) = conf{confPrefix = Just p}
+
+handleExists :: IOError -> IO ()
+handleExists e | isDoesNotExistError e = return ()
+               | otherwise = throwIO e
+
+
+main :: IO ()
+main = do
+  -- We need to get out of cabal exec, because cabal build doesn't like it
+  unsetEnv "GHC_PACKAGE_PATH"
+  -- Read the package description
+  desc <- readPackageDescription silent "marmalade-upload.cabal"
+  -- Obtain platform information
+  platform <- getPlatformInfo
+  homeDir <- getHomeDirectory
+  -- Start Shake to process our rules
+  let opts = shakeOptions{shakeFiles=defaultDistPref </> "shake"}
+  shakeArgsWith opts confFlags $ \flags targets -> return $ Just $ do
+    want (if null targets then ["build"] else targets)
+    let config = addFlags def flags
+    let prefix = fromMaybe homeDir (confPrefix config)
+
+    -- Extract meta information from the package description
+    let pkgId = package (packageDescription desc)
+    let (PackageName name) = pkgName pkgId
+    let bin = defaultDistPref </> "build" </> name </> name
+
+    -- Build the binary.  Use a phony rule because cabal has its own dependency
+    -- tracking anyway
+    "build" ~> command_ [] "cabal" ["build"]
+    bin ~> need ["build"]
+
+    -- Install and uninstall the binary
+    let binInstall = prefix </> "bin" </> name
+    "install" ~> need [binInstall]
+    binInstall *> copyFile' bin
+
+    "uninstall" ~> do
+      liftIO (removeFile binInstall `catch` handleExists)
+      putLoud ("Removing " ++ binInstall)
+
+    -- Create binary archives for releases
+    let binDistFile = defaultDistPref </>
+                      archiveName name (showVersion (pkgVersion pkgId)) platform
+
+    "bindist" ~> need [binDistFile]
+
+    binDistFile *> \dest -> do
+      archive <- addToArchive' bin name emptyArchive
+      writeArchive' dest archive
+
+</pre>

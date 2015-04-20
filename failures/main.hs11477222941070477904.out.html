@@ -1,0 +1,300 @@
+<a href="MACCatcher.hs578354438892053144.out.html">prev</a></br><a href="failures.html">home</a></br><a href="Main.hs11538515011004844897.out.html">next</a></br></br><pre>1c1
+< #!/usr/bin/env runhaskell
+---
+> 
+146a147
+> 
+</pre></br><h2>original</h2></br><pre>#!/usr/bin/env runhaskell
+import Shellish( shellish, rm_rf )
+import Control.Arrow ( first, second )
+import System.Console.CmdArgs
+import System.Cmd ( system )
+import System.Exit
+import System.Directory
+import System.IO
+import Control.Monad
+import Control.Monad.Trans
+import Benchmark
+import Config (Config(Get,Run,Dist,Report))
+import Definitions
+import qualified Config as C
+import Report
+import Run
+import Standard
+import Dist ( createTarball )
+import Download
+import Data.List
+import Data.Version ( showVersion )
+import Paths_darcs_benchmark
+import Text.JSON
+import Data.IORef
+
+help :: String
+help = unlines [ "darcs-benchmark " ++ showVersion version ++ ": run standard darcs benchmarks"
+               , ""
+               , "Please either specify the repositories and binaries to run on like this:"
+               , "$ darcs-benchmark run <binary> [binary] [/ [repository] [repository]]"
+               , ""
+               , "or alternatively, to run on all available repos:"
+               , "$ darcs-benchmark run <binary> [binary]"
+               , ""
+               , "You can also create a file called 'config' in the working directory."
+               , "Put two lines in it, one with list of binaries, one with list of repos:"
+               , ""
+               , "binary binary binary"
+               , "repo repo repo"
+               , ""
+               , "(again, if the second line is not there, we run on all available repos)"
+               , ""
+               , "Thank you for benchmarking darcs!" ]
+
+known_repos :: [String]
+known_repos = [ "tabular", "tahoe-lafs", "darcs", "ghc-hashed" ]
+
+download_repos :: [String] -> IO ()
+download_repos r = forM_ (if null r then known_repos else r) download
+
+doVMFlush :: FilePath -> IO ()
+doVMFlush path = do system "sudo sh -c 'echo 3 > /proc/sys/vm/drop_caches'"
+                    system $ path ++ " --version > /dev/null"
+                    return ()
+
+config :: [TestRepo] -> C.Config -> IO ([(TestRepo,[Benchmark ()])], [String])
+config allrepos cfg = do
+  case cfg of
+   Get {} -> do
+      download_repos (C.repos cfg)
+      exitWith ExitSuccess
+   Dist {} -> do
+      createTarball (C.repo cfg)
+      exitWith ExitSuccess
+   Report {} ->  do
+      shellish printCumulativeReport
+      exitWith ExitSuccess
+   Run {} -> do
+     haveConf <- doesFileExist "config"
+     conf <- if haveConf then lines `fmap` readFile "config"
+                         else return []
+     let confrepos = if length conf > 1 then (words $ conf !! 1) else []
+         confbins = if length conf > 0 then words $ conf !! 0 else []
+         (bins,repos) = second (drop 1) $ break (== "/") (C.extra cfg)
+         userepos = if null repos then confrepos else repos
+         usebins = if null bins then confbins else bins
+         usetests' = if C.fast cfg then filter (\b -> speed b == FastB) benchmarks else benchmarks
+         usetests = case C.only cfg of
+                     [] -> usetests'
+                     os -> filter (\b -> any (\o -> o `isInfixOf` show b) os) usetests'
+     let setParams p = p { pFlush = if C.cold cfg then Just doVMFlush else Nothing }
+     modifyIORef global (first setParams)
+     filterTests <- if C.converge cfg
+                       then do pstampPath <- (paramStampPath . fst) `fmap` readIORef global
+                               ts <- readTimingsForParams pstampPath
+                               return $ \r bs -> case lookup (trCoreName r) (sufficientData ts) of
+                                                   Nothing -> bs
+                                                   Just xs -> filter (\b -> not (description b `elem` xs)) bs
+                       else return (const id)
+     when (null usebins) $ do
+       hPutStrLn stderr "Please specify at least one darcs binary to benchmark"
+       exitWith (ExitFailure 1)
+     let finalrepos = if null userepos then allrepos
+                         else filter (\r -> any (matchRepo r) userepos) allrepos
+         finalbins  = usebins
+     return ( map (\r -> (r, filterTests r usetests)) finalrepos
+            , finalbins
+            )
+ where
+  dropPrefix p x = if p `isPrefixOf` x then drop (length p) x else x
+  matchRepo tr x = trName tr == x || dropPrefix "repo." (trPath tr) == x
+
+testRepoFromDir :: String -> TestRepo
+testRepoFromDir d = TestRepo n n d Nothing [toVariant DefaultVariant] []
+ where
+  n = drop (length "repo.") d
+
+main :: IO ()
+main = do
+    cfg <- cmdArgs help C.defaultConfig
+    allrepos <- do listing <- getDirectoryContents "."
+                   configs <- mapM readC $
+                                  filter ((/='~') . last) $
+                                  filter ("config." `isPrefixOf`) listing
+                   let other = [ testRepoFromDir d | d <- listing
+                                                   , "repo." `isPrefixOf` d
+                                                   , d `notElem` map trPath configs ]
+                   return (configs ++ other)
+    (reposNtests, binaries') <- config allrepos cfg
+    let repos = map fst reposNtests
+    unless (null $ repos \\ allrepos) $ do
+         let name r = intercalate ", " $ map trName r
+         putStrLn $ "Missing repositories: " ++ name (repos \\ allrepos)
+         exitWith $ ExitFailure 2
+    binaries <- forM binaries' check_vcs
+    mapM_ appendBinary binaries
+    when (null repos) $ do
+         putStrLn $ "Oops, no repositories! Consider doing a darcs-benchmark get."
+         putStrLn $ "(Alternatively, check that you are in the right directory.)"
+         exitWith $ ExitFailure 3
+    shellish $ do rm_rf "_playground"
+                  -- for setting up variants, we probably want the latest/greatest
+                  -- version of darcs in case the variant involves some new feature
+                  case reverse binaries of
+                    []    -> return ()
+                    (b:_) -> setupVariants repos b
+                  res <- benchMany reposNtests binaries
+                  if C.dump cfg
+                     then liftIO $ print res
+                     else renderMany res
+ where
+  readC f =
+   do mj <- (resultToEither . decode) `fmap` readFile f
+      case mj of
+        Left e  -> fail $ "Could not read " ++ f ++ ": " ++ show e
+        Right j -> return $ j
+</pre></br><h2>printed</h2></br><pre>
+import Shellish( shellish, rm_rf )
+import Control.Arrow ( first, second )
+import System.Console.CmdArgs
+import System.Cmd ( system )
+import System.Exit
+import System.Directory
+import System.IO
+import Control.Monad
+import Control.Monad.Trans
+import Benchmark
+import Config (Config(Get,Run,Dist,Report))
+import Definitions
+import qualified Config as C
+import Report
+import Run
+import Standard
+import Dist ( createTarball )
+import Download
+import Data.List
+import Data.Version ( showVersion )
+import Paths_darcs_benchmark
+import Text.JSON
+import Data.IORef
+
+help :: String
+help = unlines [ "darcs-benchmark " ++ showVersion version ++ ": run standard darcs benchmarks"
+               , ""
+               , "Please either specify the repositories and binaries to run on like this:"
+               , "$ darcs-benchmark run <binary> [binary] [/ [repository] [repository]]"
+               , ""
+               , "or alternatively, to run on all available repos:"
+               , "$ darcs-benchmark run <binary> [binary]"
+               , ""
+               , "You can also create a file called 'config' in the working directory."
+               , "Put two lines in it, one with list of binaries, one with list of repos:"
+               , ""
+               , "binary binary binary"
+               , "repo repo repo"
+               , ""
+               , "(again, if the second line is not there, we run on all available repos)"
+               , ""
+               , "Thank you for benchmarking darcs!" ]
+
+known_repos :: [String]
+known_repos = [ "tabular", "tahoe-lafs", "darcs", "ghc-hashed" ]
+
+download_repos :: [String] -> IO ()
+download_repos r = forM_ (if null r then known_repos else r) download
+
+doVMFlush :: FilePath -> IO ()
+doVMFlush path = do system "sudo sh -c 'echo 3 > /proc/sys/vm/drop_caches'"
+                    system $ path ++ " --version > /dev/null"
+                    return ()
+
+config :: [TestRepo] -> C.Config -> IO ([(TestRepo,[Benchmark ()])], [String])
+config allrepos cfg = do
+  case cfg of
+   Get {} -> do
+      download_repos (C.repos cfg)
+      exitWith ExitSuccess
+   Dist {} -> do
+      createTarball (C.repo cfg)
+      exitWith ExitSuccess
+   Report {} ->  do
+      shellish printCumulativeReport
+      exitWith ExitSuccess
+   Run {} -> do
+     haveConf <- doesFileExist "config"
+     conf <- if haveConf then lines `fmap` readFile "config"
+                         else return []
+     let confrepos = if length conf > 1 then (words $ conf !! 1) else []
+         confbins = if length conf > 0 then words $ conf !! 0 else []
+         (bins,repos) = second (drop 1) $ break (== "/") (C.extra cfg)
+         userepos = if null repos then confrepos else repos
+         usebins = if null bins then confbins else bins
+         usetests' = if C.fast cfg then filter (\b -> speed b == FastB) benchmarks else benchmarks
+         usetests = case C.only cfg of
+                     [] -> usetests'
+                     os -> filter (\b -> any (\o -> o `isInfixOf` show b) os) usetests'
+     let setParams p = p { pFlush = if C.cold cfg then Just doVMFlush else Nothing }
+     modifyIORef global (first setParams)
+     filterTests <- if C.converge cfg
+                       then do pstampPath <- (paramStampPath . fst) `fmap` readIORef global
+                               ts <- readTimingsForParams pstampPath
+                               return $ \r bs -> case lookup (trCoreName r) (sufficientData ts) of
+                                                   Nothing -> bs
+                                                   Just xs -> filter (\b -> not (description b `elem` xs)) bs
+                       else return (const id)
+     when (null usebins) $ do
+       hPutStrLn stderr "Please specify at least one darcs binary to benchmark"
+       exitWith (ExitFailure 1)
+     let finalrepos = if null userepos then allrepos
+                         else filter (\r -> any (matchRepo r) userepos) allrepos
+         finalbins  = usebins
+     return ( map (\r -> (r, filterTests r usetests)) finalrepos
+            , finalbins
+            )
+ where
+  dropPrefix p x = if p `isPrefixOf` x then drop (length p) x else x
+  matchRepo tr x = trName tr == x || dropPrefix "repo." (trPath tr) == x
+
+testRepoFromDir :: String -> TestRepo
+testRepoFromDir d = TestRepo n n d Nothing [toVariant DefaultVariant] []
+ where
+  n = drop (length "repo.") d
+
+main :: IO ()
+main = do
+    cfg <- cmdArgs help C.defaultConfig
+    allrepos <- do listing <- getDirectoryContents "."
+                   configs <- mapM readC $
+                                  filter ((/='~') . last) $
+                                  filter ("config." `isPrefixOf`) listing
+                   let other = [ testRepoFromDir d | d <- listing
+                                                   , "repo." `isPrefixOf` d
+                                                   , d `notElem` map trPath configs ]
+                   return (configs ++ other)
+    (reposNtests, binaries') <- config allrepos cfg
+    let repos = map fst reposNtests
+    unless (null $ repos \\ allrepos) $ do
+         let name r = intercalate ", " $ map trName r
+         putStrLn $ "Missing repositories: " ++ name (repos \\ allrepos)
+         exitWith $ ExitFailure 2
+    binaries <- forM binaries' check_vcs
+    mapM_ appendBinary binaries
+    when (null repos) $ do
+         putStrLn $ "Oops, no repositories! Consider doing a darcs-benchmark get."
+         putStrLn $ "(Alternatively, check that you are in the right directory.)"
+         exitWith $ ExitFailure 3
+    shellish $ do rm_rf "_playground"
+                  -- for setting up variants, we probably want the latest/greatest
+                  -- version of darcs in case the variant involves some new feature
+                  case reverse binaries of
+                    []    -> return ()
+                    (b:_) -> setupVariants repos b
+                  res <- benchMany reposNtests binaries
+                  if C.dump cfg
+                     then liftIO $ print res
+                     else renderMany res
+ where
+  readC f =
+   do mj <- (resultToEither . decode) `fmap` readFile f
+      case mj of
+        Left e  -> fail $ "Could not read " ++ f ++ ": " ++ show e
+        Right j -> return $ j
+
+</pre>
