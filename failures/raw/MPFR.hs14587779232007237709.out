@@ -1,0 +1,626 @@
+{-# LANGUAGE MagicHash, CPP #-}
+
+{-|
+    Module      :  Data.Number.MPFR
+    Description :  Pure interface to the MPFR library.
+    Copyright   :  (c) Aleš Bizjak
+    License     :  BSD3
+
+    Maintainer  :  mikkonecny@gmail.com
+    Stability   :  experimental
+    Portability :  non-portable
+
+This module exports a pure interface to the MPFR library functions. Functions
+return new 'MPFR' structures instead of modifying existing ones and so all
+functions which produce a new MPFR structure take one more parameter than
+their original @C@ counterparts. This parameter, 'Precision', is the precision
+of the resulting 'MPFR'.
+
+This is naturally slower than modifying in-place, especially when dealing
+with lower precisions, so a \"mutable\" interface is provided in
+"Data.Number.MPFR.Mutable" module.
+
+
+/Naming conventions/
+
+    - functions ending with _ (underscore) usually return a pair @('MPFR', 'Int')@, where
+      'Int' is a return value of a corresponding @mpfr_@ function. See the MPFR manual for
+      a description of return values.
+
+    - the same functions without the _ return just the 'MPFR'.
+
+    - @mpfr_@ prefix in functions is removed
+
+    - @_ui@ and @ui_@ in function becomes @w@ (stands for 'Word').
+      For example @mpfr_sub_ui@ becomes @'subw'@ and @mpfr_ui_sub@ becomes 'wsub'.
+
+    - @si_@ and @_si@ in functions becomes @i@ (stands for 'Int').
+      For example @mpfr_sub_si@ becomes @'subi'@ and @mpfr_si_sub@ becomes 'isub'.
+
+    - comparison functions which have @_p@ appended loose it.
+      For example @mpfr_less_p@ becomes @'less'@.
+
+/Instances/
+
+    [@'Eq'@]
+
+        - NaN \/= NaN,
+
+        - Infinity = Infinity,
+
+        - \-Infinity = -Infinity
+
+        - otherwise normal comparison
+
+
+    [@'Ord'@]
+
+        - compare NaN _ = 'GT'
+
+        - compare _ NaN = 'GT'
+
+        - infinity < _ = 'False'
+
+        - \-infinity > _ = 'False'
+
+        - NaN [\<,\>,\>=,<=] _ = 'False'
+
+This mimics the behaviour of built in Haskell 'Float' and 'Double'.
+
+If you need instances of numeric typeclasses import one of the
+Data.Number.MPFR.Instances.* modules.
+-}
+
+module Data.Number.MPFR (
+         RoundMode (Near, Up, Down, Zero),
+         MPFR, Precision(), Exp, MpSize,
+         -- * Assignment functions
+         -- | See <http://www.mpfr.org/mpfr-current/mpfr.html#Assignment-Functions>
+         --  documentation on particular functions.
+         module Data.Number.MPFR.Assignment,
+         -- * Conversion functions
+         -- |  See <http://www.mpfr.org/mpfr-current/mpfr.html#Conversion-Functions>
+         --  documentation on particular functions.
+         module Data.Number.MPFR.Conversion,
+         -- * Basic arithmetic functions
+         -- |  For documentation on particular functions see
+         -- <http://www.mpfr.org/mpfr-current/mpfr.html#Basic-Arithmetic-Functions>.
+         module Data.Number.MPFR.Arithmetic,
+         -- * Comparison functions
+         -- | For documentation on particular functions see
+         -- <http://www.mpfr.org/mpfr-current/mpfr.html#Comparison-Functions>
+         module Data.Number.MPFR.Comparison,
+         -- * Special functions
+         -- | For documentation on particular functions see
+         -- <http://www.mpfr.org/mpfr-current/mpfr.html#Special-Functions>.
+
+         module Data.Number.MPFR.Special,
+         -- * Integer related functions
+         -- | For documentation on particular functions see
+         -- <http://www.mpfr.org/mpfr-chttp://www.mpfr.org/mpfr-current/mpfr.html#Integer-Related-Functions>
+         module Data.Number.MPFR.Integer,
+         -- * Miscellaneous functions
+         -- |For documentation on particular functions see
+         -- <http://www.mpfr.org/mpfr-current/mpfr.html#Miscellaneous-Functions>.
+         module Data.Number.MPFR.Misc
+) where
+
+import Data.Number.MPFR.Assignment
+import Data.Number.MPFR.Conversion
+import Data.Number.MPFR.Arithmetic
+import Data.Number.MPFR.Comparison
+import Data.Number.MPFR.Special
+import Data.Number.MPFR.Integer
+import Data.Number.MPFR.Misc
+
+import Data.Number.MPFR.Internal
+
+{-
+
+import GHC.Integer.Internals
+
+import GHC.Exts
+
+instance Num MPFR where
+    d + d'        = add Zero (addPrec d d') d d'
+    d - d'        = sub Zero (addPrec d d') d d'
+    d * d'        = mul Zero (getPrec d + getPrec d') d d'
+    negate d      = neg Zero (getPrec d) d
+    abs d         = absD Zero (getPrec d) d
+    signum        = fromInt Zero minPrec . fromMaybe (-1) . sgn
+    fromInteger (S# i) = fromInt Zero minPrec (I# i)
+    fromInteger i@(J# n _) = fromIntegerA Zero (fromIntegral . abs $ I# n * bitsPerIntegerLimb) i
+
+addPrec       :: MPFR -> MPFR -> Precision
+addPrec d1 d2 = fromIntegral (max (p1 + e1 - e3) (p2 + e2 - e3)) + 1
+                where e1 = if d1 == 0 then 0 else getExp d1
+                      e2 = if d2 == 0 then 0 else getExp d2
+                      p1 = fromIntegral $ getPrec d1
+                      p2 = fromIntegral $ getPrec d2
+                      e3 = min e1 e2
+
+instance Real MPFR where
+    toRational d = n % 2 ^ e
+        where (n', e') = decompose d
+              (n, e) = if e' >= 0 then ((n' * 2 ^ e'), 0)
+                         else (n', - e')
+
+-}
+
+==============
+../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs
+==============
+lengths:(5144,5180)
+
+==============
+
+({ ../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:1:1 }
+ Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((AnnComment DComment (DP (0,0),DP (0,31)) "{-# LANGUAGE MagicHash, CPP #-}" Nothing),DP (0,0)),((AnnComment DComment (DP (2,1),DP (71,3)) "{-|\n    Module      :  Data.Number.MPFR\n    Description :  Pure interface to the MPFR library.\n    Copyright   :  (c) Ale\353 Bizjak\n    License     :  BSD3\n\n    Maintainer  :  mikkonecny@gmail.com\n    Stability   :  experimental\n    Portability :  non-portable\n\nThis module exports a pure interface to the MPFR library functions. Functions\nreturn new 'MPFR' structures instead of modifying existing ones and so all\nfunctions which produce a new MPFR structure take one more parameter than\ntheir original @C@ counterparts. This parameter, 'Precision', is the precision\nof the resulting 'MPFR'.\n\nThis is naturally slower than modifying in-place, especially when dealing\nwith lower precisions, so a \\\"mutable\\\" interface is provided in\n\"Data.Number.MPFR.Mutable\" module.\n\n\n/Naming conventions/\n\n    - functions ending with _ (underscore) usually return a pair @('MPFR', 'Int')@, where\n      'Int' is a return value of a corresponding @mpfr_@ function. See the MPFR manual for\n      a description of return values.\n\n    - the same functions without the _ return just the 'MPFR'.\n\n    - @mpfr_@ prefix in functions is removed\n\n    - @_ui@ and @ui_@ in function becomes @w@ (stands for 'Word').\n      For example @mpfr_sub_ui@ becomes @'subw'@ and @mpfr_ui_sub@ becomes 'wsub'.\n\n    - @si_@ and @_si@ in functions becomes @i@ (stands for 'Int').\n      For example @mpfr_sub_si@ becomes @'subi'@ and @mpfr_si_sub@ becomes 'isub'.\n\n    - comparison functions which have @_p@ appended loose it.\n      For example @mpfr_less_p@ becomes @'less'@.\n\n/Instances/\n\n    [@'Eq'@]\n\n        - NaN \\/= NaN,\n\n        - Infinity = Infinity,\n\n        - \\-Infinity = -Infinity\n\n        - otherwise normal comparison\n\n\n    [@'Ord'@]\n\n        - compare NaN _ = 'GT'\n\n        - compare _ NaN = 'GT'\n\n        - infinity < _ = 'False'\n\n        - \\-infinity > _ = 'False'\n\n        - NaN [\\<,\\>,\\>=,<=] _ = 'False'\n\nThis mimics the behaviour of built in Haskell 'Float' and 'Double'.\n\nIf you need instances of numeric typeclasses import one of the\nData.Number.MPFR.Instances.* modules.\n-}" Nothing),DP (2,1)),((G AnnModule),DP (73,1)),((G AnnVal),DP (0,1)),((G AnnWhere),DP (0,1)),((AnnComment DComment (DP (2,1),DP (32,3)) "{-\n\nimport GHC.Integer.Internals\n\nimport GHC.Exts\n\ninstance Num MPFR where\n    d + d'        = add Zero (addPrec d d') d d'\n    d - d'        = sub Zero (addPrec d d') d d'\n    d * d'        = mul Zero (getPrec d + getPrec d') d d'\n    negate d      = neg Zero (getPrec d) d\n    abs d         = absD Zero (getPrec d) d\n    signum        = fromInt Zero minPrec . fromMaybe (-1) . sgn\n    fromInteger (S# i) = fromInt Zero minPrec (I# i)\n    fromInteger i@(J# n _) = fromIntegerA Zero (fromIntegral . abs $ I# n * bitsPerIntegerLimb) i\n\naddPrec       :: MPFR -> MPFR -> Precision\naddPrec d1 d2 = fromIntegral (max (p1 + e1 - e3) (p2 + e2 - e3)) + 1\n                where e1 = if d1 == 0 then 0 else getExp d1\n                      e2 = if d2 == 0 then 0 else getExp d2\n                      p1 = fromIntegral $ getPrec d1\n                      p2 = fromIntegral $ getPrec d2\n                      e3 = min e1 e2\n\ninstance Real MPFR where\n    toRational d = n % 2 ^ e\n        where (n', e') = decompose d\n              (n, e) = if e' >= 0 then ((n' * 2 ^ e'), 0)\n                         else (n', - e')\n\n-}" Nothing),DP (2,1)),((AnnComment DComment (DP (-29,1),DP (-29,30)) "#if __GLASGOW_HASKELL__ >= 610" Nothing),DP (-29,1)),((AnnComment DComment (DP (2,1),DP (2,6)) "#endif" Nothing),DP (2,1)),((AnnComment DComment (DP (28,1),DP (28,1)) "" Nothing),DP (28,1)),((G AnnEofPos),DP (34,0))])
+ (HsModule 
+  (Just 
+   ({ ../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:74:8-23
+     }
+    Nothing{ModuleName: Data.Number.MPFR})) 
+  (Just 
+   ({ ../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:(74,25)-(106,1)
+     }
+    Just (Ann (DP (0,1)) (ColDelta 25) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (1,1))])
+    [
+     ({ ../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:75:10-41
+       }
+      Just (Ann (DP (1,10)) (ColDelta 10) DP (1,10) [] [((G AnnOpenP),DP (0,1)),((G AnnCloseP),DP (0,0)),((G AnnComma),DP (0,0))])
+      (IEThingWith 
+       ({ ../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:75:10-18
+         }
+        Just (Ann (DP (0,0)) (ColDelta 10) DP (0,0) [] [((G AnnVal),DP (0,0))])
+        (Unqual {OccName: RoundMode})) 
+       [
+        ({ ../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:75:21-24
+          }
+         Just (Ann (DP (0,0)) (ColDelta 21) DP (0,0) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+         (Unqual {OccName: Near})),
+        ({ ../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:75:27-28
+          }
+         Just (Ann (DP (0,1)) (ColDelta 27) DP (0,1) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+         (Unqual {OccName: Up})),
+        ({ ../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:75:31-34
+          }
+         Just (Ann (DP (0,1)) (ColDelta 31) DP (0,1) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+         (Unqual {OccName: Down})),
+        ({ ../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:75:37-40
+          }
+         Just (Ann (DP (0,1)) (ColDelta 37) DP (0,1) [] [((G AnnVal),DP (0,0))])
+         (Unqual {OccName: Zero}))])),
+     ({ ../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:76:10-13
+       }
+      Just (Ann (DP (1,10)) (ColDelta 10) DP (1,10) [] [])
+      (IEThingAbs 
+       ({ ../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:76:10-13
+         }
+        Just (Ann (DP (0,0)) (ColDelta 10) DP (0,0) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+        (Unqual {OccName: MPFR})))),
+     ({ ../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:76:16-26
+       }
+      Just (Ann (DP (0,1)) (ColDelta 16) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0)),((G AnnComma),DP (0,0))])
+      (IEThingWith 
+       ({ ../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:76:16-24
+         }
+        Just (Ann (DP (0,0)) (ColDelta 16) DP (0,0) [] [((G AnnVal),DP (0,0))])
+        (Unqual {OccName: Precision})) 
+       [])),
+     ({ ../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:76:29-31
+       }
+      Just (Ann (DP (0,1)) (ColDelta 29) DP (0,1) [] [])
+      (IEThingAbs 
+       ({ ../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:76:29-31
+         }
+        Just (Ann (DP (0,0)) (ColDelta 29) DP (0,0) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+        (Unqual {OccName: Exp})))),
+     ({ ../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:76:34-39
+       }
+      Just (Ann (DP (0,1)) (ColDelta 34) DP (0,1) [] [])
+      (IEThingAbs 
+       ({ ../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:76:34-39
+         }
+        Just (Ann (DP (0,0)) (ColDelta 34) DP (0,0) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+        (Unqual {OccName: MpSize})))),
+     ({ ../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:80:10-43
+       }
+      Just (Ann (DP (1,10)) (ColDelta 10) DP (4,10) [DComment (DP (1,10),DP (1,35)) "-- * Assignment functions" Nothing,DComment (DP (1,10),DP (1,84)) "-- | See <http://www.mpfr.org/mpfr-current/mpfr.html#Assignment-Functions>" Nothing,DComment (DP (1,10),DP (1,52)) "--  documentation on particular functions." Nothing] [((G AnnModule),DP (0,0)),((G AnnVal),DP (0,1)),((G AnnComma),DP (0,0))])
+      (IEModuleContents 
+       ({ ../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:80:17-43
+         }
+        Nothing{ModuleName: Data.Number.MPFR.Assignment}))),
+     ({ ../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:84:10-43
+       }
+      Just (Ann (DP (1,10)) (ColDelta 10) DP (4,10) [DComment (DP (1,10),DP (1,35)) "-- * Conversion functions" Nothing,DComment (DP (1,10),DP (1,85)) "-- |  See <http://www.mpfr.org/mpfr-current/mpfr.html#Conversion-Functions>" Nothing,DComment (DP (1,10),DP (1,52)) "--  documentation on particular functions." Nothing] [((G AnnModule),DP (0,0)),((G AnnVal),DP (0,1)),((G AnnComma),DP (0,0))])
+      (IEModuleContents 
+       ({ ../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:84:17-43
+         }
+        Nothing{ModuleName: Data.Number.MPFR.Conversion}))),
+     ({ ../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:88:10-43
+       }
+      Just (Ann (DP (1,10)) (ColDelta 10) DP (4,10) [DComment (DP (1,10),DP (1,41)) "-- * Basic arithmetic functions" Nothing,DComment (DP (1,10),DP (1,61)) "-- |  For documentation on particular functions see" Nothing,DComment (DP (1,10),DP (1,85)) "-- <http://www.mpfr.org/mpfr-current/mpfr.html#Basic-Arithmetic-Functions>." Nothing] [((G AnnModule),DP (0,0)),((G AnnVal),DP (0,1)),((G AnnComma),DP (0,0))])
+      (IEModuleContents 
+       ({ ../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:88:17-43
+         }
+        Nothing{ModuleName: Data.Number.MPFR.Arithmetic}))),
+     ({ ../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:92:10-43
+       }
+      Just (Ann (DP (1,10)) (ColDelta 10) DP (4,10) [DComment (DP (1,10),DP (1,35)) "-- * Comparison functions" Nothing,DComment (DP (1,10),DP (1,60)) "-- | For documentation on particular functions see" Nothing,DComment (DP (1,10),DP (1,78)) "-- <http://www.mpfr.org/mpfr-current/mpfr.html#Comparison-Functions>" Nothing] [((G AnnModule),DP (0,0)),((G AnnVal),DP (0,1)),((G AnnComma),DP (0,0))])
+      (IEModuleContents 
+       ({ ../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:92:17-43
+         }
+        Nothing{ModuleName: Data.Number.MPFR.Comparison}))),
+     ({ ../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:97:10-40
+       }
+      Just (Ann (DP (2,10)) (ColDelta 10) DP (5,10) [DComment (DP (1,10),DP (1,32)) "-- * Special functions" Nothing,DComment (DP (1,10),DP (1,60)) "-- | For documentation on particular functions see" Nothing,DComment (DP (1,10),DP (1,76)) "-- <http://www.mpfr.org/mpfr-current/mpfr.html#Special-Functions>." Nothing] [((G AnnModule),DP (0,0)),((G AnnVal),DP (0,1)),((G AnnComma),DP (0,0))])
+      (IEModuleContents 
+       ({ ../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:97:17-40
+         }
+        Nothing{ModuleName: Data.Number.MPFR.Special}))),
+     ({ ../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:101:10-40
+       }
+      Just (Ann (DP (1,10)) (ColDelta 10) DP (4,10) [DComment (DP (1,10),DP (1,40)) "-- * Integer related functions" Nothing,DComment (DP (1,10),DP (1,60)) "-- | For documentation on particular functions see" Nothing,DComment (DP (1,10),DP (1,109)) "-- <http://www.mpfr.org/mpfr-chttp://www.mpfr.org/mpfr-current/mpfr.html#Integer-Related-Functions>" Nothing] [((G AnnModule),DP (0,0)),((G AnnVal),DP (0,1)),((G AnnComma),DP (0,0))])
+      (IEModuleContents 
+       ({ ../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:101:17-40
+         }
+        Nothing{ModuleName: Data.Number.MPFR.Integer}))),
+     ({ ../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:105:10-37
+       }
+      Just (Ann (DP (1,10)) (ColDelta 10) DP (4,10) [DComment (DP (1,10),DP (1,38)) "-- * Miscellaneous functions" Nothing,DComment (DP (1,10),DP (1,59)) "-- |For documentation on particular functions see" Nothing,DComment (DP (1,10),DP (1,82)) "-- <http://www.mpfr.org/mpfr-current/mpfr.html#Miscellaneous-Functions>." Nothing] [((G AnnModule),DP (0,0)),((G AnnVal),DP (0,1))])
+      (IEModuleContents 
+       ({ ../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:105:17-37
+         }
+        Nothing{ModuleName: Data.Number.MPFR.Misc})))])) 
+  [
+   ({ ../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:108:1-34
+     }
+    Just (Ann (DP (2,1)) (ColDelta 1) DP (2,1) [] [((G AnnImport),DP (0,0)),((G AnnVal),DP (0,1))])
+    (ImportDecl 
+     (Nothing) 
+     ({ ../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:108:8-34
+       }
+      Nothing{ModuleName: Data.Number.MPFR.Assignment}) 
+     (Nothing) 
+     (False) 
+     (False) 
+     (False) 
+     (False) 
+     (Nothing) 
+     (Nothing))),
+   ({ ../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:109:1-34
+     }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [((G AnnImport),DP (0,0)),((G AnnVal),DP (0,1))])
+    (ImportDecl 
+     (Nothing) 
+     ({ ../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:109:8-34
+       }
+      Nothing{ModuleName: Data.Number.MPFR.Conversion}) 
+     (Nothing) 
+     (False) 
+     (False) 
+     (False) 
+     (False) 
+     (Nothing) 
+     (Nothing))),
+   ({ ../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:110:1-34
+     }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [((G AnnImport),DP (0,0)),((G AnnVal),DP (0,1))])
+    (ImportDecl 
+     (Nothing) 
+     ({ ../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:110:8-34
+       }
+      Nothing{ModuleName: Data.Number.MPFR.Arithmetic}) 
+     (Nothing) 
+     (False) 
+     (False) 
+     (False) 
+     (False) 
+     (Nothing) 
+     (Nothing))),
+   ({ ../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:111:1-34
+     }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [((G AnnImport),DP (0,0)),((G AnnVal),DP (0,1))])
+    (ImportDecl 
+     (Nothing) 
+     ({ ../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:111:8-34
+       }
+      Nothing{ModuleName: Data.Number.MPFR.Comparison}) 
+     (Nothing) 
+     (False) 
+     (False) 
+     (False) 
+     (False) 
+     (Nothing) 
+     (Nothing))),
+   ({ ../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:112:1-31
+     }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [((G AnnImport),DP (0,0)),((G AnnVal),DP (0,1))])
+    (ImportDecl 
+     (Nothing) 
+     ({ ../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:112:8-31
+       }
+      Nothing{ModuleName: Data.Number.MPFR.Special}) 
+     (Nothing) 
+     (False) 
+     (False) 
+     (False) 
+     (False) 
+     (Nothing) 
+     (Nothing))),
+   ({ ../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:113:1-31
+     }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [((G AnnImport),DP (0,0)),((G AnnVal),DP (0,1))])
+    (ImportDecl 
+     (Nothing) 
+     ({ ../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:113:8-31
+       }
+      Nothing{ModuleName: Data.Number.MPFR.Integer}) 
+     (Nothing) 
+     (False) 
+     (False) 
+     (False) 
+     (False) 
+     (Nothing) 
+     (Nothing))),
+   ({ ../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:114:1-28
+     }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [((G AnnImport),DP (0,0)),((G AnnVal),DP (0,1))])
+    (ImportDecl 
+     (Nothing) 
+     ({ ../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:114:8-28
+       }
+      Nothing{ModuleName: Data.Number.MPFR.Misc}) 
+     (Nothing) 
+     (False) 
+     (False) 
+     (False) 
+     (False) 
+     (Nothing) 
+     (Nothing))),
+   ({ ../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:116:1-32
+     }
+    Just (Ann (DP (2,1)) (ColDelta 1) DP (2,1) [] [((G AnnImport),DP (0,0)),((G AnnVal),DP (0,1))])
+    (ImportDecl 
+     (Nothing) 
+     ({ ../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:116:8-32
+       }
+      Nothing{ModuleName: Data.Number.MPFR.Internal}) 
+     (Nothing) 
+     (False) 
+     (False) 
+     (False) 
+     (False) 
+     (Nothing) 
+     (Nothing)))] 
+  [] 
+  (Nothing) 
+  (Nothing)))
+==============
+[(AnnKey ../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:1:1 CN "HsModule" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((AnnComment DComment (DP (0,0),DP (0,31)) "{-# LANGUAGE MagicHash, CPP #-}" Nothing),DP (0,0)),((AnnComment DComment (DP (2,1),DP (71,3)) "{-|\n    Module      :  Data.Number.MPFR\n    Description :  Pure interface to the MPFR library.\n    Copyright   :  (c) Ale\353 Bizjak\n    License     :  BSD3\n\n    Maintainer  :  mikkonecny@gmail.com\n    Stability   :  experimental\n    Portability :  non-portable\n\nThis module exports a pure interface to the MPFR library functions. Functions\nreturn new 'MPFR' structures instead of modifying existing ones and so all\nfunctions which produce a new MPFR structure take one more parameter than\ntheir original @C@ counterparts. This parameter, 'Precision', is the precision\nof the resulting 'MPFR'.\n\nThis is naturally slower than modifying in-place, especially when dealing\nwith lower precisions, so a \\\"mutable\\\" interface is provided in\n\"Data.Number.MPFR.Mutable\" module.\n\n\n/Naming conventions/\n\n    - functions ending with _ (underscore) usually return a pair @('MPFR', 'Int')@, where\n      'Int' is a return value of a corresponding @mpfr_@ function. See the MPFR manual for\n      a description of return values.\n\n    - the same functions without the _ return just the 'MPFR'.\n\n    - @mpfr_@ prefix in functions is removed\n\n    - @_ui@ and @ui_@ in function becomes @w@ (stands for 'Word').\n      For example @mpfr_sub_ui@ becomes @'subw'@ and @mpfr_ui_sub@ becomes 'wsub'.\n\n    - @si_@ and @_si@ in functions becomes @i@ (stands for 'Int').\n      For example @mpfr_sub_si@ becomes @'subi'@ and @mpfr_si_sub@ becomes 'isub'.\n\n    - comparison functions which have @_p@ appended loose it.\n      For example @mpfr_less_p@ becomes @'less'@.\n\n/Instances/\n\n    [@'Eq'@]\n\n        - NaN \\/= NaN,\n\n        - Infinity = Infinity,\n\n        - \\-Infinity = -Infinity\n\n        - otherwise normal comparison\n\n\n    [@'Ord'@]\n\n        - compare NaN _ = 'GT'\n\n        - compare _ NaN = 'GT'\n\n        - infinity < _ = 'False'\n\n        - \\-infinity > _ = 'False'\n\n        - NaN [\\<,\\>,\\>=,<=] _ = 'False'\n\nThis mimics the behaviour of built in Haskell 'Float' and 'Double'.\n\nIf you need instances of numeric typeclasses import one of the\nData.Number.MPFR.Instances.* modules.\n-}" Nothing),DP (2,1)),((G AnnModule),DP (73,1)),((G AnnVal),DP (0,1)),((G AnnWhere),DP (0,1)),((AnnComment DComment (DP (2,1),DP (32,3)) "{-\n\nimport GHC.Integer.Internals\n\nimport GHC.Exts\n\ninstance Num MPFR where\n    d + d'        = add Zero (addPrec d d') d d'\n    d - d'        = sub Zero (addPrec d d') d d'\n    d * d'        = mul Zero (getPrec d + getPrec d') d d'\n    negate d      = neg Zero (getPrec d) d\n    abs d         = absD Zero (getPrec d) d\n    signum        = fromInt Zero minPrec . fromMaybe (-1) . sgn\n    fromInteger (S# i) = fromInt Zero minPrec (I# i)\n    fromInteger i@(J# n _) = fromIntegerA Zero (fromIntegral . abs $ I# n * bitsPerIntegerLimb) i\n\naddPrec       :: MPFR -> MPFR -> Precision\naddPrec d1 d2 = fromIntegral (max (p1 + e1 - e3) (p2 + e2 - e3)) + 1\n                where e1 = if d1 == 0 then 0 else getExp d1\n                      e2 = if d2 == 0 then 0 else getExp d2\n                      p1 = fromIntegral $ getPrec d1\n                      p2 = fromIntegral $ getPrec d2\n                      e3 = min e1 e2\n\ninstance Real MPFR where\n    toRational d = n % 2 ^ e\n        where (n', e') = decompose d\n              (n, e) = if e' >= 0 then ((n' * 2 ^ e'), 0)\n                         else (n', - e')\n\n-}" Nothing),DP (2,1)),((AnnComment DComment (DP (-29,1),DP (-29,30)) "#if __GLASGOW_HASKELL__ >= 610" Nothing),DP (-29,1)),((AnnComment DComment (DP (2,1),DP (2,6)) "#endif" Nothing),DP (2,1)),((AnnComment DComment (DP (28,1),DP (28,1)) "" Nothing),DP (28,1)),((G AnnEofPos),DP (34,0))])),
+ (AnnKey ../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:(74,25)-(106,1) CN "(:)" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 25) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (1,1))])),
+ (AnnKey ../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:75:10-18 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 10) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:75:10-41 CN "IEThingWith" NotNeeded,
+  (Ann (DP (1,10)) (ColDelta 10) DP (1,10) [] [((G AnnOpenP),DP (0,1)),((G AnnCloseP),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:75:21-24 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 21) DP (0,0) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:75:27-28 CN "Unqual" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 27) DP (0,1) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:75:31-34 CN "Unqual" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 31) DP (0,1) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:75:37-40 CN "Unqual" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 37) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:76:10-13 CN "IEThingAbs" NotNeeded,
+  (Ann (DP (1,10)) (ColDelta 10) DP (1,10) [] [])),
+ (AnnKey ../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:76:10-13 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 10) DP (0,0) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:76:16-24 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 16) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:76:16-26 CN "IEThingWith" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 16) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:76:29-31 CN "IEThingAbs" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 29) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:76:29-31 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 29) DP (0,0) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:76:34-39 CN "IEThingAbs" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 34) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:76:34-39 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 34) DP (0,0) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:80:10-43 CN "IEModuleContents" NotNeeded,
+  (Ann (DP (1,10)) (ColDelta 10) DP (4,10) [DComment (DP (1,10),DP (1,35)) "-- * Assignment functions" Nothing,DComment (DP (1,10),DP (1,84)) "-- | See <http://www.mpfr.org/mpfr-current/mpfr.html#Assignment-Functions>" Nothing,DComment (DP (1,10),DP (1,52)) "--  documentation on particular functions." Nothing] [((G AnnModule),DP (0,0)),((G AnnVal),DP (0,1)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:84:10-43 CN "IEModuleContents" NotNeeded,
+  (Ann (DP (1,10)) (ColDelta 10) DP (4,10) [DComment (DP (1,10),DP (1,35)) "-- * Conversion functions" Nothing,DComment (DP (1,10),DP (1,85)) "-- |  See <http://www.mpfr.org/mpfr-current/mpfr.html#Conversion-Functions>" Nothing,DComment (DP (1,10),DP (1,52)) "--  documentation on particular functions." Nothing] [((G AnnModule),DP (0,0)),((G AnnVal),DP (0,1)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:88:10-43 CN "IEModuleContents" NotNeeded,
+  (Ann (DP (1,10)) (ColDelta 10) DP (4,10) [DComment (DP (1,10),DP (1,41)) "-- * Basic arithmetic functions" Nothing,DComment (DP (1,10),DP (1,61)) "-- |  For documentation on particular functions see" Nothing,DComment (DP (1,10),DP (1,85)) "-- <http://www.mpfr.org/mpfr-current/mpfr.html#Basic-Arithmetic-Functions>." Nothing] [((G AnnModule),DP (0,0)),((G AnnVal),DP (0,1)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:92:10-43 CN "IEModuleContents" NotNeeded,
+  (Ann (DP (1,10)) (ColDelta 10) DP (4,10) [DComment (DP (1,10),DP (1,35)) "-- * Comparison functions" Nothing,DComment (DP (1,10),DP (1,60)) "-- | For documentation on particular functions see" Nothing,DComment (DP (1,10),DP (1,78)) "-- <http://www.mpfr.org/mpfr-current/mpfr.html#Comparison-Functions>" Nothing] [((G AnnModule),DP (0,0)),((G AnnVal),DP (0,1)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:97:10-40 CN "IEModuleContents" NotNeeded,
+  (Ann (DP (2,10)) (ColDelta 10) DP (5,10) [DComment (DP (1,10),DP (1,32)) "-- * Special functions" Nothing,DComment (DP (1,10),DP (1,60)) "-- | For documentation on particular functions see" Nothing,DComment (DP (1,10),DP (1,76)) "-- <http://www.mpfr.org/mpfr-current/mpfr.html#Special-Functions>." Nothing] [((G AnnModule),DP (0,0)),((G AnnVal),DP (0,1)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:101:10-40 CN "IEModuleContents" NotNeeded,
+  (Ann (DP (1,10)) (ColDelta 10) DP (4,10) [DComment (DP (1,10),DP (1,40)) "-- * Integer related functions" Nothing,DComment (DP (1,10),DP (1,60)) "-- | For documentation on particular functions see" Nothing,DComment (DP (1,10),DP (1,109)) "-- <http://www.mpfr.org/mpfr-chttp://www.mpfr.org/mpfr-current/mpfr.html#Integer-Related-Functions>" Nothing] [((G AnnModule),DP (0,0)),((G AnnVal),DP (0,1)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:105:10-37 CN "IEModuleContents" NotNeeded,
+  (Ann (DP (1,10)) (ColDelta 10) DP (4,10) [DComment (DP (1,10),DP (1,38)) "-- * Miscellaneous functions" Nothing,DComment (DP (1,10),DP (1,59)) "-- |For documentation on particular functions see" Nothing,DComment (DP (1,10),DP (1,82)) "-- <http://www.mpfr.org/mpfr-current/mpfr.html#Miscellaneous-Functions>." Nothing] [((G AnnModule),DP (0,0)),((G AnnVal),DP (0,1))])),
+ (AnnKey ../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:108:1-34 CN "ImportDecl" NotNeeded,
+  (Ann (DP (2,1)) (ColDelta 1) DP (2,1) [] [((G AnnImport),DP (0,0)),((G AnnVal),DP (0,1))])),
+ (AnnKey ../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:109:1-34 CN "ImportDecl" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [((G AnnImport),DP (0,0)),((G AnnVal),DP (0,1))])),
+ (AnnKey ../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:110:1-34 CN "ImportDecl" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [((G AnnImport),DP (0,0)),((G AnnVal),DP (0,1))])),
+ (AnnKey ../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:111:1-34 CN "ImportDecl" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [((G AnnImport),DP (0,0)),((G AnnVal),DP (0,1))])),
+ (AnnKey ../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:112:1-31 CN "ImportDecl" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [((G AnnImport),DP (0,0)),((G AnnVal),DP (0,1))])),
+ (AnnKey ../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:113:1-31 CN "ImportDecl" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [((G AnnImport),DP (0,0)),((G AnnVal),DP (0,1))])),
+ (AnnKey ../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:114:1-28 CN "ImportDecl" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [((G AnnImport),DP (0,0)),((G AnnVal),DP (0,1))])),
+ (AnnKey ../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:116:1-32 CN "ImportDecl" NotNeeded,
+  (Ann (DP (2,1)) (ColDelta 1) DP (2,1) [] [((G AnnImport),DP (0,0)),((G AnnVal),DP (0,1))]))]
+==============
+([((../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:1:1,
+    AnnModule),
+   [../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:74:1-6]),
+  ((../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:1:1,
+    AnnWhere),
+   [../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:106:3-7]),
+  ((../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:(74,25)-(106,1),
+    AnnCloseP),
+   [../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:106:1]),
+  ((../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:(74,25)-(106,1),
+    AnnOpenP),
+   [../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:74:25]),
+  ((../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:75:10-41,
+    AnnCloseP),
+   [../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:75:41]),
+  ((../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:75:10-41,
+    AnnComma),
+   [../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:75:42]),
+  ((../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:75:10-41,
+    AnnOpenP),
+   [../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:75:20]),
+  ((../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:75:21-24,
+    AnnComma),
+   [../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:75:25]),
+  ((../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:75:27-28,
+    AnnComma),
+   [../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:75:29]),
+  ((../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:75:31-34,
+    AnnComma),
+   [../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:75:35]),
+  ((../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:76:10-13,
+    AnnComma),
+   [../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:76:14]),
+  ((../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:76:16-26,
+    AnnCloseP),
+   [../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:76:26]),
+  ((../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:76:16-26,
+    AnnComma),
+   [../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:76:27]),
+  ((../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:76:16-26,
+    AnnOpenP),
+   [../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:76:25]),
+  ((../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:76:29-31,
+    AnnComma),
+   [../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:76:32]),
+  ((../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:76:34-39,
+    AnnComma),
+   [../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:76:40]),
+  ((../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:80:10-43,
+    AnnComma),
+   [../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:80:44]),
+  ((../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:80:10-43,
+    AnnModule),
+   [../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:80:10-15]),
+  ((../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:84:10-43,
+    AnnComma),
+   [../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:84:44]),
+  ((../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:84:10-43,
+    AnnModule),
+   [../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:84:10-15]),
+  ((../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:88:10-43,
+    AnnComma),
+   [../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:88:44]),
+  ((../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:88:10-43,
+    AnnModule),
+   [../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:88:10-15]),
+  ((../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:92:10-43,
+    AnnComma),
+   [../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:92:44]),
+  ((../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:92:10-43,
+    AnnModule),
+   [../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:92:10-15]),
+  ((../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:97:10-40,
+    AnnComma),
+   [../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:97:41]),
+  ((../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:97:10-40,
+    AnnModule),
+   [../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:97:10-15]),
+  ((../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:101:10-40,
+    AnnComma),
+   [../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:101:41]),
+  ((../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:101:10-40,
+    AnnModule),
+   [../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:101:10-15]),
+  ((../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:105:10-37,
+    AnnModule),
+   [../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:105:10-15]),
+  ((../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:108:1-34,
+    AnnImport),
+   [../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:108:1-6]),
+  ((../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:108:1-34,
+    AnnSemi),
+   [../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:109:1]),
+  ((../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:109:1-34,
+    AnnImport),
+   [../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:109:1-6]),
+  ((../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:109:1-34,
+    AnnSemi),
+   [../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:110:1]),
+  ((../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:110:1-34,
+    AnnImport),
+   [../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:110:1-6]),
+  ((../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:110:1-34,
+    AnnSemi),
+   [../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:111:1]),
+  ((../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:111:1-34,
+    AnnImport),
+   [../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:111:1-6]),
+  ((../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:111:1-34,
+    AnnSemi),
+   [../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:112:1]),
+  ((../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:112:1-31,
+    AnnImport),
+   [../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:112:1-6]),
+  ((../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:112:1-31,
+    AnnSemi),
+   [../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:113:1]),
+  ((../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:113:1-31,
+    AnnImport),
+   [../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:113:1-6]),
+  ((../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:113:1-31,
+    AnnSemi),
+   [../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:114:1]),
+  ((../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:114:1-28,
+    AnnImport),
+   [../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:114:1-6]),
+  ((../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:114:1-28,
+    AnnSemi),
+   [../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:116:1]),
+  ((../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:116:1-32,
+    AnnImport),
+   [../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:116:1-6]),
+  ((../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:116:1-32,
+    AnnSemi),
+   [../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:150:1]),
+  ((<no location info>, AnnEofPos),
+   [../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:150:1])],
+ [(../../hackage-packages/hmpfr-0.3.3.5/src/Data/Number/MPFR.hs:(74,25)-(106,1),
+   [AnnLineComment "-- <http://www.mpfr.org/mpfr-current/mpfr.html#Miscellaneous-Functions>.",
+    AnnLineComment "-- |For documentation on particular functions see",
+    AnnLineComment "-- * Miscellaneous functions",
+    AnnLineComment "-- <http://www.mpfr.org/mpfr-chttp://www.mpfr.org/mpfr-current/mpfr.html#Integer-Related-Functions>",
+    AnnLineComment "-- | For documentation on particular functions see",
+    AnnLineComment "-- * Integer related functions",
+    AnnLineComment "-- <http://www.mpfr.org/mpfr-current/mpfr.html#Special-Functions>.",
+    AnnLineComment "-- | For documentation on particular functions see",
+    AnnLineComment "-- * Special functions",
+    AnnLineComment "-- <http://www.mpfr.org/mpfr-current/mpfr.html#Comparison-Functions>",
+    AnnLineComment "-- | For documentation on particular functions see",
+    AnnLineComment "-- * Comparison functions",
+    AnnLineComment "-- <http://www.mpfr.org/mpfr-current/mpfr.html#Basic-Arithmetic-Functions>.",
+    AnnLineComment "-- |  For documentation on particular functions see",
+    AnnLineComment "-- * Basic arithmetic functions",
+    AnnLineComment "--  documentation on particular functions.",
+    AnnLineComment "-- |  See <http://www.mpfr.org/mpfr-current/mpfr.html#Conversion-Functions>",
+    AnnLineComment "-- * Conversion functions",
+    AnnLineComment "--  documentation on particular functions.",
+    AnnLineComment "-- | See <http://www.mpfr.org/mpfr-current/mpfr.html#Assignment-Functions>",
+    AnnLineComment "-- * Assignment functions"]),
+  (<no location info>,
+   [AnnBlockComment "{-\n\nimport GHC.Integer.Internals\n\nimport GHC.Exts\n\ninstance Num MPFR where\n    d + d'        = add Zero (addPrec d d') d d'\n    d - d'        = sub Zero (addPrec d d') d d'\n    d * d'        = mul Zero (getPrec d + getPrec d') d d'\n    negate d      = neg Zero (getPrec d) d\n    abs d         = absD Zero (getPrec d) d\n    signum        = fromInt Zero minPrec . fromMaybe (-1) . sgn\n    fromInteger (S# i) = fromInt Zero minPrec (I# i)\n    fromInteger i@(J# n _) = fromIntegerA Zero (fromIntegral . abs $ I# n * bitsPerIntegerLimb) i\n\naddPrec       :: MPFR -> MPFR -> Precision\naddPrec d1 d2 = fromIntegral (max (p1 + e1 - e3) (p2 + e2 - e3)) + 1\n                where e1 = if d1 == 0 then 0 else getExp d1\n                      e2 = if d2 == 0 then 0 else getExp d2\n                      p1 = fromIntegral $ getPrec d1\n                      p2 = fromIntegral $ getPrec d2\n                      e3 = min e1 e2\n\ninstance Real MPFR where\n    toRational d = n % 2 ^ e\n        where (n', e') = decompose d\n              (n, e) = if e' >= 0 then ((n' * 2 ^ e'), 0)\n                         else (n', - e')\n\n-}",
+    AnnBlockComment "{-|\n    Module      :  Data.Number.MPFR\n    Description :  Pure interface to the MPFR library.\n    Copyright   :  (c) Ale\353 Bizjak\n    License     :  BSD3\n\n    Maintainer  :  mikkonecny@gmail.com\n    Stability   :  experimental\n    Portability :  non-portable\n\nThis module exports a pure interface to the MPFR library functions. Functions\nreturn new 'MPFR' structures instead of modifying existing ones and so all\nfunctions which produce a new MPFR structure take one more parameter than\ntheir original @C@ counterparts. This parameter, 'Precision', is the precision\nof the resulting 'MPFR'.\n\nThis is naturally slower than modifying in-place, especially when dealing\nwith lower precisions, so a \\\"mutable\\\" interface is provided in\n\"Data.Number.MPFR.Mutable\" module.\n\n\n/Naming conventions/\n\n    - functions ending with _ (underscore) usually return a pair @('MPFR', 'Int')@, where\n      'Int' is a return value of a corresponding @mpfr_@ function. See the MPFR manual for\n      a description of return values.\n\n    - the same functions without the _ return just the 'MPFR'.\n\n    - @mpfr_@ prefix in functions is removed\n\n    - @_ui@ and @ui_@ in function becomes @w@ (stands for 'Word').\n      For example @mpfr_sub_ui@ becomes @'subw'@ and @mpfr_ui_sub@ becomes 'wsub'.\n\n    - @si_@ and @_si@ in functions becomes @i@ (stands for 'Int').\n      For example @mpfr_sub_si@ becomes @'subi'@ and @mpfr_si_sub@ becomes 'isub'.\n\n    - comparison functions which have @_p@ appended loose it.\n      For example @mpfr_less_p@ becomes @'less'@.\n\n/Instances/\n\n    [@'Eq'@]\n\n        - NaN \\/= NaN,\n\n        - Infinity = Infinity,\n\n        - \\-Infinity = -Infinity\n\n        - otherwise normal comparison\n\n\n    [@'Ord'@]\n\n        - compare NaN _ = 'GT'\n\n        - compare _ NaN = 'GT'\n\n        - infinity < _ = 'False'\n\n        - \\-infinity > _ = 'False'\n\n        - NaN [\\<,\\>,\\>=,<=] _ = 'False'\n\nThis mimics the behaviour of built in Haskell 'Float' and 'Double'.\n\nIf you need instances of numeric typeclasses import one of the\nData.Number.MPFR.Instances.* modules.\n-}",
+    AnnBlockComment "{-# LANGUAGE MagicHash, CPP #-}"])])

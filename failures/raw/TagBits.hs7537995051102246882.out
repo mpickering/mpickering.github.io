@@ -1,0 +1,2239 @@
+{-# LANGUAGE CPP, BangPatterns, MagicHash, UnboxedTuples #-}
+module Data.TagBits
+    (
+    -- * Inspecting the tag bits of a closure
+      unsafeGetTagBits
+    -- * Determining if a closure is evaluated
+    , unsafeIsEvaluated
+    ) where
+
+#if __GLASGOW_HASKELL__ >= 608
+-- dynamic pointer tagging is present on this platform
+#define HAS_TAGS
+-- and we have an info table we can plunder for information
+#define HAS_INFO_TABLE
+
+import Data.Bits ((.&.))
+import Data.Functor ((<$>))
+import Unsafe.Coerce (unsafeCoerce)
+import System.IO.Unsafe (unsafePerformIO)
+import Foreign (plusPtr, castPtr, peek)
+import GHC.Prim
+import GHC.Exts
+import Data.Word
+
+#include "ghcconfig.h"
+
+#if SIZEOF_VOID_P == 8
+type HalfWord = Word32
+#else
+type HalfWord = Word16
+#endif
+
+#if i386_BUILD_ARCH
+#define TABLES_NEXT_TO_CODE
+#define CLOSURE_TYPE_OFFSET SIZEOF_INT
+#else
+#define CLOSURE_TYPE_OFFSET (SIZEOF_INT * 2)
+#endif
+
+getInfoTablePtr :: a -> Ptr HalfWord
+getInfoTablePtr i = case unpackClosure# i of
+    (# p, _, _ #) -> Ptr p
+
+newtype ClosureType = ClosureType HalfWord
+
+getClosureType :: a -> IO ClosureType
+getClosureType a = ClosureType <$>
+    peek (castPtr (getInfoTablePtr a) `plusPtr` (CLOSURE_TYPE_OFFSET4 * 2))           )
+
+isConstructor :: ClosureType -> Bool
+isConstructor (ClosureType i) = i >= 1 && i <= 8
+
+isIndirection :: ClosureType -> Bool
+isIndirection (ClosureType i) = i >= 28 && i <= 32
+
+unsafeIsConstructorOrIndirection :: a -> Bool
+unsafeIsConstructorOrIndirection a = unsafePerformIO $ do
+    ty <- getClosureType a
+    return (isConstructor ty || isIndirection ty)
+
+#endif
+
+-- | Inspect the dynamic pointer tagging bits of a closure. This is an impure function that relies on GHC internals and may falsely return 0, but should never give the wrong tag number if it returns a non-0 value.
+unsafeGetTagBits :: a -> Word
+{-# INLINE unsafeGetTagBits #-}
+#ifdef HAS_TAGS
+unsafeGetTagBits a = unsafeCoerce (Box a) .&. (8SIZEOF_VOID_P 1)        - 1)
+data Box a = Box a
+#else
+unsafeGetTagBits _ = 0
+#endif
+
+-- | Returns a guess as to whether or not a value has been evaluated. This is an impure function that relies on GHC internals and will return false negatives, but no false positives. This is unsafe as the value of this function will vary (from False to True) over the course of otherwise pure invocations! This first attempts to check the tag bits of the pointer, and then falls back on inspecting the info table for the closure type.
+unsafeIsEvaluated :: a -> Bool
+{-# INLINE unsafeIsEvaluated #-}
+unsafeIsEvaluated a = unsafeGetTagBits a > 0
+#ifdef HAS_INFO_TABLE
+                   || unsafeIsConstructorOrIndirection a
+#endif
+
+==============
+../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs
+==============
+lengths:(2638,2608)
+
+==============
+
+({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:1:1 }
+ Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((AnnComment DComment (DP (0,0),DP (0,60)) "{-# LANGUAGE CPP, BangPatterns, MagicHash, UnboxedTuples #-}" Nothing),DP (0,0)),((G AnnModule),DP (1,1)),((G AnnVal),DP (0,1)),((G AnnWhere),DP (0,1)),((AnnComment DComment (DP (1,1),DP (1,6)) "#endif" Nothing),DP (1,1)),((G AnnEofPos),DP (2,0))])
+ (HsModule 
+  (Just 
+   ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:2:8-19 }
+    Nothing{ModuleName: Data.TagBits})) 
+  (Just 
+   ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:(3,5)-(8,5)
+     }
+    Just (Ann (DP (1,5)) (ColDelta 5) DP (1,5) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (1,5))])
+    [
+     ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:5:7-22 }
+      Just (Ann (DP (1,7)) (ColDelta 7) DP (2,7) [DComment (DP (1,5),DP (1,46)) "-- * Inspecting the tag bits of a closure" Nothing] [])
+      (IEVar 
+       ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:5:7-22 }
+        Just (Ann (DP (0,0)) (ColDelta 7) DP (0,0) [] [((G AnnVal),DP (0,0)),((AnnComment DComment (DP (1,5),DP (1,47)) "-- * Determining if a closure is evaluated" Nothing),DP (1,5)),((G AnnComma),DP (2,5))])
+        (Unqual {OccName: unsafeGetTagBits})))),
+     ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:7:7-23 }
+      Just (Ann (DP (0,1)) (ColDelta 7) DP (0,1) [] [])
+      (IEVar 
+       ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:7:7-23 }
+        Just (Ann (DP (0,0)) (ColDelta 7) DP (0,0) [] [((G AnnVal),DP (0,0))])
+        (Unqual {OccName: unsafeIsEvaluated}))))])) 
+  [
+   ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:16:1-24 }
+    Just (Ann (DP (2,1)) (ColDelta 1) DP (8,1) [DComment (DP (2,1),DP (2,30)) "#if __GLASGOW_HASKELL__ >= 608" Nothing,DComment (DP (1,1),DP (1,55)) "-- dynamic pointer tagging is present on this platform" Nothing,DComment (DP (1,1),DP (1,16)) "#define HAS_TAGS" Nothing,DComment (DP (1,1),DP (1,60)) "-- and we have an info table we can plunder for information" Nothing,DComment (DP (1,1),DP (1,22)) "#define HAS_INFO_TABLE" Nothing] [((G AnnImport),DP (0,0)),((G AnnVal),DP (0,1))])
+    (ImportDecl 
+     (Nothing) 
+     ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:16:8-16 }
+      Nothing{ModuleName: Data.Bits}) 
+     (Nothing) 
+     (False) 
+     (False) 
+     (False) 
+     (False) 
+     (Nothing) 
+     (Just 
+      ((,) 
+       (False) 
+       ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:16:18-24 }
+        Just (Ann (DP (0,1)) (ColDelta 18) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])
+        [
+         ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:16:19-23 }
+          Just (Ann (DP (0,0)) (ColDelta 19) DP (0,0) [] [])
+          (IEVar 
+           ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:16:19-23 }
+            Just (Ann (DP (0,0)) (ColDelta 19) DP (0,0) [] [((G AnnOpenP),DP (0,0)),((G AnnVal),DP (0,0)),((G AnnCloseP),DP (0,0))])
+            (Unqual {OccName: .&.}))))]))))),
+   ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:17:1-27 }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [((G AnnImport),DP (0,0)),((G AnnVal),DP (0,1))])
+    (ImportDecl 
+     (Nothing) 
+     ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:17:8-19 }
+      Nothing{ModuleName: Data.Functor}) 
+     (Nothing) 
+     (False) 
+     (False) 
+     (False) 
+     (False) 
+     (Nothing) 
+     (Just 
+      ((,) 
+       (False) 
+       ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:17:21-27 }
+        Just (Ann (DP (0,1)) (ColDelta 21) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])
+        [
+         ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:17:22-26 }
+          Just (Ann (DP (0,0)) (ColDelta 22) DP (0,0) [] [])
+          (IEVar 
+           ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:17:22-26 }
+            Just (Ann (DP (0,0)) (ColDelta 22) DP (0,0) [] [((G AnnOpenP),DP (0,0)),((G AnnVal),DP (0,0)),((G AnnCloseP),DP (0,0))])
+            (Unqual {OccName: <$>}))))]))))),
+   ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:18:1-35 }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [((G AnnImport),DP (0,0)),((G AnnVal),DP (0,1))])
+    (ImportDecl 
+     (Nothing) 
+     ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:18:8-20 }
+      Nothing{ModuleName: Unsafe.Coerce}) 
+     (Nothing) 
+     (False) 
+     (False) 
+     (False) 
+     (False) 
+     (Nothing) 
+     (Just 
+      ((,) 
+       (False) 
+       ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:18:22-35 }
+        Just (Ann (DP (0,1)) (ColDelta 22) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])
+        [
+         ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:18:23-34 }
+          Just (Ann (DP (0,0)) (ColDelta 23) DP (0,0) [] [])
+          (IEVar 
+           ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:18:23-34 }
+            Just (Ann (DP (0,0)) (ColDelta 23) DP (0,0) [] [((G AnnVal),DP (0,0))])
+            (Unqual {OccName: unsafeCoerce}))))]))))),
+   ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:19:1-41 }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [((G AnnImport),DP (0,0)),((G AnnVal),DP (0,1))])
+    (ImportDecl 
+     (Nothing) 
+     ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:19:8-23 }
+      Nothing{ModuleName: System.IO.Unsafe}) 
+     (Nothing) 
+     (False) 
+     (False) 
+     (False) 
+     (False) 
+     (Nothing) 
+     (Just 
+      ((,) 
+       (False) 
+       ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:19:25-41 }
+        Just (Ann (DP (0,1)) (ColDelta 25) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])
+        [
+         ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:19:26-40 }
+          Just (Ann (DP (0,0)) (ColDelta 26) DP (0,0) [] [])
+          (IEVar 
+           ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:19:26-40 }
+            Just (Ann (DP (0,0)) (ColDelta 26) DP (0,0) [] [((G AnnVal),DP (0,0))])
+            (Unqual {OccName: unsafePerformIO}))))]))))),
+   ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:20:1-39 }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [((G AnnImport),DP (0,0)),((G AnnVal),DP (0,1))])
+    (ImportDecl 
+     (Nothing) 
+     ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:20:8-14 }
+      Nothing{ModuleName: Foreign}) 
+     (Nothing) 
+     (False) 
+     (False) 
+     (False) 
+     (False) 
+     (Nothing) 
+     (Just 
+      ((,) 
+       (False) 
+       ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:20:16-39 }
+        Just (Ann (DP (0,1)) (ColDelta 16) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])
+        [
+         ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:20:17-23 }
+          Just (Ann (DP (0,0)) (ColDelta 17) DP (0,0) [] [])
+          (IEVar 
+           ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:20:17-23 }
+            Just (Ann (DP (0,0)) (ColDelta 17) DP (0,0) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+            (Unqual {OccName: plusPtr})))),
+         ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:20:26-32 }
+          Just (Ann (DP (0,1)) (ColDelta 26) DP (0,1) [] [])
+          (IEVar 
+           ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:20:26-32 }
+            Just (Ann (DP (0,0)) (ColDelta 26) DP (0,0) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+            (Unqual {OccName: castPtr})))),
+         ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:20:35-38 }
+          Just (Ann (DP (0,1)) (ColDelta 35) DP (0,1) [] [])
+          (IEVar 
+           ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:20:35-38 }
+            Just (Ann (DP (0,0)) (ColDelta 35) DP (0,0) [] [((G AnnVal),DP (0,0))])
+            (Unqual {OccName: peek}))))]))))),
+   ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:21:1-15 }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [((G AnnImport),DP (0,0)),((G AnnVal),DP (0,1))])
+    (ImportDecl 
+     (Nothing) 
+     ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:21:8-15 }
+      Nothing{ModuleName: GHC.Prim}) 
+     (Nothing) 
+     (False) 
+     (False) 
+     (False) 
+     (False) 
+     (Nothing) 
+     (Nothing))),
+   ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:22:1-15 }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [((G AnnImport),DP (0,0)),((G AnnVal),DP (0,1))])
+    (ImportDecl 
+     (Nothing) 
+     ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:22:8-15 }
+      Nothing{ModuleName: GHC.Exts}) 
+     (Nothing) 
+     (False) 
+     (False) 
+     (False) 
+     (False) 
+     (Nothing) 
+     (Nothing))),
+   ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:23:1-16 }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [((G AnnImport),DP (0,0)),((G AnnVal),DP (0,1))])
+    (ImportDecl 
+     (Nothing) 
+     ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:23:8-16 }
+      Nothing{ModuleName: Data.Word}) 
+     (Nothing) 
+     (False) 
+     (False) 
+     (False) 
+     (False) 
+     (Nothing) 
+     (Nothing)))] 
+  [
+   ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:28:1-22 }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (5,1) [DComment (DP (2,1),DP (2,22)) "#include \"ghcconfig.h\"" Nothing,DComment (DP (2,1),DP (2,22)) "#if SIZEOF_VOID_P == 8" Nothing] [((G AnnType),DP (0,0)),((G AnnEqual),DP (0,1))])
+    (TyClD 
+     (SynDecl 
+      ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:28:6-13 }
+       Just (Ann (DP (0,1)) (ColDelta 6) DP (0,1) [] [((G AnnVal),DP (0,0))])
+       (Unqual {OccName: HalfWord})) 
+      (HsQTvs 
+       [] 
+       []) 
+      ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:28:17-22 }
+       Just (Ann (DP (0,1)) (ColDelta 17) DP (0,1) [] [((G AnnVal),DP (0,0))])
+       (HsTyVar 
+        (Unqual {OccName: Word32}))) 
+      (PlaceHolder)))),
+   ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:40:1-36 }
+    Just (Ann (DP (2,1)) (ColDelta 1) DP (12,1) [DComment (DP (1,1),DP (1,5)) "#else" Nothing,DComment (DP (1,1),DP (1,1)) "" Nothing,DComment (DP (0,0),DP (0,4)) "type" Nothing,DComment (DP (0,1),DP (0,9)) "HalfWord" Nothing,DComment (DP (0,1),DP (0,2)) "=" Nothing,DComment (DP (0,1),DP (0,7)) "Word16" Nothing,DComment (DP (1,1),DP (1,6)) "#endif" Nothing,DComment (DP (2,1),DP (2,19)) "#if i386_BUILD_ARCH" Nothing,DComment (DP (1,1),DP (1,27)) "#define TABLES_NEXT_TO_CODE" Nothing,DComment (DP (1,1),DP (1,38)) "#define CLOSURE_TYPE_OFFSET SIZEOF_INT" Nothing,DComment (DP (1,1),DP (1,5)) "#else" Nothing,DComment (DP (1,1),DP (1,44)) "#define CLOSURE_TYPE_OFFSET (SIZEOF_INT * 2)" Nothing,DComment (DP (1,1),DP (1,6)) "#endif" Nothing] [((G AnnDcolon),DP (0,1))])
+    (SigD 
+     (TypeSig 
+      [
+       ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:40:1-15 }
+        Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+        (Unqual {OccName: getInfoTablePtr}))] 
+      ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:40:20-36 }
+       Just (Ann (DP (0,1)) (ColDelta 20) DP (0,1) [] [])
+       (HsForAllTy 
+        (Implicit) 
+        (Nothing) 
+        (HsQTvs 
+         [] 
+         []) 
+        ({ <no location info> }
+         Just (Ann (DP (-44,0)) (ColDelta 0) DP (-44,0) [] [])
+         []) 
+        ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:40:20-36 }
+         Just (Ann (DP (0,0)) (ColDelta 20) DP (0,0) [] [((G AnnRarrow),DP (0,1))])
+         (HsFunTy 
+          ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:40:20 }
+           Just (Ann (DP (0,0)) (ColDelta 20) DP (0,0) [] [((G AnnVal),DP (0,0))])
+           (HsTyVar 
+            (Unqual {OccName: a}))) 
+          ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:40:25-36 }
+           Just (Ann (DP (0,1)) (ColDelta 25) DP (0,1) [] [])
+           (HsAppTy 
+            ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:40:25-27 }
+             Just (Ann (DP (0,0)) (ColDelta 25) DP (0,0) [] [((G AnnVal),DP (0,0))])
+             (HsTyVar 
+              (Unqual {OccName: Ptr}))) 
+            ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:40:29-36 }
+             Just (Ann (DP (0,1)) (ColDelta 29) DP (0,1) [] [((G AnnVal),DP (0,0))])
+             (HsTyVar 
+              (Unqual {OccName: HalfWord}))))))))) 
+      (PlaceHolder)))),
+   ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:(41,1)-(42,26)
+     }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [])
+    (ValD 
+     (FunBind 
+      ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:41:1-15 }
+       Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+       (Unqual {OccName: getInfoTablePtr})) 
+      (False) 
+      (MG 
+       [
+        ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:(41,1)-(42,26)
+          }
+         Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnEqual),DP (0,1))])
+         (Match 
+          (Just 
+           ((,) 
+            ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:41:1-15 }
+             Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+             (Unqual {OccName: getInfoTablePtr})) 
+            (False))) 
+          [
+           ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:41:17 }
+            Just (Ann (DP (0,1)) (ColDelta 17) DP (0,1) [] [((G AnnVal),DP (0,0))])
+            (VarPat 
+             (Unqual {OccName: i})))] 
+          (Nothing) 
+          (GRHSs 
+           [
+            ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:(41,19)-(42,26)
+              }
+             Just (Ann (DP (0,-1)) (ColDelta 19) DP (0,-1) [] [])
+             (GRHS 
+              [] 
+              ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:(41,21)-(42,26)
+                }
+               Just (Ann (DP (0,1)) (ColDelta 21) DP (0,1) [] [((G AnnCase),DP (0,0)),((G AnnOf),DP (0,1)),((AnnList ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:42:5-26 Ref "delta-1"),DP (0,0))])
+               (HsCase 
+                ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:41:26-41 }
+                 Just (Ann (DP (0,1)) (ColDelta 26) DP (0,1) [] [])
+                 (HsApp 
+                  ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:41:26-39 }
+                   Just (Ann (DP (0,0)) (ColDelta 26) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                   (HsVar 
+                    (Unqual {OccName: unpackClosure#}))) 
+                  ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:41:41 }
+                   Just (Ann (DP (0,1)) (ColDelta 41) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                   (HsVar 
+                    (Unqual {OccName: i}))))) 
+                (MG 
+                 [
+                  ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:42:5-26 }
+                   Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])
+                   (Match 
+                    (Nothing) 
+                    [
+                     ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:42:5-17 }
+                      Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnOpen),DP (0,0)),((G AnnClose),DP (0,1))])
+                      (TuplePat 
+                       [
+                        ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:42:8 }
+                         Just (Ann (DP (0,1)) (ColDelta 3) DP (0,1) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                         (VarPat 
+                          (Unqual {OccName: p}))),
+                        ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:42:11 }
+                         Just (Ann (DP (0,1)) (ColDelta 6) DP (0,1) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                         (WildPat 
+                          (PlaceHolder))),
+                        ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:42:14 }
+                         Just (Ann (DP (0,1)) (ColDelta 9) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                         (WildPat 
+                          (PlaceHolder)))] 
+                       (Unboxed) 
+                       []))] 
+                    (Nothing) 
+                    (GRHSs 
+                     [
+                      ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:42:19-26 }
+                       Just (Ann (DP (0,1)) (ColDelta 14) DP (0,1) [] [((G AnnRarrow),DP (0,0))])
+                       (GRHS 
+                        [] 
+                        ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:42:22-26 }
+                         Just (Ann (DP (0,1)) (ColDelta 17) DP (0,1) [] [])
+                         (HsApp 
+                          ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:42:22-24 }
+                           Just (Ann (DP (0,0)) (ColDelta 17) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                           (HsVar 
+                            (Unqual {OccName: Ptr}))) 
+                          ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:42:26 }
+                           Just (Ann (DP (0,1)) (ColDelta 21) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                           (HsVar 
+                            (Unqual {OccName: p})))))))] 
+                     (EmptyLocalBinds))))] 
+                 [] 
+                 (PlaceHolder) 
+                 (FromSource))))))] 
+           (EmptyLocalBinds))))] 
+       [] 
+       (PlaceHolder) 
+       (FromSource)) 
+      (WpHole) 
+      (PlaceHolder) 
+      []))),
+   ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:44:1-42 }
+    Just (Ann (DP (2,1)) (ColDelta 1) DP (2,1) [] [((G AnnNewtype),DP (0,0)),((G AnnEqual),DP (0,1))])
+    (TyClD 
+     (DataDecl 
+      ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:44:9-19 }
+       Just (Ann (DP (0,1)) (ColDelta 9) DP (0,1) [] [((G AnnVal),DP (0,0))])
+       (Unqual {OccName: ClosureType})) 
+      (HsQTvs 
+       [] 
+       []) 
+      (HsDataDefn 
+       (NewType) 
+       ({ <no location info> }
+        Just (Ann (DP (-44,0)) (ColDelta 0) DP (-44,0) [] [])
+        []) 
+       (Nothing) 
+       (Nothing) 
+       [
+        ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:44:23-42 }
+         Just (Ann (DP (0,1)) (ColDelta 23) DP (0,1) [] [])
+         (ConDecl 
+          [
+           ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:44:23-33 }
+            Just (Ann (DP (0,0)) (ColDelta 23) DP (0,0) [] [((G AnnVal),DP (0,0))])
+            (Unqual {OccName: ClosureType}))] 
+          (Explicit) 
+          (HsQTvs 
+           [] 
+           []) 
+          ({ <no location info> }
+           Just (Ann (DP (-44,0)) (ColDelta 0) DP (-44,0) [] [])
+           []) 
+          (PrefixCon 
+           [
+            ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:44:35-42 }
+             Just (Ann (DP (0,1)) (ColDelta 35) DP (0,1) [] [((G AnnVal),DP (0,0))])
+             (HsTyVar 
+              (Unqual {OccName: HalfWord})))]) 
+          (ResTyH98) 
+          (Nothing) 
+          (False)))] 
+       (Nothing)) 
+      (PlaceHolder)))),
+   ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:46:1-37 }
+    Just (Ann (DP (2,1)) (ColDelta 1) DP (2,1) [] [((G AnnDcolon),DP (0,1))])
+    (SigD 
+     (TypeSig 
+      [
+       ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:46:1-14 }
+        Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+        (Unqual {OccName: getClosureType}))] 
+      ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:46:19-37 }
+       Just (Ann (DP (0,1)) (ColDelta 19) DP (0,1) [] [])
+       (HsForAllTy 
+        (Implicit) 
+        (Nothing) 
+        (HsQTvs 
+         [] 
+         []) 
+        ({ <no location info> }
+         Just (Ann (DP (-44,0)) (ColDelta 0) DP (-44,0) [] [])
+         []) 
+        ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:46:19-37 }
+         Just (Ann (DP (0,0)) (ColDelta 19) DP (0,0) [] [((G AnnRarrow),DP (0,1))])
+         (HsFunTy 
+          ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:46:19 }
+           Just (Ann (DP (0,0)) (ColDelta 19) DP (0,0) [] [((G AnnVal),DP (0,0))])
+           (HsTyVar 
+            (Unqual {OccName: a}))) 
+          ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:46:24-37 }
+           Just (Ann (DP (0,1)) (ColDelta 24) DP (0,1) [] [])
+           (HsAppTy 
+            ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:46:24-25 }
+             Just (Ann (DP (0,0)) (ColDelta 24) DP (0,0) [] [((G AnnVal),DP (0,0))])
+             (HsTyVar 
+              (Unqual {OccName: IO}))) 
+            ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:46:27-37 }
+             Just (Ann (DP (0,1)) (ColDelta 27) DP (0,1) [] [((G AnnVal),DP (0,0))])
+             (HsTyVar 
+              (Unqual {OccName: ClosureType}))))))))) 
+      (PlaceHolder)))),
+   ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:(47,1)-(48,56)
+     }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [])
+    (ValD 
+     (FunBind 
+      ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:47:1-14 }
+       Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+       (Unqual {OccName: getClosureType})) 
+      (False) 
+      (MG 
+       [
+        ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:(47,1)-(48,56)
+          }
+         Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnEqual),DP (0,1))])
+         (Match 
+          (Just 
+           ((,) 
+            ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:47:1-14 }
+             Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+             (Unqual {OccName: getClosureType})) 
+            (False))) 
+          [
+           ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:47:16 }
+            Just (Ann (DP (0,1)) (ColDelta 16) DP (0,1) [] [((G AnnVal),DP (0,0))])
+            (VarPat 
+             (Unqual {OccName: a})))] 
+          (Nothing) 
+          (GRHSs 
+           [
+            ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:(47,18)-(48,56)
+              }
+             Just (Ann (DP (0,-1)) (ColDelta 18) DP (0,-1) [] [])
+             (GRHS 
+              [] 
+              ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:(47,20)-(48,56)
+                }
+               Just (Ann (DP (0,1)) (ColDelta 20) DP (0,1) [] [])
+               (OpApp 
+                ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:47:20-30 }
+                 Just (Ann (DP (0,0)) (ColDelta 20) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                 (HsVar 
+                  (Unqual {OccName: ClosureType}))) 
+                ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:47:32-34 }
+                 Just (Ann (DP (0,1)) (ColDelta 32) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                 (HsVar 
+                  (Unqual {OccName: <$>}))) 
+                (PlaceHolder) 
+                ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:48:5-56 }
+                 Just (Ann (DP (1,5)) (ColDelta 5) DP (1,5) [] [])
+                 (HsApp 
+                  ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:48:5-8 }
+                   Just (Ann (DP (0,0)) (ColDelta 5) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                   (HsVar 
+                    (Unqual {OccName: peek}))) 
+                  ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:48:10-56 }
+                   Just (Ann (DP (0,1)) (ColDelta 10) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])
+                   (HsPar 
+                    ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:48:11-55 }
+                     Just (Ann (DP (0,0)) (ColDelta 11) DP (0,0) [] [])
+                     (OpApp 
+                      ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:48:11-37 }
+                       Just (Ann (DP (0,0)) (ColDelta 11) DP (0,0) [] [])
+                       (HsApp 
+                        ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:48:11-17 }
+                         Just (Ann (DP (0,0)) (ColDelta 11) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                         (HsVar 
+                          (Unqual {OccName: castPtr}))) 
+                        ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:48:19-37 }
+                         Just (Ann (DP (0,1)) (ColDelta 19) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])
+                         (HsPar 
+                          ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:48:20-36 }
+                           Just (Ann (DP (0,0)) (ColDelta 20) DP (0,0) [] [])
+                           (HsApp 
+                            ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:48:20-34 }
+                             Just (Ann (DP (0,0)) (ColDelta 20) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                             (HsVar 
+                              (Unqual {OccName: getInfoTablePtr}))) 
+                            ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:48:36 }
+                             Just (Ann (DP (0,1)) (ColDelta 36) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                             (HsVar 
+                              (Unqual {OccName: a}))))))))) 
+                      ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:48:39-47 }
+                       Just (Ann (DP (0,1)) (ColDelta 39) DP (0,1) [] [((G AnnBackquote),DP (0,0)),((G AnnVal),DP (0,0)),((G AnnBackquote),DP (0,0))])
+                       (HsVar 
+                        (Unqual {OccName: plusPtr}))) 
+                      (PlaceHolder) 
+                      ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:48:49-55 }
+                       Just (Ann (DP (0,1)) (ColDelta 49) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])
+                       (HsPar 
+                        ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:48:50-54 }
+                         Just (Ann (DP (0,0)) (ColDelta 50) DP (0,0) [] [])
+                         (OpApp 
+                          ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:48:50 }
+                           Just (Ann (DP (0,0)) (ColDelta 50) DP (0,0) [] [((AnnComment DComment (DP (0,-1),DP (0,18)) "CLOSURE_TYPE_OFFSET" Nothing),DP (0,-1)),((G AnnVal),DP (0,0))])
+                           (HsOverLit {HsOverLit:4})) 
+                          ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:48:52 }
+                           Just (Ann (DP (0,1)) (ColDelta 52) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                           (HsVar 
+                            (Unqual {OccName: *}))) 
+                          (PlaceHolder) 
+                          ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:48:54 }
+                           Just (Ann (DP (0,1)) (ColDelta 54) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                           (HsOverLit {HsOverLit:2}))))))))))))))))] 
+           (EmptyLocalBinds))))] 
+       [] 
+       (PlaceHolder) 
+       (FromSource)) 
+      (WpHole) 
+      (PlaceHolder) 
+      []))),
+   ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:50:1-36 }
+    Just (Ann (DP (2,1)) (ColDelta 1) DP (2,1) [DComment (DP (0,11),DP (0,12)) ")" Nothing] [((G AnnDcolon),DP (0,1))])
+    (SigD 
+     (TypeSig 
+      [
+       ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:50:1-13 }
+        Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+        (Unqual {OccName: isConstructor}))] 
+      ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:50:18-36 }
+       Just (Ann (DP (0,1)) (ColDelta 18) DP (0,1) [] [])
+       (HsForAllTy 
+        (Implicit) 
+        (Nothing) 
+        (HsQTvs 
+         [] 
+         []) 
+        ({ <no location info> }
+         Just (Ann (DP (-44,0)) (ColDelta 0) DP (-44,0) [] [])
+         []) 
+        ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:50:18-36 }
+         Just (Ann (DP (0,0)) (ColDelta 18) DP (0,0) [] [((G AnnRarrow),DP (0,1))])
+         (HsFunTy 
+          ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:50:18-28 }
+           Just (Ann (DP (0,0)) (ColDelta 18) DP (0,0) [] [((G AnnVal),DP (0,0))])
+           (HsTyVar 
+            (Unqual {OccName: ClosureType}))) 
+          ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:50:33-36 }
+           Just (Ann (DP (0,1)) (ColDelta 33) DP (0,1) [] [((G AnnVal),DP (0,0))])
+           (HsTyVar 
+            (Unqual {OccName: Bool}))))))) 
+      (PlaceHolder)))),
+   ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:51:1-48 }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [])
+    (ValD 
+     (FunBind 
+      ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:51:1-13 }
+       Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+       (Unqual {OccName: isConstructor})) 
+      (False) 
+      (MG 
+       [
+        ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:51:1-48 }
+         Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnEqual),DP (0,1))])
+         (Match 
+          (Just 
+           ((,) 
+            ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:51:1-13 }
+             Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+             (Unqual {OccName: isConstructor})) 
+            (False))) 
+          [
+           ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:51:15-29 }
+            Just (Ann (DP (0,1)) (ColDelta 15) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])
+            (ParPat 
+             ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:51:16-28 }
+              Just (Ann (DP (0,0)) (ColDelta 16) DP (0,0) [] [])
+              (ConPatIn 
+               ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:51:16-26 }
+                Just (Ann (DP (0,0)) (ColDelta 16) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                (Unqual {OccName: ClosureType})) 
+               (PrefixCon 
+                [
+                 ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:51:28 }
+                  Just (Ann (DP (0,1)) (ColDelta 28) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                  (VarPat 
+                   (Unqual {OccName: i})))])))))] 
+          (Nothing) 
+          (GRHSs 
+           [
+            ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:51:31-48 }
+             Just (Ann (DP (0,-1)) (ColDelta 31) DP (0,-1) [] [])
+             (GRHS 
+              [] 
+              ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:51:33-48 }
+               Just (Ann (DP (0,1)) (ColDelta 33) DP (0,1) [] [])
+               (OpApp 
+                ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:51:33-43 }
+                 Just (Ann (DP (0,0)) (ColDelta 33) DP (0,0) [] [])
+                 (OpApp 
+                  ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:51:33-38 }
+                   Just (Ann (DP (0,0)) (ColDelta 33) DP (0,0) [] [])
+                   (OpApp 
+                    ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:51:33 }
+                     Just (Ann (DP (0,0)) (ColDelta 33) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                     (HsVar 
+                      (Unqual {OccName: i}))) 
+                    ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:51:35-36 }
+                     Just (Ann (DP (0,1)) (ColDelta 35) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                     (HsVar 
+                      (Unqual {OccName: >=}))) 
+                    (PlaceHolder) 
+                    ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:51:38 }
+                     Just (Ann (DP (0,1)) (ColDelta 38) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                     (HsOverLit {HsOverLit:1})))) 
+                  ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:51:40-41 }
+                   Just (Ann (DP (0,1)) (ColDelta 40) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                   (HsVar 
+                    (Unqual {OccName: &&}))) 
+                  (PlaceHolder) 
+                  ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:51:43 }
+                   Just (Ann (DP (0,1)) (ColDelta 43) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                   (HsVar 
+                    (Unqual {OccName: i}))))) 
+                ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:51:45-46 }
+                 Just (Ann (DP (0,1)) (ColDelta 45) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                 (HsVar 
+                  (Unqual {OccName: <=}))) 
+                (PlaceHolder) 
+                ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:51:48 }
+                 Just (Ann (DP (0,1)) (ColDelta 48) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                 (HsOverLit {HsOverLit:8}))))))] 
+           (EmptyLocalBinds))))] 
+       [] 
+       (PlaceHolder) 
+       (FromSource)) 
+      (WpHole) 
+      (PlaceHolder) 
+      []))),
+   ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:53:1-36 }
+    Just (Ann (DP (2,1)) (ColDelta 1) DP (2,1) [] [((G AnnDcolon),DP (0,1))])
+    (SigD 
+     (TypeSig 
+      [
+       ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:53:1-13 }
+        Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+        (Unqual {OccName: isIndirection}))] 
+      ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:53:18-36 }
+       Just (Ann (DP (0,1)) (ColDelta 18) DP (0,1) [] [])
+       (HsForAllTy 
+        (Implicit) 
+        (Nothing) 
+        (HsQTvs 
+         [] 
+         []) 
+        ({ <no location info> }
+         Just (Ann (DP (-44,0)) (ColDelta 0) DP (-44,0) [] [])
+         []) 
+        ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:53:18-36 }
+         Just (Ann (DP (0,0)) (ColDelta 18) DP (0,0) [] [((G AnnRarrow),DP (0,1))])
+         (HsFunTy 
+          ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:53:18-28 }
+           Just (Ann (DP (0,0)) (ColDelta 18) DP (0,0) [] [((G AnnVal),DP (0,0))])
+           (HsTyVar 
+            (Unqual {OccName: ClosureType}))) 
+          ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:53:33-36 }
+           Just (Ann (DP (0,1)) (ColDelta 33) DP (0,1) [] [((G AnnVal),DP (0,0))])
+           (HsTyVar 
+            (Unqual {OccName: Bool}))))))) 
+      (PlaceHolder)))),
+   ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:54:1-50 }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [])
+    (ValD 
+     (FunBind 
+      ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:54:1-13 }
+       Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+       (Unqual {OccName: isIndirection})) 
+      (False) 
+      (MG 
+       [
+        ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:54:1-50 }
+         Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnEqual),DP (0,1))])
+         (Match 
+          (Just 
+           ((,) 
+            ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:54:1-13 }
+             Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+             (Unqual {OccName: isIndirection})) 
+            (False))) 
+          [
+           ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:54:15-29 }
+            Just (Ann (DP (0,1)) (ColDelta 15) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])
+            (ParPat 
+             ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:54:16-28 }
+              Just (Ann (DP (0,0)) (ColDelta 16) DP (0,0) [] [])
+              (ConPatIn 
+               ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:54:16-26 }
+                Just (Ann (DP (0,0)) (ColDelta 16) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                (Unqual {OccName: ClosureType})) 
+               (PrefixCon 
+                [
+                 ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:54:28 }
+                  Just (Ann (DP (0,1)) (ColDelta 28) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                  (VarPat 
+                   (Unqual {OccName: i})))])))))] 
+          (Nothing) 
+          (GRHSs 
+           [
+            ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:54:31-50 }
+             Just (Ann (DP (0,-1)) (ColDelta 31) DP (0,-1) [] [])
+             (GRHS 
+              [] 
+              ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:54:33-50 }
+               Just (Ann (DP (0,1)) (ColDelta 33) DP (0,1) [] [])
+               (OpApp 
+                ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:54:33-44 }
+                 Just (Ann (DP (0,0)) (ColDelta 33) DP (0,0) [] [])
+                 (OpApp 
+                  ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:54:33-39 }
+                   Just (Ann (DP (0,0)) (ColDelta 33) DP (0,0) [] [])
+                   (OpApp 
+                    ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:54:33 }
+                     Just (Ann (DP (0,0)) (ColDelta 33) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                     (HsVar 
+                      (Unqual {OccName: i}))) 
+                    ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:54:35-36 }
+                     Just (Ann (DP (0,1)) (ColDelta 35) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                     (HsVar 
+                      (Unqual {OccName: >=}))) 
+                    (PlaceHolder) 
+                    ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:54:38-39 }
+                     Just (Ann (DP (0,1)) (ColDelta 38) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                     (HsOverLit {HsOverLit:28})))) 
+                  ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:54:41-42 }
+                   Just (Ann (DP (0,1)) (ColDelta 41) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                   (HsVar 
+                    (Unqual {OccName: &&}))) 
+                  (PlaceHolder) 
+                  ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:54:44 }
+                   Just (Ann (DP (0,1)) (ColDelta 44) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                   (HsVar 
+                    (Unqual {OccName: i}))))) 
+                ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:54:46-47 }
+                 Just (Ann (DP (0,1)) (ColDelta 46) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                 (HsVar 
+                  (Unqual {OccName: <=}))) 
+                (PlaceHolder) 
+                ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:54:49-50 }
+                 Just (Ann (DP (0,1)) (ColDelta 49) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                 (HsOverLit {HsOverLit:32}))))))] 
+           (EmptyLocalBinds))))] 
+       [] 
+       (PlaceHolder) 
+       (FromSource)) 
+      (WpHole) 
+      (PlaceHolder) 
+      []))),
+   ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:56:1-45 }
+    Just (Ann (DP (2,1)) (ColDelta 1) DP (2,1) [] [((G AnnDcolon),DP (0,1))])
+    (SigD 
+     (TypeSig 
+      [
+       ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:56:1-32 }
+        Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+        (Unqual {OccName: unsafeIsConstructorOrIndirection}))] 
+      ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:56:37-45 }
+       Just (Ann (DP (0,1)) (ColDelta 37) DP (0,1) [] [])
+       (HsForAllTy 
+        (Implicit) 
+        (Nothing) 
+        (HsQTvs 
+         [] 
+         []) 
+        ({ <no location info> }
+         Just (Ann (DP (-44,0)) (ColDelta 0) DP (-44,0) [] [])
+         []) 
+        ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:56:37-45 }
+         Just (Ann (DP (0,0)) (ColDelta 37) DP (0,0) [] [((G AnnRarrow),DP (0,1))])
+         (HsFunTy 
+          ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:56:37 }
+           Just (Ann (DP (0,0)) (ColDelta 37) DP (0,0) [] [((G AnnVal),DP (0,0))])
+           (HsTyVar 
+            (Unqual {OccName: a}))) 
+          ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:56:42-45 }
+           Just (Ann (DP (0,1)) (ColDelta 42) DP (0,1) [] [((G AnnVal),DP (0,0))])
+           (HsTyVar 
+            (Unqual {OccName: Bool}))))))) 
+      (PlaceHolder)))),
+   ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:(57,1)-(59,49)
+     }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [])
+    (ValD 
+     (FunBind 
+      ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:57:1-32 }
+       Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+       (Unqual {OccName: unsafeIsConstructorOrIndirection})) 
+      (False) 
+      (MG 
+       [
+        ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:(57,1)-(59,49)
+          }
+         Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnEqual),DP (0,1))])
+         (Match 
+          (Just 
+           ((,) 
+            ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:57:1-32 }
+             Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+             (Unqual {OccName: unsafeIsConstructorOrIndirection})) 
+            (False))) 
+          [
+           ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:57:34 }
+            Just (Ann (DP (0,1)) (ColDelta 34) DP (0,1) [] [((G AnnVal),DP (0,0))])
+            (VarPat 
+             (Unqual {OccName: a})))] 
+          (Nothing) 
+          (GRHSs 
+           [
+            ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:(57,36)-(59,49)
+              }
+             Just (Ann (DP (0,-1)) (ColDelta 36) DP (0,-1) [] [])
+             (GRHS 
+              [] 
+              ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:(57,38)-(59,49)
+                }
+               Just (Ann (DP (0,1)) (ColDelta 38) DP (0,1) [] [])
+               (OpApp 
+                ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:57:38-52 }
+                 Just (Ann (DP (0,0)) (ColDelta 38) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                 (HsVar 
+                  (Unqual {OccName: unsafePerformIO}))) 
+                ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:57:54 }
+                 Just (Ann (DP (0,1)) (ColDelta 54) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                 (HsVar 
+                  (Unqual {OccName: $}))) 
+                (PlaceHolder) 
+                ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:(57,56)-(59,49)
+                  }
+                 Just (Ann (DP (0,1)) (ColDelta 56) DP (0,1) [] [((G AnnDo),DP (0,0)),((AnnList ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:(58,5)-(59,49) Ref "delta-2"),DP (0,0))])
+                 (HsDo 
+                  (DoExpr) 
+                  [
+                   ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:58:5-26 }
+                    Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnLarrow),DP (0,1))])
+                    (BindStmt 
+                     ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:58:5-6 }
+                      Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                      (VarPat 
+                       (Unqual {OccName: ty}))) 
+                     ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:58:11-26 }
+                      Just (Ann (DP (0,1)) (ColDelta 6) DP (0,1) [] [])
+                      (HsApp 
+                       ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:58:11-24 }
+                        Just (Ann (DP (0,0)) (ColDelta 6) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                        (HsVar 
+                         (Unqual {OccName: getClosureType}))) 
+                       ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:58:26 }
+                        Just (Ann (DP (0,1)) (ColDelta 21) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                        (HsVar 
+                         (Unqual {OccName: a}))))) 
+                     (HsLit 
+                      (HsString "" {FastString: "noSyntaxExpr"})) 
+                     (HsLit 
+                      (HsString "" {FastString: "noSyntaxExpr"})))),
+                   ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:59:5-49 }
+                    Just (Ann (DP (1,0)) (ColDelta 0) DP (1,0) [] [])
+                    (BodyStmt 
+                     ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:59:5-49 }
+                      Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])
+                      (HsApp 
+                       ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:59:5-10 }
+                        Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                        (HsVar 
+                         (Unqual {OccName: return}))) 
+                       ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:59:12-49 }
+                        Just (Ann (DP (0,1)) (ColDelta 7) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])
+                        (HsPar 
+                         ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:59:13-48 }
+                          Just (Ann (DP (0,0)) (ColDelta 8) DP (0,0) [] [])
+                          (OpApp 
+                           ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:59:13-28 }
+                            Just (Ann (DP (0,0)) (ColDelta 8) DP (0,0) [] [])
+                            (HsApp 
+                             ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:59:13-25 }
+                              Just (Ann (DP (0,0)) (ColDelta 8) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                              (HsVar 
+                               (Unqual {OccName: isConstructor}))) 
+                             ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:59:27-28 }
+                              Just (Ann (DP (0,1)) (ColDelta 22) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                              (HsVar 
+                               (Unqual {OccName: ty}))))) 
+                           ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:59:30-31 }
+                            Just (Ann (DP (0,1)) (ColDelta 25) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                            (HsVar 
+                             (Unqual {OccName: ||}))) 
+                           (PlaceHolder) 
+                           ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:59:33-48 }
+                            Just (Ann (DP (0,1)) (ColDelta 28) DP (0,1) [] [])
+                            (HsApp 
+                             ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:59:33-45 }
+                              Just (Ann (DP (0,0)) (ColDelta 28) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                              (HsVar 
+                               (Unqual {OccName: isIndirection}))) 
+                             ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:59:47-48 }
+                              Just (Ann (DP (0,1)) (ColDelta 42) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                              (HsVar 
+                               (Unqual {OccName: ty}))))))))))) 
+                     (HsLit 
+                      (HsString "" {FastString: "noSyntaxExpr"})) 
+                     (HsLit 
+                      (HsString "" {FastString: "noSyntaxExpr"})) 
+                     (PlaceHolder)))] 
+                  (PlaceHolder)))))))] 
+           (EmptyLocalBinds))))] 
+       [] 
+       (PlaceHolder) 
+       (FromSource)) 
+      (WpHole) 
+      (PlaceHolder) 
+      []))),
+   ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:64:1-29 }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (5,1) [DComment (DP (2,1),DP (2,6)) "#endif" Nothing,DComment (DP (2,1),DP (2,214)) "-- | Inspect the dynamic pointer tagging bits of a closure. This is an impure function that relies on GHC internals and may falsely return 0, but should never give the wrong tag number if it returns a non-0 value." Nothing] [((G AnnDcolon),DP (0,1))])
+    (SigD 
+     (TypeSig 
+      [
+       ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:64:1-16 }
+        Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+        (Unqual {OccName: unsafeGetTagBits}))] 
+      ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:64:21-29 }
+       Just (Ann (DP (0,1)) (ColDelta 21) DP (0,1) [] [])
+       (HsForAllTy 
+        (Implicit) 
+        (Nothing) 
+        (HsQTvs 
+         [] 
+         []) 
+        ({ <no location info> }
+         Just (Ann (DP (-44,0)) (ColDelta 0) DP (-44,0) [] [])
+         []) 
+        ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:64:21-29 }
+         Just (Ann (DP (0,0)) (ColDelta 21) DP (0,0) [] [((G AnnRarrow),DP (0,1))])
+         (HsFunTy 
+          ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:64:21 }
+           Just (Ann (DP (0,0)) (ColDelta 21) DP (0,0) [] [((G AnnVal),DP (0,0))])
+           (HsTyVar 
+            (Unqual {OccName: a}))) 
+          ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:64:26-29 }
+           Just (Ann (DP (0,1)) (ColDelta 26) DP (0,1) [] [((G AnnVal),DP (0,0))])
+           (HsTyVar 
+            (Unqual {OccName: Word}))))))) 
+      (PlaceHolder)))),
+   ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:65:1-31 }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [((G AnnOpen),DP (0,0)),((G AnnClose),DP (0,1))])
+    (SigD 
+     (InlineSig 
+      ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:65:12-27 }
+       Just (Ann (DP (0,1)) (ColDelta 12) DP (0,1) [] [((G AnnVal),DP (0,0))])
+       (Unqual {OccName: unsafeGetTagBits})) 
+      (InlinePragma "{-# INLINE" 
+       (Inline) 
+       (Nothing) 
+       (AlwaysActive) 
+       (FunLike))))),
+   ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:67:1-53 }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (2,1) [DComment (DP (1,1),DP (1,15)) "#ifdef HAS_TAGS" Nothing] [])
+    (ValD 
+     (FunBind 
+      ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:67:1-16 }
+       Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+       (Unqual {OccName: unsafeGetTagBits})) 
+      (False) 
+      (MG 
+       [
+        ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:67:1-53 }
+         Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnEqual),DP (0,1))])
+         (Match 
+          (Just 
+           ((,) 
+            ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:67:1-16 }
+             Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+             (Unqual {OccName: unsafeGetTagBits})) 
+            (False))) 
+          [
+           ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:67:18 }
+            Just (Ann (DP (0,1)) (ColDelta 18) DP (0,1) [] [((G AnnVal),DP (0,0))])
+            (VarPat 
+             (Unqual {OccName: a})))] 
+          (Nothing) 
+          (GRHSs 
+           [
+            ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:67:20-53 }
+             Just (Ann (DP (0,-1)) (ColDelta 20) DP (0,-1) [] [])
+             (GRHS 
+              [] 
+              ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:67:22-53 }
+               Just (Ann (DP (0,1)) (ColDelta 22) DP (0,1) [] [])
+               (OpApp 
+                ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:67:22-41 }
+                 Just (Ann (DP (0,0)) (ColDelta 22) DP (0,0) [] [])
+                 (HsApp 
+                  ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:67:22-33 }
+                   Just (Ann (DP (0,0)) (ColDelta 22) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                   (HsVar 
+                    (Unqual {OccName: unsafeCoerce}))) 
+                  ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:67:35-41 }
+                   Just (Ann (DP (0,1)) (ColDelta 35) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])
+                   (HsPar 
+                    ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:67:36-40 }
+                     Just (Ann (DP (0,0)) (ColDelta 36) DP (0,0) [] [])
+                     (HsApp 
+                      ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:67:36-38 }
+                       Just (Ann (DP (0,0)) (ColDelta 36) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                       (HsVar 
+                        (Unqual {OccName: Box}))) 
+                      ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:67:40 }
+                       Just (Ann (DP (0,1)) (ColDelta 40) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                       (HsVar 
+                        (Unqual {OccName: a}))))))))) 
+                ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:67:43-45 }
+                 Just (Ann (DP (0,1)) (ColDelta 43) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                 (HsVar 
+                  (Unqual {OccName: .&.}))) 
+                (PlaceHolder) 
+                ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:67:47-53 }
+                 Just (Ann (DP (0,1)) (ColDelta 47) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])
+                 (HsPar 
+                  ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:67:48-52 }
+                   Just (Ann (DP (0,0)) (ColDelta 48) DP (0,0) [] [])
+                   (OpApp 
+                    ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:67:48 }
+                     Just (Ann (DP (0,0)) (ColDelta 48) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                     (HsOverLit {HsOverLit:8})) 
+                    ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:67:50 }
+                     Just (Ann (DP (0,-11)) (ColDelta 50) DP (0,1) [DComment (DP (0,-1),DP (0,12)) "SIZEOF_VOID_P" Nothing] [((G AnnVal),DP (0,-11))])
+                     (HsVar 
+                      (Unqual {OccName: -}))) 
+                    (PlaceHolder) 
+                    ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:67:52 }
+                     Just (Ann (DP (0,1)) (ColDelta 52) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                     (HsOverLit {HsOverLit:1}))))))))))] 
+           (EmptyLocalBinds))))] 
+       [] 
+       (PlaceHolder) 
+       (FromSource)) 
+      (WpHole) 
+      (PlaceHolder) 
+      []))),
+   ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:68:1-18 }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [DComment (DP (0,8),DP (0,9)) "-" Nothing,DComment (DP (0,1),DP (0,2)) "1" Nothing,DComment (DP (0,0),DP (0,1)) ")" Nothing] [((G AnnData),DP (0,0)),((G AnnEqual),DP (0,1))])
+    (TyClD 
+     (DataDecl 
+      ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:68:6-8 }
+       Just (Ann (DP (0,1)) (ColDelta 6) DP (0,1) [] [((G AnnVal),DP (0,0))])
+       (Unqual {OccName: Box})) 
+      (HsQTvs 
+       [] 
+       [
+        ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:68:10 }
+         Just (Ann (DP (0,1)) (ColDelta 10) DP (0,1) [] [((G AnnVal),DP (0,0))])
+         (UserTyVar 
+          (Unqual {OccName: a})))]) 
+      (HsDataDefn 
+       (DataType) 
+       ({ <no location info> }
+        Just (Ann (DP (-44,0)) (ColDelta 0) DP (-44,0) [] [])
+        []) 
+       (Nothing) 
+       (Nothing) 
+       [
+        ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:68:14-18 }
+         Just (Ann (DP (0,1)) (ColDelta 14) DP (0,1) [] [])
+         (ConDecl 
+          [
+           ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:68:14-16 }
+            Just (Ann (DP (0,0)) (ColDelta 14) DP (0,0) [] [((G AnnVal),DP (0,0))])
+            (Unqual {OccName: Box}))] 
+          (Explicit) 
+          (HsQTvs 
+           [] 
+           []) 
+          ({ <no location info> }
+           Just (Ann (DP (-44,0)) (ColDelta 0) DP (-44,0) [] [])
+           []) 
+          (PrefixCon 
+           [
+            ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:68:18 }
+             Just (Ann (DP (0,1)) (ColDelta 18) DP (0,1) [] [((G AnnVal),DP (0,0))])
+             (HsTyVar 
+              (Unqual {OccName: a})))]) 
+          (ResTyH98) 
+          (Nothing) 
+          (False)))] 
+       (Nothing)) 
+      (PlaceHolder)))),
+   ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:74:1-30 }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (6,1) [DComment (DP (1,1),DP (1,5)) "#else" Nothing,DComment (DP (1,1),DP (1,1)) "" Nothing,DComment (DP (0,0),DP (0,16)) "unsafeGetTagBits" Nothing,DComment (DP (0,1),DP (0,2)) "_" Nothing,DComment (DP (0,1),DP (0,2)) "=" Nothing,DComment (DP (0,1),DP (0,2)) "0" Nothing,DComment (DP (1,1),DP (1,6)) "#endif" Nothing,DComment (DP (2,1),DP (2,435)) "-- | Returns a guess as to whether or not a value has been evaluated. This is an impure function that relies on GHC internals and will return false negatives, but no false positives. This is unsafe as the value of this function will vary (from False to True) over the course of otherwise pure invocations! This first attempts to check the tag bits of the pointer, and then falls back on inspecting the info table for the closure type." Nothing] [((G AnnDcolon),DP (0,1))])
+    (SigD 
+     (TypeSig 
+      [
+       ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:74:1-17 }
+        Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+        (Unqual {OccName: unsafeIsEvaluated}))] 
+      ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:74:22-30 }
+       Just (Ann (DP (0,1)) (ColDelta 22) DP (0,1) [] [])
+       (HsForAllTy 
+        (Implicit) 
+        (Nothing) 
+        (HsQTvs 
+         [] 
+         []) 
+        ({ <no location info> }
+         Just (Ann (DP (-44,0)) (ColDelta 0) DP (-44,0) [] [])
+         []) 
+        ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:74:22-30 }
+         Just (Ann (DP (0,0)) (ColDelta 22) DP (0,0) [] [((G AnnRarrow),DP (0,1))])
+         (HsFunTy 
+          ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:74:22 }
+           Just (Ann (DP (0,0)) (ColDelta 22) DP (0,0) [] [((G AnnVal),DP (0,0))])
+           (HsTyVar 
+            (Unqual {OccName: a}))) 
+          ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:74:27-30 }
+           Just (Ann (DP (0,1)) (ColDelta 27) DP (0,1) [] [((G AnnVal),DP (0,0))])
+           (HsTyVar 
+            (Unqual {OccName: Bool}))))))) 
+      (PlaceHolder)))),
+   ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:75:1-32 }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [((G AnnOpen),DP (0,0)),((G AnnClose),DP (0,1))])
+    (SigD 
+     (InlineSig 
+      ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:75:12-28 }
+       Just (Ann (DP (0,1)) (ColDelta 12) DP (0,1) [] [((G AnnVal),DP (0,0))])
+       (Unqual {OccName: unsafeIsEvaluated})) 
+      (InlinePragma "{-# INLINE" 
+       (Inline) 
+       (Nothing) 
+       (AlwaysActive) 
+       (FunLike))))),
+   ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:(76,1)-(78,56)
+     }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [])
+    (ValD 
+     (FunBind 
+      ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:76:1-17 }
+       Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+       (Unqual {OccName: unsafeIsEvaluated})) 
+      (False) 
+      (MG 
+       [
+        ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:(76,1)-(78,56)
+          }
+         Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnEqual),DP (0,1))])
+         (Match 
+          (Just 
+           ((,) 
+            ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:76:1-17 }
+             Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+             (Unqual {OccName: unsafeIsEvaluated})) 
+            (False))) 
+          [
+           ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:76:19 }
+            Just (Ann (DP (0,1)) (ColDelta 19) DP (0,1) [] [((G AnnVal),DP (0,0))])
+            (VarPat 
+             (Unqual {OccName: a})))] 
+          (Nothing) 
+          (GRHSs 
+           [
+            ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:(76,21)-(78,56)
+              }
+             Just (Ann (DP (0,-1)) (ColDelta 21) DP (0,-1) [] [])
+             (GRHS 
+              [] 
+              ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:(76,23)-(78,56)
+                }
+               Just (Ann (DP (0,1)) (ColDelta 23) DP (0,1) [] [])
+               (OpApp 
+                ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:76:23-44 }
+                 Just (Ann (DP (0,0)) (ColDelta 23) DP (0,0) [] [])
+                 (OpApp 
+                  ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:76:23-40 }
+                   Just (Ann (DP (0,0)) (ColDelta 23) DP (0,0) [] [])
+                   (HsApp 
+                    ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:76:23-38 }
+                     Just (Ann (DP (0,0)) (ColDelta 23) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                     (HsVar 
+                      (Unqual {OccName: unsafeGetTagBits}))) 
+                    ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:76:40 }
+                     Just (Ann (DP (0,1)) (ColDelta 40) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                     (HsVar 
+                      (Unqual {OccName: a}))))) 
+                  ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:76:42 }
+                   Just (Ann (DP (0,1)) (ColDelta 42) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                   (HsVar 
+                    (Unqual {OccName: >}))) 
+                  (PlaceHolder) 
+                  ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:76:44 }
+                   Just (Ann (DP (0,1)) (ColDelta 44) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                   (HsOverLit {HsOverLit:0})))) 
+                ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:78:20-21 }
+                 Just (Ann (DP (1,20)) (ColDelta 20) DP (2,20) [DComment (DP (1,1),DP (1,21)) "#ifdef HAS_INFO_TABLE" Nothing] [((G AnnVal),DP (0,0))])
+                 (HsVar 
+                  (Unqual {OccName: ||}))) 
+                (PlaceHolder) 
+                ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:78:23-56 }
+                 Just (Ann (DP (0,1)) (ColDelta 23) DP (0,1) [] [])
+                 (HsApp 
+                  ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:78:23-54 }
+                   Just (Ann (DP (0,0)) (ColDelta 23) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                   (HsVar 
+                    (Unqual {OccName: unsafeIsConstructorOrIndirection}))) 
+                  ({ ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:78:56 }
+                   Just (Ann (DP (0,1)) (ColDelta 56) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                   (HsVar 
+                    (Unqual {OccName: a})))))))))] 
+           (EmptyLocalBinds))))] 
+       [] 
+       (PlaceHolder) 
+       (FromSource)) 
+      (WpHole) 
+      (PlaceHolder) 
+      [])))] 
+  (Nothing) 
+  (Nothing)))
+==============
+[(AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:1:1 CN "HsModule" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((AnnComment DComment (DP (0,0),DP (0,60)) "{-# LANGUAGE CPP, BangPatterns, MagicHash, UnboxedTuples #-}" Nothing),DP (0,0)),((G AnnModule),DP (1,1)),((G AnnVal),DP (0,1)),((G AnnWhere),DP (0,1)),((AnnComment DComment (DP (1,1),DP (1,6)) "#endif" Nothing),DP (1,1)),((G AnnEofPos),DP (2,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:(3,5)-(8,5) CN "(:)" NotNeeded,
+  (Ann (DP (1,5)) (ColDelta 5) DP (1,5) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (1,5))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:5:7-22 CN "IEVar" NotNeeded,
+  (Ann (DP (1,7)) (ColDelta 7) DP (2,7) [DComment (DP (1,5),DP (1,46)) "-- * Inspecting the tag bits of a closure" Nothing] [])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:5:7-22 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 7) DP (0,0) [] [((G AnnVal),DP (0,0)),((AnnComment DComment (DP (1,5),DP (1,47)) "-- * Determining if a closure is evaluated" Nothing),DP (1,5)),((G AnnComma),DP (2,5))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:7:7-23 CN "IEVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 7) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:7:7-23 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 7) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:16:1-24 CN "ImportDecl" NotNeeded,
+  (Ann (DP (2,1)) (ColDelta 1) DP (8,1) [DComment (DP (2,1),DP (2,30)) "#if __GLASGOW_HASKELL__ >= 608" Nothing,DComment (DP (1,1),DP (1,55)) "-- dynamic pointer tagging is present on this platform" Nothing,DComment (DP (1,1),DP (1,16)) "#define HAS_TAGS" Nothing,DComment (DP (1,1),DP (1,60)) "-- and we have an info table we can plunder for information" Nothing,DComment (DP (1,1),DP (1,22)) "#define HAS_INFO_TABLE" Nothing] [((G AnnImport),DP (0,0)),((G AnnVal),DP (0,1))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:16:18-24 CN "(:)" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 18) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:16:19-23 CN "IEVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 19) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:16:19-23 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 19) DP (0,0) [] [((G AnnOpenP),DP (0,0)),((G AnnVal),DP (0,0)),((G AnnCloseP),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:17:1-27 CN "ImportDecl" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [((G AnnImport),DP (0,0)),((G AnnVal),DP (0,1))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:17:21-27 CN "(:)" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 21) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:17:22-26 CN "IEVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 22) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:17:22-26 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 22) DP (0,0) [] [((G AnnOpenP),DP (0,0)),((G AnnVal),DP (0,0)),((G AnnCloseP),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:18:1-35 CN "ImportDecl" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [((G AnnImport),DP (0,0)),((G AnnVal),DP (0,1))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:18:22-35 CN "(:)" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 22) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:18:23-34 CN "IEVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 23) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:18:23-34 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 23) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:19:1-41 CN "ImportDecl" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [((G AnnImport),DP (0,0)),((G AnnVal),DP (0,1))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:19:25-41 CN "(:)" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 25) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:19:26-40 CN "IEVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 26) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:19:26-40 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 26) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:20:1-39 CN "ImportDecl" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [((G AnnImport),DP (0,0)),((G AnnVal),DP (0,1))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:20:16-39 CN "(:)" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 16) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:20:17-23 CN "IEVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 17) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:20:17-23 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 17) DP (0,0) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:20:26-32 CN "IEVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 26) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:20:26-32 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 26) DP (0,0) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:20:35-38 CN "IEVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 35) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:20:35-38 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 35) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:21:1-15 CN "ImportDecl" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [((G AnnImport),DP (0,0)),((G AnnVal),DP (0,1))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:22:1-15 CN "ImportDecl" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [((G AnnImport),DP (0,0)),((G AnnVal),DP (0,1))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:23:1-16 CN "ImportDecl" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [((G AnnImport),DP (0,0)),((G AnnVal),DP (0,1))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:28:1-22 CN "TyClD" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (5,1) [DComment (DP (2,1),DP (2,22)) "#include \"ghcconfig.h\"" Nothing,DComment (DP (2,1),DP (2,22)) "#if SIZEOF_VOID_P == 8" Nothing] [((G AnnType),DP (0,0)),((G AnnEqual),DP (0,1))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:28:6-13 CN "Unqual" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 6) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:28:17-22 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 17) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:40:1-15 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:40:1-36 CN "SigD" NotNeeded,
+  (Ann (DP (2,1)) (ColDelta 1) DP (12,1) [DComment (DP (1,1),DP (1,5)) "#else" Nothing,DComment (DP (1,1),DP (1,1)) "" Nothing,DComment (DP (0,0),DP (0,4)) "type" Nothing,DComment (DP (0,1),DP (0,9)) "HalfWord" Nothing,DComment (DP (0,1),DP (0,2)) "=" Nothing,DComment (DP (0,1),DP (0,7)) "Word16" Nothing,DComment (DP (1,1),DP (1,6)) "#endif" Nothing,DComment (DP (2,1),DP (2,19)) "#if i386_BUILD_ARCH" Nothing,DComment (DP (1,1),DP (1,27)) "#define TABLES_NEXT_TO_CODE" Nothing,DComment (DP (1,1),DP (1,38)) "#define CLOSURE_TYPE_OFFSET SIZEOF_INT" Nothing,DComment (DP (1,1),DP (1,5)) "#else" Nothing,DComment (DP (1,1),DP (1,44)) "#define CLOSURE_TYPE_OFFSET (SIZEOF_INT * 2)" Nothing,DComment (DP (1,1),DP (1,6)) "#endif" Nothing] [((G AnnDcolon),DP (0,1))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:40:20 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 20) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:40:20-36 CN "HsForAllTy" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 20) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:40:20-36 CN "HsFunTy" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 20) DP (0,0) [] [((G AnnRarrow),DP (0,1))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:40:25-27 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 25) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:40:25-36 CN "HsAppTy" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 25) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:40:29-36 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 29) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:41:1-15 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:(41,1)-(42,26) CN "Match" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnEqual),DP (0,1))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:(41,1)-(42,26) CN "ValD" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:41:17 CN "VarPat" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 17) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:(41,19)-(42,26) CN "GRHS" NotNeeded,
+  (Ann (DP (0,-1)) (ColDelta 19) DP (0,-1) [] [])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:(41,21)-(42,26) CN "HsCase" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 21) DP (0,1) [] [((G AnnCase),DP (0,0)),((G AnnOf),DP (0,1)),((AnnList ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:42:5-26 Ref "delta-1"),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:41:26-39 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 26) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:41:26-41 CN "HsApp" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 26) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:41:41 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 41) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:42:5-17 CN "TuplePat" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnOpen),DP (0,0)),((G AnnClose),DP (0,1))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:42:5-26 CN "(:)" Ref "delta-1",
+  (Ann (DP (1,0)) (ColDelta 5) DP (1,0) [] [])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:42:5-26 CN "Match" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:42:8 CN "VarPat" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 3) DP (0,1) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:42:11 CN "WildPat" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 6) DP (0,1) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:42:14 CN "WildPat" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 9) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:42:19-26 CN "GRHS" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 14) DP (0,1) [] [((G AnnRarrow),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:42:22-24 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 17) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:42:22-26 CN "HsApp" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 17) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:42:26 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 21) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:44:1-42 CN "TyClD" NotNeeded,
+  (Ann (DP (2,1)) (ColDelta 1) DP (2,1) [] [((G AnnNewtype),DP (0,0)),((G AnnEqual),DP (0,1))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:44:9-19 CN "Unqual" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 9) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:44:23-33 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 23) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:44:23-42 CN "ConDecl" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 23) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:44:35-42 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 35) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:46:1-14 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:46:1-37 CN "SigD" NotNeeded,
+  (Ann (DP (2,1)) (ColDelta 1) DP (2,1) [] [((G AnnDcolon),DP (0,1))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:46:19 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 19) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:46:19-37 CN "HsForAllTy" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 19) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:46:19-37 CN "HsFunTy" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 19) DP (0,0) [] [((G AnnRarrow),DP (0,1))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:46:24-25 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 24) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:46:24-37 CN "HsAppTy" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 24) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:46:27-37 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 27) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:47:1-14 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:(47,1)-(48,56) CN "Match" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnEqual),DP (0,1))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:(47,1)-(48,56) CN "ValD" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:47:16 CN "VarPat" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 16) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:(47,18)-(48,56) CN "GRHS" NotNeeded,
+  (Ann (DP (0,-1)) (ColDelta 18) DP (0,-1) [] [])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:47:20-30 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 20) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:(47,20)-(48,56) CN "OpApp" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 20) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:47:32-34 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 32) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:48:5-8 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 5) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:48:5-56 CN "HsApp" NotNeeded,
+  (Ann (DP (1,5)) (ColDelta 5) DP (1,5) [] [])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:48:10-56 CN "HsPar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 10) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:48:11-17 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 11) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:48:11-37 CN "HsApp" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 11) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:48:11-55 CN "OpApp" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 11) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:48:19-37 CN "HsPar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 19) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:48:20-34 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 20) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:48:20-36 CN "HsApp" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 20) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:48:36 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 36) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:48:39-47 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 39) DP (0,1) [] [((G AnnBackquote),DP (0,0)),((G AnnVal),DP (0,0)),((G AnnBackquote),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:48:49-55 CN "HsPar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 49) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:48:50 CN "HsOverLit" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 50) DP (0,0) [] [((AnnComment DComment (DP (0,-1),DP (0,18)) "CLOSURE_TYPE_OFFSET" Nothing),DP (0,-1)),((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:48:50-54 CN "OpApp" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 50) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:48:52 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 52) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:48:54 CN "HsOverLit" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 54) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:50:1-13 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:50:1-36 CN "SigD" NotNeeded,
+  (Ann (DP (2,1)) (ColDelta 1) DP (2,1) [DComment (DP (0,11),DP (0,12)) ")" Nothing] [((G AnnDcolon),DP (0,1))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:50:18-28 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 18) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:50:18-36 CN "HsForAllTy" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 18) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:50:18-36 CN "HsFunTy" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 18) DP (0,0) [] [((G AnnRarrow),DP (0,1))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:50:33-36 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 33) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:51:1-13 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:51:1-48 CN "Match" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnEqual),DP (0,1))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:51:1-48 CN "ValD" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:51:15-29 CN "ParPat" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 15) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:51:16-26 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 16) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:51:16-28 CN "ConPatIn" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 16) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:51:28 CN "VarPat" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 28) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:51:31-48 CN "GRHS" NotNeeded,
+  (Ann (DP (0,-1)) (ColDelta 31) DP (0,-1) [] [])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:51:33 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 33) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:51:33-38 CN "OpApp" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 33) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:51:33-43 CN "OpApp" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 33) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:51:33-48 CN "OpApp" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 33) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:51:35-36 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 35) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:51:38 CN "HsOverLit" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 38) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:51:40-41 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 40) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:51:43 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 43) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:51:45-46 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 45) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:51:48 CN "HsOverLit" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 48) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:53:1-13 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:53:1-36 CN "SigD" NotNeeded,
+  (Ann (DP (2,1)) (ColDelta 1) DP (2,1) [] [((G AnnDcolon),DP (0,1))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:53:18-28 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 18) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:53:18-36 CN "HsForAllTy" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 18) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:53:18-36 CN "HsFunTy" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 18) DP (0,0) [] [((G AnnRarrow),DP (0,1))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:53:33-36 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 33) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:54:1-13 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:54:1-50 CN "Match" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnEqual),DP (0,1))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:54:1-50 CN "ValD" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:54:15-29 CN "ParPat" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 15) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:54:16-26 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 16) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:54:16-28 CN "ConPatIn" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 16) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:54:28 CN "VarPat" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 28) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:54:31-50 CN "GRHS" NotNeeded,
+  (Ann (DP (0,-1)) (ColDelta 31) DP (0,-1) [] [])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:54:33 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 33) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:54:33-39 CN "OpApp" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 33) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:54:33-44 CN "OpApp" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 33) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:54:33-50 CN "OpApp" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 33) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:54:35-36 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 35) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:54:38-39 CN "HsOverLit" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 38) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:54:41-42 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 41) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:54:44 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 44) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:54:46-47 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 46) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:54:49-50 CN "HsOverLit" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 49) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:56:1-32 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:56:1-45 CN "SigD" NotNeeded,
+  (Ann (DP (2,1)) (ColDelta 1) DP (2,1) [] [((G AnnDcolon),DP (0,1))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:56:37 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 37) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:56:37-45 CN "HsForAllTy" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 37) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:56:37-45 CN "HsFunTy" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 37) DP (0,0) [] [((G AnnRarrow),DP (0,1))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:56:42-45 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 42) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:57:1-32 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:(57,1)-(59,49) CN "Match" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnEqual),DP (0,1))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:(57,1)-(59,49) CN "ValD" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:57:34 CN "VarPat" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 34) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:(57,36)-(59,49) CN "GRHS" NotNeeded,
+  (Ann (DP (0,-1)) (ColDelta 36) DP (0,-1) [] [])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:57:38-52 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 38) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:(57,38)-(59,49) CN "OpApp" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 38) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:57:54 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 54) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:(57,56)-(59,49) CN "HsDo" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 56) DP (0,1) [] [((G AnnDo),DP (0,0)),((AnnList ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:(58,5)-(59,49) Ref "delta-2"),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:58:5-6 CN "VarPat" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:58:5-26 CN "BindStmt" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnLarrow),DP (0,1))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:(58,5)-(59,49) CN "(:)" Ref "delta-2",
+  (Ann (DP (1,0)) (ColDelta 5) DP (1,0) [] [])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:58:11-24 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 6) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:58:11-26 CN "HsApp" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 6) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:58:26 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 21) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:59:5-10 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:59:5-49 CN "BodyStmt" NotNeeded,
+  (Ann (DP (1,0)) (ColDelta 0) DP (1,0) [] [])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:59:5-49 CN "HsApp" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:59:12-49 CN "HsPar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 7) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:59:13-25 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 8) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:59:13-28 CN "HsApp" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 8) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:59:13-48 CN "OpApp" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 8) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:59:27-28 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 22) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:59:30-31 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 25) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:59:33-45 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 28) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:59:33-48 CN "HsApp" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 28) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:59:47-48 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 42) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:64:1-16 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:64:1-29 CN "SigD" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (5,1) [DComment (DP (2,1),DP (2,6)) "#endif" Nothing,DComment (DP (2,1),DP (2,214)) "-- | Inspect the dynamic pointer tagging bits of a closure. This is an impure function that relies on GHC internals and may falsely return 0, but should never give the wrong tag number if it returns a non-0 value." Nothing] [((G AnnDcolon),DP (0,1))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:64:21 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 21) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:64:21-29 CN "HsForAllTy" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 21) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:64:21-29 CN "HsFunTy" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 21) DP (0,0) [] [((G AnnRarrow),DP (0,1))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:64:26-29 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 26) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:65:1-31 CN "SigD" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [((G AnnOpen),DP (0,0)),((G AnnClose),DP (0,1))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:65:12-27 CN "Unqual" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 12) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:67:1-16 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:67:1-53 CN "Match" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnEqual),DP (0,1))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:67:1-53 CN "ValD" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (2,1) [DComment (DP (1,1),DP (1,15)) "#ifdef HAS_TAGS" Nothing] [])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:67:18 CN "VarPat" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 18) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:67:20-53 CN "GRHS" NotNeeded,
+  (Ann (DP (0,-1)) (ColDelta 20) DP (0,-1) [] [])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:67:22-33 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 22) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:67:22-41 CN "HsApp" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 22) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:67:22-53 CN "OpApp" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 22) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:67:35-41 CN "HsPar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 35) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:67:36-38 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 36) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:67:36-40 CN "HsApp" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 36) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:67:40 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 40) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:67:43-45 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 43) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:67:47-53 CN "HsPar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 47) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:67:48 CN "HsOverLit" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 48) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:67:48-52 CN "OpApp" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 48) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:67:50 CN "HsVar" NotNeeded,
+  (Ann (DP (0,-11)) (ColDelta 50) DP (0,1) [DComment (DP (0,-1),DP (0,12)) "SIZEOF_VOID_P" Nothing] [((G AnnVal),DP (0,-11))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:67:52 CN "HsOverLit" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 52) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:68:1-18 CN "TyClD" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [DComment (DP (0,8),DP (0,9)) "-" Nothing,DComment (DP (0,1),DP (0,2)) "1" Nothing,DComment (DP (0,0),DP (0,1)) ")" Nothing] [((G AnnData),DP (0,0)),((G AnnEqual),DP (0,1))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:68:6-8 CN "Unqual" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 6) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:68:10 CN "UserTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 10) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:68:14-16 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 14) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:68:14-18 CN "ConDecl" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 14) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:68:18 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 18) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:74:1-17 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:74:1-30 CN "SigD" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (6,1) [DComment (DP (1,1),DP (1,5)) "#else" Nothing,DComment (DP (1,1),DP (1,1)) "" Nothing,DComment (DP (0,0),DP (0,16)) "unsafeGetTagBits" Nothing,DComment (DP (0,1),DP (0,2)) "_" Nothing,DComment (DP (0,1),DP (0,2)) "=" Nothing,DComment (DP (0,1),DP (0,2)) "0" Nothing,DComment (DP (1,1),DP (1,6)) "#endif" Nothing,DComment (DP (2,1),DP (2,435)) "-- | Returns a guess as to whether or not a value has been evaluated. This is an impure function that relies on GHC internals and will return false negatives, but no false positives. This is unsafe as the value of this function will vary (from False to True) over the course of otherwise pure invocations! This first attempts to check the tag bits of the pointer, and then falls back on inspecting the info table for the closure type." Nothing] [((G AnnDcolon),DP (0,1))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:74:22 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 22) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:74:22-30 CN "HsForAllTy" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 22) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:74:22-30 CN "HsFunTy" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 22) DP (0,0) [] [((G AnnRarrow),DP (0,1))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:74:27-30 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 27) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:75:1-32 CN "SigD" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [((G AnnOpen),DP (0,0)),((G AnnClose),DP (0,1))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:75:12-28 CN "Unqual" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 12) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:76:1-17 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:(76,1)-(78,56) CN "Match" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnEqual),DP (0,1))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:(76,1)-(78,56) CN "ValD" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:76:19 CN "VarPat" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 19) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:(76,21)-(78,56) CN "GRHS" NotNeeded,
+  (Ann (DP (0,-1)) (ColDelta 21) DP (0,-1) [] [])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:76:23-38 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 23) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:76:23-40 CN "HsApp" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 23) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:76:23-44 CN "OpApp" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 23) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:(76,23)-(78,56) CN "OpApp" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 23) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:76:40 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 40) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:76:42 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 42) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:76:44 CN "HsOverLit" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 44) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:78:20-21 CN "HsVar" NotNeeded,
+  (Ann (DP (1,20)) (ColDelta 20) DP (2,20) [DComment (DP (1,1),DP (1,21)) "#ifdef HAS_INFO_TABLE" Nothing] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:78:23-54 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 23) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:78:23-56 CN "HsApp" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 23) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:78:56 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 56) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey <no location info> CN "EmptyLocalBinds" NotNeeded,
+  (Ann (DP (-42,0)) (ColDelta -5) DP (-42,0) [] [])),
+ (AnnKey <no location info> CN "[]" NotNeeded,
+  (Ann (DP (-44,0)) (ColDelta 0) DP (-44,0) [] []))]
+==============
+([((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:1:1,
+    AnnModule),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:2:1-6]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:1:1,
+    AnnWhere),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:8:7-11]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:(3,5)-(8,5),
+    AnnCloseP),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:8:5]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:(3,5)-(8,5),
+    AnnOpenP),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:3:5]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:5:7-22,
+    AnnComma),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:7:5]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:16:1-24,
+    AnnImport),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:16:1-6]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:16:1-24,
+    AnnSemi),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:17:1]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:16:18-24,
+    AnnCloseP),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:16:24]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:16:18-24,
+    AnnOpenP),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:16:18]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:16:19-23,
+    AnnCloseP),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:16:23]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:16:19-23,
+    AnnOpenP),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:16:19]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:16:19-23,
+    AnnVal),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:16:20-22]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:17:1-27,
+    AnnImport),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:17:1-6]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:17:1-27,
+    AnnSemi),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:18:1]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:17:21-27,
+    AnnCloseP),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:17:27]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:17:21-27,
+    AnnOpenP),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:17:21]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:17:22-26,
+    AnnCloseP),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:17:26]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:17:22-26,
+    AnnOpenP),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:17:22]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:17:22-26,
+    AnnVal),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:17:23-25]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:18:1-35,
+    AnnImport),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:18:1-6]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:18:1-35,
+    AnnSemi),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:19:1]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:18:22-35,
+    AnnCloseP),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:18:35]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:18:22-35,
+    AnnOpenP),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:18:22]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:19:1-41,
+    AnnImport),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:19:1-6]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:19:1-41,
+    AnnSemi),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:20:1]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:19:25-41,
+    AnnCloseP),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:19:41]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:19:25-41,
+    AnnOpenP),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:19:25]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:20:1-39,
+    AnnImport),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:20:1-6]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:20:1-39,
+    AnnSemi),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:21:1]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:20:16-39,
+    AnnCloseP),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:20:39]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:20:16-39,
+    AnnOpenP),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:20:16]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:20:17-23,
+    AnnComma),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:20:24]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:20:26-32,
+    AnnComma),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:20:33]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:21:1-15,
+    AnnImport),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:21:1-6]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:21:1-15,
+    AnnSemi),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:22:1]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:22:1-15,
+    AnnImport),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:22:1-6]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:22:1-15,
+    AnnSemi),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:23:1]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:23:1-16,
+    AnnImport),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:23:1-6]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:23:1-16,
+    AnnSemi),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:28:1]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:28:1-22,
+    AnnEqual),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:28:15]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:28:1-22,
+    AnnSemi),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:40:1]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:28:1-22,
+    AnnType),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:28:1-4]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:40:1-36,
+    AnnDcolon),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:40:17-18]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:40:1-36,
+    AnnSemi),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:41:1]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:40:20-36,
+    AnnRarrow),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:40:22-23]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:(41,1)-(42,26),
+    AnnEqual),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:41:19]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:(41,1)-(42,26),
+    AnnFunId),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:41:1-15]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:(41,1)-(42,26),
+    AnnSemi),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:44:1]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:(41,21)-(42,26),
+    AnnCase),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:41:21-24]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:(41,21)-(42,26),
+    AnnOf),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:41:43-44]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:42:5-17,
+    AnnClose),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:42:16-17]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:42:5-17,
+    AnnOpen),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:42:5-6]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:42:8,
+    AnnComma),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:42:9]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:42:11,
+    AnnComma),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:42:12]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:42:19-26,
+    AnnRarrow),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:42:19-20]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:44:1-42,
+    AnnEqual),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:44:21]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:44:1-42,
+    AnnNewtype),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:44:1-7]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:44:1-42,
+    AnnSemi),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:46:1]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:46:1-37,
+    AnnDcolon),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:46:16-17]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:46:1-37,
+    AnnSemi),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:47:1]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:46:19-37,
+    AnnRarrow),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:46:21-22]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:(47,1)-(48,56),
+    AnnEqual),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:47:18]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:(47,1)-(48,56),
+    AnnFunId),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:47:1-14]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:(47,1)-(48,56),
+    AnnSemi),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:50:1]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:(47,20)-(48,56),
+    AnnVal),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:47:32-34]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:48:10-56,
+    AnnCloseP),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:48:56]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:48:10-56,
+    AnnOpenP),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:48:10]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:48:11-55,
+    AnnVal),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:48:39-47]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:48:19-37,
+    AnnCloseP),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:48:37]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:48:19-37,
+    AnnOpenP),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:48:19]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:48:39-47,
+    AnnBackquote),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:48:39,
+    ../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:48:47]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:48:39-47,
+    AnnVal),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:48:40-46]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:48:49-55,
+    AnnCloseP),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:48:55]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:48:49-55,
+    AnnOpenP),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:48:49]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:48:50-54,
+    AnnVal),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:48:52]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:50:1-36,
+    AnnDcolon),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:50:15-16]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:50:1-36,
+    AnnSemi),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:51:1]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:50:18-36,
+    AnnRarrow),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:50:30-31]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:51:1-48,
+    AnnEqual),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:51:31]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:51:1-48,
+    AnnFunId),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:51:1-13]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:51:1-48,
+    AnnSemi),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:53:1]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:51:15-29,
+    AnnCloseP),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:51:29]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:51:15-29,
+    AnnOpenP),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:51:15]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:51:33-38,
+    AnnVal),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:51:35-36]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:51:33-43,
+    AnnVal),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:51:40-41]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:51:33-48,
+    AnnVal),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:51:45-46]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:53:1-36,
+    AnnDcolon),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:53:15-16]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:53:1-36,
+    AnnSemi),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:54:1]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:53:18-36,
+    AnnRarrow),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:53:30-31]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:54:1-50,
+    AnnEqual),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:54:31]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:54:1-50,
+    AnnFunId),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:54:1-13]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:54:1-50,
+    AnnSemi),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:56:1]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:54:15-29,
+    AnnCloseP),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:54:29]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:54:15-29,
+    AnnOpenP),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:54:15]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:54:33-39,
+    AnnVal),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:54:35-36]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:54:33-44,
+    AnnVal),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:54:41-42]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:54:33-50,
+    AnnVal),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:54:46-47]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:56:1-45,
+    AnnDcolon),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:56:34-35]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:56:1-45,
+    AnnSemi),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:57:1]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:56:37-45,
+    AnnRarrow),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:56:39-40]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:(57,1)-(59,49),
+    AnnEqual),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:57:36]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:(57,1)-(59,49),
+    AnnFunId),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:57:1-32]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:(57,1)-(59,49),
+    AnnSemi),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:64:1]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:(57,38)-(59,49),
+    AnnVal),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:57:54]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:(57,56)-(59,49),
+    AnnDo),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:57:56-57]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:58:5-26,
+    AnnLarrow),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:58:8-9]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:58:5-26,
+    AnnSemi),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:59:5]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:59:12-49,
+    AnnCloseP),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:59:49]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:59:12-49,
+    AnnOpenP),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:59:12]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:59:13-48,
+    AnnVal),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:59:30-31]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:64:1-29,
+    AnnDcolon),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:64:18-19]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:64:1-29,
+    AnnSemi),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:65:1]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:64:21-29,
+    AnnRarrow),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:64:23-24]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:65:1-31,
+    AnnClose),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:65:29-31]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:65:1-31,
+    AnnOpen),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:65:1-10]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:65:1-31,
+    AnnSemi),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:67:1]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:67:1-53,
+    AnnEqual),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:67:20]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:67:1-53,
+    AnnFunId),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:67:1-16]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:67:1-53,
+    AnnSemi),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:68:1]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:67:22-53,
+    AnnVal),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:67:43-45]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:67:35-41,
+    AnnCloseP),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:67:41]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:67:35-41,
+    AnnOpenP),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:67:35]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:67:47-53,
+    AnnCloseP),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:67:53]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:67:47-53,
+    AnnOpenP),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:67:47]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:67:48-52,
+    AnnVal),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:67:50]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:68:1-18,
+    AnnData),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:68:1-4]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:68:1-18,
+    AnnEqual),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:68:12]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:68:1-18,
+    AnnSemi),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:74:1]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:74:1-30,
+    AnnDcolon),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:74:19-20]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:74:1-30,
+    AnnSemi),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:75:1]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:74:22-30,
+    AnnRarrow),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:74:24-25]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:75:1-32,
+    AnnClose),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:75:30-32]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:75:1-32,
+    AnnOpen),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:75:1-10]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:75:1-32,
+    AnnSemi),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:76:1]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:(76,1)-(78,56),
+    AnnEqual),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:76:21]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:(76,1)-(78,56),
+    AnnFunId),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:76:1-17]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:(76,1)-(78,56),
+    AnnSemi),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:80:1]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:76:23-44,
+    AnnVal),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:76:42]),
+  ((../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:(76,23)-(78,56),
+    AnnVal),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:78:20-21]),
+  ((<no location info>, AnnEofPos),
+   [../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:80:1])],
+ [(../../hackage-packages/tag-bits-0.1.1.2/Data/TagBits.hs:(3,5)-(8,5),
+   [AnnLineComment "-- * Determining if a closure is evaluated",
+    AnnLineComment "-- * Inspecting the tag bits of a closure"]),
+  (<no location info>,
+   [AnnLineComment "-- | Returns a guess as to whether or not a value has been evaluated. This is an impure function that relies on GHC internals and will return false negatives, but no false positives. This is unsafe as the value of this function will vary (from False to True) over the course of otherwise pure invocations! This first attempts to check the tag bits of the pointer, and then falls back on inspecting the info table for the closure type.",
+    AnnLineComment "-- | Inspect the dynamic pointer tagging bits of a closure. This is an impure function that relies on GHC internals and may falsely return 0, but should never give the wrong tag number if it returns a non-0 value.",
+    AnnLineComment "-- and we have an info table we can plunder for information",
+    AnnLineComment "-- dynamic pointer tagging is present on this platform",
+    AnnBlockComment "{-# LANGUAGE CPP, BangPatterns, MagicHash, UnboxedTuples #-}"])])

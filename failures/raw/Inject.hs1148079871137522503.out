@@ -1,0 +1,1688 @@
+{-# LANGUAGE CPP #-}
+module Data.RangeMin.Inject (
+    Injective,
+    unsafeInjectRangeMin,
+    unsafeInjectRangeMax,
+    injectRangeMin,
+    injectRangeMax) where
+
+import Data.RangeMin.Common
+import Data.RangeMin.Int
+import Data.RangeMin.Vector
+import Data.RangeMin.Cartesian.Spec
+
+import qualified Data.Vector.Primitive as PV
+import qualified Data.Vector.Generic as G
+
+#define injection An order-preserving function into 'Int'.  (The ordering on the elements is    \
+    equivalent to @\\ x y -> f x '<=' f y@.)
+#define injectDoc(inj,other,cmp)  /O(n)/.  @'inj' f xs@ is equivalent to            \
+    @'other' (\\ x y -> f x 'cmp' f y) xs@, but is frequently much faster,          \
+    fusing with the input vector and converting it directly to a @'PV.Vector' 'Int'@.
+
+{-# INLINE unsafeInjectRangeMin #-}
+-- | injectDoc(unsafeInjectRangeMin,unsafeVecRangeMinBy,<=) The returned function /does not/ do bounds checks;-- | /O(n)/. @'inj' f xs@ is equivalent to @'other' (\\ x y -> f x 'cmp' f y) xs@, but is frequently much faster, fusing with the input vector and converting it directly to a @'PV.Vector' 'Int'@. The returned function /does not/ do bounds checks;
+-- see 'unsafeIntRangeMin' for details.
+unsafeInjectRangeMin :: G.Vector v a =>
+    (a -> Int)  -- ^ injection-- ^ An order-preserving function into 'Int'. (The ordering on the elements is equivalent to @\\ x y -> f x '<=' f y@.)
+    -> v a      -- ^ The input vector.
+    -> RangeMin -- ^ A range-min function on the elements (under the above ordering)
+            -- which runs in /O(1)/.
+
+{-# INLINE unsafeInjectRangeMax #-}
+-- | injectDoc(unsafeInjectRangeMax,unsafeVecRangeMinBy,>=) The returned function /does not/ do bounds checks;-- | /O(n)/. @'inj' f xs@ is equivalent to @'other' (\\ x y -> f x 'cmp' f y) xs@, but is frequently much faster, fusing with the input vector and converting it directly to a @'PV.Vector' 'Int'@. The returned function /does not/ do bounds checks;
+-- see 'unsafeIntRangeMin' for details.
+unsafeInjectRangeMax :: G.Vector v a =>
+    (a -> Int)  -- ^ injection-- ^ An order-preserving function into 'Int'. (The ordering on the elements is equivalent to @\\ x y -> f x '<=' f y@.)
+    -> v a      -- ^ The input vector.
+    -> RangeMin -- ^ A range-max function on the elements (under the above ordering)
+            -- which runs in /O(1)/.
+
+{-# INLINE injectRangeMin #-}
+-- | injectDoc(injectRangeMin,vecRangeMinBy,<=) The returned function /does/ do bounds checks; see 'intRangeMin' for details.-- | /O(n)/. @'inj' f xs@ is equivalent to @'other' (\\ x y -> f x 'cmp' f y) xs@, but is frequently much faster, fusing with the input vector and converting it directly to a @'PV.Vector' 'Int'@. The returned function /does/ do bounds checks; see 'intRangeMin' for details.
+injectRangeMin :: G.Vector v a =>
+    (a -> Int)  -- ^ injection-- ^ An order-preserving function into 'Int'. (The ordering on the elements is equivalent to @\\ x y -> f x '<=' f y@.)
+    -> v a      -- ^ The input vector.
+    -> RangeMin -- ^ A range-min function on the elements (under the above ordering)
+            -- which runs in /O(1)/.
+
+{-# INLINE injectRangeMax #-}
+-- | injectDoc(injectRangeMax,vecRangeMinBy,>=) The returned function /does/ do bounds checks; see 'intRangeMin' for details.-- | /O(n)/. @'inj' f xs@ is equivalent to @'other' (\\ x y -> f x 'cmp' f y) xs@, but is frequently much faster, fusing with the input vector and converting it directly to a @'PV.Vector' 'Int'@. The returned function /does/ do bounds checks; see 'intRangeMin' for details.
+injectRangeMax :: G.Vector v a =>
+    (a -> Int)  -- ^ injection-- ^ An order-preserving function into 'Int'. (The ordering on the elements is equivalent to @\\ x y -> f x '<=' f y@.)
+    -> v a      -- ^ The input vector.
+    -> RangeMin -- ^ A range-max function on the elements (under the above ordering)
+            -- which runs in /O(1)/.
+
+unsafeInjectRangeMin inject xs = unsafeIntRangeMin (G.unstream (fmap inject (G.stream xs)))
+unsafeInjectRangeMax inject = unsafeInjectRangeMin (invertValue . inject)
+injectRangeMin inject xs = intRangeMin (G.unstream (fmap inject (G.stream xs)))
+injectRangeMax inject = injectRangeMin (invertValue . inject)
+
+==============
+../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs
+==============
+lengths:(4201,2687)
+
+==============
+
+({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:1:1 }
+ Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((AnnComment DComment (DP (0,0),DP (0,20)) "{-# LANGUAGE CPP #-}" Nothing),DP (0,0)),((G AnnModule),DP (1,1)),((G AnnVal),DP (0,1)),((G AnnWhere),DP (0,1)),((AnnComment DComment (DP (1,1),DP (1,1)) "" Nothing),DP (1,1)),((G AnnEofPos),DP (2,0))])
+ (HsModule 
+  (Just 
+   ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:2:8-27
+     }
+    Nothing{ModuleName: Data.RangeMin.Inject})) 
+  (Just 
+   ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:(2,29)-(7,19)
+     }
+    Just (Ann (DP (0,1)) (ColDelta 29) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])
+    [
+     ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:3:5-13
+       }
+      Just (Ann (DP (1,5)) (ColDelta 5) DP (1,5) [] [])
+      (IEThingAbs 
+       ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:3:5-13
+         }
+        Just (Ann (DP (0,0)) (ColDelta 5) DP (0,0) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+        (Unqual {OccName: Injective})))),
+     ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:4:5-24
+       }
+      Just (Ann (DP (1,5)) (ColDelta 5) DP (1,5) [] [])
+      (IEVar 
+       ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:4:5-24
+         }
+        Just (Ann (DP (0,0)) (ColDelta 5) DP (0,0) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+        (Unqual {OccName: unsafeInjectRangeMin})))),
+     ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:5:5-24
+       }
+      Just (Ann (DP (1,5)) (ColDelta 5) DP (1,5) [] [])
+      (IEVar 
+       ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:5:5-24
+         }
+        Just (Ann (DP (0,0)) (ColDelta 5) DP (0,0) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+        (Unqual {OccName: unsafeInjectRangeMax})))),
+     ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:6:5-18
+       }
+      Just (Ann (DP (1,5)) (ColDelta 5) DP (1,5) [] [])
+      (IEVar 
+       ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:6:5-18
+         }
+        Just (Ann (DP (0,0)) (ColDelta 5) DP (0,0) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+        (Unqual {OccName: injectRangeMin})))),
+     ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:7:5-18
+       }
+      Just (Ann (DP (1,5)) (ColDelta 5) DP (1,5) [] [])
+      (IEVar 
+       ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:7:5-18
+         }
+        Just (Ann (DP (0,0)) (ColDelta 5) DP (0,0) [] [((G AnnVal),DP (0,0))])
+        (Unqual {OccName: injectRangeMax}))))])) 
+  [
+   ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:9:1-27
+     }
+    Just (Ann (DP (2,1)) (ColDelta 1) DP (2,1) [] [((G AnnImport),DP (0,0)),((G AnnVal),DP (0,1))])
+    (ImportDecl 
+     (Nothing) 
+     ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:9:8-27
+       }
+      Nothing{ModuleName: Data.RangeMin.Common}) 
+     (Nothing) 
+     (False) 
+     (False) 
+     (False) 
+     (False) 
+     (Nothing) 
+     (Nothing))),
+   ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:10:1-24
+     }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [((G AnnImport),DP (0,0)),((G AnnVal),DP (0,1))])
+    (ImportDecl 
+     (Nothing) 
+     ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:10:8-24
+       }
+      Nothing{ModuleName: Data.RangeMin.Int}) 
+     (Nothing) 
+     (False) 
+     (False) 
+     (False) 
+     (False) 
+     (Nothing) 
+     (Nothing))),
+   ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:11:1-27
+     }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [((G AnnImport),DP (0,0)),((G AnnVal),DP (0,1))])
+    (ImportDecl 
+     (Nothing) 
+     ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:11:8-27
+       }
+      Nothing{ModuleName: Data.RangeMin.Vector}) 
+     (Nothing) 
+     (False) 
+     (False) 
+     (False) 
+     (False) 
+     (Nothing) 
+     (Nothing))),
+   ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:12:1-35
+     }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [((G AnnImport),DP (0,0)),((G AnnVal),DP (0,1))])
+    (ImportDecl 
+     (Nothing) 
+     ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:12:8-35
+       }
+      Nothing{ModuleName: Data.RangeMin.Cartesian.Spec}) 
+     (Nothing) 
+     (False) 
+     (False) 
+     (False) 
+     (False) 
+     (Nothing) 
+     (Nothing))),
+   ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:14:1-44
+     }
+    Just (Ann (DP (2,1)) (ColDelta 1) DP (2,1) [] [((G AnnImport),DP (0,0)),((G AnnQualified),DP (0,1)),((G AnnVal),DP (0,1)),((G AnnAs),DP (0,1)),((G AnnVal),DP (0,1))])
+    (ImportDecl 
+     (Nothing) 
+     ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:14:18-38
+       }
+      Nothing{ModuleName: Data.Vector.Primitive}) 
+     (Nothing) 
+     (False) 
+     (False) 
+     (True) 
+     (False) 
+     (Just {ModuleName: PV}) 
+     (Nothing))),
+   ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:15:1-41
+     }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [((G AnnImport),DP (0,0)),((G AnnQualified),DP (0,1)),((G AnnVal),DP (0,1)),((G AnnAs),DP (0,1)),((G AnnVal),DP (0,1))])
+    (ImportDecl 
+     (Nothing) 
+     ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:15:18-36
+       }
+      Nothing{ModuleName: Data.Vector.Generic}) 
+     (Nothing) 
+     (False) 
+     (False) 
+     (True) 
+     (False) 
+     (Just {ModuleName: G}) 
+     (Nothing)))] 
+  [
+   ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:23:1-35
+     }
+    Just (Ann (DP (2,1)) (ColDelta 1) DP (8,1) [DComment (DP (2,1),DP (2,97)) "#define injection An order-preserving function into 'Int'.  (The ordering on the elements is    \\" Nothing,DComment (DP (1,5),DP (1,15)) "equivalent" Nothing,DComment (DP (0,1),DP (0,3)) "to" Nothing,DComment (DP (0,1),DP (0,4)) "@\\\\" Nothing,DComment (DP (0,1),DP (0,2)) "x" Nothing,DComment (DP (0,1),DP (0,2)) "y" Nothing,DComment (DP (0,1),DP (0,3)) "->" Nothing,DComment (DP (0,1),DP (0,2)) "f" Nothing,DComment (DP (0,1),DP (0,2)) "x" Nothing,DComment (DP (0,1),DP (0,2)) "'" Nothing,DComment (DP (0,0),DP (0,2)) "<=" Nothing,DComment (DP (0,0),DP (0,1)) "'" Nothing,DComment (DP (0,1),DP (0,2)) "f" Nothing,DComment (DP (0,1),DP (0,2)) "y" Nothing,DComment (DP (0,0),DP (0,2)) "@." Nothing,DComment (DP (0,0),DP (0,1)) ")" Nothing,DComment (DP (1,1),DP (1,85)) "#define injectDoc(inj,other,cmp)  /O(n)/.  @'inj' f xs@ is equivalent to            \\" Nothing,DComment (DP (1,5),DP (1,6)) "@" Nothing,DComment (DP (0,0),DP (0,1)) "'" Nothing,DComment (DP (0,0),DP (0,6)) "other'" Nothing,DComment (DP (0,1),DP (0,2)) "(" Nothing,DComment (DP (0,0),DP (0,2)) "\\\\" Nothing,DComment (DP (0,1),DP (0,2)) "x" Nothing,DComment (DP (0,1),DP (0,2)) "y" Nothing,DComment (DP (0,1),DP (0,3)) "->" Nothing,DComment (DP (0,1),DP (0,2)) "f" Nothing,DComment (DP (0,1),DP (0,2)) "x" Nothing,DComment (DP (0,1),DP (0,2)) "'" Nothing,DComment (DP (0,0),DP (0,4)) "cmp'" Nothing,DComment (DP (0,1),DP (0,2)) "f" Nothing,DComment (DP (0,1),DP (0,2)) "y" Nothing,DComment (DP (0,0),DP (0,1)) ")" Nothing,DComment (DP (0,1),DP (0,3)) "xs" Nothing,DComment (DP (0,0),DP (0,1)) "@" Nothing,DComment (DP (0,0),DP (0,1)) "," Nothing,DComment (DP (0,1),DP (0,4)) "but" Nothing,DComment (DP (0,1),DP (0,3)) "is" Nothing,DComment (DP (0,1),DP (0,11)) "frequently" Nothing,DComment (DP (0,1),DP (0,5)) "much" Nothing,DComment (DP (0,1),DP (0,7)) "faster" Nothing,DComment (DP (0,0),DP (0,1)) "," Nothing,DComment (DP (0,10),DP (0,11)) "\\" Nothing,DComment (DP (1,5),DP (1,11)) "fusing" Nothing,DComment (DP (0,1),DP (0,5)) "with" Nothing,DComment (DP (0,1),DP (0,4)) "the" Nothing,DComment (DP (0,1),DP (0,6)) "input" Nothing,DComment (DP (0,1),DP (0,7)) "vector" Nothing,DComment (DP (0,1),DP (0,4)) "and" Nothing,DComment (DP (0,1),DP (0,11)) "converting" Nothing,DComment (DP (0,1),DP (0,3)) "it" Nothing,DComment (DP (0,1),DP (0,9)) "directly" Nothing,DComment (DP (0,1),DP (0,3)) "to" Nothing,DComment (DP (0,1),DP (0,2)) "a" Nothing,DComment (DP (0,1),DP (0,2)) "@" Nothing,DComment (DP (0,0),DP (0,1)) "'" Nothing,DComment (DP (0,0),DP (0,10)) "PV.Vector'" Nothing,DComment (DP (0,1),DP (0,2)) "'" Nothing,DComment (DP (0,0),DP (0,4)) "Int'" Nothing,DComment (DP (0,0),DP (0,2)) "@." Nothing] [((G AnnOpen),DP (0,0)),((G AnnClose),DP (0,1))])
+    (SigD 
+     (InlineSig 
+      ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:23:12-31
+        }
+       Just (Ann (DP (0,1)) (ColDelta 12) DP (0,1) [] [((G AnnVal),DP (0,0))])
+       (Unqual {OccName: unsafeInjectRangeMin})) 
+      (InlinePragma "{-# INLINE" 
+       (Inline) 
+       (Nothing) 
+       (AlwaysActive) 
+       (FunLike))))),
+   ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:(26,1)-(29,15)
+     }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (3,1) [DComment (DP (1,1),DP (1,111)) "-- | injectDoc(unsafeInjectRangeMin,unsafeVecRangeMinBy,<=) The returned function /does not/ do bounds checks;" Nothing,DComment (DP (0,-110),DP (0,136)) "-- | /O(n)/. @'inj' f xs@ is equivalent to @'other' (\\\\ x y -> f x 'cmp' f y) xs@, but is frequently much faster, fusing with the input vector and converting it directly to a @'PV.Vector' 'Int'@. The returned function /does not/ do bounds checks;" Nothing,DComment (DP (1,1),DP (1,40)) "-- see 'unsafeIntRangeMin' for details." Nothing] [((G AnnDcolon),DP (0,1))])
+    (SigD 
+     (TypeSig 
+      [
+       ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:26:1-20
+         }
+        Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+        (Unqual {OccName: unsafeInjectRangeMin}))] 
+      ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:(26,25)-(29,15)
+        }
+       Just (Ann (DP (0,1)) (ColDelta 25) DP (0,1) [] [])
+       (HsForAllTy 
+        (Implicit) 
+        (Nothing) 
+        (HsQTvs 
+         [] 
+         []) 
+        ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:26:25-36
+          }
+         Just (Ann (DP (0,0)) (ColDelta 25) DP (0,0) [] [((G AnnDarrow),DP (0,1))])
+         [
+          ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:26:25-36
+            }
+           Just (Ann (DP (0,0)) (ColDelta 25) DP (0,0) [] [])
+           (HsAppTy 
+            ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:26:25-34
+              }
+             Just (Ann (DP (0,0)) (ColDelta 25) DP (0,0) [] [])
+             (HsAppTy 
+              ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:26:25-32
+                }
+               Just (Ann (DP (0,0)) (ColDelta 25) DP (0,0) [] [((G AnnVal),DP (0,0))])
+               (HsTyVar 
+                (Qual {ModuleName: G} {OccName: Vector}))) 
+              ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:26:34
+                }
+               Just (Ann (DP (0,1)) (ColDelta 34) DP (0,1) [] [((G AnnVal),DP (0,0))])
+               (HsTyVar 
+                (Unqual {OccName: v}))))) 
+            ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:26:36
+              }
+             Just (Ann (DP (0,1)) (ColDelta 36) DP (0,1) [] [((G AnnVal),DP (0,0))])
+             (HsTyVar 
+              (Unqual {OccName: a})))))]) 
+        ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:(27,5)-(29,15)
+          }
+         Just (Ann (DP (1,5)) (ColDelta 5) DP (1,5) [] [((AnnComment DComment (DP (0,2),DP (0,16)) "-- ^ injection" Nothing),DP (0,2)),((AnnComment DComment (DP (0,-14),DP (0,105)) "-- ^ An order-preserving function into 'Int'. (The ordering on the elements is equivalent to @\\\\ x y -> f x '<=' f y@.)" Nothing),DP (0,-14)),((G AnnRarrow),DP (1,5))])
+         (HsFunTy 
+          ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:27:5-14
+            }
+           Just (Ann (DP (0,0)) (ColDelta 5) DP (0,0) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])
+           (HsParTy 
+            ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:27:6-13
+              }
+             Just (Ann (DP (0,0)) (ColDelta 6) DP (0,0) [] [((G AnnRarrow),DP (0,1))])
+             (HsFunTy 
+              ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:27:6 }
+               Just (Ann (DP (0,0)) (ColDelta 6) DP (0,0) [] [((G AnnVal),DP (0,0))])
+               (HsTyVar 
+                (Unqual {OccName: a}))) 
+              ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:27:11-13
+                }
+               Just (Ann (DP (0,1)) (ColDelta 11) DP (0,1) [] [((G AnnVal),DP (0,0))])
+               (HsTyVar 
+                (Unqual {OccName: Int}))))))) 
+          ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:(28,8)-(29,15)
+            }
+           Just (Ann (DP (0,1)) (ColDelta 8) DP (0,1) [] [((AnnComment DComment (DP (0,6),DP (0,28)) "-- ^ The input vector." Nothing),DP (0,6)),((G AnnRarrow),DP (1,5))])
+           (HsFunTy 
+            ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:28:8-10
+              }
+             Just (Ann (DP (0,0)) (ColDelta 8) DP (0,0) [] [])
+             (HsAppTy 
+              ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:28:8 }
+               Just (Ann (DP (0,0)) (ColDelta 8) DP (0,0) [] [((G AnnVal),DP (0,0))])
+               (HsTyVar 
+                (Unqual {OccName: v}))) 
+              ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:28:10
+                }
+               Just (Ann (DP (0,1)) (ColDelta 10) DP (0,1) [] [((G AnnVal),DP (0,0))])
+               (HsTyVar 
+                (Unqual {OccName: a}))))) 
+            ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:29:8-15
+              }
+             Just (Ann (DP (0,1)) (ColDelta 8) DP (0,1) [] [((G AnnVal),DP (0,0))])
+             (HsTyVar 
+              (Unqual {OccName: RangeMin}))))))))) 
+      (PlaceHolder)))),
+   ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:32:1-35
+     }
+    Just (Ann (DP (2,1)) (ColDelta 1) DP (3,1) [DComment (DP (0,1),DP (0,69)) "-- ^ A range-min function on the elements (under the above ordering)" Nothing,DComment (DP (1,13),DP (1,37)) "-- which runs in /O(1)/." Nothing] [((G AnnOpen),DP (0,0)),((G AnnClose),DP (0,1))])
+    (SigD 
+     (InlineSig 
+      ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:32:12-31
+        }
+       Just (Ann (DP (0,1)) (ColDelta 12) DP (0,1) [] [((G AnnVal),DP (0,0))])
+       (Unqual {OccName: unsafeInjectRangeMax})) 
+      (InlinePragma "{-# INLINE" 
+       (Inline) 
+       (Nothing) 
+       (AlwaysActive) 
+       (FunLike))))),
+   ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:(35,1)-(38,15)
+     }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (3,1) [DComment (DP (1,1),DP (1,111)) "-- | injectDoc(unsafeInjectRangeMax,unsafeVecRangeMinBy,>=) The returned function /does not/ do bounds checks;" Nothing,DComment (DP (0,-110),DP (0,136)) "-- | /O(n)/. @'inj' f xs@ is equivalent to @'other' (\\\\ x y -> f x 'cmp' f y) xs@, but is frequently much faster, fusing with the input vector and converting it directly to a @'PV.Vector' 'Int'@. The returned function /does not/ do bounds checks;" Nothing,DComment (DP (1,1),DP (1,40)) "-- see 'unsafeIntRangeMin' for details." Nothing] [((G AnnDcolon),DP (0,1))])
+    (SigD 
+     (TypeSig 
+      [
+       ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:35:1-20
+         }
+        Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+        (Unqual {OccName: unsafeInjectRangeMax}))] 
+      ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:(35,25)-(38,15)
+        }
+       Just (Ann (DP (0,1)) (ColDelta 25) DP (0,1) [] [])
+       (HsForAllTy 
+        (Implicit) 
+        (Nothing) 
+        (HsQTvs 
+         [] 
+         []) 
+        ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:35:25-36
+          }
+         Just (Ann (DP (0,0)) (ColDelta 25) DP (0,0) [] [((G AnnDarrow),DP (0,1))])
+         [
+          ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:35:25-36
+            }
+           Just (Ann (DP (0,0)) (ColDelta 25) DP (0,0) [] [])
+           (HsAppTy 
+            ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:35:25-34
+              }
+             Just (Ann (DP (0,0)) (ColDelta 25) DP (0,0) [] [])
+             (HsAppTy 
+              ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:35:25-32
+                }
+               Just (Ann (DP (0,0)) (ColDelta 25) DP (0,0) [] [((G AnnVal),DP (0,0))])
+               (HsTyVar 
+                (Qual {ModuleName: G} {OccName: Vector}))) 
+              ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:35:34
+                }
+               Just (Ann (DP (0,1)) (ColDelta 34) DP (0,1) [] [((G AnnVal),DP (0,0))])
+               (HsTyVar 
+                (Unqual {OccName: v}))))) 
+            ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:35:36
+              }
+             Just (Ann (DP (0,1)) (ColDelta 36) DP (0,1) [] [((G AnnVal),DP (0,0))])
+             (HsTyVar 
+              (Unqual {OccName: a})))))]) 
+        ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:(36,5)-(38,15)
+          }
+         Just (Ann (DP (1,5)) (ColDelta 5) DP (1,5) [] [((AnnComment DComment (DP (0,2),DP (0,16)) "-- ^ injection" Nothing),DP (0,2)),((AnnComment DComment (DP (0,-14),DP (0,105)) "-- ^ An order-preserving function into 'Int'. (The ordering on the elements is equivalent to @\\\\ x y -> f x '<=' f y@.)" Nothing),DP (0,-14)),((G AnnRarrow),DP (1,5))])
+         (HsFunTy 
+          ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:36:5-14
+            }
+           Just (Ann (DP (0,0)) (ColDelta 5) DP (0,0) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])
+           (HsParTy 
+            ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:36:6-13
+              }
+             Just (Ann (DP (0,0)) (ColDelta 6) DP (0,0) [] [((G AnnRarrow),DP (0,1))])
+             (HsFunTy 
+              ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:36:6 }
+               Just (Ann (DP (0,0)) (ColDelta 6) DP (0,0) [] [((G AnnVal),DP (0,0))])
+               (HsTyVar 
+                (Unqual {OccName: a}))) 
+              ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:36:11-13
+                }
+               Just (Ann (DP (0,1)) (ColDelta 11) DP (0,1) [] [((G AnnVal),DP (0,0))])
+               (HsTyVar 
+                (Unqual {OccName: Int}))))))) 
+          ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:(37,8)-(38,15)
+            }
+           Just (Ann (DP (0,1)) (ColDelta 8) DP (0,1) [] [((AnnComment DComment (DP (0,6),DP (0,28)) "-- ^ The input vector." Nothing),DP (0,6)),((G AnnRarrow),DP (1,5))])
+           (HsFunTy 
+            ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:37:8-10
+              }
+             Just (Ann (DP (0,0)) (ColDelta 8) DP (0,0) [] [])
+             (HsAppTy 
+              ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:37:8 }
+               Just (Ann (DP (0,0)) (ColDelta 8) DP (0,0) [] [((G AnnVal),DP (0,0))])
+               (HsTyVar 
+                (Unqual {OccName: v}))) 
+              ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:37:10
+                }
+               Just (Ann (DP (0,1)) (ColDelta 10) DP (0,1) [] [((G AnnVal),DP (0,0))])
+               (HsTyVar 
+                (Unqual {OccName: a}))))) 
+            ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:38:8-15
+              }
+             Just (Ann (DP (0,1)) (ColDelta 8) DP (0,1) [] [((G AnnVal),DP (0,0))])
+             (HsTyVar 
+              (Unqual {OccName: RangeMin}))))))))) 
+      (PlaceHolder)))),
+   ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:41:1-29
+     }
+    Just (Ann (DP (2,1)) (ColDelta 1) DP (3,1) [DComment (DP (0,1),DP (0,69)) "-- ^ A range-max function on the elements (under the above ordering)" Nothing,DComment (DP (1,13),DP (1,37)) "-- which runs in /O(1)/." Nothing] [((G AnnOpen),DP (0,0)),((G AnnClose),DP (0,1))])
+    (SigD 
+     (InlineSig 
+      ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:41:12-25
+        }
+       Just (Ann (DP (0,1)) (ColDelta 12) DP (0,1) [] [((G AnnVal),DP (0,0))])
+       (Unqual {OccName: injectRangeMin})) 
+      (InlinePragma "{-# INLINE" 
+       (Inline) 
+       (Nothing) 
+       (AlwaysActive) 
+       (FunLike))))),
+   ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:(43,1)-(46,15)
+     }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (2,1) [DComment (DP (1,1),DP (1,126)) "-- | injectDoc(injectRangeMin,vecRangeMinBy,<=) The returned function /does/ do bounds checks; see 'intRangeMin' for details." Nothing,DComment (DP (0,-125),DP (0,148)) "-- | /O(n)/. @'inj' f xs@ is equivalent to @'other' (\\\\ x y -> f x 'cmp' f y) xs@, but is frequently much faster, fusing with the input vector and converting it directly to a @'PV.Vector' 'Int'@. The returned function /does/ do bounds checks; see 'intRangeMin' for details." Nothing] [((G AnnDcolon),DP (0,1))])
+    (SigD 
+     (TypeSig 
+      [
+       ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:43:1-14
+         }
+        Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+        (Unqual {OccName: injectRangeMin}))] 
+      ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:(43,19)-(46,15)
+        }
+       Just (Ann (DP (0,1)) (ColDelta 19) DP (0,1) [] [])
+       (HsForAllTy 
+        (Implicit) 
+        (Nothing) 
+        (HsQTvs 
+         [] 
+         []) 
+        ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:43:19-30
+          }
+         Just (Ann (DP (0,0)) (ColDelta 19) DP (0,0) [] [((G AnnDarrow),DP (0,1))])
+         [
+          ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:43:19-30
+            }
+           Just (Ann (DP (0,0)) (ColDelta 19) DP (0,0) [] [])
+           (HsAppTy 
+            ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:43:19-28
+              }
+             Just (Ann (DP (0,0)) (ColDelta 19) DP (0,0) [] [])
+             (HsAppTy 
+              ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:43:19-26
+                }
+               Just (Ann (DP (0,0)) (ColDelta 19) DP (0,0) [] [((G AnnVal),DP (0,0))])
+               (HsTyVar 
+                (Qual {ModuleName: G} {OccName: Vector}))) 
+              ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:43:28
+                }
+               Just (Ann (DP (0,1)) (ColDelta 28) DP (0,1) [] [((G AnnVal),DP (0,0))])
+               (HsTyVar 
+                (Unqual {OccName: v}))))) 
+            ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:43:30
+              }
+             Just (Ann (DP (0,1)) (ColDelta 30) DP (0,1) [] [((G AnnVal),DP (0,0))])
+             (HsTyVar 
+              (Unqual {OccName: a})))))]) 
+        ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:(44,5)-(46,15)
+          }
+         Just (Ann (DP (1,5)) (ColDelta 5) DP (1,5) [] [((AnnComment DComment (DP (0,2),DP (0,16)) "-- ^ injection" Nothing),DP (0,2)),((AnnComment DComment (DP (0,-14),DP (0,105)) "-- ^ An order-preserving function into 'Int'. (The ordering on the elements is equivalent to @\\\\ x y -> f x '<=' f y@.)" Nothing),DP (0,-14)),((G AnnRarrow),DP (1,5))])
+         (HsFunTy 
+          ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:44:5-14
+            }
+           Just (Ann (DP (0,0)) (ColDelta 5) DP (0,0) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])
+           (HsParTy 
+            ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:44:6-13
+              }
+             Just (Ann (DP (0,0)) (ColDelta 6) DP (0,0) [] [((G AnnRarrow),DP (0,1))])
+             (HsFunTy 
+              ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:44:6 }
+               Just (Ann (DP (0,0)) (ColDelta 6) DP (0,0) [] [((G AnnVal),DP (0,0))])
+               (HsTyVar 
+                (Unqual {OccName: a}))) 
+              ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:44:11-13
+                }
+               Just (Ann (DP (0,1)) (ColDelta 11) DP (0,1) [] [((G AnnVal),DP (0,0))])
+               (HsTyVar 
+                (Unqual {OccName: Int}))))))) 
+          ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:(45,8)-(46,15)
+            }
+           Just (Ann (DP (0,1)) (ColDelta 8) DP (0,1) [] [((AnnComment DComment (DP (0,6),DP (0,28)) "-- ^ The input vector." Nothing),DP (0,6)),((G AnnRarrow),DP (1,5))])
+           (HsFunTy 
+            ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:45:8-10
+              }
+             Just (Ann (DP (0,0)) (ColDelta 8) DP (0,0) [] [])
+             (HsAppTy 
+              ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:45:8 }
+               Just (Ann (DP (0,0)) (ColDelta 8) DP (0,0) [] [((G AnnVal),DP (0,0))])
+               (HsTyVar 
+                (Unqual {OccName: v}))) 
+              ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:45:10
+                }
+               Just (Ann (DP (0,1)) (ColDelta 10) DP (0,1) [] [((G AnnVal),DP (0,0))])
+               (HsTyVar 
+                (Unqual {OccName: a}))))) 
+            ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:46:8-15
+              }
+             Just (Ann (DP (0,1)) (ColDelta 8) DP (0,1) [] [((G AnnVal),DP (0,0))])
+             (HsTyVar 
+              (Unqual {OccName: RangeMin}))))))))) 
+      (PlaceHolder)))),
+   ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:49:1-29
+     }
+    Just (Ann (DP (2,1)) (ColDelta 1) DP (3,1) [DComment (DP (0,1),DP (0,69)) "-- ^ A range-min function on the elements (under the above ordering)" Nothing,DComment (DP (1,13),DP (1,37)) "-- which runs in /O(1)/." Nothing] [((G AnnOpen),DP (0,0)),((G AnnClose),DP (0,1))])
+    (SigD 
+     (InlineSig 
+      ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:49:12-25
+        }
+       Just (Ann (DP (0,1)) (ColDelta 12) DP (0,1) [] [((G AnnVal),DP (0,0))])
+       (Unqual {OccName: injectRangeMax})) 
+      (InlinePragma "{-# INLINE" 
+       (Inline) 
+       (Nothing) 
+       (AlwaysActive) 
+       (FunLike))))),
+   ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:(51,1)-(54,15)
+     }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (2,1) [DComment (DP (1,1),DP (1,126)) "-- | injectDoc(injectRangeMax,vecRangeMinBy,>=) The returned function /does/ do bounds checks; see 'intRangeMin' for details." Nothing,DComment (DP (0,-125),DP (0,148)) "-- | /O(n)/. @'inj' f xs@ is equivalent to @'other' (\\\\ x y -> f x 'cmp' f y) xs@, but is frequently much faster, fusing with the input vector and converting it directly to a @'PV.Vector' 'Int'@. The returned function /does/ do bounds checks; see 'intRangeMin' for details." Nothing] [((G AnnDcolon),DP (0,1))])
+    (SigD 
+     (TypeSig 
+      [
+       ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:51:1-14
+         }
+        Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+        (Unqual {OccName: injectRangeMax}))] 
+      ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:(51,19)-(54,15)
+        }
+       Just (Ann (DP (0,1)) (ColDelta 19) DP (0,1) [] [])
+       (HsForAllTy 
+        (Implicit) 
+        (Nothing) 
+        (HsQTvs 
+         [] 
+         []) 
+        ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:51:19-30
+          }
+         Just (Ann (DP (0,0)) (ColDelta 19) DP (0,0) [] [((G AnnDarrow),DP (0,1))])
+         [
+          ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:51:19-30
+            }
+           Just (Ann (DP (0,0)) (ColDelta 19) DP (0,0) [] [])
+           (HsAppTy 
+            ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:51:19-28
+              }
+             Just (Ann (DP (0,0)) (ColDelta 19) DP (0,0) [] [])
+             (HsAppTy 
+              ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:51:19-26
+                }
+               Just (Ann (DP (0,0)) (ColDelta 19) DP (0,0) [] [((G AnnVal),DP (0,0))])
+               (HsTyVar 
+                (Qual {ModuleName: G} {OccName: Vector}))) 
+              ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:51:28
+                }
+               Just (Ann (DP (0,1)) (ColDelta 28) DP (0,1) [] [((G AnnVal),DP (0,0))])
+               (HsTyVar 
+                (Unqual {OccName: v}))))) 
+            ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:51:30
+              }
+             Just (Ann (DP (0,1)) (ColDelta 30) DP (0,1) [] [((G AnnVal),DP (0,0))])
+             (HsTyVar 
+              (Unqual {OccName: a})))))]) 
+        ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:(52,5)-(54,15)
+          }
+         Just (Ann (DP (1,5)) (ColDelta 5) DP (1,5) [] [((AnnComment DComment (DP (0,2),DP (0,16)) "-- ^ injection" Nothing),DP (0,2)),((AnnComment DComment (DP (0,-14),DP (0,105)) "-- ^ An order-preserving function into 'Int'. (The ordering on the elements is equivalent to @\\\\ x y -> f x '<=' f y@.)" Nothing),DP (0,-14)),((G AnnRarrow),DP (1,5))])
+         (HsFunTy 
+          ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:52:5-14
+            }
+           Just (Ann (DP (0,0)) (ColDelta 5) DP (0,0) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])
+           (HsParTy 
+            ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:52:6-13
+              }
+             Just (Ann (DP (0,0)) (ColDelta 6) DP (0,0) [] [((G AnnRarrow),DP (0,1))])
+             (HsFunTy 
+              ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:52:6 }
+               Just (Ann (DP (0,0)) (ColDelta 6) DP (0,0) [] [((G AnnVal),DP (0,0))])
+               (HsTyVar 
+                (Unqual {OccName: a}))) 
+              ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:52:11-13
+                }
+               Just (Ann (DP (0,1)) (ColDelta 11) DP (0,1) [] [((G AnnVal),DP (0,0))])
+               (HsTyVar 
+                (Unqual {OccName: Int}))))))) 
+          ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:(53,8)-(54,15)
+            }
+           Just (Ann (DP (0,1)) (ColDelta 8) DP (0,1) [] [((AnnComment DComment (DP (0,6),DP (0,28)) "-- ^ The input vector." Nothing),DP (0,6)),((G AnnRarrow),DP (1,5))])
+           (HsFunTy 
+            ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:53:8-10
+              }
+             Just (Ann (DP (0,0)) (ColDelta 8) DP (0,0) [] [])
+             (HsAppTy 
+              ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:53:8 }
+               Just (Ann (DP (0,0)) (ColDelta 8) DP (0,0) [] [((G AnnVal),DP (0,0))])
+               (HsTyVar 
+                (Unqual {OccName: v}))) 
+              ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:53:10
+                }
+               Just (Ann (DP (0,1)) (ColDelta 10) DP (0,1) [] [((G AnnVal),DP (0,0))])
+               (HsTyVar 
+                (Unqual {OccName: a}))))) 
+            ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:54:8-15
+              }
+             Just (Ann (DP (0,1)) (ColDelta 8) DP (0,1) [] [((G AnnVal),DP (0,0))])
+             (HsTyVar 
+              (Unqual {OccName: RangeMin}))))))))) 
+      (PlaceHolder)))),
+   ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:57:1-91
+     }
+    Just (Ann (DP (2,1)) (ColDelta 1) DP (3,1) [DComment (DP (0,1),DP (0,69)) "-- ^ A range-max function on the elements (under the above ordering)" Nothing,DComment (DP (1,13),DP (1,37)) "-- which runs in /O(1)/." Nothing] [])
+    (ValD 
+     (FunBind 
+      ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:57:1-20
+        }
+       Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+       (Unqual {OccName: unsafeInjectRangeMin})) 
+      (False) 
+      (MG 
+       [
+        ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:57:1-91
+          }
+         Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnEqual),DP (0,1))])
+         (Match 
+          (Just 
+           ((,) 
+            ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:57:1-20
+              }
+             Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+             (Unqual {OccName: unsafeInjectRangeMin})) 
+            (False))) 
+          [
+           ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:57:22-27
+             }
+            Just (Ann (DP (0,1)) (ColDelta 22) DP (0,1) [] [((G AnnVal),DP (0,0))])
+            (VarPat 
+             (Unqual {OccName: inject}))),
+           ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:57:29-30
+             }
+            Just (Ann (DP (0,1)) (ColDelta 29) DP (0,1) [] [((G AnnVal),DP (0,0))])
+            (VarPat 
+             (Unqual {OccName: xs})))] 
+          (Nothing) 
+          (GRHSs 
+           [
+            ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:57:32-91
+              }
+             Just (Ann (DP (0,-1)) (ColDelta 32) DP (0,-1) [] [])
+             (GRHS 
+              [] 
+              ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:57:34-91
+                }
+               Just (Ann (DP (0,1)) (ColDelta 34) DP (0,1) [] [])
+               (HsApp 
+                ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:57:34-50
+                  }
+                 Just (Ann (DP (0,0)) (ColDelta 34) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                 (HsVar 
+                  (Unqual {OccName: unsafeIntRangeMin}))) 
+                ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:57:52-91
+                  }
+                 Just (Ann (DP (0,1)) (ColDelta 52) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])
+                 (HsPar 
+                  ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:57:53-90
+                    }
+                   Just (Ann (DP (0,0)) (ColDelta 53) DP (0,0) [] [])
+                   (HsApp 
+                    ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:57:53-62
+                      }
+                     Just (Ann (DP (0,0)) (ColDelta 53) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                     (HsVar 
+                      (Qual {ModuleName: G} {OccName: unstream}))) 
+                    ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:57:64-90
+                      }
+                     Just (Ann (DP (0,1)) (ColDelta 64) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])
+                     (HsPar 
+                      ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:57:65-89
+                        }
+                       Just (Ann (DP (0,0)) (ColDelta 65) DP (0,0) [] [])
+                       (HsApp 
+                        ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:57:65-75
+                          }
+                         Just (Ann (DP (0,0)) (ColDelta 65) DP (0,0) [] [])
+                         (HsApp 
+                          ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:57:65-68
+                            }
+                           Just (Ann (DP (0,0)) (ColDelta 65) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                           (HsVar 
+                            (Unqual {OccName: fmap}))) 
+                          ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:57:70-75
+                            }
+                           Just (Ann (DP (0,1)) (ColDelta 70) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                           (HsVar 
+                            (Unqual {OccName: inject}))))) 
+                        ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:57:77-89
+                          }
+                         Just (Ann (DP (0,1)) (ColDelta 77) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])
+                         (HsPar 
+                          ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:57:78-88
+                            }
+                           Just (Ann (DP (0,0)) (ColDelta 78) DP (0,0) [] [])
+                           (HsApp 
+                            ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:57:78-85
+                              }
+                             Just (Ann (DP (0,0)) (ColDelta 78) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                             (HsVar 
+                              (Qual {ModuleName: G} {OccName: stream}))) 
+                            ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:57:87-88
+                              }
+                             Just (Ann (DP (0,1)) (ColDelta 87) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                             (HsVar 
+                              (Unqual {OccName: xs})))))))))))))))))))] 
+           (EmptyLocalBinds))))] 
+       [] 
+       (PlaceHolder) 
+       (FromSource)) 
+      (WpHole) 
+      (PlaceHolder) 
+      []))),
+   ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:58:1-73
+     }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [])
+    (ValD 
+     (FunBind 
+      ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:58:1-20
+        }
+       Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+       (Unqual {OccName: unsafeInjectRangeMax})) 
+      (False) 
+      (MG 
+       [
+        ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:58:1-73
+          }
+         Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnEqual),DP (0,1))])
+         (Match 
+          (Just 
+           ((,) 
+            ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:58:1-20
+              }
+             Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+             (Unqual {OccName: unsafeInjectRangeMax})) 
+            (False))) 
+          [
+           ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:58:22-27
+             }
+            Just (Ann (DP (0,1)) (ColDelta 22) DP (0,1) [] [((G AnnVal),DP (0,0))])
+            (VarPat 
+             (Unqual {OccName: inject})))] 
+          (Nothing) 
+          (GRHSs 
+           [
+            ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:58:29-73
+              }
+             Just (Ann (DP (0,-1)) (ColDelta 29) DP (0,-1) [] [])
+             (GRHS 
+              [] 
+              ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:58:31-73
+                }
+               Just (Ann (DP (0,1)) (ColDelta 31) DP (0,1) [] [])
+               (HsApp 
+                ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:58:31-50
+                  }
+                 Just (Ann (DP (0,0)) (ColDelta 31) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                 (HsVar 
+                  (Unqual {OccName: unsafeInjectRangeMin}))) 
+                ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:58:52-73
+                  }
+                 Just (Ann (DP (0,1)) (ColDelta 52) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])
+                 (HsPar 
+                  ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:58:53-72
+                    }
+                   Just (Ann (DP (0,0)) (ColDelta 53) DP (0,0) [] [])
+                   (OpApp 
+                    ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:58:53-63
+                      }
+                     Just (Ann (DP (0,0)) (ColDelta 53) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                     (HsVar 
+                      (Unqual {OccName: invertValue}))) 
+                    ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:58:65
+                      }
+                     Just (Ann (DP (0,1)) (ColDelta 65) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                     (HsVar 
+                      (Unqual {OccName: .}))) 
+                    (PlaceHolder) 
+                    ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:58:67-72
+                      }
+                     Just (Ann (DP (0,1)) (ColDelta 67) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                     (HsVar 
+                      (Unqual {OccName: inject})))))))))))] 
+           (EmptyLocalBinds))))] 
+       [] 
+       (PlaceHolder) 
+       (FromSource)) 
+      (WpHole) 
+      (PlaceHolder) 
+      []))),
+   ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:59:1-79
+     }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [])
+    (ValD 
+     (FunBind 
+      ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:59:1-14
+        }
+       Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+       (Unqual {OccName: injectRangeMin})) 
+      (False) 
+      (MG 
+       [
+        ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:59:1-79
+          }
+         Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnEqual),DP (0,1))])
+         (Match 
+          (Just 
+           ((,) 
+            ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:59:1-14
+              }
+             Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+             (Unqual {OccName: injectRangeMin})) 
+            (False))) 
+          [
+           ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:59:16-21
+             }
+            Just (Ann (DP (0,1)) (ColDelta 16) DP (0,1) [] [((G AnnVal),DP (0,0))])
+            (VarPat 
+             (Unqual {OccName: inject}))),
+           ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:59:23-24
+             }
+            Just (Ann (DP (0,1)) (ColDelta 23) DP (0,1) [] [((G AnnVal),DP (0,0))])
+            (VarPat 
+             (Unqual {OccName: xs})))] 
+          (Nothing) 
+          (GRHSs 
+           [
+            ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:59:26-79
+              }
+             Just (Ann (DP (0,-1)) (ColDelta 26) DP (0,-1) [] [])
+             (GRHS 
+              [] 
+              ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:59:28-79
+                }
+               Just (Ann (DP (0,1)) (ColDelta 28) DP (0,1) [] [])
+               (HsApp 
+                ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:59:28-38
+                  }
+                 Just (Ann (DP (0,0)) (ColDelta 28) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                 (HsVar 
+                  (Unqual {OccName: intRangeMin}))) 
+                ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:59:40-79
+                  }
+                 Just (Ann (DP (0,1)) (ColDelta 40) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])
+                 (HsPar 
+                  ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:59:41-78
+                    }
+                   Just (Ann (DP (0,0)) (ColDelta 41) DP (0,0) [] [])
+                   (HsApp 
+                    ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:59:41-50
+                      }
+                     Just (Ann (DP (0,0)) (ColDelta 41) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                     (HsVar 
+                      (Qual {ModuleName: G} {OccName: unstream}))) 
+                    ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:59:52-78
+                      }
+                     Just (Ann (DP (0,1)) (ColDelta 52) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])
+                     (HsPar 
+                      ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:59:53-77
+                        }
+                       Just (Ann (DP (0,0)) (ColDelta 53) DP (0,0) [] [])
+                       (HsApp 
+                        ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:59:53-63
+                          }
+                         Just (Ann (DP (0,0)) (ColDelta 53) DP (0,0) [] [])
+                         (HsApp 
+                          ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:59:53-56
+                            }
+                           Just (Ann (DP (0,0)) (ColDelta 53) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                           (HsVar 
+                            (Unqual {OccName: fmap}))) 
+                          ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:59:58-63
+                            }
+                           Just (Ann (DP (0,1)) (ColDelta 58) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                           (HsVar 
+                            (Unqual {OccName: inject}))))) 
+                        ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:59:65-77
+                          }
+                         Just (Ann (DP (0,1)) (ColDelta 65) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])
+                         (HsPar 
+                          ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:59:66-76
+                            }
+                           Just (Ann (DP (0,0)) (ColDelta 66) DP (0,0) [] [])
+                           (HsApp 
+                            ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:59:66-73
+                              }
+                             Just (Ann (DP (0,0)) (ColDelta 66) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                             (HsVar 
+                              (Qual {ModuleName: G} {OccName: stream}))) 
+                            ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:59:75-76
+                              }
+                             Just (Ann (DP (0,1)) (ColDelta 75) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                             (HsVar 
+                              (Unqual {OccName: xs})))))))))))))))))))] 
+           (EmptyLocalBinds))))] 
+       [] 
+       (PlaceHolder) 
+       (FromSource)) 
+      (WpHole) 
+      (PlaceHolder) 
+      []))),
+   ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:60:1-61
+     }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [])
+    (ValD 
+     (FunBind 
+      ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:60:1-14
+        }
+       Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+       (Unqual {OccName: injectRangeMax})) 
+      (False) 
+      (MG 
+       [
+        ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:60:1-61
+          }
+         Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnEqual),DP (0,1))])
+         (Match 
+          (Just 
+           ((,) 
+            ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:60:1-14
+              }
+             Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+             (Unqual {OccName: injectRangeMax})) 
+            (False))) 
+          [
+           ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:60:16-21
+             }
+            Just (Ann (DP (0,1)) (ColDelta 16) DP (0,1) [] [((G AnnVal),DP (0,0))])
+            (VarPat 
+             (Unqual {OccName: inject})))] 
+          (Nothing) 
+          (GRHSs 
+           [
+            ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:60:23-61
+              }
+             Just (Ann (DP (0,-1)) (ColDelta 23) DP (0,-1) [] [])
+             (GRHS 
+              [] 
+              ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:60:25-61
+                }
+               Just (Ann (DP (0,1)) (ColDelta 25) DP (0,1) [] [])
+               (HsApp 
+                ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:60:25-38
+                  }
+                 Just (Ann (DP (0,0)) (ColDelta 25) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                 (HsVar 
+                  (Unqual {OccName: injectRangeMin}))) 
+                ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:60:40-61
+                  }
+                 Just (Ann (DP (0,1)) (ColDelta 40) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])
+                 (HsPar 
+                  ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:60:41-60
+                    }
+                   Just (Ann (DP (0,0)) (ColDelta 41) DP (0,0) [] [])
+                   (OpApp 
+                    ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:60:41-51
+                      }
+                     Just (Ann (DP (0,0)) (ColDelta 41) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                     (HsVar 
+                      (Unqual {OccName: invertValue}))) 
+                    ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:60:53
+                      }
+                     Just (Ann (DP (0,1)) (ColDelta 53) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                     (HsVar 
+                      (Unqual {OccName: .}))) 
+                    (PlaceHolder) 
+                    ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:60:55-60
+                      }
+                     Just (Ann (DP (0,1)) (ColDelta 55) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                     (HsVar 
+                      (Unqual {OccName: inject})))))))))))] 
+           (EmptyLocalBinds))))] 
+       [] 
+       (PlaceHolder) 
+       (FromSource)) 
+      (WpHole) 
+      (PlaceHolder) 
+      [])))] 
+  (Nothing) 
+  (Nothing)))
+==============
+[(AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:1:1 CN "HsModule" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((AnnComment DComment (DP (0,0),DP (0,20)) "{-# LANGUAGE CPP #-}" Nothing),DP (0,0)),((G AnnModule),DP (1,1)),((G AnnVal),DP (0,1)),((G AnnWhere),DP (0,1)),((AnnComment DComment (DP (1,1),DP (1,1)) "" Nothing),DP (1,1)),((G AnnEofPos),DP (2,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:(2,29)-(7,19) CN "(:)" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 29) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:3:5-13 CN "IEThingAbs" NotNeeded,
+  (Ann (DP (1,5)) (ColDelta 5) DP (1,5) [] [])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:3:5-13 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 5) DP (0,0) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:4:5-24 CN "IEVar" NotNeeded,
+  (Ann (DP (1,5)) (ColDelta 5) DP (1,5) [] [])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:4:5-24 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 5) DP (0,0) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:5:5-24 CN "IEVar" NotNeeded,
+  (Ann (DP (1,5)) (ColDelta 5) DP (1,5) [] [])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:5:5-24 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 5) DP (0,0) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:6:5-18 CN "IEVar" NotNeeded,
+  (Ann (DP (1,5)) (ColDelta 5) DP (1,5) [] [])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:6:5-18 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 5) DP (0,0) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:7:5-18 CN "IEVar" NotNeeded,
+  (Ann (DP (1,5)) (ColDelta 5) DP (1,5) [] [])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:7:5-18 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 5) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:9:1-27 CN "ImportDecl" NotNeeded,
+  (Ann (DP (2,1)) (ColDelta 1) DP (2,1) [] [((G AnnImport),DP (0,0)),((G AnnVal),DP (0,1))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:10:1-24 CN "ImportDecl" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [((G AnnImport),DP (0,0)),((G AnnVal),DP (0,1))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:11:1-27 CN "ImportDecl" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [((G AnnImport),DP (0,0)),((G AnnVal),DP (0,1))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:12:1-35 CN "ImportDecl" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [((G AnnImport),DP (0,0)),((G AnnVal),DP (0,1))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:14:1-44 CN "ImportDecl" NotNeeded,
+  (Ann (DP (2,1)) (ColDelta 1) DP (2,1) [] [((G AnnImport),DP (0,0)),((G AnnQualified),DP (0,1)),((G AnnVal),DP (0,1)),((G AnnAs),DP (0,1)),((G AnnVal),DP (0,1))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:15:1-41 CN "ImportDecl" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [((G AnnImport),DP (0,0)),((G AnnQualified),DP (0,1)),((G AnnVal),DP (0,1)),((G AnnAs),DP (0,1)),((G AnnVal),DP (0,1))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:23:1-35 CN "SigD" NotNeeded,
+  (Ann (DP (2,1)) (ColDelta 1) DP (8,1) [DComment (DP (2,1),DP (2,97)) "#define injection An order-preserving function into 'Int'.  (The ordering on the elements is    \\" Nothing,DComment (DP (1,5),DP (1,15)) "equivalent" Nothing,DComment (DP (0,1),DP (0,3)) "to" Nothing,DComment (DP (0,1),DP (0,4)) "@\\\\" Nothing,DComment (DP (0,1),DP (0,2)) "x" Nothing,DComment (DP (0,1),DP (0,2)) "y" Nothing,DComment (DP (0,1),DP (0,3)) "->" Nothing,DComment (DP (0,1),DP (0,2)) "f" Nothing,DComment (DP (0,1),DP (0,2)) "x" Nothing,DComment (DP (0,1),DP (0,2)) "'" Nothing,DComment (DP (0,0),DP (0,2)) "<=" Nothing,DComment (DP (0,0),DP (0,1)) "'" Nothing,DComment (DP (0,1),DP (0,2)) "f" Nothing,DComment (DP (0,1),DP (0,2)) "y" Nothing,DComment (DP (0,0),DP (0,2)) "@." Nothing,DComment (DP (0,0),DP (0,1)) ")" Nothing,DComment (DP (1,1),DP (1,85)) "#define injectDoc(inj,other,cmp)  /O(n)/.  @'inj' f xs@ is equivalent to            \\" Nothing,DComment (DP (1,5),DP (1,6)) "@" Nothing,DComment (DP (0,0),DP (0,1)) "'" Nothing,DComment (DP (0,0),DP (0,6)) "other'" Nothing,DComment (DP (0,1),DP (0,2)) "(" Nothing,DComment (DP (0,0),DP (0,2)) "\\\\" Nothing,DComment (DP (0,1),DP (0,2)) "x" Nothing,DComment (DP (0,1),DP (0,2)) "y" Nothing,DComment (DP (0,1),DP (0,3)) "->" Nothing,DComment (DP (0,1),DP (0,2)) "f" Nothing,DComment (DP (0,1),DP (0,2)) "x" Nothing,DComment (DP (0,1),DP (0,2)) "'" Nothing,DComment (DP (0,0),DP (0,4)) "cmp'" Nothing,DComment (DP (0,1),DP (0,2)) "f" Nothing,DComment (DP (0,1),DP (0,2)) "y" Nothing,DComment (DP (0,0),DP (0,1)) ")" Nothing,DComment (DP (0,1),DP (0,3)) "xs" Nothing,DComment (DP (0,0),DP (0,1)) "@" Nothing,DComment (DP (0,0),DP (0,1)) "," Nothing,DComment (DP (0,1),DP (0,4)) "but" Nothing,DComment (DP (0,1),DP (0,3)) "is" Nothing,DComment (DP (0,1),DP (0,11)) "frequently" Nothing,DComment (DP (0,1),DP (0,5)) "much" Nothing,DComment (DP (0,1),DP (0,7)) "faster" Nothing,DComment (DP (0,0),DP (0,1)) "," Nothing,DComment (DP (0,10),DP (0,11)) "\\" Nothing,DComment (DP (1,5),DP (1,11)) "fusing" Nothing,DComment (DP (0,1),DP (0,5)) "with" Nothing,DComment (DP (0,1),DP (0,4)) "the" Nothing,DComment (DP (0,1),DP (0,6)) "input" Nothing,DComment (DP (0,1),DP (0,7)) "vector" Nothing,DComment (DP (0,1),DP (0,4)) "and" Nothing,DComment (DP (0,1),DP (0,11)) "converting" Nothing,DComment (DP (0,1),DP (0,3)) "it" Nothing,DComment (DP (0,1),DP (0,9)) "directly" Nothing,DComment (DP (0,1),DP (0,3)) "to" Nothing,DComment (DP (0,1),DP (0,2)) "a" Nothing,DComment (DP (0,1),DP (0,2)) "@" Nothing,DComment (DP (0,0),DP (0,1)) "'" Nothing,DComment (DP (0,0),DP (0,10)) "PV.Vector'" Nothing,DComment (DP (0,1),DP (0,2)) "'" Nothing,DComment (DP (0,0),DP (0,4)) "Int'" Nothing,DComment (DP (0,0),DP (0,2)) "@." Nothing] [((G AnnOpen),DP (0,0)),((G AnnClose),DP (0,1))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:23:12-31 CN "Unqual" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 12) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:26:1-20 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:(26,1)-(29,15) CN "SigD" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (3,1) [DComment (DP (1,1),DP (1,111)) "-- | injectDoc(unsafeInjectRangeMin,unsafeVecRangeMinBy,<=) The returned function /does not/ do bounds checks;" Nothing,DComment (DP (0,-110),DP (0,136)) "-- | /O(n)/. @'inj' f xs@ is equivalent to @'other' (\\\\ x y -> f x 'cmp' f y) xs@, but is frequently much faster, fusing with the input vector and converting it directly to a @'PV.Vector' 'Int'@. The returned function /does not/ do bounds checks;" Nothing,DComment (DP (1,1),DP (1,40)) "-- see 'unsafeIntRangeMin' for details." Nothing] [((G AnnDcolon),DP (0,1))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:26:25-32 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 25) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:26:25-34 CN "HsAppTy" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 25) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:26:25-36 CN "(:)" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 25) DP (0,0) [] [((G AnnDarrow),DP (0,1))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:26:25-36 CN "HsAppTy" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 25) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:(26,25)-(29,15) CN "HsForAllTy" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 25) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:26:34 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 34) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:26:36 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 36) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:27:5-14 CN "HsParTy" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 5) DP (0,0) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:(27,5)-(29,15) CN "HsFunTy" NotNeeded,
+  (Ann (DP (1,5)) (ColDelta 5) DP (1,5) [] [((AnnComment DComment (DP (0,2),DP (0,16)) "-- ^ injection" Nothing),DP (0,2)),((AnnComment DComment (DP (0,-14),DP (0,105)) "-- ^ An order-preserving function into 'Int'. (The ordering on the elements is equivalent to @\\\\ x y -> f x '<=' f y@.)" Nothing),DP (0,-14)),((G AnnRarrow),DP (1,5))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:27:6 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 6) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:27:6-13 CN "HsFunTy" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 6) DP (0,0) [] [((G AnnRarrow),DP (0,1))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:27:11-13 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 11) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:28:8 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 8) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:28:8-10 CN "HsAppTy" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 8) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:(28,8)-(29,15) CN "HsFunTy" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 8) DP (0,1) [] [((AnnComment DComment (DP (0,6),DP (0,28)) "-- ^ The input vector." Nothing),DP (0,6)),((G AnnRarrow),DP (1,5))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:28:10 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 10) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:29:8-15 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 8) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:32:1-35 CN "SigD" NotNeeded,
+  (Ann (DP (2,1)) (ColDelta 1) DP (3,1) [DComment (DP (0,1),DP (0,69)) "-- ^ A range-min function on the elements (under the above ordering)" Nothing,DComment (DP (1,13),DP (1,37)) "-- which runs in /O(1)/." Nothing] [((G AnnOpen),DP (0,0)),((G AnnClose),DP (0,1))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:32:12-31 CN "Unqual" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 12) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:35:1-20 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:(35,1)-(38,15) CN "SigD" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (3,1) [DComment (DP (1,1),DP (1,111)) "-- | injectDoc(unsafeInjectRangeMax,unsafeVecRangeMinBy,>=) The returned function /does not/ do bounds checks;" Nothing,DComment (DP (0,-110),DP (0,136)) "-- | /O(n)/. @'inj' f xs@ is equivalent to @'other' (\\\\ x y -> f x 'cmp' f y) xs@, but is frequently much faster, fusing with the input vector and converting it directly to a @'PV.Vector' 'Int'@. The returned function /does not/ do bounds checks;" Nothing,DComment (DP (1,1),DP (1,40)) "-- see 'unsafeIntRangeMin' for details." Nothing] [((G AnnDcolon),DP (0,1))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:35:25-32 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 25) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:35:25-34 CN "HsAppTy" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 25) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:35:25-36 CN "(:)" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 25) DP (0,0) [] [((G AnnDarrow),DP (0,1))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:35:25-36 CN "HsAppTy" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 25) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:(35,25)-(38,15) CN "HsForAllTy" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 25) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:35:34 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 34) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:35:36 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 36) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:36:5-14 CN "HsParTy" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 5) DP (0,0) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:(36,5)-(38,15) CN "HsFunTy" NotNeeded,
+  (Ann (DP (1,5)) (ColDelta 5) DP (1,5) [] [((AnnComment DComment (DP (0,2),DP (0,16)) "-- ^ injection" Nothing),DP (0,2)),((AnnComment DComment (DP (0,-14),DP (0,105)) "-- ^ An order-preserving function into 'Int'. (The ordering on the elements is equivalent to @\\\\ x y -> f x '<=' f y@.)" Nothing),DP (0,-14)),((G AnnRarrow),DP (1,5))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:36:6 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 6) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:36:6-13 CN "HsFunTy" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 6) DP (0,0) [] [((G AnnRarrow),DP (0,1))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:36:11-13 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 11) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:37:8 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 8) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:37:8-10 CN "HsAppTy" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 8) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:(37,8)-(38,15) CN "HsFunTy" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 8) DP (0,1) [] [((AnnComment DComment (DP (0,6),DP (0,28)) "-- ^ The input vector." Nothing),DP (0,6)),((G AnnRarrow),DP (1,5))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:37:10 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 10) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:38:8-15 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 8) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:41:1-29 CN "SigD" NotNeeded,
+  (Ann (DP (2,1)) (ColDelta 1) DP (3,1) [DComment (DP (0,1),DP (0,69)) "-- ^ A range-max function on the elements (under the above ordering)" Nothing,DComment (DP (1,13),DP (1,37)) "-- which runs in /O(1)/." Nothing] [((G AnnOpen),DP (0,0)),((G AnnClose),DP (0,1))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:41:12-25 CN "Unqual" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 12) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:43:1-14 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:(43,1)-(46,15) CN "SigD" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (2,1) [DComment (DP (1,1),DP (1,126)) "-- | injectDoc(injectRangeMin,vecRangeMinBy,<=) The returned function /does/ do bounds checks; see 'intRangeMin' for details." Nothing,DComment (DP (0,-125),DP (0,148)) "-- | /O(n)/. @'inj' f xs@ is equivalent to @'other' (\\\\ x y -> f x 'cmp' f y) xs@, but is frequently much faster, fusing with the input vector and converting it directly to a @'PV.Vector' 'Int'@. The returned function /does/ do bounds checks; see 'intRangeMin' for details." Nothing] [((G AnnDcolon),DP (0,1))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:43:19-26 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 19) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:43:19-28 CN "HsAppTy" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 19) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:43:19-30 CN "(:)" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 19) DP (0,0) [] [((G AnnDarrow),DP (0,1))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:43:19-30 CN "HsAppTy" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 19) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:(43,19)-(46,15) CN "HsForAllTy" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 19) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:43:28 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 28) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:43:30 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 30) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:44:5-14 CN "HsParTy" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 5) DP (0,0) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:(44,5)-(46,15) CN "HsFunTy" NotNeeded,
+  (Ann (DP (1,5)) (ColDelta 5) DP (1,5) [] [((AnnComment DComment (DP (0,2),DP (0,16)) "-- ^ injection" Nothing),DP (0,2)),((AnnComment DComment (DP (0,-14),DP (0,105)) "-- ^ An order-preserving function into 'Int'. (The ordering on the elements is equivalent to @\\\\ x y -> f x '<=' f y@.)" Nothing),DP (0,-14)),((G AnnRarrow),DP (1,5))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:44:6 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 6) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:44:6-13 CN "HsFunTy" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 6) DP (0,0) [] [((G AnnRarrow),DP (0,1))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:44:11-13 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 11) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:45:8 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 8) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:45:8-10 CN "HsAppTy" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 8) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:(45,8)-(46,15) CN "HsFunTy" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 8) DP (0,1) [] [((AnnComment DComment (DP (0,6),DP (0,28)) "-- ^ The input vector." Nothing),DP (0,6)),((G AnnRarrow),DP (1,5))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:45:10 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 10) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:46:8-15 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 8) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:49:1-29 CN "SigD" NotNeeded,
+  (Ann (DP (2,1)) (ColDelta 1) DP (3,1) [DComment (DP (0,1),DP (0,69)) "-- ^ A range-min function on the elements (under the above ordering)" Nothing,DComment (DP (1,13),DP (1,37)) "-- which runs in /O(1)/." Nothing] [((G AnnOpen),DP (0,0)),((G AnnClose),DP (0,1))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:49:12-25 CN "Unqual" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 12) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:51:1-14 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:(51,1)-(54,15) CN "SigD" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (2,1) [DComment (DP (1,1),DP (1,126)) "-- | injectDoc(injectRangeMax,vecRangeMinBy,>=) The returned function /does/ do bounds checks; see 'intRangeMin' for details." Nothing,DComment (DP (0,-125),DP (0,148)) "-- | /O(n)/. @'inj' f xs@ is equivalent to @'other' (\\\\ x y -> f x 'cmp' f y) xs@, but is frequently much faster, fusing with the input vector and converting it directly to a @'PV.Vector' 'Int'@. The returned function /does/ do bounds checks; see 'intRangeMin' for details." Nothing] [((G AnnDcolon),DP (0,1))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:51:19-26 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 19) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:51:19-28 CN "HsAppTy" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 19) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:51:19-30 CN "(:)" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 19) DP (0,0) [] [((G AnnDarrow),DP (0,1))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:51:19-30 CN "HsAppTy" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 19) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:(51,19)-(54,15) CN "HsForAllTy" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 19) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:51:28 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 28) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:51:30 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 30) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:52:5-14 CN "HsParTy" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 5) DP (0,0) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:(52,5)-(54,15) CN "HsFunTy" NotNeeded,
+  (Ann (DP (1,5)) (ColDelta 5) DP (1,5) [] [((AnnComment DComment (DP (0,2),DP (0,16)) "-- ^ injection" Nothing),DP (0,2)),((AnnComment DComment (DP (0,-14),DP (0,105)) "-- ^ An order-preserving function into 'Int'. (The ordering on the elements is equivalent to @\\\\ x y -> f x '<=' f y@.)" Nothing),DP (0,-14)),((G AnnRarrow),DP (1,5))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:52:6 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 6) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:52:6-13 CN "HsFunTy" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 6) DP (0,0) [] [((G AnnRarrow),DP (0,1))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:52:11-13 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 11) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:53:8 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 8) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:53:8-10 CN "HsAppTy" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 8) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:(53,8)-(54,15) CN "HsFunTy" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 8) DP (0,1) [] [((AnnComment DComment (DP (0,6),DP (0,28)) "-- ^ The input vector." Nothing),DP (0,6)),((G AnnRarrow),DP (1,5))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:53:10 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 10) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:54:8-15 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 8) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:57:1-20 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:57:1-91 CN "Match" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnEqual),DP (0,1))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:57:1-91 CN "ValD" NotNeeded,
+  (Ann (DP (2,1)) (ColDelta 1) DP (3,1) [DComment (DP (0,1),DP (0,69)) "-- ^ A range-max function on the elements (under the above ordering)" Nothing,DComment (DP (1,13),DP (1,37)) "-- which runs in /O(1)/." Nothing] [])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:57:22-27 CN "VarPat" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 22) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:57:29-30 CN "VarPat" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 29) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:57:32-91 CN "GRHS" NotNeeded,
+  (Ann (DP (0,-1)) (ColDelta 32) DP (0,-1) [] [])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:57:34-50 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 34) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:57:34-91 CN "HsApp" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 34) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:57:52-91 CN "HsPar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 52) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:57:53-62 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 53) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:57:53-90 CN "HsApp" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 53) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:57:64-90 CN "HsPar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 64) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:57:65-68 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 65) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:57:65-75 CN "HsApp" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 65) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:57:65-89 CN "HsApp" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 65) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:57:70-75 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 70) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:57:77-89 CN "HsPar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 77) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:57:78-85 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 78) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:57:78-88 CN "HsApp" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 78) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:57:87-88 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 87) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:58:1-20 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:58:1-73 CN "Match" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnEqual),DP (0,1))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:58:1-73 CN "ValD" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:58:22-27 CN "VarPat" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 22) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:58:29-73 CN "GRHS" NotNeeded,
+  (Ann (DP (0,-1)) (ColDelta 29) DP (0,-1) [] [])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:58:31-50 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 31) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:58:31-73 CN "HsApp" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 31) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:58:52-73 CN "HsPar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 52) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:58:53-63 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 53) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:58:53-72 CN "OpApp" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 53) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:58:65 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 65) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:58:67-72 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 67) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:59:1-14 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:59:1-79 CN "Match" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnEqual),DP (0,1))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:59:1-79 CN "ValD" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:59:16-21 CN "VarPat" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 16) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:59:23-24 CN "VarPat" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 23) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:59:26-79 CN "GRHS" NotNeeded,
+  (Ann (DP (0,-1)) (ColDelta 26) DP (0,-1) [] [])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:59:28-38 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 28) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:59:28-79 CN "HsApp" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 28) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:59:40-79 CN "HsPar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 40) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:59:41-50 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 41) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:59:41-78 CN "HsApp" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 41) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:59:52-78 CN "HsPar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 52) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:59:53-56 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 53) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:59:53-63 CN "HsApp" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 53) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:59:53-77 CN "HsApp" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 53) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:59:58-63 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 58) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:59:65-77 CN "HsPar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 65) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:59:66-73 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 66) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:59:66-76 CN "HsApp" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 66) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:59:75-76 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 75) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:60:1-14 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:60:1-61 CN "Match" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnEqual),DP (0,1))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:60:1-61 CN "ValD" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:60:16-21 CN "VarPat" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 16) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:60:23-61 CN "GRHS" NotNeeded,
+  (Ann (DP (0,-1)) (ColDelta 23) DP (0,-1) [] [])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:60:25-38 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 25) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:60:25-61 CN "HsApp" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 25) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:60:40-61 CN "HsPar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 40) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:60:41-51 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 41) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:60:41-60 CN "OpApp" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 41) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:60:53 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 53) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:60:55-60 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 55) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey <no location info> CN "EmptyLocalBinds" NotNeeded,
+  (Ann (DP (-57,0)) (ColDelta 0) DP (-57,0) [] []))]
+==============
+([((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:1:1,
+    AnnModule),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:2:1-6]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:1:1,
+    AnnWhere),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:7:21-25]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:(2,29)-(7,19),
+    AnnCloseP),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:7:19]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:(2,29)-(7,19),
+    AnnOpenP),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:2:29]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:3:5-13,
+    AnnComma),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:3:14]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:4:5-24,
+    AnnComma),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:4:25]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:5:5-24,
+    AnnComma),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:5:25]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:6:5-18,
+    AnnComma),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:6:19]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:9:1-27,
+    AnnImport),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:9:1-6]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:9:1-27,
+    AnnSemi),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:10:1]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:10:1-24,
+    AnnImport),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:10:1-6]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:10:1-24,
+    AnnSemi),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:11:1]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:11:1-27,
+    AnnImport),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:11:1-6]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:11:1-27,
+    AnnSemi),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:12:1]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:12:1-35,
+    AnnImport),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:12:1-6]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:12:1-35,
+    AnnSemi),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:14:1]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:14:1-44,
+    AnnAs),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:14:40-41]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:14:1-44,
+    AnnImport),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:14:1-6]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:14:1-44,
+    AnnQualified),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:14:8-16]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:14:1-44,
+    AnnSemi),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:15:1]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:14:1-44,
+    AnnVal),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:14:43-44]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:15:1-41,
+    AnnAs),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:15:38-39]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:15:1-41,
+    AnnImport),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:15:1-6]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:15:1-41,
+    AnnQualified),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:15:8-16]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:15:1-41,
+    AnnSemi),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:23:1]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:15:1-41,
+    AnnVal),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:15:41]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:23:1-35,
+    AnnClose),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:23:33-35]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:23:1-35,
+    AnnOpen),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:23:1-10]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:23:1-35,
+    AnnSemi),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:26:1]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:(26,1)-(29,15),
+    AnnDcolon),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:26:22-23]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:(26,1)-(29,15),
+    AnnSemi),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:32:1]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:26:25-36,
+    AnnDarrow),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:26:38-39]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:27:5-14,
+    AnnCloseP),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:27:14]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:27:5-14,
+    AnnOpenP),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:27:5]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:(27,5)-(29,15),
+    AnnRarrow),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:28:5-6]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:27:6,
+    AnnRarrow),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:27:8-9]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:27:6-13,
+    AnnRarrow),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:27:8-9]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:(28,8)-(29,15),
+    AnnRarrow),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:29:5-6]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:32:1-35,
+    AnnClose),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:32:33-35]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:32:1-35,
+    AnnOpen),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:32:1-10]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:32:1-35,
+    AnnSemi),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:35:1]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:(35,1)-(38,15),
+    AnnDcolon),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:35:22-23]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:(35,1)-(38,15),
+    AnnSemi),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:41:1]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:35:25-36,
+    AnnDarrow),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:35:38-39]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:36:5-14,
+    AnnCloseP),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:36:14]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:36:5-14,
+    AnnOpenP),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:36:5]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:(36,5)-(38,15),
+    AnnRarrow),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:37:5-6]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:36:6,
+    AnnRarrow),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:36:8-9]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:36:6-13,
+    AnnRarrow),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:36:8-9]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:(37,8)-(38,15),
+    AnnRarrow),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:38:5-6]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:41:1-29,
+    AnnClose),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:41:27-29]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:41:1-29,
+    AnnOpen),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:41:1-10]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:41:1-29,
+    AnnSemi),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:43:1]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:(43,1)-(46,15),
+    AnnDcolon),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:43:16-17]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:(43,1)-(46,15),
+    AnnSemi),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:49:1]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:43:19-30,
+    AnnDarrow),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:43:32-33]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:44:5-14,
+    AnnCloseP),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:44:14]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:44:5-14,
+    AnnOpenP),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:44:5]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:(44,5)-(46,15),
+    AnnRarrow),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:45:5-6]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:44:6,
+    AnnRarrow),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:44:8-9]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:44:6-13,
+    AnnRarrow),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:44:8-9]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:(45,8)-(46,15),
+    AnnRarrow),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:46:5-6]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:49:1-29,
+    AnnClose),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:49:27-29]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:49:1-29,
+    AnnOpen),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:49:1-10]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:49:1-29,
+    AnnSemi),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:51:1]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:(51,1)-(54,15),
+    AnnDcolon),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:51:16-17]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:(51,1)-(54,15),
+    AnnSemi),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:57:1]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:51:19-30,
+    AnnDarrow),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:51:32-33]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:52:5-14,
+    AnnCloseP),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:52:14]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:52:5-14,
+    AnnOpenP),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:52:5]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:(52,5)-(54,15),
+    AnnRarrow),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:53:5-6]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:52:6,
+    AnnRarrow),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:52:8-9]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:52:6-13,
+    AnnRarrow),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:52:8-9]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:(53,8)-(54,15),
+    AnnRarrow),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:54:5-6]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:57:1-91,
+    AnnEqual),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:57:32]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:57:1-91,
+    AnnFunId),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:57:1-20]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:57:1-91,
+    AnnSemi),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:58:1]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:57:52-91,
+    AnnCloseP),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:57:91]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:57:52-91,
+    AnnOpenP),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:57:52]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:57:64-90,
+    AnnCloseP),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:57:90]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:57:64-90,
+    AnnOpenP),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:57:64]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:57:77-89,
+    AnnCloseP),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:57:89]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:57:77-89,
+    AnnOpenP),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:57:77]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:58:1-73,
+    AnnEqual),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:58:29]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:58:1-73,
+    AnnFunId),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:58:1-20]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:58:1-73,
+    AnnSemi),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:59:1]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:58:52-73,
+    AnnCloseP),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:58:73]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:58:52-73,
+    AnnOpenP),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:58:52]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:58:53-72,
+    AnnVal),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:58:65]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:59:1-79,
+    AnnEqual),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:59:26]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:59:1-79,
+    AnnFunId),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:59:1-14]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:59:1-79,
+    AnnSemi),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:60:1]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:59:40-79,
+    AnnCloseP),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:59:79]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:59:40-79,
+    AnnOpenP),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:59:40]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:59:52-78,
+    AnnCloseP),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:59:78]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:59:52-78,
+    AnnOpenP),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:59:52]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:59:65-77,
+    AnnCloseP),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:59:77]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:59:65-77,
+    AnnOpenP),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:59:65]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:60:1-61,
+    AnnEqual),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:60:23]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:60:1-61,
+    AnnFunId),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:60:1-14]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:60:1-61,
+    AnnSemi),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:62:1]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:60:40-61,
+    AnnCloseP),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:60:61]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:60:40-61,
+    AnnOpenP),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:60:40]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:60:41-60,
+    AnnVal),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:60:53]),
+  ((<no location info>, AnnEofPos),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:62:1])],
+ [(../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:(27,5)-(29,15),
+   [AnnLineComment "-- ^ An order-preserving function into 'Int'. (The ordering on the elements is equivalent to @\\\\ x y -> f x '<=' f y@.)"]),
+  (../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:(28,8)-(29,15),
+   [AnnLineComment "-- ^ The input vector."]),
+  (../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:(36,5)-(38,15),
+   [AnnLineComment "-- ^ An order-preserving function into 'Int'. (The ordering on the elements is equivalent to @\\\\ x y -> f x '<=' f y@.)"]),
+  (../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:(37,8)-(38,15),
+   [AnnLineComment "-- ^ The input vector."]),
+  (../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:(44,5)-(46,15),
+   [AnnLineComment "-- ^ An order-preserving function into 'Int'. (The ordering on the elements is equivalent to @\\\\ x y -> f x '<=' f y@.)"]),
+  (../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:(45,8)-(46,15),
+   [AnnLineComment "-- ^ The input vector."]),
+  (../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:(52,5)-(54,15),
+   [AnnLineComment "-- ^ An order-preserving function into 'Int'. (The ordering on the elements is equivalent to @\\\\ x y -> f x '<=' f y@.)"]),
+  (../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Inject.hs:(53,8)-(54,15),
+   [AnnLineComment "-- ^ The input vector."]),
+  (<no location info>,
+   [AnnLineComment "-- which runs in /O(1)/.",
+    AnnLineComment "-- ^ A range-max function on the elements (under the above ordering)",
+    AnnLineComment "-- | /O(n)/. @'inj' f xs@ is equivalent to @'other' (\\\\ x y -> f x 'cmp' f y) xs@, but is frequently much faster, fusing with the input vector and converting it directly to a @'PV.Vector' 'Int'@. The returned function /does/ do bounds checks; see 'intRangeMin' for details.",
+    AnnLineComment "-- which runs in /O(1)/.",
+    AnnLineComment "-- ^ A range-min function on the elements (under the above ordering)",
+    AnnLineComment "-- | /O(n)/. @'inj' f xs@ is equivalent to @'other' (\\\\ x y -> f x 'cmp' f y) xs@, but is frequently much faster, fusing with the input vector and converting it directly to a @'PV.Vector' 'Int'@. The returned function /does/ do bounds checks; see 'intRangeMin' for details.",
+    AnnLineComment "-- which runs in /O(1)/.",
+    AnnLineComment "-- ^ A range-max function on the elements (under the above ordering)",
+    AnnLineComment "-- see 'unsafeIntRangeMin' for details.",
+    AnnLineComment "-- | /O(n)/. @'inj' f xs@ is equivalent to @'other' (\\\\ x y -> f x 'cmp' f y) xs@, but is frequently much faster, fusing with the input vector and converting it directly to a @'PV.Vector' 'Int'@. The returned function /does not/ do bounds checks;",
+    AnnLineComment "-- which runs in /O(1)/.",
+    AnnLineComment "-- ^ A range-min function on the elements (under the above ordering)",
+    AnnLineComment "-- see 'unsafeIntRangeMin' for details.",
+    AnnLineComment "-- | /O(n)/. @'inj' f xs@ is equivalent to @'other' (\\\\ x y -> f x 'cmp' f y) xs@, but is frequently much faster, fusing with the input vector and converting it directly to a @'PV.Vector' 'Int'@. The returned function /does not/ do bounds checks;",
+    AnnBlockComment "{-# LANGUAGE CPP #-}"])])

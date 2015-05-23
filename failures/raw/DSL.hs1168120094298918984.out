@@ -1,0 +1,2515 @@
+{-# LANGUAGE CPP #-}
+#if defined(__GLASGOW_HASKELL__) && (__GLASGOW_HASKELL__ >= 702)
+{-# LANGUAGE Safe #-}
+#endif
+{-# LANGUAGE TypeSynonymInstances #-}
+{-# LANGUAGE FlexibleInstances #-}
+
+{-|
+  This module implements a ``nano``, very simple, embedded domain
+  specific language to create 'Component's and privilage descriptions
+  from conjunctions of principal disjunctions.
+
+  A 'Component'/'DCPrivDesc' is created using the ('\/') and ('/\') operators.
+  The disjunction operator ('\/') is used to create a 'Clause' from
+  'Principal's, ByteStrings, or a disjunctive sub-expression. For example:
+
+  @
+     p1 = 'principal' \"p1\"
+     p2 = 'principal' \"p2\"
+     p3 = 'principal' \"p3\"
+     e1 = p1 '\/' p2
+     e2 = e1 '\/' \"p4\"
+  @
+
+  Similarly, the conjunction operator ('/\') is used to create category-sets
+  from 'Principal's, ByteStrings, and conjunctive or disjunctive sub-expressions.
+  For example:
+
+  @
+     e3 = p1 '\/' p2
+     e4 = e1 '/\' \"p4\" '/\' p3
+  @
+
+  /Note/ that because a clause consists of a disjunction of principals, and a
+  component is composed of the conjunction of categories, ('\/') binds
+  more tightly than ('/\').
+
+  Given two 'Component's, one for secrecy and one for integrity, you
+  can create a 'DCLabel' with 'dcLabel'. Given a 'Component' you can
+  create a 'DCPrivDesc' using 'dcPrivDesc'. Finally, given a 'DCPriv'
+  and 'DCPrivDesc' you can create a new minted privilege with
+  'dcDelegatePriv'.
+
+
+  Consider the following, example:
+
+  @
+     l1 = \"Alice\" '\/' \"Bob\" '/\' \"Carla\"
+     l2 = \"Alice\" '/\' \"Carla\"
+     dc1 = 'dcLabel' l1 l2
+     dc2 = 'dcLabel' ('toComponent' \"Djon\") ('toComponent' \"Alice\")
+     pr = 'dcPrivTCB' . 'dcPrivDesc' $ \"Alice\" '/\' \"Carla\"
+  @
+
+where
+
+  * @ dc1 = \<{[\"Alice\" &#8897; \"Bob\"] &#8896; [\"Carla\"]} , {[\"Alice\"] &#8896; [\"Carla\"]}\>@
+
+  * @ dc2 = \<{[\"Djon\"]} , {[\"Alice\"]}\>@
+
+  * @ 'canFlowTo' dc1 dc2 = False @
+
+  * @ 'canFlowToP' pr dc1 dc2 = True@
+
+-}
+
+module DCLabel.DSL ( -- * Operators
+                 (\/), (/\), ToComponent(..)
+                   , fromList, toList
+                     -- * Aliases
+                   , everybody, anybody
+                   ) where
+
+import           DCLabel.Core
+import qualified Data.Set as Set
+import qualified Data.ByteString.Char8 as S8
+
+type S8 = S8.ByteString
+
+-- | Convert a type (e.g., 'Clause', 'Principal') to a label component.
+class ToComponent a where
+  -- | Convert to 'Component'
+  toComponent :: a -> Component
+
+-- | Identity of 'Component'.
+instance ToComponent Component where
+  toComponent = id
+-- | Convert singleton 'Clause' to 'Component'.
+instance ToComponent Clause    where
+  toComponent c = DCFormula $! Set.singleton c
+-- | Convert singleton 'Principal' to 'Component'.
+instance ToComponent Principal where
+  toComponent p = toComponent . Clause $! Set.singleton p
+-- | Convert singleton 'Principal' (in the form of a @ByteString@)to 'Component'.
+instance ToComponent S8 where
+  toComponent = toComponent . principal
+-- | Convert singleton 'Principal' (in the form of a 'String')to 'Component'.
+instance ToComponent String where
+  toComponent = toComponent . S8.pack
+
+infixl 7 \/
+infixl 6 /\/\\
+
+-- | Conjunction of two 'Principal'-based elements.
+--
+-- @
+-- infixl 6 /&#92;
+-- @
+--
+(/\) :: (ToComponent a, ToComponent b) => a -> b -> Component
+a /\ b = dcReduce $! toComponent a `dcAnd` toComponent b
+
+-- | Disjunction of two 'Principal'-based elements.
+--
+-- @
+-- infixl 7 \\/
+-- @
+--
+(\/) :: (ToComponent a, ToComponent b) => a -> b -> Component
+a \/ b = dcReduce $! toComponent a `dcOr` toComponent b
+
+--
+-- Aliases
+--
+
+-- | Logical falsehood can be thought of as the component containing
+-- every possible principal:
+--
+-- > everybody = dcFalse
+--
+everybody :: Component
+everybody = dcFalse
+
+-- | Logical truth can be thought of as the component containing
+-- no specific principal:
+--
+-- > anybody = dcTrue
+--
+anybody :: Component
+anybody = dcTrue
+
+
+-- | Convert a 'Component' to a list of list of 'Principal's if the
+-- 'Component' does not have the value 'DCFalse'. In the latter case
+-- the function returns 'Nothing'.
+toList :: Component -> [[Principal]]
+toList DCFalse        = error "toList: Invalid use, expected DCFormula"
+toList (DCFormula cs) = map (Set.toList . unClause) $! Set.toList cs
+
+-- | Convert a list of list of 'Principal's to a 'Component'. Each
+-- inner list is considered to correspond to a 'Clause'.
+fromList :: [[Principal]] -> Component
+fromList ps = DCFormula . Set.fromList $! map (Clause . Set.fromList) ps
+
+==============
+../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs
+==============
+lengths:(4537,4535)
+
+==============
+
+({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:1:1 }
+ Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((AnnComment DComment (DP (0,0),DP (0,20)) "{-# LANGUAGE CPP #-}" Nothing),DP (0,0)),((AnnComment DComment (DP (1,1),DP (1,64)) "#if defined(__GLASGOW_HASKELL__) && (__GLASGOW_HASKELL__ >= 702)" Nothing),DP (1,1)),((AnnComment DComment (DP (1,1),DP (1,22)) "{-# LANGUAGE Safe #-}" Nothing),DP (1,1)),((AnnComment DComment (DP (1,1),DP (1,6)) "#endif" Nothing),DP (1,1)),((AnnComment DComment (DP (1,1),DP (1,38)) "{-# LANGUAGE TypeSynonymInstances #-}" Nothing),DP (1,1)),((AnnComment DComment (DP (1,1),DP (1,35)) "{-# LANGUAGE FlexibleInstances #-}" Nothing),DP (1,1)),((AnnComment DComment (DP (2,1),DP (59,3)) "{-|\n  This module implements a ``nano``, very simple, embedded domain\n  specific language to create 'Component's and privilage descriptions\n  from conjunctions of principal disjunctions.\n\n  A 'Component'/'DCPrivDesc' is created using the ('\\/') and ('/\\') operators.\n  The disjunction operator ('\\/') is used to create a 'Clause' from\n  'Principal's, ByteStrings, or a disjunctive sub-expression. For example:\n\n  @\n     p1 = 'principal' \\\"p1\\\"\n     p2 = 'principal' \\\"p2\\\"\n     p3 = 'principal' \\\"p3\\\"\n     e1 = p1 '\\/' p2\n     e2 = e1 '\\/' \\\"p4\\\"\n  @\n\n  Similarly, the conjunction operator ('/\\') is used to create category-sets\n  from 'Principal's, ByteStrings, and conjunctive or disjunctive sub-expressions.\n  For example:\n\n  @\n     e3 = p1 '\\/' p2\n     e4 = e1 '/\\' \\\"p4\\\" '/\\' p3\n  @\n\n  /Note/ that because a clause consists of a disjunction of principals, and a\n  component is composed of the conjunction of categories, ('\\/') binds\n  more tightly than ('/\\').\n\n  Given two 'Component's, one for secrecy and one for integrity, you\n  can create a 'DCLabel' with 'dcLabel'. Given a 'Component' you can\n  create a 'DCPrivDesc' using 'dcPrivDesc'. Finally, given a 'DCPriv'\n  and 'DCPrivDesc' you can create a new minted privilege with\n  'dcDelegatePriv'.\n\n\n  Consider the following, example:\n\n  @\n     l1 = \\\"Alice\\\" '\\/' \\\"Bob\\\" '/\\' \\\"Carla\\\"\n     l2 = \\\"Alice\\\" '/\\' \\\"Carla\\\"\n     dc1 = 'dcLabel' l1 l2\n     dc2 = 'dcLabel' ('toComponent' \\\"Djon\\\") ('toComponent' \\\"Alice\\\")\n     pr = 'dcPrivTCB' . 'dcPrivDesc' $ \\\"Alice\\\" '/\\' \\\"Carla\\\"\n  @\n\nwhere\n\n  * @ dc1 = \\<{[\\\"Alice\\\" &#8897; \\\"Bob\\\"] &#8896; [\\\"Carla\\\"]} , {[\\\"Alice\\\"] &#8896; [\\\"Carla\\\"]}\\>@\n\n  * @ dc2 = \\<{[\\\"Djon\\\"]} , {[\\\"Alice\\\"]}\\>@\n\n  * @ 'canFlowTo' dc1 dc2 = False @\n\n  * @ 'canFlowToP' pr dc1 dc2 = True@\n\n-}" Nothing),DP (2,1)),((G AnnModule),DP (66,1)),((G AnnVal),DP (0,1)),((G AnnWhere),DP (0,1)),((AnnComment DComment (DP (1,1),DP (1,1)) "" Nothing),DP (1,1)),((G AnnEofPos),DP (2,0))])
+ (HsModule 
+  (Just 
+   ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:67:8-18 }
+    Nothing{ModuleName: DCLabel.DSL})) 
+  (Just 
+   ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:(67,20)-(72,20)
+     }
+    Just (Ann (DP (0,1)) (ColDelta 20) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (1,20))])
+    [
+     ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:68:18-21 }
+      Just (Ann (DP (1,18)) (ColDelta 18) DP (1,18) [DComment (DP (0,1),DP (0,15)) "-- * Operators" Nothing] [])
+      (IEVar 
+       ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:68:18-21 }
+        Just (Ann (DP (0,0)) (ColDelta 18) DP (0,0) [] [((G AnnOpenP),DP (0,0)),((G AnnVal),DP (0,0)),((G AnnCloseP),DP (0,0)),((G AnnComma),DP (0,0))])
+        (Unqual {OccName: \/})))),
+     ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:68:24-27 }
+      Just (Ann (DP (0,1)) (ColDelta 24) DP (0,1) [] [])
+      (IEVar 
+       ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:68:24-27 }
+        Just (Ann (DP (0,0)) (ColDelta 24) DP (0,0) [] [((G AnnOpenP),DP (0,0)),((G AnnVal),DP (0,0)),((G AnnCloseP),DP (0,0)),((G AnnComma),DP (0,0))])
+        (Unqual {OccName: /\})))),
+     ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:68:30-44 }
+      Just (Ann (DP (0,1)) (ColDelta 30) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnDotdot),DP (0,0)),((G AnnCloseP),DP (0,0)),((G AnnComma),DP (1,20))])
+      (IEThingAll 
+       ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:68:30-40 }
+        Just (Ann (DP (0,0)) (ColDelta 30) DP (0,0) [] [((G AnnVal),DP (0,0))])
+        (Unqual {OccName: ToComponent})))),
+     ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:69:22-29 }
+      Just (Ann (DP (0,1)) (ColDelta 22) DP (0,1) [] [])
+      (IEVar 
+       ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:69:22-29 }
+        Just (Ann (DP (0,0)) (ColDelta 22) DP (0,0) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+        (Unqual {OccName: fromList})))),
+     ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:69:32-37 }
+      Just (Ann (DP (0,1)) (ColDelta 32) DP (0,1) [] [])
+      (IEVar 
+       ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:69:32-37 }
+        Just (Ann (DP (0,0)) (ColDelta 32) DP (0,0) [] [((G AnnVal),DP (0,0)),((AnnComment DComment (DP (1,22),DP (1,34)) "-- * Aliases" Nothing),DP (1,22)),((G AnnComma),DP (2,20))])
+        (Unqual {OccName: toList})))),
+     ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:71:22-30 }
+      Just (Ann (DP (0,1)) (ColDelta 22) DP (0,1) [] [])
+      (IEVar 
+       ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:71:22-30 }
+        Just (Ann (DP (0,0)) (ColDelta 22) DP (0,0) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+        (Unqual {OccName: everybody})))),
+     ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:71:33-39 }
+      Just (Ann (DP (0,1)) (ColDelta 33) DP (0,1) [] [])
+      (IEVar 
+       ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:71:33-39 }
+        Just (Ann (DP (0,0)) (ColDelta 33) DP (0,0) [] [((G AnnVal),DP (0,0))])
+        (Unqual {OccName: anybody}))))])) 
+  [
+   ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:74:1-29 }
+    Just (Ann (DP (2,1)) (ColDelta 1) DP (2,1) [] [((G AnnImport),DP (0,0)),((G AnnVal),DP (0,11))])
+    (ImportDecl 
+     (Nothing) 
+     ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:74:18-29 }
+      Nothing{ModuleName: DCLabel.Core}) 
+     (Nothing) 
+     (False) 
+     (False) 
+     (False) 
+     (False) 
+     (Nothing) 
+     (Nothing))),
+   ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:75:1-32 }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [((G AnnImport),DP (0,0)),((G AnnQualified),DP (0,1)),((G AnnVal),DP (0,1)),((G AnnAs),DP (0,1)),((G AnnVal),DP (0,1))])
+    (ImportDecl 
+     (Nothing) 
+     ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:75:18-25 }
+      Nothing{ModuleName: Data.Set}) 
+     (Nothing) 
+     (False) 
+     (False) 
+     (True) 
+     (False) 
+     (Just {ModuleName: Set}) 
+     (Nothing))),
+   ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:76:1-44 }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [((G AnnImport),DP (0,0)),((G AnnQualified),DP (0,1)),((G AnnVal),DP (0,1)),((G AnnAs),DP (0,1)),((G AnnVal),DP (0,1))])
+    (ImportDecl 
+     (Nothing) 
+     ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:76:18-38 }
+      Nothing{ModuleName: Data.ByteString.Char8}) 
+     (Nothing) 
+     (False) 
+     (False) 
+     (True) 
+     (False) 
+     (Just {ModuleName: S8}) 
+     (Nothing)))] 
+  [
+   ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:78:1-23 }
+    Just (Ann (DP (2,1)) (ColDelta 1) DP (2,1) [] [((G AnnType),DP (0,0)),((G AnnEqual),DP (0,1))])
+    (TyClD 
+     (SynDecl 
+      ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:78:6-7 }
+       Just (Ann (DP (0,1)) (ColDelta 6) DP (0,1) [] [((G AnnVal),DP (0,0))])
+       (Unqual {OccName: S8})) 
+      (HsQTvs 
+       [] 
+       []) 
+      ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:78:11-23 }
+       Just (Ann (DP (0,1)) (ColDelta 11) DP (0,1) [] [((G AnnVal),DP (0,0))])
+       (HsTyVar 
+        (Qual {ModuleName: S8} {OccName: ByteString}))) 
+      (PlaceHolder)))),
+   ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:(81,1)-(83,31)
+     }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (3,1) [DComment (DP (2,1),DP (2,72)) "-- | Convert a type (e.g., 'Clause', 'Principal') to a label component." Nothing] [((G AnnClass),DP (0,0)),((G AnnWhere),DP (0,1))])
+    (TyClD 
+     (ClassDecl 
+      ({ <no location info> }
+       Just (Ann (DP (-81,0)) (ColDelta 0) DP (-81,0) [] [])
+       []) 
+      ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:81:7-17 }
+       Just (Ann (DP (0,1)) (ColDelta 7) DP (0,1) [] [((G AnnVal),DP (0,0))])
+       (Unqual {OccName: ToComponent})) 
+      (HsQTvs 
+       [] 
+       [
+        ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:81:19 }
+         Just (Ann (DP (0,1)) (ColDelta 19) DP (0,1) [] [((G AnnVal),DP (0,0))])
+         (UserTyVar 
+          (Unqual {OccName: a})))]) 
+      [] 
+      [
+       ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:83:3-31 }
+        Just (Ann (DP (1,3)) (ColDelta 3) DP (2,3) [DComment (DP (1,3),DP (1,30)) "-- | Convert to 'Component'" Nothing] [((G AnnDcolon),DP (0,1))])
+        (TypeSig 
+         [
+          ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:83:3-13 }
+           Just (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnVal),DP (0,0))])
+           (Unqual {OccName: toComponent}))] 
+         ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:83:18-31 }
+          Just (Ann (DP (0,1)) (ColDelta 18) DP (0,1) [] [])
+          (HsForAllTy 
+           (Implicit) 
+           (Nothing) 
+           (HsQTvs 
+            [] 
+            []) 
+           ({ <no location info> }
+            Just (Ann (DP (-81,0)) (ColDelta 0) DP (-81,0) [] [])
+            []) 
+           ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:83:18-31 }
+            Just (Ann (DP (0,0)) (ColDelta 18) DP (0,0) [] [((G AnnRarrow),DP (0,1))])
+            (HsFunTy 
+             ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:83:18 }
+              Just (Ann (DP (0,0)) (ColDelta 18) DP (0,0) [] [((G AnnVal),DP (0,0))])
+              (HsTyVar 
+               (Unqual {OccName: a}))) 
+             ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:83:23-31 }
+              Just (Ann (DP (0,1)) (ColDelta 23) DP (0,1) [] [((G AnnVal),DP (0,0))])
+              (HsTyVar 
+               (Unqual {OccName: Component}))))))) 
+         (PlaceHolder)))] {Bag(Located (HsBind RdrName)): 
+      []} 
+      [] 
+      [] 
+      [] 
+      (PlaceHolder)))),
+   ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:(86,1)-(87,18)
+     }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (3,1) [DComment (DP (2,1),DP (2,30)) "-- | Identity of 'Component'." Nothing] [((G AnnInstance),DP (0,0)),((G AnnWhere),DP (0,1))])
+    (InstD 
+     (ClsInstD 
+      (ClsInstDecl 
+       ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:86:10-30 }
+        Just (Ann (DP (0,1)) (ColDelta 10) DP (0,1) [] [])
+        (HsForAllTy 
+         (Implicit) 
+         (Nothing) 
+         (HsQTvs 
+          [] 
+          []) 
+         ({ <no location info> }
+          Just (Ann (DP (-81,0)) (ColDelta 0) DP (-81,0) [] [])
+          []) 
+         ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:86:10-30 }
+          Just (Ann (DP (0,0)) (ColDelta 10) DP (0,0) [] [])
+          (HsAppTy 
+           ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:86:10-20 }
+            Just (Ann (DP (0,0)) (ColDelta 10) DP (0,0) [] [((G AnnVal),DP (0,0))])
+            (HsTyVar 
+             (Unqual {OccName: ToComponent}))) 
+           ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:86:22-30 }
+            Just (Ann (DP (0,1)) (ColDelta 22) DP (0,1) [] [((G AnnVal),DP (0,0))])
+            (HsTyVar 
+             (Unqual {OccName: Component}))))))) {Bag(Located (HsBind RdrName)): 
+       [
+        ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:87:3-18 }
+         Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [])
+         (FunBind 
+          ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:87:3-13 }
+           Just (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnVal),DP (0,0))])
+           (Unqual {OccName: toComponent})) 
+          (False) 
+          (MG 
+           [
+            ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:87:3-18 }
+             Just (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnEqual),DP (0,1))])
+             (Match 
+              (Just 
+               ((,) 
+                ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:87:3-13 }
+                 Just (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                 (Unqual {OccName: toComponent})) 
+                (False))) 
+              [] 
+              (Nothing) 
+              (GRHSs 
+               [
+                ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:87:15-18 }
+                 Just (Ann (DP (0,-1)) (ColDelta 15) DP (0,-1) [] [])
+                 (GRHS 
+                  [] 
+                  ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:87:17-18 }
+                   Just (Ann (DP (0,1)) (ColDelta 17) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                   (HsVar 
+                    (Unqual {OccName: id})))))] 
+               (EmptyLocalBinds))))] 
+           [] 
+           (PlaceHolder) 
+           (FromSource)) 
+          (WpHole) 
+          (PlaceHolder) 
+          []))]} 
+       [] 
+       [] 
+       [] 
+       (Nothing))))),
+   ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:(89,1)-(90,46)
+     }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (2,1) [DComment (DP (1,1),DP (1,48)) "-- | Convert singleton 'Clause' to 'Component'." Nothing] [((G AnnInstance),DP (0,0)),((G AnnWhere),DP (0,4))])
+    (InstD 
+     (ClsInstD 
+      (ClsInstDecl 
+       ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:89:10-27 }
+        Just (Ann (DP (0,1)) (ColDelta 10) DP (0,1) [] [])
+        (HsForAllTy 
+         (Implicit) 
+         (Nothing) 
+         (HsQTvs 
+          [] 
+          []) 
+         ({ <no location info> }
+          Just (Ann (DP (-81,0)) (ColDelta 0) DP (-81,0) [] [])
+          []) 
+         ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:89:10-27 }
+          Just (Ann (DP (0,0)) (ColDelta 10) DP (0,0) [] [])
+          (HsAppTy 
+           ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:89:10-20 }
+            Just (Ann (DP (0,0)) (ColDelta 10) DP (0,0) [] [((G AnnVal),DP (0,0))])
+            (HsTyVar 
+             (Unqual {OccName: ToComponent}))) 
+           ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:89:22-27 }
+            Just (Ann (DP (0,1)) (ColDelta 22) DP (0,1) [] [((G AnnVal),DP (0,0))])
+            (HsTyVar 
+             (Unqual {OccName: Clause}))))))) {Bag(Located (HsBind RdrName)): 
+       [
+        ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:90:3-46 }
+         Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [])
+         (FunBind 
+          ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:90:3-13 }
+           Just (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnVal),DP (0,0))])
+           (Unqual {OccName: toComponent})) 
+          (False) 
+          (MG 
+           [
+            ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:90:3-46 }
+             Just (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnEqual),DP (0,1))])
+             (Match 
+              (Just 
+               ((,) 
+                ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:90:3-13 }
+                 Just (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                 (Unqual {OccName: toComponent})) 
+                (False))) 
+              [
+               ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:90:15 }
+                Just (Ann (DP (0,1)) (ColDelta 15) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                (VarPat 
+                 (Unqual {OccName: c})))] 
+              (Nothing) 
+              (GRHSs 
+               [
+                ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:90:17-46 }
+                 Just (Ann (DP (0,-1)) (ColDelta 17) DP (0,-1) [] [])
+                 (GRHS 
+                  [] 
+                  ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:90:19-46 }
+                   Just (Ann (DP (0,1)) (ColDelta 19) DP (0,1) [] [])
+                   (OpApp 
+                    ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:90:19-27 }
+                     Just (Ann (DP (0,0)) (ColDelta 19) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                     (HsVar 
+                      (Unqual {OccName: DCFormula}))) 
+                    ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:90:29-30 }
+                     Just (Ann (DP (0,1)) (ColDelta 29) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                     (HsVar 
+                      (Unqual {OccName: $!}))) 
+                    (PlaceHolder) 
+                    ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:90:32-46 }
+                     Just (Ann (DP (0,1)) (ColDelta 32) DP (0,1) [] [])
+                     (HsApp 
+                      ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:90:32-44 }
+                       Just (Ann (DP (0,0)) (ColDelta 32) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                       (HsVar 
+                        (Qual {ModuleName: Set} {OccName: singleton}))) 
+                      ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:90:46 }
+                       Just (Ann (DP (0,1)) (ColDelta 46) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                       (HsVar 
+                        (Unqual {OccName: c})))))))))] 
+               (EmptyLocalBinds))))] 
+           [] 
+           (PlaceHolder) 
+           (FromSource)) 
+          (WpHole) 
+          (PlaceHolder) 
+          []))]} 
+       [] 
+       [] 
+       [] 
+       (Nothing))))),
+   ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:(92,1)-(93,57)
+     }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (2,1) [DComment (DP (1,1),DP (1,51)) "-- | Convert singleton 'Principal' to 'Component'." Nothing] [((G AnnInstance),DP (0,0)),((G AnnWhere),DP (0,1))])
+    (InstD 
+     (ClsInstD 
+      (ClsInstDecl 
+       ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:92:10-30 }
+        Just (Ann (DP (0,1)) (ColDelta 10) DP (0,1) [] [])
+        (HsForAllTy 
+         (Implicit) 
+         (Nothing) 
+         (HsQTvs 
+          [] 
+          []) 
+         ({ <no location info> }
+          Just (Ann (DP (-81,0)) (ColDelta 0) DP (-81,0) [] [])
+          []) 
+         ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:92:10-30 }
+          Just (Ann (DP (0,0)) (ColDelta 10) DP (0,0) [] [])
+          (HsAppTy 
+           ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:92:10-20 }
+            Just (Ann (DP (0,0)) (ColDelta 10) DP (0,0) [] [((G AnnVal),DP (0,0))])
+            (HsTyVar 
+             (Unqual {OccName: ToComponent}))) 
+           ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:92:22-30 }
+            Just (Ann (DP (0,1)) (ColDelta 22) DP (0,1) [] [((G AnnVal),DP (0,0))])
+            (HsTyVar 
+             (Unqual {OccName: Principal}))))))) {Bag(Located (HsBind RdrName)): 
+       [
+        ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:93:3-57 }
+         Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [])
+         (FunBind 
+          ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:93:3-13 }
+           Just (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnVal),DP (0,0))])
+           (Unqual {OccName: toComponent})) 
+          (False) 
+          (MG 
+           [
+            ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:93:3-57 }
+             Just (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnEqual),DP (0,1))])
+             (Match 
+              (Just 
+               ((,) 
+                ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:93:3-13 }
+                 Just (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                 (Unqual {OccName: toComponent})) 
+                (False))) 
+              [
+               ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:93:15 }
+                Just (Ann (DP (0,1)) (ColDelta 15) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                (VarPat 
+                 (Unqual {OccName: p})))] 
+              (Nothing) 
+              (GRHSs 
+               [
+                ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:93:17-57 }
+                 Just (Ann (DP (0,-1)) (ColDelta 17) DP (0,-1) [] [])
+                 (GRHS 
+                  [] 
+                  ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:93:19-57 }
+                   Just (Ann (DP (0,1)) (ColDelta 19) DP (0,1) [] [])
+                   (OpApp 
+                    ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:93:19-38 }
+                     Just (Ann (DP (0,0)) (ColDelta 19) DP (0,0) [] [])
+                     (OpApp 
+                      ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:93:19-29 }
+                       Just (Ann (DP (0,0)) (ColDelta 19) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                       (HsVar 
+                        (Unqual {OccName: toComponent}))) 
+                      ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:93:31 }
+                       Just (Ann (DP (0,1)) (ColDelta 31) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                       (HsVar 
+                        (Unqual {OccName: .}))) 
+                      (PlaceHolder) 
+                      ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:93:33-38 }
+                       Just (Ann (DP (0,1)) (ColDelta 33) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                       (HsVar 
+                        (Unqual {OccName: Clause}))))) 
+                    ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:93:40-41 }
+                     Just (Ann (DP (0,1)) (ColDelta 40) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                     (HsVar 
+                      (Unqual {OccName: $!}))) 
+                    (PlaceHolder) 
+                    ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:93:43-57 }
+                     Just (Ann (DP (0,1)) (ColDelta 43) DP (0,1) [] [])
+                     (HsApp 
+                      ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:93:43-55 }
+                       Just (Ann (DP (0,0)) (ColDelta 43) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                       (HsVar 
+                        (Qual {ModuleName: Set} {OccName: singleton}))) 
+                      ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:93:57 }
+                       Just (Ann (DP (0,1)) (ColDelta 57) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                       (HsVar 
+                        (Unqual {OccName: p})))))))))] 
+               (EmptyLocalBinds))))] 
+           [] 
+           (PlaceHolder) 
+           (FromSource)) 
+          (WpHole) 
+          (PlaceHolder) 
+          []))]} 
+       [] 
+       [] 
+       [] 
+       (Nothing))))),
+   ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:(95,1)-(96,39)
+     }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (2,1) [DComment (DP (1,1),DP (1,82)) "-- | Convert singleton 'Principal' (in the form of a @ByteString@)to 'Component'." Nothing] [((G AnnInstance),DP (0,0)),((G AnnWhere),DP (0,1))])
+    (InstD 
+     (ClsInstD 
+      (ClsInstDecl 
+       ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:95:10-23 }
+        Just (Ann (DP (0,1)) (ColDelta 10) DP (0,1) [] [])
+        (HsForAllTy 
+         (Implicit) 
+         (Nothing) 
+         (HsQTvs 
+          [] 
+          []) 
+         ({ <no location info> }
+          Just (Ann (DP (-81,0)) (ColDelta 0) DP (-81,0) [] [])
+          []) 
+         ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:95:10-23 }
+          Just (Ann (DP (0,0)) (ColDelta 10) DP (0,0) [] [])
+          (HsAppTy 
+           ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:95:10-20 }
+            Just (Ann (DP (0,0)) (ColDelta 10) DP (0,0) [] [((G AnnVal),DP (0,0))])
+            (HsTyVar 
+             (Unqual {OccName: ToComponent}))) 
+           ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:95:22-23 }
+            Just (Ann (DP (0,1)) (ColDelta 22) DP (0,1) [] [((G AnnVal),DP (0,0))])
+            (HsTyVar 
+             (Unqual {OccName: S8}))))))) {Bag(Located (HsBind RdrName)): 
+       [
+        ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:96:3-39 }
+         Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [])
+         (FunBind 
+          ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:96:3-13 }
+           Just (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnVal),DP (0,0))])
+           (Unqual {OccName: toComponent})) 
+          (False) 
+          (MG 
+           [
+            ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:96:3-39 }
+             Just (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnEqual),DP (0,1))])
+             (Match 
+              (Just 
+               ((,) 
+                ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:96:3-13 }
+                 Just (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                 (Unqual {OccName: toComponent})) 
+                (False))) 
+              [] 
+              (Nothing) 
+              (GRHSs 
+               [
+                ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:96:15-39 }
+                 Just (Ann (DP (0,-1)) (ColDelta 15) DP (0,-1) [] [])
+                 (GRHS 
+                  [] 
+                  ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:96:17-39 }
+                   Just (Ann (DP (0,1)) (ColDelta 17) DP (0,1) [] [])
+                   (OpApp 
+                    ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:96:17-27 }
+                     Just (Ann (DP (0,0)) (ColDelta 17) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                     (HsVar 
+                      (Unqual {OccName: toComponent}))) 
+                    ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:96:29 }
+                     Just (Ann (DP (0,1)) (ColDelta 29) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                     (HsVar 
+                      (Unqual {OccName: .}))) 
+                    (PlaceHolder) 
+                    ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:96:31-39 }
+                     Just (Ann (DP (0,1)) (ColDelta 31) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                     (HsVar 
+                      (Unqual {OccName: principal})))))))] 
+               (EmptyLocalBinds))))] 
+           [] 
+           (PlaceHolder) 
+           (FromSource)) 
+          (WpHole) 
+          (PlaceHolder) 
+          []))]} 
+       [] 
+       [] 
+       [] 
+       (Nothing))))),
+   ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:(98,1)-(99,37)
+     }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (2,1) [DComment (DP (1,1),DP (1,78)) "-- | Convert singleton 'Principal' (in the form of a 'String')to 'Component'." Nothing] [((G AnnInstance),DP (0,0)),((G AnnWhere),DP (0,1))])
+    (InstD 
+     (ClsInstD 
+      (ClsInstDecl 
+       ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:98:10-27 }
+        Just (Ann (DP (0,1)) (ColDelta 10) DP (0,1) [] [])
+        (HsForAllTy 
+         (Implicit) 
+         (Nothing) 
+         (HsQTvs 
+          [] 
+          []) 
+         ({ <no location info> }
+          Just (Ann (DP (-81,0)) (ColDelta 0) DP (-81,0) [] [])
+          []) 
+         ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:98:10-27 }
+          Just (Ann (DP (0,0)) (ColDelta 10) DP (0,0) [] [])
+          (HsAppTy 
+           ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:98:10-20 }
+            Just (Ann (DP (0,0)) (ColDelta 10) DP (0,0) [] [((G AnnVal),DP (0,0))])
+            (HsTyVar 
+             (Unqual {OccName: ToComponent}))) 
+           ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:98:22-27 }
+            Just (Ann (DP (0,1)) (ColDelta 22) DP (0,1) [] [((G AnnVal),DP (0,0))])
+            (HsTyVar 
+             (Unqual {OccName: String}))))))) {Bag(Located (HsBind RdrName)): 
+       [
+        ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:99:3-37 }
+         Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [])
+         (FunBind 
+          ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:99:3-13 }
+           Just (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnVal),DP (0,0))])
+           (Unqual {OccName: toComponent})) 
+          (False) 
+          (MG 
+           [
+            ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:99:3-37 }
+             Just (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnEqual),DP (0,1))])
+             (Match 
+              (Just 
+               ((,) 
+                ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:99:3-13 }
+                 Just (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                 (Unqual {OccName: toComponent})) 
+                (False))) 
+              [] 
+              (Nothing) 
+              (GRHSs 
+               [
+                ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:99:15-37 }
+                 Just (Ann (DP (0,-1)) (ColDelta 15) DP (0,-1) [] [])
+                 (GRHS 
+                  [] 
+                  ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:99:17-37 }
+                   Just (Ann (DP (0,1)) (ColDelta 17) DP (0,1) [] [])
+                   (OpApp 
+                    ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:99:17-27 }
+                     Just (Ann (DP (0,0)) (ColDelta 17) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                     (HsVar 
+                      (Unqual {OccName: toComponent}))) 
+                    ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:99:29 }
+                     Just (Ann (DP (0,1)) (ColDelta 29) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                     (HsVar 
+                      (Unqual {OccName: .}))) 
+                    (PlaceHolder) 
+                    ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:99:31-37 }
+                     Just (Ann (DP (0,1)) (ColDelta 31) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                     (HsVar 
+                      (Qual {ModuleName: S8} {OccName: pack})))))))] 
+               (EmptyLocalBinds))))] 
+           [] 
+           (PlaceHolder) 
+           (FromSource)) 
+          (WpHole) 
+          (PlaceHolder) 
+          []))]} 
+       [] 
+       [] 
+       [] 
+       (Nothing))))),
+   ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:101:1-11 }
+    Just (Ann (DP (2,1)) (ColDelta 1) DP (2,1) [] [((G AnnInfix),DP (0,0)),((G AnnVal),DP (0,1))])
+    (SigD 
+     (FixSig 
+      (FixitySig 
+       [
+        ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:101:10-11 }
+         Just (Ann (DP (0,1)) (ColDelta 10) DP (0,1) [] [((G AnnVal),DP (0,0))])
+         (Unqual {OccName: \/}))] {Fixity: infixl 7})))),
+   ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:102:1-11 }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [((G AnnInfix),DP (0,0)),((G AnnVal),DP (0,1))])
+    (SigD 
+     (FixSig 
+      (FixitySig 
+       [
+        ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:102:10-11 }
+         Just (Ann (DP (0,1)) (ColDelta 10) DP (0,1) [] [((G AnnVal),DP (0,0))])
+         (Unqual {OccName: /\}))] {Fixity: infixl 6})))),
+   ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:110:1-61 }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (8,1) [DComment (DP (0,-2),DP (0,1)) "/\\\\" Nothing,DComment (DP (2,1),DP (2,52)) "-- | Conjunction of two 'Principal'-based elements." Nothing,DComment (DP (1,1),DP (1,3)) "--" Nothing,DComment (DP (1,1),DP (1,5)) "-- @" Nothing,DComment (DP (1,1),DP (1,19)) "-- infixl 6 /&#92;" Nothing,DComment (DP (1,1),DP (1,5)) "-- @" Nothing,DComment (DP (1,1),DP (1,3)) "--" Nothing] [((G AnnDcolon),DP (0,1))])
+    (SigD 
+     (TypeSig 
+      [
+       ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:110:1-4 }
+        Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnOpenP),DP (0,0)),((G AnnVal),DP (0,0)),((G AnnCloseP),DP (0,0))])
+        (Unqual {OccName: /\}))] 
+      ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:110:9-61 }
+       Just (Ann (DP (0,1)) (ColDelta 9) DP (0,1) [] [])
+       (HsForAllTy 
+        (Implicit) 
+        (Nothing) 
+        (HsQTvs 
+         [] 
+         []) 
+        ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:110:9-38 }
+         Just (Ann (DP (0,0)) (ColDelta 9) DP (0,0) [] [((G AnnOpenP),DP (0,0)),((G AnnOpenP),DP (0,-1)),((G AnnCloseP),DP (0,0)),((G AnnCloseP),DP (0,-1)),((G AnnDarrow),DP (0,1))])
+         [
+          ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:110:10-22 }
+           Just (Ann (DP (0,0)) (ColDelta 10) DP (0,0) [] [((G AnnComma),DP (0,0))])
+           (HsAppTy 
+            ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:110:10-20 }
+             Just (Ann (DP (0,0)) (ColDelta 10) DP (0,0) [] [((G AnnVal),DP (0,0))])
+             (HsTyVar 
+              (Unqual {OccName: ToComponent}))) 
+            ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:110:22 }
+             Just (Ann (DP (0,1)) (ColDelta 22) DP (0,1) [] [((G AnnVal),DP (0,0))])
+             (HsTyVar 
+              (Unqual {OccName: a}))))),
+          ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:110:25-37 }
+           Just (Ann (DP (0,1)) (ColDelta 25) DP (0,1) [] [])
+           (HsAppTy 
+            ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:110:25-35 }
+             Just (Ann (DP (0,0)) (ColDelta 25) DP (0,0) [] [((G AnnVal),DP (0,0))])
+             (HsTyVar 
+              (Unqual {OccName: ToComponent}))) 
+            ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:110:37 }
+             Just (Ann (DP (0,1)) (ColDelta 37) DP (0,1) [] [((G AnnVal),DP (0,0))])
+             (HsTyVar 
+              (Unqual {OccName: b})))))]) 
+        ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:110:43-61 }
+         Just (Ann (DP (0,1)) (ColDelta 43) DP (0,1) [] [((G AnnRarrow),DP (0,1))])
+         (HsFunTy 
+          ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:110:43 }
+           Just (Ann (DP (0,0)) (ColDelta 43) DP (0,0) [] [((G AnnVal),DP (0,0))])
+           (HsTyVar 
+            (Unqual {OccName: a}))) 
+          ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:110:48-61 }
+           Just (Ann (DP (0,1)) (ColDelta 48) DP (0,1) [] [((G AnnRarrow),DP (0,1))])
+           (HsFunTy 
+            ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:110:48 }
+             Just (Ann (DP (0,0)) (ColDelta 48) DP (0,0) [] [((G AnnVal),DP (0,0))])
+             (HsTyVar 
+              (Unqual {OccName: b}))) 
+            ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:110:53-61 }
+             Just (Ann (DP (0,1)) (ColDelta 53) DP (0,1) [] [((G AnnVal),DP (0,0))])
+             (HsTyVar 
+              (Unqual {OccName: Component}))))))))) 
+      (PlaceHolder)))),
+   ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:111:1-56 }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [])
+    (ValD 
+     (FunBind 
+      ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:111:3-4 }
+       Just (Ann (DP (0,1)) (ColDelta 3) DP (0,1) [] [((G AnnVal),DP (0,0))])
+       (Unqual {OccName: /\})) 
+      (True) 
+      (MG 
+       [
+        ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:111:1-56 }
+         Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnEqual),DP (0,1))])
+         (Match 
+          (Just 
+           ((,) 
+            ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:111:3-4 }
+             Just (Ann (DP (0,1)) (ColDelta 3) DP (0,1) [] [((G AnnVal),DP (0,0))])
+             (Unqual {OccName: /\})) 
+            (True))) 
+          [
+           ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:111:1 }
+            Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+            (VarPat 
+             (Unqual {OccName: a}))),
+           ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:111:6 }
+            Just (Ann (DP (0,1)) (ColDelta 6) DP (0,1) [] [((G AnnVal),DP (0,0))])
+            (VarPat 
+             (Unqual {OccName: b})))] 
+          (Nothing) 
+          (GRHSs 
+           [
+            ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:111:8-56 }
+             Just (Ann (DP (0,-1)) (ColDelta 8) DP (0,-1) [] [])
+             (GRHS 
+              [] 
+              ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:111:10-56 }
+               Just (Ann (DP (0,1)) (ColDelta 10) DP (0,1) [] [])
+               (OpApp 
+                ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:111:10-34 }
+                 Just (Ann (DP (0,0)) (ColDelta 10) DP (0,0) [] [])
+                 (OpApp 
+                  ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:111:10-17 }
+                   Just (Ann (DP (0,0)) (ColDelta 10) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                   (HsVar 
+                    (Unqual {OccName: dcReduce}))) 
+                  ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:111:19-20 }
+                   Just (Ann (DP (0,1)) (ColDelta 19) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                   (HsVar 
+                    (Unqual {OccName: $!}))) 
+                  (PlaceHolder) 
+                  ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:111:22-34 }
+                   Just (Ann (DP (0,1)) (ColDelta 22) DP (0,1) [] [])
+                   (HsApp 
+                    ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:111:22-32 }
+                     Just (Ann (DP (0,0)) (ColDelta 22) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                     (HsVar 
+                      (Unqual {OccName: toComponent}))) 
+                    ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:111:34 }
+                     Just (Ann (DP (0,1)) (ColDelta 34) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                     (HsVar 
+                      (Unqual {OccName: a}))))))) 
+                ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:111:36-42 }
+                 Just (Ann (DP (0,1)) (ColDelta 36) DP (0,1) [] [((G AnnBackquote),DP (0,0)),((G AnnVal),DP (0,0)),((G AnnBackquote),DP (0,0))])
+                 (HsVar 
+                  (Unqual {OccName: dcAnd}))) 
+                (PlaceHolder) 
+                ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:111:44-56 }
+                 Just (Ann (DP (0,1)) (ColDelta 44) DP (0,1) [] [])
+                 (HsApp 
+                  ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:111:44-54 }
+                   Just (Ann (DP (0,0)) (ColDelta 44) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                   (HsVar 
+                    (Unqual {OccName: toComponent}))) 
+                  ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:111:56 }
+                   Just (Ann (DP (0,1)) (ColDelta 56) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                   (HsVar 
+                    (Unqual {OccName: b})))))))))] 
+           (EmptyLocalBinds))))] 
+       [] 
+       (PlaceHolder) 
+       (FromSource)) 
+      (WpHole) 
+      (PlaceHolder) 
+      []))),
+   ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:119:1-61 }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (8,1) [DComment (DP (2,1),DP (2,52)) "-- | Disjunction of two 'Principal'-based elements." Nothing,DComment (DP (1,1),DP (1,3)) "--" Nothing,DComment (DP (1,1),DP (1,5)) "-- @" Nothing,DComment (DP (1,1),DP (1,16)) "-- infixl 7 \\\\/" Nothing,DComment (DP (1,1),DP (1,5)) "-- @" Nothing,DComment (DP (1,1),DP (1,3)) "--" Nothing] [((G AnnDcolon),DP (0,1))])
+    (SigD 
+     (TypeSig 
+      [
+       ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:119:1-4 }
+        Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnOpenP),DP (0,0)),((G AnnVal),DP (0,0)),((G AnnCloseP),DP (0,0))])
+        (Unqual {OccName: \/}))] 
+      ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:119:9-61 }
+       Just (Ann (DP (0,1)) (ColDelta 9) DP (0,1) [] [])
+       (HsForAllTy 
+        (Implicit) 
+        (Nothing) 
+        (HsQTvs 
+         [] 
+         []) 
+        ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:119:9-38 }
+         Just (Ann (DP (0,0)) (ColDelta 9) DP (0,0) [] [((G AnnOpenP),DP (0,0)),((G AnnOpenP),DP (0,-1)),((G AnnCloseP),DP (0,0)),((G AnnCloseP),DP (0,-1)),((G AnnDarrow),DP (0,1))])
+         [
+          ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:119:10-22 }
+           Just (Ann (DP (0,0)) (ColDelta 10) DP (0,0) [] [((G AnnComma),DP (0,0))])
+           (HsAppTy 
+            ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:119:10-20 }
+             Just (Ann (DP (0,0)) (ColDelta 10) DP (0,0) [] [((G AnnVal),DP (0,0))])
+             (HsTyVar 
+              (Unqual {OccName: ToComponent}))) 
+            ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:119:22 }
+             Just (Ann (DP (0,1)) (ColDelta 22) DP (0,1) [] [((G AnnVal),DP (0,0))])
+             (HsTyVar 
+              (Unqual {OccName: a}))))),
+          ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:119:25-37 }
+           Just (Ann (DP (0,1)) (ColDelta 25) DP (0,1) [] [])
+           (HsAppTy 
+            ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:119:25-35 }
+             Just (Ann (DP (0,0)) (ColDelta 25) DP (0,0) [] [((G AnnVal),DP (0,0))])
+             (HsTyVar 
+              (Unqual {OccName: ToComponent}))) 
+            ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:119:37 }
+             Just (Ann (DP (0,1)) (ColDelta 37) DP (0,1) [] [((G AnnVal),DP (0,0))])
+             (HsTyVar 
+              (Unqual {OccName: b})))))]) 
+        ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:119:43-61 }
+         Just (Ann (DP (0,1)) (ColDelta 43) DP (0,1) [] [((G AnnRarrow),DP (0,1))])
+         (HsFunTy 
+          ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:119:43 }
+           Just (Ann (DP (0,0)) (ColDelta 43) DP (0,0) [] [((G AnnVal),DP (0,0))])
+           (HsTyVar 
+            (Unqual {OccName: a}))) 
+          ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:119:48-61 }
+           Just (Ann (DP (0,1)) (ColDelta 48) DP (0,1) [] [((G AnnRarrow),DP (0,1))])
+           (HsFunTy 
+            ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:119:48 }
+             Just (Ann (DP (0,0)) (ColDelta 48) DP (0,0) [] [((G AnnVal),DP (0,0))])
+             (HsTyVar 
+              (Unqual {OccName: b}))) 
+            ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:119:53-61 }
+             Just (Ann (DP (0,1)) (ColDelta 53) DP (0,1) [] [((G AnnVal),DP (0,0))])
+             (HsTyVar 
+              (Unqual {OccName: Component}))))))))) 
+      (PlaceHolder)))),
+   ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:120:1-55 }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [])
+    (ValD 
+     (FunBind 
+      ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:120:3-4 }
+       Just (Ann (DP (0,1)) (ColDelta 3) DP (0,1) [] [((G AnnVal),DP (0,0))])
+       (Unqual {OccName: \/})) 
+      (True) 
+      (MG 
+       [
+        ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:120:1-55 }
+         Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnEqual),DP (0,1))])
+         (Match 
+          (Just 
+           ((,) 
+            ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:120:3-4 }
+             Just (Ann (DP (0,1)) (ColDelta 3) DP (0,1) [] [((G AnnVal),DP (0,0))])
+             (Unqual {OccName: \/})) 
+            (True))) 
+          [
+           ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:120:1 }
+            Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+            (VarPat 
+             (Unqual {OccName: a}))),
+           ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:120:6 }
+            Just (Ann (DP (0,1)) (ColDelta 6) DP (0,1) [] [((G AnnVal),DP (0,0))])
+            (VarPat 
+             (Unqual {OccName: b})))] 
+          (Nothing) 
+          (GRHSs 
+           [
+            ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:120:8-55 }
+             Just (Ann (DP (0,-1)) (ColDelta 8) DP (0,-1) [] [])
+             (GRHS 
+              [] 
+              ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:120:10-55 }
+               Just (Ann (DP (0,1)) (ColDelta 10) DP (0,1) [] [])
+               (OpApp 
+                ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:120:10-34 }
+                 Just (Ann (DP (0,0)) (ColDelta 10) DP (0,0) [] [])
+                 (OpApp 
+                  ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:120:10-17 }
+                   Just (Ann (DP (0,0)) (ColDelta 10) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                   (HsVar 
+                    (Unqual {OccName: dcReduce}))) 
+                  ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:120:19-20 }
+                   Just (Ann (DP (0,1)) (ColDelta 19) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                   (HsVar 
+                    (Unqual {OccName: $!}))) 
+                  (PlaceHolder) 
+                  ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:120:22-34 }
+                   Just (Ann (DP (0,1)) (ColDelta 22) DP (0,1) [] [])
+                   (HsApp 
+                    ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:120:22-32 }
+                     Just (Ann (DP (0,0)) (ColDelta 22) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                     (HsVar 
+                      (Unqual {OccName: toComponent}))) 
+                    ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:120:34 }
+                     Just (Ann (DP (0,1)) (ColDelta 34) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                     (HsVar 
+                      (Unqual {OccName: a}))))))) 
+                ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:120:36-41 }
+                 Just (Ann (DP (0,1)) (ColDelta 36) DP (0,1) [] [((G AnnBackquote),DP (0,0)),((G AnnVal),DP (0,0)),((G AnnBackquote),DP (0,0))])
+                 (HsVar 
+                  (Unqual {OccName: dcOr}))) 
+                (PlaceHolder) 
+                ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:120:43-55 }
+                 Just (Ann (DP (0,1)) (ColDelta 43) DP (0,1) [] [])
+                 (HsApp 
+                  ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:120:43-53 }
+                   Just (Ann (DP (0,0)) (ColDelta 43) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                   (HsVar 
+                    (Unqual {OccName: toComponent}))) 
+                  ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:120:55 }
+                   Just (Ann (DP (0,1)) (ColDelta 55) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                   (HsVar 
+                    (Unqual {OccName: b})))))))))] 
+           (EmptyLocalBinds))))] 
+       [] 
+       (PlaceHolder) 
+       (FromSource)) 
+      (WpHole) 
+      (PlaceHolder) 
+      []))),
+   ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:131:1-22 }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (11,1) [DComment (DP (2,1),DP (2,3)) "--" Nothing,DComment (DP (1,1),DP (1,11)) "-- Aliases" Nothing,DComment (DP (1,1),DP (1,3)) "--" Nothing,DComment (DP (2,1),DP (2,69)) "-- | Logical falsehood can be thought of as the component containing" Nothing,DComment (DP (1,1),DP (1,29)) "-- every possible principal:" Nothing,DComment (DP (1,1),DP (1,3)) "--" Nothing,DComment (DP (1,1),DP (1,25)) "-- > everybody = dcFalse" Nothing,DComment (DP (1,1),DP (1,3)) "--" Nothing] [((G AnnDcolon),DP (0,1))])
+    (SigD 
+     (TypeSig 
+      [
+       ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:131:1-9 }
+        Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+        (Unqual {OccName: everybody}))] 
+      ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:131:14-22 }
+       Just (Ann (DP (0,1)) (ColDelta 14) DP (0,1) [] [])
+       (HsForAllTy 
+        (Implicit) 
+        (Nothing) 
+        (HsQTvs 
+         [] 
+         []) 
+        ({ <no location info> }
+         Just (Ann (DP (-81,0)) (ColDelta 0) DP (-81,0) [] [])
+         []) 
+        ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:131:14-22 }
+         Just (Ann (DP (0,0)) (ColDelta 14) DP (0,0) [] [((G AnnVal),DP (0,0))])
+         (HsTyVar 
+          (Unqual {OccName: Component}))))) 
+      (PlaceHolder)))),
+   ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:132:1-19 }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [])
+    (ValD 
+     (FunBind 
+      ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:132:1-9 }
+       Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+       (Unqual {OccName: everybody})) 
+      (False) 
+      (MG 
+       [
+        ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:132:1-19 }
+         Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnEqual),DP (0,1))])
+         (Match 
+          (Just 
+           ((,) 
+            ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:132:1-9 }
+             Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+             (Unqual {OccName: everybody})) 
+            (False))) 
+          [] 
+          (Nothing) 
+          (GRHSs 
+           [
+            ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:132:11-19 }
+             Just (Ann (DP (0,-1)) (ColDelta 11) DP (0,-1) [] [])
+             (GRHS 
+              [] 
+              ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:132:13-19 }
+               Just (Ann (DP (0,1)) (ColDelta 13) DP (0,1) [] [((G AnnVal),DP (0,0))])
+               (HsVar 
+                (Unqual {OccName: dcFalse})))))] 
+           (EmptyLocalBinds))))] 
+       [] 
+       (PlaceHolder) 
+       (FromSource)) 
+      (WpHole) 
+      (PlaceHolder) 
+      []))),
+   ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:139:1-20 }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (7,1) [DComment (DP (2,1),DP (2,65)) "-- | Logical truth can be thought of as the component containing" Nothing,DComment (DP (1,1),DP (1,26)) "-- no specific principal:" Nothing,DComment (DP (1,1),DP (1,3)) "--" Nothing,DComment (DP (1,1),DP (1,22)) "-- > anybody = dcTrue" Nothing,DComment (DP (1,1),DP (1,3)) "--" Nothing] [((G AnnDcolon),DP (0,1))])
+    (SigD 
+     (TypeSig 
+      [
+       ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:139:1-7 }
+        Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+        (Unqual {OccName: anybody}))] 
+      ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:139:12-20 }
+       Just (Ann (DP (0,1)) (ColDelta 12) DP (0,1) [] [])
+       (HsForAllTy 
+        (Implicit) 
+        (Nothing) 
+        (HsQTvs 
+         [] 
+         []) 
+        ({ <no location info> }
+         Just (Ann (DP (-81,0)) (ColDelta 0) DP (-81,0) [] [])
+         []) 
+        ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:139:12-20 }
+         Just (Ann (DP (0,0)) (ColDelta 12) DP (0,0) [] [((G AnnVal),DP (0,0))])
+         (HsTyVar 
+          (Unqual {OccName: Component}))))) 
+      (PlaceHolder)))),
+   ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:140:1-16 }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [])
+    (ValD 
+     (FunBind 
+      ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:140:1-7 }
+       Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+       (Unqual {OccName: anybody})) 
+      (False) 
+      (MG 
+       [
+        ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:140:1-16 }
+         Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnEqual),DP (0,1))])
+         (Match 
+          (Just 
+           ((,) 
+            ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:140:1-7 }
+             Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+             (Unqual {OccName: anybody})) 
+            (False))) 
+          [] 
+          (Nothing) 
+          (GRHSs 
+           [
+            ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:140:9-16 }
+             Just (Ann (DP (0,-1)) (ColDelta 9) DP (0,-1) [] [])
+             (GRHS 
+              [] 
+              ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:140:11-16 }
+               Just (Ann (DP (0,1)) (ColDelta 11) DP (0,1) [] [((G AnnVal),DP (0,0))])
+               (HsVar 
+                (Unqual {OccName: dcTrue})))))] 
+           (EmptyLocalBinds))))] 
+       [] 
+       (PlaceHolder) 
+       (FromSource)) 
+      (WpHole) 
+      (PlaceHolder) 
+      []))),
+   ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:146:1-36 }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (6,1) [DComment (DP (3,1),DP (3,68)) "-- | Convert a 'Component' to a list of list of 'Principal's if the" Nothing,DComment (DP (1,1),DP (1,69)) "-- 'Component' does not have the value 'DCFalse'. In the latter case" Nothing,DComment (DP (1,1),DP (1,35)) "-- the function returns 'Nothing'." Nothing] [((G AnnDcolon),DP (0,1))])
+    (SigD 
+     (TypeSig 
+      [
+       ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:146:1-6 }
+        Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+        (Unqual {OccName: toList}))] 
+      ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:146:11-36 }
+       Just (Ann (DP (0,1)) (ColDelta 11) DP (0,1) [] [])
+       (HsForAllTy 
+        (Implicit) 
+        (Nothing) 
+        (HsQTvs 
+         [] 
+         []) 
+        ({ <no location info> }
+         Just (Ann (DP (-81,0)) (ColDelta 0) DP (-81,0) [] [])
+         []) 
+        ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:146:11-36 }
+         Just (Ann (DP (0,0)) (ColDelta 11) DP (0,0) [] [((G AnnRarrow),DP (0,1))])
+         (HsFunTy 
+          ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:146:11-19 }
+           Just (Ann (DP (0,0)) (ColDelta 11) DP (0,0) [] [((G AnnVal),DP (0,0))])
+           (HsTyVar 
+            (Unqual {OccName: Component}))) 
+          ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:146:24-36 }
+           Just (Ann (DP (0,1)) (ColDelta 24) DP (0,1) [] [((G AnnOpenS),DP (0,0)),((G AnnCloseS),DP (0,0))])
+           (HsListTy 
+            ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:146:25-35 }
+             Just (Ann (DP (0,0)) (ColDelta 25) DP (0,0) [] [((G AnnOpenS),DP (0,0)),((G AnnCloseS),DP (0,0))])
+             (HsListTy 
+              ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:146:26-34 }
+               Just (Ann (DP (0,0)) (ColDelta 26) DP (0,0) [] [((G AnnVal),DP (0,0))])
+               (HsTyVar 
+                (Unqual {OccName: Principal}))))))))))) 
+      (PlaceHolder)))),
+   ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:(147,1)-(148,68)
+     }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [])
+    (ValD 
+     (FunBind 
+      ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:147:1-6 }
+       Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+       (Unqual {OccName: toList})) 
+      (False) 
+      (MG 
+       [
+        ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:147:1-71 }
+         Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnEqual),DP (0,8))])
+         (Match 
+          (Just 
+           ((,) 
+            ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:147:1-6 }
+             Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+             (Unqual {OccName: toList})) 
+            (False))) 
+          [
+           ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:147:8-14 }
+            Just (Ann (DP (0,1)) (ColDelta 8) DP (0,1) [] [])
+            (ConPatIn 
+             ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:147:8-14 }
+              Just (Ann (DP (0,0)) (ColDelta 8) DP (0,0) [] [((G AnnVal),DP (0,0))])
+              (Unqual {OccName: DCFalse})) 
+             (PrefixCon 
+              [])))] 
+          (Nothing) 
+          (GRHSs 
+           [
+            ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:147:23-71 }
+             Just (Ann (DP (0,-1)) (ColDelta 23) DP (0,-1) [] [])
+             (GRHS 
+              [] 
+              ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:147:25-71 }
+               Just (Ann (DP (0,1)) (ColDelta 25) DP (0,1) [] [])
+               (HsApp 
+                ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:147:25-29 }
+                 Just (Ann (DP (0,0)) (ColDelta 25) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                 (HsVar 
+                  (Unqual {OccName: error}))) 
+                ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:147:31-71 }
+                 Just (Ann (DP (0,1)) (ColDelta 31) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                 (HsLit 
+                  (HsString "\"toList: Invalid use, expected DCFormula\"" {FastString: "toList: Invalid use, expected DCFormula"})))))))] 
+           (EmptyLocalBinds)))),
+        ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:148:1-68 }
+         Just (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [((G AnnEqual),DP (0,1))])
+         (Match 
+          (Just 
+           ((,) 
+            ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:148:1-6 }
+             Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+             (Unqual {OccName: toList})) 
+            (False))) 
+          [
+           ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:148:8-21 }
+            Just (Ann (DP (0,1)) (ColDelta 8) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])
+            (ParPat 
+             ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:148:9-20 }
+              Just (Ann (DP (0,0)) (ColDelta 9) DP (0,0) [] [])
+              (ConPatIn 
+               ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:148:9-17 }
+                Just (Ann (DP (0,0)) (ColDelta 9) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                (Unqual {OccName: DCFormula})) 
+               (PrefixCon 
+                [
+                 ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:148:19-20 }
+                  Just (Ann (DP (0,1)) (ColDelta 19) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                  (VarPat 
+                   (Unqual {OccName: cs})))])))))] 
+          (Nothing) 
+          (GRHSs 
+           [
+            ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:148:23-68 }
+             Just (Ann (DP (0,-1)) (ColDelta 23) DP (0,-1) [] [])
+             (GRHS 
+              [] 
+              ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:148:25-68 }
+               Just (Ann (DP (0,1)) (ColDelta 25) DP (0,1) [] [])
+               (OpApp 
+                ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:148:25-51 }
+                 Just (Ann (DP (0,0)) (ColDelta 25) DP (0,0) [] [])
+                 (HsApp 
+                  ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:148:25-27 }
+                   Just (Ann (DP (0,0)) (ColDelta 25) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                   (HsVar 
+                    (Unqual {OccName: map}))) 
+                  ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:148:29-51 }
+                   Just (Ann (DP (0,1)) (ColDelta 29) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])
+                   (HsPar 
+                    ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:148:30-50 }
+                     Just (Ann (DP (0,0)) (ColDelta 30) DP (0,0) [] [])
+                     (OpApp 
+                      ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:148:30-39 }
+                       Just (Ann (DP (0,0)) (ColDelta 30) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                       (HsVar 
+                        (Qual {ModuleName: Set} {OccName: toList}))) 
+                      ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:148:41 }
+                       Just (Ann (DP (0,1)) (ColDelta 41) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                       (HsVar 
+                        (Unqual {OccName: .}))) 
+                      (PlaceHolder) 
+                      ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:148:43-50 }
+                       Just (Ann (DP (0,1)) (ColDelta 43) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                       (HsVar 
+                        (Unqual {OccName: unClause}))))))))) 
+                ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:148:53-54 }
+                 Just (Ann (DP (0,1)) (ColDelta 53) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                 (HsVar 
+                  (Unqual {OccName: $!}))) 
+                (PlaceHolder) 
+                ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:148:56-68 }
+                 Just (Ann (DP (0,1)) (ColDelta 56) DP (0,1) [] [])
+                 (HsApp 
+                  ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:148:56-65 }
+                   Just (Ann (DP (0,0)) (ColDelta 56) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                   (HsVar 
+                    (Qual {ModuleName: Set} {OccName: toList}))) 
+                  ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:148:67-68 }
+                   Just (Ann (DP (0,1)) (ColDelta 67) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                   (HsVar 
+                    (Unqual {OccName: cs})))))))))] 
+           (EmptyLocalBinds))))] 
+       [] 
+       (PlaceHolder) 
+       (FromSource)) 
+      (WpHole) 
+      (PlaceHolder) 
+      []))),
+   ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:152:1-38 }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (4,1) [DComment (DP (2,1),DP (2,67)) "-- | Convert a list of list of 'Principal's to a 'Component'. Each" Nothing,DComment (DP (1,1),DP (1,57)) "-- inner list is considered to correspond to a 'Clause'." Nothing] [((G AnnDcolon),DP (0,1))])
+    (SigD 
+     (TypeSig 
+      [
+       ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:152:1-8 }
+        Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+        (Unqual {OccName: fromList}))] 
+      ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:152:13-38 }
+       Just (Ann (DP (0,1)) (ColDelta 13) DP (0,1) [] [])
+       (HsForAllTy 
+        (Implicit) 
+        (Nothing) 
+        (HsQTvs 
+         [] 
+         []) 
+        ({ <no location info> }
+         Just (Ann (DP (-81,0)) (ColDelta 0) DP (-81,0) [] [])
+         []) 
+        ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:152:13-38 }
+         Just (Ann (DP (0,0)) (ColDelta 13) DP (0,0) [] [((G AnnRarrow),DP (0,1))])
+         (HsFunTy 
+          ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:152:13-25 }
+           Just (Ann (DP (0,0)) (ColDelta 13) DP (0,0) [] [((G AnnOpenS),DP (0,0)),((G AnnCloseS),DP (0,0))])
+           (HsListTy 
+            ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:152:14-24 }
+             Just (Ann (DP (0,0)) (ColDelta 14) DP (0,0) [] [((G AnnOpenS),DP (0,0)),((G AnnCloseS),DP (0,0))])
+             (HsListTy 
+              ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:152:15-23 }
+               Just (Ann (DP (0,0)) (ColDelta 15) DP (0,0) [] [((G AnnVal),DP (0,0))])
+               (HsTyVar 
+                (Unqual {OccName: Principal}))))))) 
+          ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:152:30-38 }
+           Just (Ann (DP (0,1)) (ColDelta 30) DP (0,1) [] [((G AnnVal),DP (0,0))])
+           (HsTyVar 
+            (Unqual {OccName: Component}))))))) 
+      (PlaceHolder)))),
+   ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:153:1-72 }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [])
+    (ValD 
+     (FunBind 
+      ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:153:1-8 }
+       Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+       (Unqual {OccName: fromList})) 
+      (False) 
+      (MG 
+       [
+        ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:153:1-72 }
+         Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnEqual),DP (0,1))])
+         (Match 
+          (Just 
+           ((,) 
+            ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:153:1-8 }
+             Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+             (Unqual {OccName: fromList})) 
+            (False))) 
+          [
+           ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:153:10-11 }
+            Just (Ann (DP (0,1)) (ColDelta 10) DP (0,1) [] [((G AnnVal),DP (0,0))])
+            (VarPat 
+             (Unqual {OccName: ps})))] 
+          (Nothing) 
+          (GRHSs 
+           [
+            ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:153:13-72 }
+             Just (Ann (DP (0,-1)) (ColDelta 13) DP (0,-1) [] [])
+             (GRHS 
+              [] 
+              ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:153:15-72 }
+               Just (Ann (DP (0,1)) (ColDelta 15) DP (0,1) [] [])
+               (OpApp 
+                ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:153:15-38 }
+                 Just (Ann (DP (0,0)) (ColDelta 15) DP (0,0) [] [])
+                 (OpApp 
+                  ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:153:15-23 }
+                   Just (Ann (DP (0,0)) (ColDelta 15) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                   (HsVar 
+                    (Unqual {OccName: DCFormula}))) 
+                  ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:153:25 }
+                   Just (Ann (DP (0,1)) (ColDelta 25) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                   (HsVar 
+                    (Unqual {OccName: .}))) 
+                  (PlaceHolder) 
+                  ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:153:27-38 }
+                   Just (Ann (DP (0,1)) (ColDelta 27) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                   (HsVar 
+                    (Qual {ModuleName: Set} {OccName: fromList}))))) 
+                ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:153:40-41 }
+                 Just (Ann (DP (0,1)) (ColDelta 40) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                 (HsVar 
+                  (Unqual {OccName: $!}))) 
+                (PlaceHolder) 
+                ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:153:43-72 }
+                 Just (Ann (DP (0,1)) (ColDelta 43) DP (0,1) [] [])
+                 (HsApp 
+                  ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:153:43-69 }
+                   Just (Ann (DP (0,0)) (ColDelta 43) DP (0,0) [] [])
+                   (HsApp 
+                    ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:153:43-45 }
+                     Just (Ann (DP (0,0)) (ColDelta 43) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                     (HsVar 
+                      (Unqual {OccName: map}))) 
+                    ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:153:47-69 }
+                     Just (Ann (DP (0,1)) (ColDelta 47) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])
+                     (HsPar 
+                      ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:153:48-68 }
+                       Just (Ann (DP (0,0)) (ColDelta 48) DP (0,0) [] [])
+                       (OpApp 
+                        ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:153:48-53 }
+                         Just (Ann (DP (0,0)) (ColDelta 48) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                         (HsVar 
+                          (Unqual {OccName: Clause}))) 
+                        ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:153:55 }
+                         Just (Ann (DP (0,1)) (ColDelta 55) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                         (HsVar 
+                          (Unqual {OccName: .}))) 
+                        (PlaceHolder) 
+                        ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:153:57-68 }
+                         Just (Ann (DP (0,1)) (ColDelta 57) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                         (HsVar 
+                          (Qual {ModuleName: Set} {OccName: fromList}))))))))) 
+                  ({ ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:153:71-72 }
+                   Just (Ann (DP (0,1)) (ColDelta 71) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                   (HsVar 
+                    (Unqual {OccName: ps})))))))))] 
+           (EmptyLocalBinds))))] 
+       [] 
+       (PlaceHolder) 
+       (FromSource)) 
+      (WpHole) 
+      (PlaceHolder) 
+      [])))] 
+  (Nothing) 
+  (Nothing)))
+==============
+[(AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:1:1 CN "HsModule" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((AnnComment DComment (DP (0,0),DP (0,20)) "{-# LANGUAGE CPP #-}" Nothing),DP (0,0)),((AnnComment DComment (DP (1,1),DP (1,64)) "#if defined(__GLASGOW_HASKELL__) && (__GLASGOW_HASKELL__ >= 702)" Nothing),DP (1,1)),((AnnComment DComment (DP (1,1),DP (1,22)) "{-# LANGUAGE Safe #-}" Nothing),DP (1,1)),((AnnComment DComment (DP (1,1),DP (1,6)) "#endif" Nothing),DP (1,1)),((AnnComment DComment (DP (1,1),DP (1,38)) "{-# LANGUAGE TypeSynonymInstances #-}" Nothing),DP (1,1)),((AnnComment DComment (DP (1,1),DP (1,35)) "{-# LANGUAGE FlexibleInstances #-}" Nothing),DP (1,1)),((AnnComment DComment (DP (2,1),DP (59,3)) "{-|\n  This module implements a ``nano``, very simple, embedded domain\n  specific language to create 'Component's and privilage descriptions\n  from conjunctions of principal disjunctions.\n\n  A 'Component'/'DCPrivDesc' is created using the ('\\/') and ('/\\') operators.\n  The disjunction operator ('\\/') is used to create a 'Clause' from\n  'Principal's, ByteStrings, or a disjunctive sub-expression. For example:\n\n  @\n     p1 = 'principal' \\\"p1\\\"\n     p2 = 'principal' \\\"p2\\\"\n     p3 = 'principal' \\\"p3\\\"\n     e1 = p1 '\\/' p2\n     e2 = e1 '\\/' \\\"p4\\\"\n  @\n\n  Similarly, the conjunction operator ('/\\') is used to create category-sets\n  from 'Principal's, ByteStrings, and conjunctive or disjunctive sub-expressions.\n  For example:\n\n  @\n     e3 = p1 '\\/' p2\n     e4 = e1 '/\\' \\\"p4\\\" '/\\' p3\n  @\n\n  /Note/ that because a clause consists of a disjunction of principals, and a\n  component is composed of the conjunction of categories, ('\\/') binds\n  more tightly than ('/\\').\n\n  Given two 'Component's, one for secrecy and one for integrity, you\n  can create a 'DCLabel' with 'dcLabel'. Given a 'Component' you can\n  create a 'DCPrivDesc' using 'dcPrivDesc'. Finally, given a 'DCPriv'\n  and 'DCPrivDesc' you can create a new minted privilege with\n  'dcDelegatePriv'.\n\n\n  Consider the following, example:\n\n  @\n     l1 = \\\"Alice\\\" '\\/' \\\"Bob\\\" '/\\' \\\"Carla\\\"\n     l2 = \\\"Alice\\\" '/\\' \\\"Carla\\\"\n     dc1 = 'dcLabel' l1 l2\n     dc2 = 'dcLabel' ('toComponent' \\\"Djon\\\") ('toComponent' \\\"Alice\\\")\n     pr = 'dcPrivTCB' . 'dcPrivDesc' $ \\\"Alice\\\" '/\\' \\\"Carla\\\"\n  @\n\nwhere\n\n  * @ dc1 = \\<{[\\\"Alice\\\" &#8897; \\\"Bob\\\"] &#8896; [\\\"Carla\\\"]} , {[\\\"Alice\\\"] &#8896; [\\\"Carla\\\"]}\\>@\n\n  * @ dc2 = \\<{[\\\"Djon\\\"]} , {[\\\"Alice\\\"]}\\>@\n\n  * @ 'canFlowTo' dc1 dc2 = False @\n\n  * @ 'canFlowToP' pr dc1 dc2 = True@\n\n-}" Nothing),DP (2,1)),((G AnnModule),DP (66,1)),((G AnnVal),DP (0,1)),((G AnnWhere),DP (0,1)),((AnnComment DComment (DP (1,1),DP (1,1)) "" Nothing),DP (1,1)),((G AnnEofPos),DP (2,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:(67,20)-(72,20) CN "(:)" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 20) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (1,20))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:68:18-21 CN "IEVar" NotNeeded,
+  (Ann (DP (1,18)) (ColDelta 18) DP (1,18) [DComment (DP (0,1),DP (0,15)) "-- * Operators" Nothing] [])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:68:18-21 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 18) DP (0,0) [] [((G AnnOpenP),DP (0,0)),((G AnnVal),DP (0,0)),((G AnnCloseP),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:68:24-27 CN "IEVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 24) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:68:24-27 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 24) DP (0,0) [] [((G AnnOpenP),DP (0,0)),((G AnnVal),DP (0,0)),((G AnnCloseP),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:68:30-40 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 30) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:68:30-44 CN "IEThingAll" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 30) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnDotdot),DP (0,0)),((G AnnCloseP),DP (0,0)),((G AnnComma),DP (1,20))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:69:22-29 CN "IEVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 22) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:69:22-29 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 22) DP (0,0) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:69:32-37 CN "IEVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 32) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:69:32-37 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 32) DP (0,0) [] [((G AnnVal),DP (0,0)),((AnnComment DComment (DP (1,22),DP (1,34)) "-- * Aliases" Nothing),DP (1,22)),((G AnnComma),DP (2,20))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:71:22-30 CN "IEVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 22) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:71:22-30 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 22) DP (0,0) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:71:33-39 CN "IEVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 33) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:71:33-39 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 33) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:74:1-29 CN "ImportDecl" NotNeeded,
+  (Ann (DP (2,1)) (ColDelta 1) DP (2,1) [] [((G AnnImport),DP (0,0)),((G AnnVal),DP (0,11))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:75:1-32 CN "ImportDecl" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [((G AnnImport),DP (0,0)),((G AnnQualified),DP (0,1)),((G AnnVal),DP (0,1)),((G AnnAs),DP (0,1)),((G AnnVal),DP (0,1))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:76:1-44 CN "ImportDecl" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [((G AnnImport),DP (0,0)),((G AnnQualified),DP (0,1)),((G AnnVal),DP (0,1)),((G AnnAs),DP (0,1)),((G AnnVal),DP (0,1))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:78:1-23 CN "TyClD" NotNeeded,
+  (Ann (DP (2,1)) (ColDelta 1) DP (2,1) [] [((G AnnType),DP (0,0)),((G AnnEqual),DP (0,1))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:78:6-7 CN "Unqual" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 6) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:78:11-23 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 11) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:(81,1)-(83,31) CN "TyClD" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (3,1) [DComment (DP (2,1),DP (2,72)) "-- | Convert a type (e.g., 'Clause', 'Principal') to a label component." Nothing] [((G AnnClass),DP (0,0)),((G AnnWhere),DP (0,1))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:81:7-17 CN "Unqual" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 7) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:81:19 CN "UserTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 19) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:83:3-13 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:83:3-31 CN "TypeSig" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (2,3) [DComment (DP (1,3),DP (1,30)) "-- | Convert to 'Component'" Nothing] [((G AnnDcolon),DP (0,1))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:83:18 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 18) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:83:18-31 CN "HsForAllTy" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 18) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:83:18-31 CN "HsFunTy" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 18) DP (0,0) [] [((G AnnRarrow),DP (0,1))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:83:23-31 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 23) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:(86,1)-(87,18) CN "InstD" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (3,1) [DComment (DP (2,1),DP (2,30)) "-- | Identity of 'Component'." Nothing] [((G AnnInstance),DP (0,0)),((G AnnWhere),DP (0,1))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:86:10-20 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 10) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:86:10-30 CN "HsAppTy" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 10) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:86:10-30 CN "HsForAllTy" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 10) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:86:22-30 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 22) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:87:3-13 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:87:3-18 CN "FunBind" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:87:3-18 CN "Match" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnEqual),DP (0,1))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:87:15-18 CN "GRHS" NotNeeded,
+  (Ann (DP (0,-1)) (ColDelta 15) DP (0,-1) [] [])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:87:17-18 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 17) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:(89,1)-(90,46) CN "InstD" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (2,1) [DComment (DP (1,1),DP (1,48)) "-- | Convert singleton 'Clause' to 'Component'." Nothing] [((G AnnInstance),DP (0,0)),((G AnnWhere),DP (0,4))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:89:10-20 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 10) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:89:10-27 CN "HsAppTy" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 10) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:89:10-27 CN "HsForAllTy" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 10) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:89:22-27 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 22) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:90:3-13 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:90:3-46 CN "FunBind" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:90:3-46 CN "Match" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnEqual),DP (0,1))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:90:15 CN "VarPat" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 15) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:90:17-46 CN "GRHS" NotNeeded,
+  (Ann (DP (0,-1)) (ColDelta 17) DP (0,-1) [] [])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:90:19-27 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 19) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:90:19-46 CN "OpApp" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 19) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:90:29-30 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 29) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:90:32-44 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 32) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:90:32-46 CN "HsApp" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 32) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:90:46 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 46) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:(92,1)-(93,57) CN "InstD" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (2,1) [DComment (DP (1,1),DP (1,51)) "-- | Convert singleton 'Principal' to 'Component'." Nothing] [((G AnnInstance),DP (0,0)),((G AnnWhere),DP (0,1))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:92:10-20 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 10) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:92:10-30 CN "HsAppTy" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 10) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:92:10-30 CN "HsForAllTy" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 10) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:92:22-30 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 22) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:93:3-13 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:93:3-57 CN "FunBind" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:93:3-57 CN "Match" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnEqual),DP (0,1))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:93:15 CN "VarPat" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 15) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:93:17-57 CN "GRHS" NotNeeded,
+  (Ann (DP (0,-1)) (ColDelta 17) DP (0,-1) [] [])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:93:19-29 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 19) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:93:19-38 CN "OpApp" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 19) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:93:19-57 CN "OpApp" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 19) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:93:31 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 31) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:93:33-38 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 33) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:93:40-41 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 40) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:93:43-55 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 43) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:93:43-57 CN "HsApp" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 43) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:93:57 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 57) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:(95,1)-(96,39) CN "InstD" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (2,1) [DComment (DP (1,1),DP (1,82)) "-- | Convert singleton 'Principal' (in the form of a @ByteString@)to 'Component'." Nothing] [((G AnnInstance),DP (0,0)),((G AnnWhere),DP (0,1))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:95:10-20 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 10) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:95:10-23 CN "HsAppTy" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 10) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:95:10-23 CN "HsForAllTy" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 10) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:95:22-23 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 22) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:96:3-13 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:96:3-39 CN "FunBind" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:96:3-39 CN "Match" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnEqual),DP (0,1))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:96:15-39 CN "GRHS" NotNeeded,
+  (Ann (DP (0,-1)) (ColDelta 15) DP (0,-1) [] [])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:96:17-27 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 17) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:96:17-39 CN "OpApp" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 17) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:96:29 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 29) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:96:31-39 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 31) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:(98,1)-(99,37) CN "InstD" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (2,1) [DComment (DP (1,1),DP (1,78)) "-- | Convert singleton 'Principal' (in the form of a 'String')to 'Component'." Nothing] [((G AnnInstance),DP (0,0)),((G AnnWhere),DP (0,1))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:98:10-20 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 10) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:98:10-27 CN "HsAppTy" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 10) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:98:10-27 CN "HsForAllTy" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 10) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:98:22-27 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 22) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:99:3-13 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:99:3-37 CN "FunBind" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:99:3-37 CN "Match" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnEqual),DP (0,1))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:99:15-37 CN "GRHS" NotNeeded,
+  (Ann (DP (0,-1)) (ColDelta 15) DP (0,-1) [] [])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:99:17-27 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 17) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:99:17-37 CN "OpApp" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 17) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:99:29 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 29) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:99:31-37 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 31) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:101:1-11 CN "SigD" NotNeeded,
+  (Ann (DP (2,1)) (ColDelta 1) DP (2,1) [] [((G AnnInfix),DP (0,0)),((G AnnVal),DP (0,1))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:101:10-11 CN "Unqual" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 10) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:102:1-11 CN "SigD" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [((G AnnInfix),DP (0,0)),((G AnnVal),DP (0,1))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:102:10-11 CN "Unqual" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 10) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:110:1-4 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnOpenP),DP (0,0)),((G AnnVal),DP (0,0)),((G AnnCloseP),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:110:1-61 CN "SigD" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (8,1) [DComment (DP (0,-2),DP (0,1)) "/\\\\" Nothing,DComment (DP (2,1),DP (2,52)) "-- | Conjunction of two 'Principal'-based elements." Nothing,DComment (DP (1,1),DP (1,3)) "--" Nothing,DComment (DP (1,1),DP (1,5)) "-- @" Nothing,DComment (DP (1,1),DP (1,19)) "-- infixl 6 /&#92;" Nothing,DComment (DP (1,1),DP (1,5)) "-- @" Nothing,DComment (DP (1,1),DP (1,3)) "--" Nothing] [((G AnnDcolon),DP (0,1))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:110:9-38 CN "(:)" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 9) DP (0,0) [] [((G AnnOpenP),DP (0,0)),((G AnnOpenP),DP (0,-1)),((G AnnCloseP),DP (0,0)),((G AnnCloseP),DP (0,-1)),((G AnnDarrow),DP (0,1))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:110:9-61 CN "HsForAllTy" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 9) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:110:10-20 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 10) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:110:10-22 CN "HsAppTy" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 10) DP (0,0) [] [((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:110:22 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 22) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:110:25-35 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 25) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:110:25-37 CN "HsAppTy" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 25) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:110:37 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 37) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:110:43 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 43) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:110:43-61 CN "HsFunTy" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 43) DP (0,1) [] [((G AnnRarrow),DP (0,1))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:110:48 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 48) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:110:48-61 CN "HsFunTy" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 48) DP (0,1) [] [((G AnnRarrow),DP (0,1))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:110:53-61 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 53) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:111:1 CN "VarPat" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:111:1-56 CN "Match" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnEqual),DP (0,1))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:111:1-56 CN "ValD" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:111:3-4 CN "Unqual" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 3) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:111:6 CN "VarPat" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 6) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:111:8-56 CN "GRHS" NotNeeded,
+  (Ann (DP (0,-1)) (ColDelta 8) DP (0,-1) [] [])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:111:10-17 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 10) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:111:10-34 CN "OpApp" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 10) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:111:10-56 CN "OpApp" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 10) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:111:19-20 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 19) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:111:22-32 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 22) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:111:22-34 CN "HsApp" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 22) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:111:34 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 34) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:111:36-42 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 36) DP (0,1) [] [((G AnnBackquote),DP (0,0)),((G AnnVal),DP (0,0)),((G AnnBackquote),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:111:44-54 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 44) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:111:44-56 CN "HsApp" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 44) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:111:56 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 56) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:119:1-4 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnOpenP),DP (0,0)),((G AnnVal),DP (0,0)),((G AnnCloseP),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:119:1-61 CN "SigD" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (8,1) [DComment (DP (2,1),DP (2,52)) "-- | Disjunction of two 'Principal'-based elements." Nothing,DComment (DP (1,1),DP (1,3)) "--" Nothing,DComment (DP (1,1),DP (1,5)) "-- @" Nothing,DComment (DP (1,1),DP (1,16)) "-- infixl 7 \\\\/" Nothing,DComment (DP (1,1),DP (1,5)) "-- @" Nothing,DComment (DP (1,1),DP (1,3)) "--" Nothing] [((G AnnDcolon),DP (0,1))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:119:9-38 CN "(:)" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 9) DP (0,0) [] [((G AnnOpenP),DP (0,0)),((G AnnOpenP),DP (0,-1)),((G AnnCloseP),DP (0,0)),((G AnnCloseP),DP (0,-1)),((G AnnDarrow),DP (0,1))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:119:9-61 CN "HsForAllTy" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 9) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:119:10-20 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 10) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:119:10-22 CN "HsAppTy" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 10) DP (0,0) [] [((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:119:22 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 22) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:119:25-35 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 25) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:119:25-37 CN "HsAppTy" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 25) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:119:37 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 37) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:119:43 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 43) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:119:43-61 CN "HsFunTy" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 43) DP (0,1) [] [((G AnnRarrow),DP (0,1))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:119:48 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 48) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:119:48-61 CN "HsFunTy" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 48) DP (0,1) [] [((G AnnRarrow),DP (0,1))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:119:53-61 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 53) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:120:1 CN "VarPat" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:120:1-55 CN "Match" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnEqual),DP (0,1))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:120:1-55 CN "ValD" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:120:3-4 CN "Unqual" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 3) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:120:6 CN "VarPat" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 6) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:120:8-55 CN "GRHS" NotNeeded,
+  (Ann (DP (0,-1)) (ColDelta 8) DP (0,-1) [] [])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:120:10-17 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 10) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:120:10-34 CN "OpApp" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 10) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:120:10-55 CN "OpApp" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 10) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:120:19-20 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 19) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:120:22-32 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 22) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:120:22-34 CN "HsApp" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 22) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:120:34 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 34) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:120:36-41 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 36) DP (0,1) [] [((G AnnBackquote),DP (0,0)),((G AnnVal),DP (0,0)),((G AnnBackquote),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:120:43-53 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 43) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:120:43-55 CN "HsApp" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 43) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:120:55 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 55) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:131:1-9 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:131:1-22 CN "SigD" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (11,1) [DComment (DP (2,1),DP (2,3)) "--" Nothing,DComment (DP (1,1),DP (1,11)) "-- Aliases" Nothing,DComment (DP (1,1),DP (1,3)) "--" Nothing,DComment (DP (2,1),DP (2,69)) "-- | Logical falsehood can be thought of as the component containing" Nothing,DComment (DP (1,1),DP (1,29)) "-- every possible principal:" Nothing,DComment (DP (1,1),DP (1,3)) "--" Nothing,DComment (DP (1,1),DP (1,25)) "-- > everybody = dcFalse" Nothing,DComment (DP (1,1),DP (1,3)) "--" Nothing] [((G AnnDcolon),DP (0,1))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:131:14-22 CN "HsForAllTy" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 14) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:131:14-22 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 14) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:132:1-9 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:132:1-19 CN "Match" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnEqual),DP (0,1))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:132:1-19 CN "ValD" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:132:11-19 CN "GRHS" NotNeeded,
+  (Ann (DP (0,-1)) (ColDelta 11) DP (0,-1) [] [])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:132:13-19 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 13) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:139:1-7 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:139:1-20 CN "SigD" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (7,1) [DComment (DP (2,1),DP (2,65)) "-- | Logical truth can be thought of as the component containing" Nothing,DComment (DP (1,1),DP (1,26)) "-- no specific principal:" Nothing,DComment (DP (1,1),DP (1,3)) "--" Nothing,DComment (DP (1,1),DP (1,22)) "-- > anybody = dcTrue" Nothing,DComment (DP (1,1),DP (1,3)) "--" Nothing] [((G AnnDcolon),DP (0,1))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:139:12-20 CN "HsForAllTy" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 12) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:139:12-20 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 12) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:140:1-7 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:140:1-16 CN "Match" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnEqual),DP (0,1))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:140:1-16 CN "ValD" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:140:9-16 CN "GRHS" NotNeeded,
+  (Ann (DP (0,-1)) (ColDelta 9) DP (0,-1) [] [])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:140:11-16 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 11) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:146:1-6 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:146:1-36 CN "SigD" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (6,1) [DComment (DP (3,1),DP (3,68)) "-- | Convert a 'Component' to a list of list of 'Principal's if the" Nothing,DComment (DP (1,1),DP (1,69)) "-- 'Component' does not have the value 'DCFalse'. In the latter case" Nothing,DComment (DP (1,1),DP (1,35)) "-- the function returns 'Nothing'." Nothing] [((G AnnDcolon),DP (0,1))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:146:11-19 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 11) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:146:11-36 CN "HsForAllTy" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 11) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:146:11-36 CN "HsFunTy" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 11) DP (0,0) [] [((G AnnRarrow),DP (0,1))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:146:24-36 CN "HsListTy" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 24) DP (0,1) [] [((G AnnOpenS),DP (0,0)),((G AnnCloseS),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:146:25-35 CN "HsListTy" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 25) DP (0,0) [] [((G AnnOpenS),DP (0,0)),((G AnnCloseS),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:146:26-34 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 26) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:147:1-6 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:147:1-71 CN "Match" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnEqual),DP (0,8))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:(147,1)-(148,68) CN "ValD" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:147:8-14 CN "ConPatIn" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 8) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:147:8-14 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 8) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:147:23-71 CN "GRHS" NotNeeded,
+  (Ann (DP (0,-1)) (ColDelta 23) DP (0,-1) [] [])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:147:25-29 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 25) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:147:25-71 CN "HsApp" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 25) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:147:31-71 CN "HsLit" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 31) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:148:1-6 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:148:1-68 CN "Match" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [((G AnnEqual),DP (0,1))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:148:8-21 CN "ParPat" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 8) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:148:9-17 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 9) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:148:9-20 CN "ConPatIn" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 9) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:148:19-20 CN "VarPat" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 19) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:148:23-68 CN "GRHS" NotNeeded,
+  (Ann (DP (0,-1)) (ColDelta 23) DP (0,-1) [] [])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:148:25-27 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 25) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:148:25-51 CN "HsApp" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 25) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:148:25-68 CN "OpApp" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 25) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:148:29-51 CN "HsPar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 29) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:148:30-39 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 30) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:148:30-50 CN "OpApp" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 30) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:148:41 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 41) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:148:43-50 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 43) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:148:53-54 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 53) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:148:56-65 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 56) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:148:56-68 CN "HsApp" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 56) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:148:67-68 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 67) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:152:1-8 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:152:1-38 CN "SigD" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (4,1) [DComment (DP (2,1),DP (2,67)) "-- | Convert a list of list of 'Principal's to a 'Component'. Each" Nothing,DComment (DP (1,1),DP (1,57)) "-- inner list is considered to correspond to a 'Clause'." Nothing] [((G AnnDcolon),DP (0,1))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:152:13-25 CN "HsListTy" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 13) DP (0,0) [] [((G AnnOpenS),DP (0,0)),((G AnnCloseS),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:152:13-38 CN "HsForAllTy" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 13) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:152:13-38 CN "HsFunTy" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 13) DP (0,0) [] [((G AnnRarrow),DP (0,1))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:152:14-24 CN "HsListTy" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 14) DP (0,0) [] [((G AnnOpenS),DP (0,0)),((G AnnCloseS),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:152:15-23 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 15) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:152:30-38 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 30) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:153:1-8 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:153:1-72 CN "Match" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnEqual),DP (0,1))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:153:1-72 CN "ValD" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:153:10-11 CN "VarPat" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 10) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:153:13-72 CN "GRHS" NotNeeded,
+  (Ann (DP (0,-1)) (ColDelta 13) DP (0,-1) [] [])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:153:15-23 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 15) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:153:15-38 CN "OpApp" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 15) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:153:15-72 CN "OpApp" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 15) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:153:25 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 25) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:153:27-38 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 27) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:153:40-41 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 40) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:153:43-45 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 43) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:153:43-69 CN "HsApp" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 43) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:153:43-72 CN "HsApp" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 43) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:153:47-69 CN "HsPar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 47) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:153:48-53 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 48) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:153:48-68 CN "OpApp" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 48) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:153:55 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 55) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:153:57-68 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 57) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:153:71-72 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 71) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey <no location info> CN "EmptyLocalBinds" NotNeeded,
+  (Ann (DP (-87,0)) (ColDelta 0) DP (-87,0) [] [])),
+ (AnnKey <no location info> CN "[]" NotNeeded,
+  (Ann (DP (-81,0)) (ColDelta 0) DP (-81,0) [] []))]
+==============
+([((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:1:1,
+    AnnModule),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:67:1-6]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:1:1,
+    AnnWhere),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:72:22-26]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:(67,20)-(72,20),
+    AnnCloseP),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:72:20]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:(67,20)-(72,20),
+    AnnOpenP),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:67:20]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:68:18-21,
+    AnnCloseP),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:68:21]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:68:18-21,
+    AnnComma),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:68:22]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:68:18-21,
+    AnnOpenP),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:68:18]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:68:18-21,
+    AnnVal),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:68:19-20]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:68:24-27,
+    AnnCloseP),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:68:27]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:68:24-27,
+    AnnComma),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:68:28]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:68:24-27,
+    AnnOpenP),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:68:24]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:68:24-27,
+    AnnVal),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:68:25-26]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:68:30-44,
+    AnnCloseP),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:68:44]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:68:30-44,
+    AnnComma),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:69:20]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:68:30-44,
+    AnnDotdot),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:68:42-43]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:68:30-44,
+    AnnOpenP),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:68:41]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:69:22-29,
+    AnnComma),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:69:30]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:69:32-37,
+    AnnComma),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:71:20]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:71:22-30,
+    AnnComma),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:71:31]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:74:1-29,
+    AnnImport),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:74:1-6]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:74:1-29,
+    AnnSemi),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:75:1]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:75:1-32,
+    AnnAs),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:75:27-28]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:75:1-32,
+    AnnImport),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:75:1-6]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:75:1-32,
+    AnnQualified),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:75:8-16]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:75:1-32,
+    AnnSemi),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:76:1]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:75:1-32,
+    AnnVal),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:75:30-32]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:76:1-44,
+    AnnAs),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:76:40-41]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:76:1-44,
+    AnnImport),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:76:1-6]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:76:1-44,
+    AnnQualified),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:76:8-16]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:76:1-44,
+    AnnSemi),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:78:1]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:76:1-44,
+    AnnVal),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:76:43-44]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:78:1-23,
+    AnnEqual),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:78:9]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:78:1-23,
+    AnnSemi),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:81:1]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:78:1-23,
+    AnnType),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:78:1-4]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:(81,1)-(83,31),
+    AnnClass),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:81:1-5]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:(81,1)-(83,31),
+    AnnSemi),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:86:1]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:(81,1)-(83,31),
+    AnnWhere),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:81:21-25]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:83:3-31,
+    AnnDcolon),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:83:15-16]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:83:18-31,
+    AnnRarrow),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:83:20-21]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:(86,1)-(87,18),
+    AnnInstance),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:86:1-8]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:(86,1)-(87,18),
+    AnnSemi),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:89:1]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:(86,1)-(87,18),
+    AnnWhere),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:86:32-36]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:87:3-18,
+    AnnEqual),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:87:15]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:87:3-18,
+    AnnFunId),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:87:3-13]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:(89,1)-(90,46),
+    AnnInstance),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:89:1-8]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:(89,1)-(90,46),
+    AnnSemi),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:92:1]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:(89,1)-(90,46),
+    AnnWhere),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:89:32-36]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:90:3-46,
+    AnnEqual),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:90:17]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:90:3-46,
+    AnnFunId),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:90:3-13]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:90:19-46,
+    AnnVal),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:90:29-30]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:(92,1)-(93,57),
+    AnnInstance),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:92:1-8]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:(92,1)-(93,57),
+    AnnSemi),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:95:1]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:(92,1)-(93,57),
+    AnnWhere),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:92:32-36]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:93:3-57,
+    AnnEqual),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:93:17]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:93:3-57,
+    AnnFunId),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:93:3-13]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:93:19-38,
+    AnnVal),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:93:31]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:93:19-57,
+    AnnVal),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:93:40-41]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:(95,1)-(96,39),
+    AnnInstance),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:95:1-8]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:(95,1)-(96,39),
+    AnnSemi),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:98:1]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:(95,1)-(96,39),
+    AnnWhere),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:95:25-29]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:96:3-39,
+    AnnEqual),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:96:15]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:96:3-39,
+    AnnFunId),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:96:3-13]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:96:17-39,
+    AnnVal),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:96:29]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:(98,1)-(99,37),
+    AnnInstance),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:98:1-8]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:(98,1)-(99,37),
+    AnnSemi),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:101:1]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:(98,1)-(99,37),
+    AnnWhere),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:98:29-33]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:99:3-37,
+    AnnEqual),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:99:15]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:99:3-37,
+    AnnFunId),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:99:3-13]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:99:17-37,
+    AnnVal),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:99:29]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:101:1-11,
+    AnnInfix),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:101:1-6]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:101:1-11,
+    AnnSemi),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:102:1]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:101:1-11,
+    AnnVal),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:101:8]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:102:1-11,
+    AnnInfix),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:102:1-6]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:102:1-11,
+    AnnSemi),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:110:1]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:102:1-11,
+    AnnVal),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:102:8]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:110:1-4,
+    AnnCloseP),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:110:4]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:110:1-4,
+    AnnOpenP),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:110:1]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:110:1-4,
+    AnnVal),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:110:2-3]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:110:1-61,
+    AnnDcolon),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:110:6-7]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:110:1-61,
+    AnnSemi),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:111:1]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:110:9-38,
+    AnnCloseP),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:110:38,
+    ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:110:38]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:110:9-38,
+    AnnDarrow),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:110:40-41]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:110:9-38,
+    AnnOpenP),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:110:9,
+    ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:110:9]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:110:10-22,
+    AnnComma),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:110:23]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:110:43-61,
+    AnnRarrow),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:110:45-46]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:110:48-61,
+    AnnRarrow),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:110:50-51]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:111:1-6,
+    AnnVal),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:111:3-4]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:111:1-56,
+    AnnEqual),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:111:8]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:111:1-56,
+    AnnFunId),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:111:3-4]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:111:1-56,
+    AnnSemi),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:119:1]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:111:10-34,
+    AnnVal),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:111:19-20]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:111:10-56,
+    AnnVal),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:111:36-42]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:111:36-42,
+    AnnBackquote),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:111:36,
+    ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:111:42]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:111:36-42,
+    AnnVal),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:111:37-41]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:119:1-4,
+    AnnCloseP),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:119:4]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:119:1-4,
+    AnnOpenP),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:119:1]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:119:1-4,
+    AnnVal),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:119:2-3]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:119:1-61,
+    AnnDcolon),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:119:6-7]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:119:1-61,
+    AnnSemi),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:120:1]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:119:9-38,
+    AnnCloseP),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:119:38,
+    ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:119:38]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:119:9-38,
+    AnnDarrow),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:119:40-41]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:119:9-38,
+    AnnOpenP),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:119:9,
+    ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:119:9]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:119:10-22,
+    AnnComma),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:119:23]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:119:43-61,
+    AnnRarrow),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:119:45-46]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:119:48-61,
+    AnnRarrow),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:119:50-51]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:120:1-6,
+    AnnVal),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:120:3-4]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:120:1-55,
+    AnnEqual),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:120:8]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:120:1-55,
+    AnnFunId),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:120:3-4]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:120:1-55,
+    AnnSemi),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:131:1]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:120:10-34,
+    AnnVal),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:120:19-20]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:120:10-55,
+    AnnVal),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:120:36-41]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:120:36-41,
+    AnnBackquote),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:120:36,
+    ../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:120:41]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:120:36-41,
+    AnnVal),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:120:37-40]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:131:1-22,
+    AnnDcolon),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:131:11-12]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:131:1-22,
+    AnnSemi),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:132:1]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:132:1-19,
+    AnnEqual),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:132:11]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:132:1-19,
+    AnnFunId),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:132:1-9]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:132:1-19,
+    AnnSemi),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:139:1]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:139:1-20,
+    AnnDcolon),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:139:9-10]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:139:1-20,
+    AnnSemi),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:140:1]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:140:1-16,
+    AnnEqual),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:140:9]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:140:1-16,
+    AnnFunId),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:140:1-7]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:140:1-16,
+    AnnSemi),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:146:1]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:146:1-36,
+    AnnDcolon),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:146:8-9]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:146:1-36,
+    AnnSemi),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:147:1]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:146:11-36,
+    AnnRarrow),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:146:21-22]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:146:24-36,
+    AnnCloseS),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:146:36]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:146:24-36,
+    AnnOpenS),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:146:24]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:146:25-35,
+    AnnCloseS),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:146:35]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:146:25-35,
+    AnnOpenS),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:146:25]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:147:1-71,
+    AnnEqual),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:147:23]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:147:1-71,
+    AnnFunId),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:147:1-6]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:147:1-71,
+    AnnSemi),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:148:1]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:148:1-68,
+    AnnEqual),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:148:23]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:148:1-68,
+    AnnFunId),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:148:1-6]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:148:1-68,
+    AnnSemi),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:152:1]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:148:8-21,
+    AnnCloseP),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:148:21]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:148:8-21,
+    AnnOpenP),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:148:8]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:148:25-68,
+    AnnVal),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:148:53-54]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:148:29-51,
+    AnnCloseP),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:148:51]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:148:29-51,
+    AnnOpenP),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:148:29]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:148:30-50,
+    AnnVal),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:148:41]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:152:1-38,
+    AnnDcolon),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:152:10-11]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:152:1-38,
+    AnnSemi),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:153:1]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:152:13-25,
+    AnnCloseS),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:152:25]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:152:13-25,
+    AnnOpenS),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:152:13]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:152:13-38,
+    AnnRarrow),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:152:27-28]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:152:14-24,
+    AnnCloseS),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:152:24]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:152:14-24,
+    AnnOpenS),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:152:14]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:153:1-72,
+    AnnEqual),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:153:13]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:153:1-72,
+    AnnFunId),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:153:1-8]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:153:1-72,
+    AnnSemi),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:155:1]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:153:15-38,
+    AnnVal),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:153:25]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:153:15-72,
+    AnnVal),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:153:40-41]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:153:47-69,
+    AnnCloseP),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:153:69]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:153:47-69,
+    AnnOpenP),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:153:47]),
+  ((../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:153:48-68,
+    AnnVal),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:153:55]),
+  ((<no location info>, AnnEofPos),
+   [../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:155:1])],
+ [(../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:(67,20)-(72,20),
+   [AnnLineComment "-- * Aliases", AnnLineComment "-- * Operators"]),
+  (../../hackage-packages/dclabel-0.9.0.0/DCLabel/DSL.hs:(81,1)-(83,31),
+   [AnnLineComment "-- | Convert to 'Component'"]),
+  (<no location info>,
+   [AnnLineComment "-- inner list is considered to correspond to a 'Clause'.",
+    AnnLineComment "-- | Convert a list of list of 'Principal's to a 'Component'. Each",
+    AnnLineComment "-- the function returns 'Nothing'.",
+    AnnLineComment "-- 'Component' does not have the value 'DCFalse'. In the latter case",
+    AnnLineComment "-- | Convert a 'Component' to a list of list of 'Principal's if the",
+    AnnLineComment "--", AnnLineComment "-- > anybody = dcTrue",
+    AnnLineComment "--", AnnLineComment "-- no specific principal:",
+    AnnLineComment "-- | Logical truth can be thought of as the component containing",
+    AnnLineComment "--", AnnLineComment "-- > everybody = dcFalse",
+    AnnLineComment "--", AnnLineComment "-- every possible principal:",
+    AnnLineComment "-- | Logical falsehood can be thought of as the component containing",
+    AnnLineComment "--", AnnLineComment "-- Aliases",
+    AnnLineComment "--", AnnLineComment "--", AnnLineComment "-- @",
+    AnnLineComment "-- infixl 7 \\\\/", AnnLineComment "-- @",
+    AnnLineComment "--",
+    AnnLineComment "-- | Disjunction of two 'Principal'-based elements.",
+    AnnLineComment "--", AnnLineComment "-- @",
+    AnnLineComment "-- infixl 6 /&#92;", AnnLineComment "-- @",
+    AnnLineComment "--",
+    AnnLineComment "-- | Conjunction of two 'Principal'-based elements.",
+    AnnLineComment "-- | Convert singleton 'Principal' (in the form of a 'String')to 'Component'.",
+    AnnLineComment "-- | Convert singleton 'Principal' (in the form of a @ByteString@)to 'Component'.",
+    AnnLineComment "-- | Convert singleton 'Principal' to 'Component'.",
+    AnnLineComment "-- | Convert singleton 'Clause' to 'Component'.",
+    AnnLineComment "-- | Identity of 'Component'.",
+    AnnLineComment "-- | Convert a type (e.g., 'Clause', 'Principal') to a label component.",
+    AnnBlockComment "{-|\n  This module implements a ``nano``, very simple, embedded domain\n  specific language to create 'Component's and privilage descriptions\n  from conjunctions of principal disjunctions.\n\n  A 'Component'/'DCPrivDesc' is created using the ('\\/') and ('/\\') operators.\n  The disjunction operator ('\\/') is used to create a 'Clause' from\n  'Principal's, ByteStrings, or a disjunctive sub-expression. For example:\n\n  @\n     p1 = 'principal' \\\"p1\\\"\n     p2 = 'principal' \\\"p2\\\"\n     p3 = 'principal' \\\"p3\\\"\n     e1 = p1 '\\/' p2\n     e2 = e1 '\\/' \\\"p4\\\"\n  @\n\n  Similarly, the conjunction operator ('/\\') is used to create category-sets\n  from 'Principal's, ByteStrings, and conjunctive or disjunctive sub-expressions.\n  For example:\n\n  @\n     e3 = p1 '\\/' p2\n     e4 = e1 '/\\' \\\"p4\\\" '/\\' p3\n  @\n\n  /Note/ that because a clause consists of a disjunction of principals, and a\n  component is composed of the conjunction of categories, ('\\/') binds\n  more tightly than ('/\\').\n\n  Given two 'Component's, one for secrecy and one for integrity, you\n  can create a 'DCLabel' with 'dcLabel'. Given a 'Component' you can\n  create a 'DCPrivDesc' using 'dcPrivDesc'. Finally, given a 'DCPriv'\n  and 'DCPrivDesc' you can create a new minted privilege with\n  'dcDelegatePriv'.\n\n\n  Consider the following, example:\n\n  @\n     l1 = \\\"Alice\\\" '\\/' \\\"Bob\\\" '/\\' \\\"Carla\\\"\n     l2 = \\\"Alice\\\" '/\\' \\\"Carla\\\"\n     dc1 = 'dcLabel' l1 l2\n     dc2 = 'dcLabel' ('toComponent' \\\"Djon\\\") ('toComponent' \\\"Alice\\\")\n     pr = 'dcPrivTCB' . 'dcPrivDesc' $ \\\"Alice\\\" '/\\' \\\"Carla\\\"\n  @\n\nwhere\n\n  * @ dc1 = \\<{[\\\"Alice\\\" &#8897; \\\"Bob\\\"] &#8896; [\\\"Carla\\\"]} , {[\\\"Alice\\\"] &#8896; [\\\"Carla\\\"]}\\>@\n\n  * @ dc2 = \\<{[\\\"Djon\\\"]} , {[\\\"Alice\\\"]}\\>@\n\n  * @ 'canFlowTo' dc1 dc2 = False @\n\n  * @ 'canFlowToP' pr dc1 dc2 = True@\n\n-}",
+    AnnBlockComment "{-# LANGUAGE FlexibleInstances #-}",
+    AnnBlockComment "{-# LANGUAGE TypeSynonymInstances #-}",
+    AnnBlockComment "{-# LANGUAGE Safe #-}",
+    AnnBlockComment "{-# LANGUAGE CPP #-}"])])

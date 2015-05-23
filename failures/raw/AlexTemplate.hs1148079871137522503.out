@@ -1,0 +1,2036 @@
+{-#Language QuasiQuotes#-}
+module Text.Alex.AlexTemplate where
+import AbsSyn
+-- import Text.Alex.Verbatim
+
+
+{-
+alexTemplate GhcTarget = [verbatim|
+-- -----------------------------------------------------------------------------
+-- ALEX TEMPLATE
+--
+-- This code is in the PUBLIC DOMAIN; you may copy it freely and use
+-- it for any purpose whatsoever.
+
+-- -----------------------------------------------------------------------------
+-- INTERNALS and main scanner engine
+
+                                               
+
+                                               
+
+
+data AlexAddr = AlexA# Addr#
+
+-- Never happens
+-- #if __GLASGOW_HASKELL__ < 503
+-- uncheckedShiftL# = shiftL#
+-- #endif
+
+{-# INLINE alexIndexInt16OffAddr #-}
+alexIndexInt16OffAddr (AlexA# arr) off = |] ++
+#ifdef WORDS_BIGENDIAN
+  [verbatim|
+    narrow16Int# i
+    where
+        i    = word2Int# ((high `uncheckedShiftL#` 8#) `or#` low)
+        high = int2Word# (ord# (indexCharOffAddr# arr (off' +# 1#)))
+        low  = int2Word# (ord# (indexCharOffAddr# arr off'))
+        off' = off *# 2#
+  |]
+#else
+  [verbatim|
+    indexInt16OffAddr# arr off
+  |]
+#endif
+  ++ [verbatim|
+
+
+
+
+
+{-# INLINE alexIndexInt32OffAddr #-}
+alexIndexInt32OffAddr (AlexA# arr) off =  |] ++
+#ifdef WORDS_BIGENDIAN
+  [verbatim|
+    narrow32Int# i
+    where
+       !i    = word2Int# ((b3 `uncheckedShiftL#` 24#) `or#`
+             (b2 `uncheckedShiftL#` 16#) `or#`
+             (b1 `uncheckedShiftL#` 8#) `or#` b0)
+       !b3   = int2Word# (ord# (indexCharOffAddr# arr (off' +# 3#)))
+       !b2   = int2Word# (ord# (indexCharOffAddr# arr (off' +# 2#)))
+       !b1   = int2Word# (ord# (indexCharOffAddr# arr (off' +# 1#)))
+       !b0   = int2Word# (ord# (indexCharOffAddr# arr off'))
+       !off' = off *# 4#
+  |]
+#else
+  [verbatim|
+    indexInt32OffAddr# arr off
+  |]
+#endif
+  ++ [verbatim|
+
+
+
+
+-- Never happens
+-- #if __GLASGOW_HASKELL__ < 503
+-- quickIndex arr i = arr ! i
+-- #else
+-- GHC >= 503, unsafeAt is available from Data.Array.Base.
+quickIndex = unsafeAt
+-- #endif
+
+
+
+
+-- -----------------------------------------------------------------------------
+-- Main lexing routines
+
+data AlexReturn a
+  = AlexEOF
+  | AlexError  !AlexInput
+  | AlexSkip   !AlexInput !Int
+  | AlexToken  !AlexInput !Int a
+
+-- alexScan :: AlexInput -> StartCode -> AlexReturn a
+alexScan input (I# (sc))
+  = alexScanUser undefined input (I# (sc))
+
+alexScanUser user input (I# (sc))
+  = case alex_scan_tkn user input 0# input sc AlexNone of
+    (AlexNone, input') ->
+        case alexGetByte input of
+            Nothing ->
+
+
+
+                   AlexEOF
+            Just _ ->
+
+
+
+                   AlexError input'
+
+    (AlexLastSkip input'' len, _) ->
+
+
+
+        AlexSkip input'' len
+
+    (AlexLastAcc k input''' len, _) ->
+
+
+
+        AlexToken input''' len k
+
+
+-- Push the input through the DFA, remembering the most recent accepting
+-- state it encountered.
+
+alex_scan_tkn user orig_input len input s last_acc =
+  input `seq` -- strict in the input
+  let
+    new_acc = (check_accs (alex_accept `quickIndex` (I# (s))))
+  in
+  new_acc `seq`
+  case alexGetByte input of
+     Nothing -> (new_acc, input)
+     Just (c, new_input) ->
+
+
+
+    let
+        (base) = alexIndexInt32OffAddr alex_base s
+        ((I# (ord_c))) = fromIntegral c
+        (offset) = (base +# ord_c)
+        (check)  = alexIndexInt16OffAddr alex_check offset
+
+        (new_s) = if (offset >=# 0#) && (check ==# ord_c)
+              then alexIndexInt16OffAddr alex_table offset
+              else alexIndexInt16OffAddr alex_deflt s
+    in
+    case new_s of
+        -1# -> (new_acc, input)
+        -- on an error, we want to keep the input *before* the
+        -- character that failed, not after.
+            _ -> alex_scan_tkn user orig_input (if c < 0x80 || c >= 0xC0 then (len +# 1#) else len)
+                                                -- note that the length is increased ONLY if this is the 1st byte in a char encoding)
+            new_input new_s new_acc
+
+  where
+    check_accs [] = last_acc
+    check_accs (AlexAcc a : _) = AlexLastAcc a input (I# (len))
+    check_accs (AlexAccSkip : _)  = AlexLastSkip  input (I# (len))
+    check_accs (AlexAccPred a predx : rest)
+       | predx user orig_input (I# (len)) input
+       = AlexLastAcc a input (I# (len))
+    check_accs (AlexAccSkipPred predx : rest)
+       | predx user orig_input (I# (len)) input
+       = AlexLastSkip input (I# (len))
+    check_accs (_ : rest) = check_accs rest
+
+data AlexLastAcc a
+  = AlexNone
+  | AlexLastAcc a !AlexInput !Int
+  | AlexLastSkip  !AlexInput !Int
+
+instance Functor AlexLastAcc where
+    fmap f AlexNone = AlexNone
+    fmap f (AlexLastAcc x y z) = AlexLastAcc (f x) y z
+    fmap f (AlexLastSkip x y) = AlexLastSkip x y
+
+data AlexAcc a user
+  = AlexAcc a
+  | AlexAccSkip
+  | AlexAccPred a (AlexAccPred user)
+  | AlexAccSkipPred (AlexAccPred user)
+
+type AlexAccPred user = user -> AlexInput -> Int -> AlexInput -> Bool
+
+-- -----------------------------------------------------------------------------
+-- Predicates on a rule
+
+alexAndPred p1 p2 user in1 len in2
+  = p1 user in1 len in2 && p2 user in1 len in2
+
+--alexPrevCharIsPred :: Char -> AlexAccPred _
+alexPrevCharIs c _ input _ _ = c == alexInputPrevChar input
+
+alexPrevCharMatches f _ input _ _ = f (alexInputPrevChar input)
+
+--alexPrevCharIsOneOfPred :: Array Char Bool -> AlexAccPred _
+alexPrevCharIsOneOf arr _ input _ _ = arr ! alexInputPrevChar input
+
+--alexRightContext :: Int -> AlexAccPred _
+alexRightContext (I# (sc)) user _ _ input =
+     case alex_scan_tkn user input 0# input sc AlexNone of
+      (AlexNone, _) -> False
+      _ -> True
+    -- TODO: there's no need to find the longest
+    -- match when checking the right context, just
+    -- the first match will do.
+
+-- used by wrappers
+iUnbox (I# (i)) = i
+|]
+
+-}
+
+{-# LINE 47 "templates\\GenericTemplate.hs" #-}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+-- This code is in the PUBLIC DOMAIN; you may copy it freely and use
+-- it for any purpose whatsoever.
+
+alexTemplate _  = unlines[
+  "alexIndexInt16OffAddr arr off = arr ! off",
+  "alexIndexInt32OffAddr arr off = arr ! off",
+  "quickIndex arr i = arr ! i",
+
+  "-- -----------------------------------------------------------------------------",
+  "-- Main lexing routines",
+  "",
+  "data AlexReturn a",
+  "  = AlexEOF",
+  "  | AlexError  !AlexInput",
+  "  | AlexSkip   !AlexInput !Int",
+  "  | AlexToken  !AlexInput !Int a",
+  "",
+  "-- alexScan :: AlexInput -> StartCode -> AlexReturn a",
+  "alexScan input (sc)",
+  "  = alexScanUser undefined input (sc)",
+  "",
+  "alexScanUser user input (sc)",
+  "  = case alex_scan_tkn user input (0) input sc AlexNone of",
+  "\t(AlexNone, input') ->",
+  "\t\tcase alexGetByte input of",
+  "\t\t\tNothing -> ",
+  "",
+  "",
+  "",
+  "\t\t\t\t   AlexEOF",
+  "\t\t\tJust _ ->",
+  "",
+  "",
+  "",
+  "\t\t\t\t   AlexError input'",
+  "",
+  "\t(AlexLastSkip input'' len, _) ->",
+  "",
+  "",
+  "",
+  "\t\tAlexSkip input'' len",
+  "",
+  "\t(AlexLastAcc k input''' len, _) ->",
+  "",
+  "",
+  "",
+  "\t\tAlexToken input''' len k",
+  "",
+  "",
+  "-- Push the input through the DFA, remembering the most recent accepting",
+  "-- state it encountered.",
+  "",
+  "alex_scan_tkn user orig_input len input s last_acc =",
+  "  input `seq` -- strict in the input",
+  "  let ",
+  "\tnew_acc = (check_accs (alex_accept `quickIndex` (s)))",
+  "  in",
+  "  new_acc `seq`",
+  "  case alexGetByte input of",
+  "     Nothing -> (new_acc, input)",
+  "     Just (c, new_input) -> ",
+  "",
+  "",
+  "",
+  "\tlet",
+  "\t\t(base) = alexIndexInt32OffAddr alex_base s",
+  "\t\t((ord_c)) = fromIntegral c",
+  "\t\t(offset) = (base + ord_c)",
+  "\t\t(check)  = alexIndexInt16OffAddr alex_check offset",
+  "\t\t",
+  "\t\t(new_s) = if (offset >= (0)) && (check == ord_c)",
+  "\t\t\t  then alexIndexInt16OffAddr alex_table offset",
+  "\t\t\t  else alexIndexInt16OffAddr alex_deflt s",
+  "\tin",
+  "\tcase new_s of ",
+  "\t    (-1) -> (new_acc, input)",
+  "\t\t-- on an error, we want to keep the input *before* the",
+  "\t\t-- character that failed, not after.",
+  "    \t    _ -> alex_scan_tkn user orig_input (if c < 0x80 || c >= 0xC0 then (len + (1)) else len)",
+  "                                                -- note that the length is increased ONLY if this is the 1st byte in a char encoding)",
+  "\t\t\tnew_input new_s new_acc",
+  "",
+  "  where",
+  "\tcheck_accs [] = last_acc",
+  "\tcheck_accs (AlexAcc a : _) = AlexLastAcc a input (len)",
+  "\tcheck_accs (AlexAccSkip : _)  = AlexLastSkip  input (len)",
+  "\tcheck_accs (AlexAccPred a predx : rest)",
+  "\t   | predx user orig_input (len) input",
+  "\t   = AlexLastAcc a input (len)",
+  "\tcheck_accs (AlexAccSkipPred predx : rest)",
+  "\t   | predx user orig_input (len) input",
+  "\t   = AlexLastSkip input (len)",
+  "\tcheck_accs (_ : rest) = check_accs rest",
+  "",
+  "data AlexLastAcc a",
+  "  = AlexNone",
+  "  | AlexLastAcc a !AlexInput !Int",
+  "  | AlexLastSkip  !AlexInput !Int",
+  "",
+  "instance Functor AlexLastAcc where",
+  "    fmap f AlexNone = AlexNone",
+  "    fmap f (AlexLastAcc x y z) = AlexLastAcc (f x) y z",
+  "    fmap f (AlexLastSkip x y) = AlexLastSkip x y",
+  "",
+  "data AlexAcc a user",
+  "  = AlexAcc a",
+  "  | AlexAccSkip",
+  "  | AlexAccPred a (AlexAccPred user)",
+  "  | AlexAccSkipPred (AlexAccPred user)",
+  "",
+  "type AlexAccPred user = user -> AlexInput -> Int -> AlexInput -> Bool",
+  "",
+  "-- -----------------------------------------------------------------------------",
+  "-- Predicates on a rule",
+  "",
+  "alexAndPred p1 p2 user in1 len in2",
+  "  = p1 user in1 len in2 && p2 user in1 len in2",
+  "",
+  "--alexPrevCharIsPred :: Char -> AlexAccPred _ ",
+  "alexPrevCharIs c _ input _ _ = c == alexInputPrevChar input",
+  "",
+  "alexPrevCharMatches f _ input _ _ = f (alexInputPrevChar input)",
+  "",
+  "--alexPrevCharIsOneOfPred :: Array Char Bool -> AlexAccPred _ ",
+  "alexPrevCharIsOneOf arr _ input _ _ = arr ! alexInputPrevChar input",
+  "",
+  "--alexRightContext :: Int -> AlexAccPred _",
+  "alexRightContext (sc) user _ _ input = ",
+  "     case alex_scan_tkn user input (0) input sc AlexNone of",
+  "\t  (AlexNone, _) -> False",
+  "\t  _ -> True",
+  "\t-- TODO: there's no need to find the longest",
+  "\t-- match when checking the right context, just",
+  "\t-- the first match will do.",
+  "",
+  "-- used by wrappers",
+  "iUnbox (i) = i"
+  ]
+
+==============
+../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs
+==============
+lengths:(10480,10232)
+
+==============
+
+({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:1:1
+  }
+ Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((AnnComment DComment (DP (0,0),DP (0,26)) "{-#Language QuasiQuotes#-}" Nothing),DP (0,0)),((G AnnModule),DP (1,1)),((G AnnVal),DP (0,1)),((G AnnWhere),DP (0,1)),((G AnnEofPos),DP (1,0))])
+ (HsModule 
+  (Just 
+   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:2:8-29
+     }
+    Nothing{ModuleName: Text.Alex.AlexTemplate})) 
+  (Nothing) 
+  [
+   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:3:1-13
+     }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [((G AnnImport),DP (0,0)),((G AnnVal),DP (0,1))])
+    (ImportDecl 
+     (Nothing) 
+     ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:3:8-13
+       }
+      Nothing{ModuleName: AbsSyn}) 
+     (Nothing) 
+     (False) 
+     (False) 
+     (False) 
+     (False) 
+     (Nothing) 
+     (Nothing)))] 
+  [
+   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:(229,1)-(363,3)
+     }
+    Just (Ann (DP (2,1)) (ColDelta 1) DP (226,1) [DComment (DP (1,1),DP (1,29)) "-- import Text.Alex.Verbatim" Nothing,DComment (DP (3,1),DP (215,3)) "{-\nalexTemplate GhcTarget = [verbatim|\n-- -----------------------------------------------------------------------------\n-- ALEX TEMPLATE\n--\n-- This code is in the PUBLIC DOMAIN; you may copy it freely and use\n-- it for any purpose whatsoever.\n\n-- -----------------------------------------------------------------------------\n-- INTERNALS and main scanner engine\n\n                                               \n\n                                               \n\n\ndata AlexAddr = AlexA# Addr#\n\n-- Never happens\n-- #if __GLASGOW_HASKELL__ < 503\n-- uncheckedShiftL# = shiftL#\n-- #endif\n\n{-# INLINE alexIndexInt16OffAddr #-}\nalexIndexInt16OffAddr (AlexA# arr) off = |] ++\n#ifdef WORDS_BIGENDIAN\n  [verbatim|\n    narrow16Int# i\n    where\n        i    = word2Int# ((high `uncheckedShiftL#` 8#) `or#` low)\n        high = int2Word# (ord# (indexCharOffAddr# arr (off' +# 1#)))\n        low  = int2Word# (ord# (indexCharOffAddr# arr off'))\n        off' = off *# 2#\n  |]\n#else\n  [verbatim|\n    indexInt16OffAddr# arr off\n  |]\n#endif\n  ++ [verbatim|\n\n\n\n\n\n{-# INLINE alexIndexInt32OffAddr #-}\nalexIndexInt32OffAddr (AlexA# arr) off =  |] ++\n#ifdef WORDS_BIGENDIAN\n  [verbatim|\n    narrow32Int# i\n    where\n       !i    = word2Int# ((b3 `uncheckedShiftL#` 24#) `or#`\n             (b2 `uncheckedShiftL#` 16#) `or#`\n             (b1 `uncheckedShiftL#` 8#) `or#` b0)\n       !b3   = int2Word# (ord# (indexCharOffAddr# arr (off' +# 3#)))\n       !b2   = int2Word# (ord# (indexCharOffAddr# arr (off' +# 2#)))\n       !b1   = int2Word# (ord# (indexCharOffAddr# arr (off' +# 1#)))\n       !b0   = int2Word# (ord# (indexCharOffAddr# arr off'))\n       !off' = off *# 4#\n  |]\n#else\n  [verbatim|\n    indexInt32OffAddr# arr off\n  |]\n#endif\n  ++ [verbatim|\n\n\n\n\n-- Never happens\n-- #if __GLASGOW_HASKELL__ < 503\n-- quickIndex arr i = arr ! i\n-- #else\n-- GHC >= 503, unsafeAt is available from Data.Array.Base.\nquickIndex = unsafeAt\n-- #endif\n\n\n\n\n-- -----------------------------------------------------------------------------\n-- Main lexing routines\n\ndata AlexReturn a\n  = AlexEOF\n  | AlexError  !AlexInput\n  | AlexSkip   !AlexInput !Int\n  | AlexToken  !AlexInput !Int a\n\n-- alexScan :: AlexInput -> StartCode -> AlexReturn a\nalexScan input (I# (sc))\n  = alexScanUser undefined input (I# (sc))\n\nalexScanUser user input (I# (sc))\n  = case alex_scan_tkn user input 0# input sc AlexNone of\n    (AlexNone, input') ->\n        case alexGetByte input of\n            Nothing ->\n\n\n\n                   AlexEOF\n            Just _ ->\n\n\n\n                   AlexError input'\n\n    (AlexLastSkip input'' len, _) ->\n\n\n\n        AlexSkip input'' len\n\n    (AlexLastAcc k input''' len, _) ->\n\n\n\n        AlexToken input''' len k\n\n\n-- Push the input through the DFA, remembering the most recent accepting\n-- state it encountered.\n\nalex_scan_tkn user orig_input len input s last_acc =\n  input `seq` -- strict in the input\n  let\n    new_acc = (check_accs (alex_accept `quickIndex` (I# (s))))\n  in\n  new_acc `seq`\n  case alexGetByte input of\n     Nothing -> (new_acc, input)\n     Just (c, new_input) ->\n\n\n\n    let\n        (base) = alexIndexInt32OffAddr alex_base s\n        ((I# (ord_c))) = fromIntegral c\n        (offset) = (base +# ord_c)\n        (check)  = alexIndexInt16OffAddr alex_check offset\n\n        (new_s) = if (offset >=# 0#) && (check ==# ord_c)\n              then alexIndexInt16OffAddr alex_table offset\n              else alexIndexInt16OffAddr alex_deflt s\n    in\n    case new_s of\n        -1# -> (new_acc, input)\n        -- on an error, we want to keep the input *before* the\n        -- character that failed, not after.\n            _ -> alex_scan_tkn user orig_input (if c < 0x80 || c >= 0xC0 then (len +# 1#) else len)\n                                                -- note that the length is increased ONLY if this is the 1st byte in a char encoding)\n            new_input new_s new_acc\n\n  where\n    check_accs [] = last_acc\n    check_accs (AlexAcc a : _) = AlexLastAcc a input (I# (len))\n    check_accs (AlexAccSkip : _)  = AlexLastSkip  input (I# (len))\n    check_accs (AlexAccPred a predx : rest)\n       | predx user orig_input (I# (len)) input\n       = AlexLastAcc a input (I# (len))\n    check_accs (AlexAccSkipPred predx : rest)\n       | predx user orig_input (I# (len)) input\n       = AlexLastSkip input (I# (len))\n    check_accs (_ : rest) = check_accs rest\n\ndata AlexLastAcc a\n  = AlexNone\n  | AlexLastAcc a !AlexInput !Int\n  | AlexLastSkip  !AlexInput !Int\n\ninstance Functor AlexLastAcc where\n    fmap f AlexNone = AlexNone\n    fmap f (AlexLastAcc x y z) = AlexLastAcc (f x) y z\n    fmap f (AlexLastSkip x y) = AlexLastSkip x y\n\ndata AlexAcc a user\n  = AlexAcc a\n  | AlexAccSkip\n  | AlexAccPred a (AlexAccPred user)\n  | AlexAccSkipPred (AlexAccPred user)\n\ntype AlexAccPred user = user -> AlexInput -> Int -> AlexInput -> Bool\n\n-- -----------------------------------------------------------------------------\n-- Predicates on a rule\n\nalexAndPred p1 p2 user in1 len in2\n  = p1 user in1 len in2 && p2 user in1 len in2\n\n--alexPrevCharIsPred :: Char -> AlexAccPred _\nalexPrevCharIs c _ input _ _ = c == alexInputPrevChar input\n\nalexPrevCharMatches f _ input _ _ = f (alexInputPrevChar input)\n\n--alexPrevCharIsOneOfPred :: Array Char Bool -> AlexAccPred _\nalexPrevCharIsOneOf arr _ input _ _ = arr ! alexInputPrevChar input\n\n--alexRightContext :: Int -> AlexAccPred _\nalexRightContext (I# (sc)) user _ _ input =\n     case alex_scan_tkn user input 0# input sc AlexNone of\n      (AlexNone, _) -> False\n      _ -> True\n    -- TODO: there's no need to find the longest\n    -- match when checking the right context, just\n    -- the first match will do.\n\n-- used by wrappers\niUnbox (I# (i)) = i\n|]\n\n-}" Nothing,DComment (DP (-201,1),DP (-201,48)) "{-# LINE 37 \"templates\\\\GenericTemplate.hs\" #-}" Nothing,DComment (DP (2,1),DP (2,48)) "{-# LINE 47 \"templates\\\\GenericTemplate.hs\" #-}" Nothing,DComment (DP (206,1),DP (206,69)) "-- This code is in the PUBLIC DOMAIN; you may copy it freely and use" Nothing,DComment (DP (1,1),DP (1,34)) "-- it for any purpose whatsoever." Nothing] [])
+    (ValD 
+     (FunBind 
+      ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:229:1-12
+        }
+       Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+       (Unqual {OccName: alexTemplate})) 
+      (False) 
+      (MG 
+       [
+        ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:(229,1)-(363,3)
+          }
+         Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnEqual),DP (0,2))])
+         (Match 
+          (Just 
+           ((,) 
+            ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:229:1-12
+              }
+             Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+             (Unqual {OccName: alexTemplate})) 
+            (False))) 
+          [
+           ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:229:14
+             }
+            Just (Ann (DP (0,1)) (ColDelta 14) DP (0,1) [] [((G AnnVal),DP (0,0))])
+            (WildPat 
+             (PlaceHolder)))] 
+          (Nothing) 
+          (GRHSs 
+           [
+            ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:(229,17)-(363,3)
+              }
+             Just (Ann (DP (0,-1)) (ColDelta 17) DP (0,-1) [] [])
+             (GRHS 
+              [] 
+              ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:(229,19)-(363,3)
+                }
+               Just (Ann (DP (0,1)) (ColDelta 19) DP (0,1) [] [])
+               (HsApp 
+                ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:229:19-25
+                  }
+                 Just (Ann (DP (0,0)) (ColDelta 19) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                 (HsVar 
+                  (Unqual {OccName: unlines}))) 
+                ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:(229,26)-(363,3)
+                  }
+                 Just (Ann (DP (0,0)) (ColDelta 26) DP (0,0) [] [((G AnnOpenS),DP (0,0)),((G AnnCloseS),DP (1,3))])
+                 (ExplicitList 
+                  (PlaceHolder) 
+                  (Nothing) 
+                  [
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:230:3-45
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"alexIndexInt16OffAddr arr off = arr ! off\"" {FastString: "alexIndexInt16OffAddr arr off = arr ! off"}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:231:3-45
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"alexIndexInt32OffAddr arr off = arr ! off\"" {FastString: "alexIndexInt32OffAddr arr off = arr ! off"}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:232:3-30
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"quickIndex arr i = arr ! i\"" {FastString: "quickIndex arr i = arr ! i"}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:234:3-84
+                     }
+                    Just (Ann (DP (2,3)) (ColDelta 3) DP (2,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"-- -----------------------------------------------------------------------------\"" {FastString: "-- -----------------------------------------------------------------------------"}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:235:3-27
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"-- Main lexing routines\"" {FastString: "-- Main lexing routines"}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:236:3-4
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"\"" {FastString: ""}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:237:3-21
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"data AlexReturn a\"" {FastString: "data AlexReturn a"}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:238:3-15
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"  = AlexEOF\"" {FastString: "  = AlexEOF"}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:239:3-29
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"  | AlexError  !AlexInput\"" {FastString: "  | AlexError  !AlexInput"}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:240:3-34
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"  | AlexSkip   !AlexInput !Int\"" {FastString: "  | AlexSkip   !AlexInput !Int"}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:241:3-36
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"  | AlexToken  !AlexInput !Int a\"" {FastString: "  | AlexToken  !AlexInput !Int a"}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:242:3-4
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"\"" {FastString: ""}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:243:3-57
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"-- alexScan :: AlexInput -> StartCode -> AlexReturn a\"" {FastString: "-- alexScan :: AlexInput -> StartCode -> AlexReturn a"}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:244:3-23
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"alexScan input (sc)\"" {FastString: "alexScan input (sc)"}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:245:3-41
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"  = alexScanUser undefined input (sc)\"" {FastString: "  = alexScanUser undefined input (sc)"}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:246:3-4
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"\"" {FastString: ""}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:247:3-32
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"alexScanUser user input (sc)\"" {FastString: "alexScanUser user input (sc)"}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:248:3-62
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"  = case alex_scan_tkn user input (0) input sc AlexNone of\"" {FastString: "  = case alex_scan_tkn user input (0) input sc AlexNone of"}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:249:3-27
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"\\t(AlexNone, input') ->\"" {FastString: "\t(AlexNone, input') ->"}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:250:3-33
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"\\t\\tcase alexGetByte input of\"" {FastString: "\t\tcase alexGetByte input of"}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:251:3-21
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"\\t\\t\\tNothing -> \"" {FastString: "\t\t\tNothing -> "}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:252:3-4
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"\"" {FastString: ""}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:253:3-4
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"\"" {FastString: ""}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:254:3-4
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"\"" {FastString: ""}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:255:3-22
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"\\t\\t\\t\\t   AlexEOF\"" {FastString: "\t\t\t\t   AlexEOF"}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:256:3-19
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"\\t\\t\\tJust _ ->\"" {FastString: "\t\t\tJust _ ->"}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:257:3-4
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"\"" {FastString: ""}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:258:3-4
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"\"" {FastString: ""}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:259:3-4
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"\"" {FastString: ""}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:260:3-31
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"\\t\\t\\t\\t   AlexError input'\"" {FastString: "\t\t\t\t   AlexError input'"}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:261:3-4
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"\"" {FastString: ""}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:262:3-38
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"\\t(AlexLastSkip input'' len, _) ->\"" {FastString: "\t(AlexLastSkip input'' len, _) ->"}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:263:3-4
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"\"" {FastString: ""}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:264:3-4
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"\"" {FastString: ""}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:265:3-4
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"\"" {FastString: ""}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:266:3-28
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"\\t\\tAlexSkip input'' len\"" {FastString: "\t\tAlexSkip input'' len"}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:267:3-4
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"\"" {FastString: ""}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:268:3-40
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"\\t(AlexLastAcc k input''' len, _) ->\"" {FastString: "\t(AlexLastAcc k input''' len, _) ->"}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:269:3-4
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"\"" {FastString: ""}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:270:3-4
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"\"" {FastString: ""}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:271:3-4
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"\"" {FastString: ""}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:272:3-32
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"\\t\\tAlexToken input''' len k\"" {FastString: "\t\tAlexToken input''' len k"}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:273:3-4
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"\"" {FastString: ""}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:274:3-4
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"\"" {FastString: ""}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:275:3-76
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"-- Push the input through the DFA, remembering the most recent accepting\"" {FastString: "-- Push the input through the DFA, remembering the most recent accepting"}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:276:3-28
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"-- state it encountered.\"" {FastString: "-- state it encountered."}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:277:3-4
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"\"" {FastString: ""}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:278:3-56
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"alex_scan_tkn user orig_input len input s last_acc =\"" {FastString: "alex_scan_tkn user orig_input len input s last_acc ="}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:279:3-40
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"  input `seq` -- strict in the input\"" {FastString: "  input `seq` -- strict in the input"}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:280:3-10
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"  let \"" {FastString: "  let "}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:281:3-59
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"\\tnew_acc = (check_accs (alex_accept `quickIndex` (s)))\"" {FastString: "\tnew_acc = (check_accs (alex_accept `quickIndex` (s)))"}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:282:3-8
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"  in\"" {FastString: "  in"}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:283:3-19
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"  new_acc `seq`\"" {FastString: "  new_acc `seq`"}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:284:3-31
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"  case alexGetByte input of\"" {FastString: "  case alexGetByte input of"}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:285:3-36
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"     Nothing -> (new_acc, input)\"" {FastString: "     Nothing -> (new_acc, input)"}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:286:3-32
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"     Just (c, new_input) -> \"" {FastString: "     Just (c, new_input) -> "}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:287:3-4
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"\"" {FastString: ""}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:288:3-4
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"\"" {FastString: ""}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:289:3-4
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"\"" {FastString: ""}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:290:3-9
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"\\tlet\"" {FastString: "\tlet"}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:291:3-50
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"\\t\\t(base) = alexIndexInt32OffAddr alex_base s\"" {FastString: "\t\t(base) = alexIndexInt32OffAddr alex_base s"}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:292:3-34
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"\\t\\t((ord_c)) = fromIntegral c\"" {FastString: "\t\t((ord_c)) = fromIntegral c"}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:293:3-33
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"\\t\\t(offset) = (base + ord_c)\"" {FastString: "\t\t(offset) = (base + ord_c)"}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:294:3-58
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"\\t\\t(check)  = alexIndexInt16OffAddr alex_check offset\"" {FastString: "\t\t(check)  = alexIndexInt16OffAddr alex_check offset"}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:295:3-8
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"\\t\\t\"" {FastString: "\t\t"}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:296:3-56
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"\\t\\t(new_s) = if (offset >= (0)) && (check == ord_c)\"" {FastString: "\t\t(new_s) = if (offset >= (0)) && (check == ord_c)"}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:297:3-56
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"\\t\\t\\t  then alexIndexInt16OffAddr alex_table offset\"" {FastString: "\t\t\t  then alexIndexInt16OffAddr alex_table offset"}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:298:3-51
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"\\t\\t\\t  else alexIndexInt16OffAddr alex_deflt s\"" {FastString: "\t\t\t  else alexIndexInt16OffAddr alex_deflt s"}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:299:3-8
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"\\tin\"" {FastString: "\tin"}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:300:3-20
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"\\tcase new_s of \"" {FastString: "\tcase new_s of "}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:301:3-34
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"\\t    (-1) -> (new_acc, input)\"" {FastString: "\t    (-1) -> (new_acc, input)"}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:302:3-62
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"\\t\\t-- on an error, we want to keep the input *before* the\"" {FastString: "\t\t-- on an error, we want to keep the input *before* the"}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:303:3-44
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"\\t\\t-- character that failed, not after.\"" {FastString: "\t\t-- character that failed, not after."}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:304:3-101
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"    \\t    _ -> alex_scan_tkn user orig_input (if c < 0x80 || c >= 0xC0 then (len + (1)) else len)\"" {FastString: "    \t    _ -> alex_scan_tkn user orig_input (if c < 0x80 || c >= 0xC0 then (len + (1)) else len)"}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:305:3-137
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"                                                -- note that the length is increased ONLY if this is the 1st byte in a char encoding)\"" {FastString: "                                                -- note that the length is increased ONLY if this is the 1st byte in a char encoding)"}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:306:3-33
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"\\t\\t\\tnew_input new_s new_acc\"" {FastString: "\t\t\tnew_input new_s new_acc"}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:307:3-4
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"\"" {FastString: ""}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:308:3-11
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"  where\"" {FastString: "  where"}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:309:3-30
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"\\tcheck_accs [] = last_acc\"" {FastString: "\tcheck_accs [] = last_acc"}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:310:3-60
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"\\tcheck_accs (AlexAcc a : _) = AlexLastAcc a input (len)\"" {FastString: "\tcheck_accs (AlexAcc a : _) = AlexLastAcc a input (len)"}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:311:3-63
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"\\tcheck_accs (AlexAccSkip : _)  = AlexLastSkip  input (len)\"" {FastString: "\tcheck_accs (AlexAccSkip : _)  = AlexLastSkip  input (len)"}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:312:3-45
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"\\tcheck_accs (AlexAccPred a predx : rest)\"" {FastString: "\tcheck_accs (AlexAccPred a predx : rest)"}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:313:3-44
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"\\t   | predx user orig_input (len) input\"" {FastString: "\t   | predx user orig_input (len) input"}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:314:3-36
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"\\t   = AlexLastAcc a input (len)\"" {FastString: "\t   = AlexLastAcc a input (len)"}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:315:3-47
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"\\tcheck_accs (AlexAccSkipPred predx : rest)\"" {FastString: "\tcheck_accs (AlexAccSkipPred predx : rest)"}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:316:3-44
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"\\t   | predx user orig_input (len) input\"" {FastString: "\t   | predx user orig_input (len) input"}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:317:3-35
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"\\t   = AlexLastSkip input (len)\"" {FastString: "\t   = AlexLastSkip input (len)"}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:318:3-45
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"\\tcheck_accs (_ : rest) = check_accs rest\"" {FastString: "\tcheck_accs (_ : rest) = check_accs rest"}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:319:3-4
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"\"" {FastString: ""}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:320:3-22
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"data AlexLastAcc a\"" {FastString: "data AlexLastAcc a"}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:321:3-16
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"  = AlexNone\"" {FastString: "  = AlexNone"}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:322:3-37
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"  | AlexLastAcc a !AlexInput !Int\"" {FastString: "  | AlexLastAcc a !AlexInput !Int"}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:323:3-37
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"  | AlexLastSkip  !AlexInput !Int\"" {FastString: "  | AlexLastSkip  !AlexInput !Int"}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:324:3-4
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"\"" {FastString: ""}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:325:3-38
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"instance Functor AlexLastAcc where\"" {FastString: "instance Functor AlexLastAcc where"}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:326:3-34
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"    fmap f AlexNone = AlexNone\"" {FastString: "    fmap f AlexNone = AlexNone"}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:327:3-58
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"    fmap f (AlexLastAcc x y z) = AlexLastAcc (f x) y z\"" {FastString: "    fmap f (AlexLastAcc x y z) = AlexLastAcc (f x) y z"}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:328:3-52
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"    fmap f (AlexLastSkip x y) = AlexLastSkip x y\"" {FastString: "    fmap f (AlexLastSkip x y) = AlexLastSkip x y"}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:329:3-4
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"\"" {FastString: ""}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:330:3-23
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"data AlexAcc a user\"" {FastString: "data AlexAcc a user"}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:331:3-17
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"  = AlexAcc a\"" {FastString: "  = AlexAcc a"}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:332:3-19
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"  | AlexAccSkip\"" {FastString: "  | AlexAccSkip"}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:333:3-40
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"  | AlexAccPred a (AlexAccPred user)\"" {FastString: "  | AlexAccPred a (AlexAccPred user)"}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:334:3-42
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"  | AlexAccSkipPred (AlexAccPred user)\"" {FastString: "  | AlexAccSkipPred (AlexAccPred user)"}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:335:3-4
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"\"" {FastString: ""}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:336:3-73
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"type AlexAccPred user = user -> AlexInput -> Int -> AlexInput -> Bool\"" {FastString: "type AlexAccPred user = user -> AlexInput -> Int -> AlexInput -> Bool"}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:337:3-4
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"\"" {FastString: ""}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:338:3-84
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"-- -----------------------------------------------------------------------------\"" {FastString: "-- -----------------------------------------------------------------------------"}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:339:3-27
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"-- Predicates on a rule\"" {FastString: "-- Predicates on a rule"}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:340:3-4
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"\"" {FastString: ""}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:341:3-38
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"alexAndPred p1 p2 user in1 len in2\"" {FastString: "alexAndPred p1 p2 user in1 len in2"}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:342:3-50
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"  = p1 user in1 len in2 && p2 user in1 len in2\"" {FastString: "  = p1 user in1 len in2 && p2 user in1 len in2"}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:343:3-4
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"\"" {FastString: ""}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:344:3-50
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"--alexPrevCharIsPred :: Char -> AlexAccPred _ \"" {FastString: "--alexPrevCharIsPred :: Char -> AlexAccPred _ "}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:345:3-63
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"alexPrevCharIs c _ input _ _ = c == alexInputPrevChar input\"" {FastString: "alexPrevCharIs c _ input _ _ = c == alexInputPrevChar input"}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:346:3-4
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"\"" {FastString: ""}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:347:3-67
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"alexPrevCharMatches f _ input _ _ = f (alexInputPrevChar input)\"" {FastString: "alexPrevCharMatches f _ input _ _ = f (alexInputPrevChar input)"}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:348:3-4
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"\"" {FastString: ""}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:349:3-66
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"--alexPrevCharIsOneOfPred :: Array Char Bool -> AlexAccPred _ \"" {FastString: "--alexPrevCharIsOneOfPred :: Array Char Bool -> AlexAccPred _ "}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:350:3-71
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"alexPrevCharIsOneOf arr _ input _ _ = arr ! alexInputPrevChar input\"" {FastString: "alexPrevCharIsOneOf arr _ input _ _ = arr ! alexInputPrevChar input"}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:351:3-4
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"\"" {FastString: ""}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:352:3-46
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"--alexRightContext :: Int -> AlexAccPred _\"" {FastString: "--alexRightContext :: Int -> AlexAccPred _"}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:353:3-43
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"alexRightContext (sc) user _ _ input = \"" {FastString: "alexRightContext (sc) user _ _ input = "}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:354:3-63
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"     case alex_scan_tkn user input (0) input sc AlexNone of\"" {FastString: "     case alex_scan_tkn user input (0) input sc AlexNone of"}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:355:3-30
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"\\t  (AlexNone, _) -> False\"" {FastString: "\t  (AlexNone, _) -> False"}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:356:3-17
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"\\t  _ -> True\"" {FastString: "\t  _ -> True"}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:357:3-50
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"\\t-- TODO: there's no need to find the longest\"" {FastString: "\t-- TODO: there's no need to find the longest"}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:358:3-52
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"\\t-- match when checking the right context, just\"" {FastString: "\t-- match when checking the right context, just"}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:359:3-33
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"\\t-- the first match will do.\"" {FastString: "\t-- the first match will do."}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:360:3-4
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"\"" {FastString: ""}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:361:3-23
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"-- used by wrappers\"" {FastString: "-- used by wrappers"}))),
+                   ({ ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:362:3-18
+                     }
+                    Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0))])
+                    (HsLit 
+                     (HsString "\"iUnbox (i) = i\"" {FastString: "iUnbox (i) = i"})))]))))))] 
+           (EmptyLocalBinds))))] 
+       [] 
+       (PlaceHolder) 
+       (FromSource)) 
+      (WpHole) 
+      (PlaceHolder) 
+      [])))] 
+  (Nothing) 
+  (Nothing)))
+==============
+[(AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:1:1 CN "HsModule" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((AnnComment DComment (DP (0,0),DP (0,26)) "{-#Language QuasiQuotes#-}" Nothing),DP (0,0)),((G AnnModule),DP (1,1)),((G AnnVal),DP (0,1)),((G AnnWhere),DP (0,1)),((G AnnEofPos),DP (1,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:3:1-13 CN "ImportDecl" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [((G AnnImport),DP (0,0)),((G AnnVal),DP (0,1))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:229:1-12 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:(229,1)-(363,3) CN "Match" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnEqual),DP (0,2))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:(229,1)-(363,3) CN "ValD" NotNeeded,
+  (Ann (DP (2,1)) (ColDelta 1) DP (226,1) [DComment (DP (1,1),DP (1,29)) "-- import Text.Alex.Verbatim" Nothing,DComment (DP (3,1),DP (215,3)) "{-\nalexTemplate GhcTarget = [verbatim|\n-- -----------------------------------------------------------------------------\n-- ALEX TEMPLATE\n--\n-- This code is in the PUBLIC DOMAIN; you may copy it freely and use\n-- it for any purpose whatsoever.\n\n-- -----------------------------------------------------------------------------\n-- INTERNALS and main scanner engine\n\n                                               \n\n                                               \n\n\ndata AlexAddr = AlexA# Addr#\n\n-- Never happens\n-- #if __GLASGOW_HASKELL__ < 503\n-- uncheckedShiftL# = shiftL#\n-- #endif\n\n{-# INLINE alexIndexInt16OffAddr #-}\nalexIndexInt16OffAddr (AlexA# arr) off = |] ++\n#ifdef WORDS_BIGENDIAN\n  [verbatim|\n    narrow16Int# i\n    where\n        i    = word2Int# ((high `uncheckedShiftL#` 8#) `or#` low)\n        high = int2Word# (ord# (indexCharOffAddr# arr (off' +# 1#)))\n        low  = int2Word# (ord# (indexCharOffAddr# arr off'))\n        off' = off *# 2#\n  |]\n#else\n  [verbatim|\n    indexInt16OffAddr# arr off\n  |]\n#endif\n  ++ [verbatim|\n\n\n\n\n\n{-# INLINE alexIndexInt32OffAddr #-}\nalexIndexInt32OffAddr (AlexA# arr) off =  |] ++\n#ifdef WORDS_BIGENDIAN\n  [verbatim|\n    narrow32Int# i\n    where\n       !i    = word2Int# ((b3 `uncheckedShiftL#` 24#) `or#`\n             (b2 `uncheckedShiftL#` 16#) `or#`\n             (b1 `uncheckedShiftL#` 8#) `or#` b0)\n       !b3   = int2Word# (ord# (indexCharOffAddr# arr (off' +# 3#)))\n       !b2   = int2Word# (ord# (indexCharOffAddr# arr (off' +# 2#)))\n       !b1   = int2Word# (ord# (indexCharOffAddr# arr (off' +# 1#)))\n       !b0   = int2Word# (ord# (indexCharOffAddr# arr off'))\n       !off' = off *# 4#\n  |]\n#else\n  [verbatim|\n    indexInt32OffAddr# arr off\n  |]\n#endif\n  ++ [verbatim|\n\n\n\n\n-- Never happens\n-- #if __GLASGOW_HASKELL__ < 503\n-- quickIndex arr i = arr ! i\n-- #else\n-- GHC >= 503, unsafeAt is available from Data.Array.Base.\nquickIndex = unsafeAt\n-- #endif\n\n\n\n\n-- -----------------------------------------------------------------------------\n-- Main lexing routines\n\ndata AlexReturn a\n  = AlexEOF\n  | AlexError  !AlexInput\n  | AlexSkip   !AlexInput !Int\n  | AlexToken  !AlexInput !Int a\n\n-- alexScan :: AlexInput -> StartCode -> AlexReturn a\nalexScan input (I# (sc))\n  = alexScanUser undefined input (I# (sc))\n\nalexScanUser user input (I# (sc))\n  = case alex_scan_tkn user input 0# input sc AlexNone of\n    (AlexNone, input') ->\n        case alexGetByte input of\n            Nothing ->\n\n\n\n                   AlexEOF\n            Just _ ->\n\n\n\n                   AlexError input'\n\n    (AlexLastSkip input'' len, _) ->\n\n\n\n        AlexSkip input'' len\n\n    (AlexLastAcc k input''' len, _) ->\n\n\n\n        AlexToken input''' len k\n\n\n-- Push the input through the DFA, remembering the most recent accepting\n-- state it encountered.\n\nalex_scan_tkn user orig_input len input s last_acc =\n  input `seq` -- strict in the input\n  let\n    new_acc = (check_accs (alex_accept `quickIndex` (I# (s))))\n  in\n  new_acc `seq`\n  case alexGetByte input of\n     Nothing -> (new_acc, input)\n     Just (c, new_input) ->\n\n\n\n    let\n        (base) = alexIndexInt32OffAddr alex_base s\n        ((I# (ord_c))) = fromIntegral c\n        (offset) = (base +# ord_c)\n        (check)  = alexIndexInt16OffAddr alex_check offset\n\n        (new_s) = if (offset >=# 0#) && (check ==# ord_c)\n              then alexIndexInt16OffAddr alex_table offset\n              else alexIndexInt16OffAddr alex_deflt s\n    in\n    case new_s of\n        -1# -> (new_acc, input)\n        -- on an error, we want to keep the input *before* the\n        -- character that failed, not after.\n            _ -> alex_scan_tkn user orig_input (if c < 0x80 || c >= 0xC0 then (len +# 1#) else len)\n                                                -- note that the length is increased ONLY if this is the 1st byte in a char encoding)\n            new_input new_s new_acc\n\n  where\n    check_accs [] = last_acc\n    check_accs (AlexAcc a : _) = AlexLastAcc a input (I# (len))\n    check_accs (AlexAccSkip : _)  = AlexLastSkip  input (I# (len))\n    check_accs (AlexAccPred a predx : rest)\n       | predx user orig_input (I# (len)) input\n       = AlexLastAcc a input (I# (len))\n    check_accs (AlexAccSkipPred predx : rest)\n       | predx user orig_input (I# (len)) input\n       = AlexLastSkip input (I# (len))\n    check_accs (_ : rest) = check_accs rest\n\ndata AlexLastAcc a\n  = AlexNone\n  | AlexLastAcc a !AlexInput !Int\n  | AlexLastSkip  !AlexInput !Int\n\ninstance Functor AlexLastAcc where\n    fmap f AlexNone = AlexNone\n    fmap f (AlexLastAcc x y z) = AlexLastAcc (f x) y z\n    fmap f (AlexLastSkip x y) = AlexLastSkip x y\n\ndata AlexAcc a user\n  = AlexAcc a\n  | AlexAccSkip\n  | AlexAccPred a (AlexAccPred user)\n  | AlexAccSkipPred (AlexAccPred user)\n\ntype AlexAccPred user = user -> AlexInput -> Int -> AlexInput -> Bool\n\n-- -----------------------------------------------------------------------------\n-- Predicates on a rule\n\nalexAndPred p1 p2 user in1 len in2\n  = p1 user in1 len in2 && p2 user in1 len in2\n\n--alexPrevCharIsPred :: Char -> AlexAccPred _\nalexPrevCharIs c _ input _ _ = c == alexInputPrevChar input\n\nalexPrevCharMatches f _ input _ _ = f (alexInputPrevChar input)\n\n--alexPrevCharIsOneOfPred :: Array Char Bool -> AlexAccPred _\nalexPrevCharIsOneOf arr _ input _ _ = arr ! alexInputPrevChar input\n\n--alexRightContext :: Int -> AlexAccPred _\nalexRightContext (I# (sc)) user _ _ input =\n     case alex_scan_tkn user input 0# input sc AlexNone of\n      (AlexNone, _) -> False\n      _ -> True\n    -- TODO: there's no need to find the longest\n    -- match when checking the right context, just\n    -- the first match will do.\n\n-- used by wrappers\niUnbox (I# (i)) = i\n|]\n\n-}" Nothing,DComment (DP (-201,1),DP (-201,48)) "{-# LINE 37 \"templates\\\\GenericTemplate.hs\" #-}" Nothing,DComment (DP (2,1),DP (2,48)) "{-# LINE 47 \"templates\\\\GenericTemplate.hs\" #-}" Nothing,DComment (DP (206,1),DP (206,69)) "-- This code is in the PUBLIC DOMAIN; you may copy it freely and use" Nothing,DComment (DP (1,1),DP (1,34)) "-- it for any purpose whatsoever." Nothing] [])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:229:14 CN "WildPat" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 14) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:(229,17)-(363,3) CN "GRHS" NotNeeded,
+  (Ann (DP (0,-1)) (ColDelta 17) DP (0,-1) [] [])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:229:19-25 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 19) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:(229,19)-(363,3) CN "HsApp" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 19) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:(229,26)-(363,3) CN "ExplicitList" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 26) DP (0,0) [] [((G AnnOpenS),DP (0,0)),((G AnnCloseS),DP (1,3))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:230:3-45 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:231:3-45 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:232:3-30 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:234:3-84 CN "HsLit" NotNeeded,
+  (Ann (DP (2,3)) (ColDelta 3) DP (2,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:235:3-27 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:236:3-4 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:237:3-21 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:238:3-15 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:239:3-29 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:240:3-34 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:241:3-36 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:242:3-4 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:243:3-57 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:244:3-23 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:245:3-41 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:246:3-4 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:247:3-32 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:248:3-62 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:249:3-27 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:250:3-33 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:251:3-21 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:252:3-4 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:253:3-4 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:254:3-4 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:255:3-22 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:256:3-19 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:257:3-4 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:258:3-4 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:259:3-4 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:260:3-31 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:261:3-4 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:262:3-38 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:263:3-4 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:264:3-4 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:265:3-4 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:266:3-28 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:267:3-4 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:268:3-40 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:269:3-4 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:270:3-4 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:271:3-4 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:272:3-32 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:273:3-4 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:274:3-4 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:275:3-76 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:276:3-28 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:277:3-4 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:278:3-56 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:279:3-40 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:280:3-10 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:281:3-59 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:282:3-8 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:283:3-19 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:284:3-31 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:285:3-36 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:286:3-32 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:287:3-4 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:288:3-4 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:289:3-4 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:290:3-9 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:291:3-50 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:292:3-34 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:293:3-33 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:294:3-58 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:295:3-8 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:296:3-56 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:297:3-56 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:298:3-51 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:299:3-8 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:300:3-20 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:301:3-34 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:302:3-62 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:303:3-44 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:304:3-101 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:305:3-137 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:306:3-33 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:307:3-4 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:308:3-11 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:309:3-30 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:310:3-60 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:311:3-63 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:312:3-45 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:313:3-44 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:314:3-36 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:315:3-47 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:316:3-44 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:317:3-35 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:318:3-45 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:319:3-4 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:320:3-22 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:321:3-16 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:322:3-37 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:323:3-37 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:324:3-4 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:325:3-38 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:326:3-34 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:327:3-58 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:328:3-52 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:329:3-4 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:330:3-23 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:331:3-17 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:332:3-19 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:333:3-40 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:334:3-42 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:335:3-4 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:336:3-73 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:337:3-4 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:338:3-84 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:339:3-27 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:340:3-4 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:341:3-38 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:342:3-50 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:343:3-4 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:344:3-50 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:345:3-63 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:346:3-4 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:347:3-67 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:348:3-4 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:349:3-66 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:350:3-71 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:351:3-4 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:352:3-46 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:353:3-43 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:354:3-63 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:355:3-30 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:356:3-17 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:357:3-50 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:358:3-52 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:359:3-33 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:360:3-4 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:361:3-23 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:362:3-18 CN "HsLit" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey <no location info> CN "EmptyLocalBinds" NotNeeded,
+  (Ann (DP (-363,0)) (ColDelta 0) DP (-363,0) [] []))]
+==============
+([((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:1:1,
+    AnnModule),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:2:1-6]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:1:1,
+    AnnWhere),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:2:31-35]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:3:1-13,
+    AnnImport),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:3:1-6]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:3:1-13,
+    AnnSemi),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:229:1]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:(229,1)-(363,3),
+    AnnEqual),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:229:17]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:(229,1)-(363,3),
+    AnnFunId),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:229:1-12]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:(229,1)-(363,3),
+    AnnSemi),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:364:1]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:(229,26)-(363,3),
+    AnnCloseS),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:363:3]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:(229,26)-(363,3),
+    AnnOpenS),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:229:26]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:230:3-45,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:230:46]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:231:3-45,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:231:46]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:232:3-30,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:232:31]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:234:3-84,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:234:85]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:235:3-27,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:235:28]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:236:3-4,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:236:5]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:237:3-21,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:237:22]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:238:3-15,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:238:16]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:239:3-29,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:239:30]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:240:3-34,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:240:35]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:241:3-36,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:241:37]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:242:3-4,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:242:5]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:243:3-57,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:243:58]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:244:3-23,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:244:24]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:245:3-41,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:245:42]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:246:3-4,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:246:5]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:247:3-32,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:247:33]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:248:3-62,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:248:63]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:249:3-27,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:249:28]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:250:3-33,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:250:34]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:251:3-21,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:251:22]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:252:3-4,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:252:5]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:253:3-4,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:253:5]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:254:3-4,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:254:5]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:255:3-22,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:255:23]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:256:3-19,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:256:20]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:257:3-4,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:257:5]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:258:3-4,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:258:5]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:259:3-4,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:259:5]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:260:3-31,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:260:32]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:261:3-4,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:261:5]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:262:3-38,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:262:39]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:263:3-4,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:263:5]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:264:3-4,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:264:5]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:265:3-4,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:265:5]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:266:3-28,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:266:29]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:267:3-4,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:267:5]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:268:3-40,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:268:41]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:269:3-4,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:269:5]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:270:3-4,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:270:5]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:271:3-4,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:271:5]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:272:3-32,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:272:33]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:273:3-4,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:273:5]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:274:3-4,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:274:5]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:275:3-76,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:275:77]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:276:3-28,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:276:29]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:277:3-4,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:277:5]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:278:3-56,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:278:57]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:279:3-40,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:279:41]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:280:3-10,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:280:11]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:281:3-59,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:281:60]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:282:3-8,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:282:9]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:283:3-19,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:283:20]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:284:3-31,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:284:32]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:285:3-36,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:285:37]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:286:3-32,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:286:33]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:287:3-4,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:287:5]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:288:3-4,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:288:5]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:289:3-4,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:289:5]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:290:3-9,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:290:10]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:291:3-50,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:291:51]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:292:3-34,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:292:35]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:293:3-33,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:293:34]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:294:3-58,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:294:59]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:295:3-8,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:295:9]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:296:3-56,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:296:57]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:297:3-56,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:297:57]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:298:3-51,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:298:52]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:299:3-8,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:299:9]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:300:3-20,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:300:21]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:301:3-34,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:301:35]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:302:3-62,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:302:63]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:303:3-44,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:303:45]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:304:3-101,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:304:102]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:305:3-137,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:305:138]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:306:3-33,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:306:34]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:307:3-4,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:307:5]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:308:3-11,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:308:12]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:309:3-30,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:309:31]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:310:3-60,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:310:61]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:311:3-63,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:311:64]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:312:3-45,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:312:46]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:313:3-44,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:313:45]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:314:3-36,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:314:37]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:315:3-47,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:315:48]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:316:3-44,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:316:45]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:317:3-35,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:317:36]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:318:3-45,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:318:46]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:319:3-4,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:319:5]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:320:3-22,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:320:23]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:321:3-16,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:321:17]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:322:3-37,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:322:38]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:323:3-37,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:323:38]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:324:3-4,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:324:5]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:325:3-38,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:325:39]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:326:3-34,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:326:35]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:327:3-58,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:327:59]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:328:3-52,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:328:53]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:329:3-4,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:329:5]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:330:3-23,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:330:24]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:331:3-17,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:331:18]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:332:3-19,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:332:20]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:333:3-40,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:333:41]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:334:3-42,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:334:43]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:335:3-4,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:335:5]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:336:3-73,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:336:74]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:337:3-4,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:337:5]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:338:3-84,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:338:85]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:339:3-27,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:339:28]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:340:3-4,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:340:5]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:341:3-38,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:341:39]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:342:3-50,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:342:51]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:343:3-4,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:343:5]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:344:3-50,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:344:51]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:345:3-63,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:345:64]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:346:3-4,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:346:5]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:347:3-67,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:347:68]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:348:3-4,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:348:5]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:349:3-66,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:349:67]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:350:3-71,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:350:72]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:351:3-4,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:351:5]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:352:3-46,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:352:47]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:353:3-43,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:353:44]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:354:3-63,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:354:64]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:355:3-30,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:355:31]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:356:3-17,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:356:18]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:357:3-50,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:357:51]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:358:3-52,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:358:53]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:359:3-33,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:359:34]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:360:3-4,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:360:5]),
+  ((../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:361:3-23,
+    AnnComma),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:361:24]),
+  ((<no location info>, AnnEofPos),
+   [../../hackage-packages/alex-meta-0.3.0.7/src/Text/Alex/AlexTemplate.hs:364:1])],
+ [(<no location info>,
+   [AnnLineComment "-- it for any purpose whatsoever.",
+    AnnLineComment "-- This code is in the PUBLIC DOMAIN; you may copy it freely and use",
+    AnnBlockComment "{-\nalexTemplate GhcTarget = [verbatim|\n-- -----------------------------------------------------------------------------\n-- ALEX TEMPLATE\n--\n-- This code is in the PUBLIC DOMAIN; you may copy it freely and use\n-- it for any purpose whatsoever.\n\n-- -----------------------------------------------------------------------------\n-- INTERNALS and main scanner engine\n\n                                               \n\n                                               \n\n\ndata AlexAddr = AlexA# Addr#\n\n-- Never happens\n-- #if __GLASGOW_HASKELL__ < 503\n-- uncheckedShiftL# = shiftL#\n-- #endif\n\n{-# INLINE alexIndexInt16OffAddr #-}\nalexIndexInt16OffAddr (AlexA# arr) off = |] ++\n#ifdef WORDS_BIGENDIAN\n  [verbatim|\n    narrow16Int# i\n    where\n        i    = word2Int# ((high `uncheckedShiftL#` 8#) `or#` low)\n        high = int2Word# (ord# (indexCharOffAddr# arr (off' +# 1#)))\n        low  = int2Word# (ord# (indexCharOffAddr# arr off'))\n        off' = off *# 2#\n  |]\n#else\n  [verbatim|\n    indexInt16OffAddr# arr off\n  |]\n#endif\n  ++ [verbatim|\n\n\n\n\n\n{-# INLINE alexIndexInt32OffAddr #-}\nalexIndexInt32OffAddr (AlexA# arr) off =  |] ++\n#ifdef WORDS_BIGENDIAN\n  [verbatim|\n    narrow32Int# i\n    where\n       !i    = word2Int# ((b3 `uncheckedShiftL#` 24#) `or#`\n             (b2 `uncheckedShiftL#` 16#) `or#`\n             (b1 `uncheckedShiftL#` 8#) `or#` b0)\n       !b3   = int2Word# (ord# (indexCharOffAddr# arr (off' +# 3#)))\n       !b2   = int2Word# (ord# (indexCharOffAddr# arr (off' +# 2#)))\n       !b1   = int2Word# (ord# (indexCharOffAddr# arr (off' +# 1#)))\n       !b0   = int2Word# (ord# (indexCharOffAddr# arr off'))\n       !off' = off *# 4#\n  |]\n#else\n  [verbatim|\n    indexInt32OffAddr# arr off\n  |]\n#endif\n  ++ [verbatim|\n\n\n\n\n-- Never happens\n-- #if __GLASGOW_HASKELL__ < 503\n-- quickIndex arr i = arr ! i\n-- #else\n-- GHC >= 503, unsafeAt is available from Data.Array.Base.\nquickIndex = unsafeAt\n-- #endif\n\n\n\n\n-- -----------------------------------------------------------------------------\n-- Main lexing routines\n\ndata AlexReturn a\n  = AlexEOF\n  | AlexError  !AlexInput\n  | AlexSkip   !AlexInput !Int\n  | AlexToken  !AlexInput !Int a\n\n-- alexScan :: AlexInput -> StartCode -> AlexReturn a\nalexScan input (I# (sc))\n  = alexScanUser undefined input (I# (sc))\n\nalexScanUser user input (I# (sc))\n  = case alex_scan_tkn user input 0# input sc AlexNone of\n    (AlexNone, input') ->\n        case alexGetByte input of\n            Nothing ->\n\n\n\n                   AlexEOF\n            Just _ ->\n\n\n\n                   AlexError input'\n\n    (AlexLastSkip input'' len, _) ->\n\n\n\n        AlexSkip input'' len\n\n    (AlexLastAcc k input''' len, _) ->\n\n\n\n        AlexToken input''' len k\n\n\n-- Push the input through the DFA, remembering the most recent accepting\n-- state it encountered.\n\nalex_scan_tkn user orig_input len input s last_acc =\n  input `seq` -- strict in the input\n  let\n    new_acc = (check_accs (alex_accept `quickIndex` (I# (s))))\n  in\n  new_acc `seq`\n  case alexGetByte input of\n     Nothing -> (new_acc, input)\n     Just (c, new_input) ->\n\n\n\n    let\n        (base) = alexIndexInt32OffAddr alex_base s\n        ((I# (ord_c))) = fromIntegral c\n        (offset) = (base +# ord_c)\n        (check)  = alexIndexInt16OffAddr alex_check offset\n\n        (new_s) = if (offset >=# 0#) && (check ==# ord_c)\n              then alexIndexInt16OffAddr alex_table offset\n              else alexIndexInt16OffAddr alex_deflt s\n    in\n    case new_s of\n        -1# -> (new_acc, input)\n        -- on an error, we want to keep the input *before* the\n        -- character that failed, not after.\n            _ -> alex_scan_tkn user orig_input (if c < 0x80 || c >= 0xC0 then (len +# 1#) else len)\n                                                -- note that the length is increased ONLY if this is the 1st byte in a char encoding)\n            new_input new_s new_acc\n\n  where\n    check_accs [] = last_acc\n    check_accs (AlexAcc a : _) = AlexLastAcc a input (I# (len))\n    check_accs (AlexAccSkip : _)  = AlexLastSkip  input (I# (len))\n    check_accs (AlexAccPred a predx : rest)\n       | predx user orig_input (I# (len)) input\n       = AlexLastAcc a input (I# (len))\n    check_accs (AlexAccSkipPred predx : rest)\n       | predx user orig_input (I# (len)) input\n       = AlexLastSkip input (I# (len))\n    check_accs (_ : rest) = check_accs rest\n\ndata AlexLastAcc a\n  = AlexNone\n  | AlexLastAcc a !AlexInput !Int\n  | AlexLastSkip  !AlexInput !Int\n\ninstance Functor AlexLastAcc where\n    fmap f AlexNone = AlexNone\n    fmap f (AlexLastAcc x y z) = AlexLastAcc (f x) y z\n    fmap f (AlexLastSkip x y) = AlexLastSkip x y\n\ndata AlexAcc a user\n  = AlexAcc a\n  | AlexAccSkip\n  | AlexAccPred a (AlexAccPred user)\n  | AlexAccSkipPred (AlexAccPred user)\n\ntype AlexAccPred user = user -> AlexInput -> Int -> AlexInput -> Bool\n\n-- -----------------------------------------------------------------------------\n-- Predicates on a rule\n\nalexAndPred p1 p2 user in1 len in2\n  = p1 user in1 len in2 && p2 user in1 len in2\n\n--alexPrevCharIsPred :: Char -> AlexAccPred _\nalexPrevCharIs c _ input _ _ = c == alexInputPrevChar input\n\nalexPrevCharMatches f _ input _ _ = f (alexInputPrevChar input)\n\n--alexPrevCharIsOneOfPred :: Array Char Bool -> AlexAccPred _\nalexPrevCharIsOneOf arr _ input _ _ = arr ! alexInputPrevChar input\n\n--alexRightContext :: Int -> AlexAccPred _\nalexRightContext (I# (sc)) user _ _ input =\n     case alex_scan_tkn user input 0# input sc AlexNone of\n      (AlexNone, _) -> False\n      _ -> True\n    -- TODO: there's no need to find the longest\n    -- match when checking the right context, just\n    -- the first match will do.\n\n-- used by wrappers\niUnbox (I# (i)) = i\n|]\n\n-}",
+    AnnLineComment "-- import Text.Alex.Verbatim",
+    AnnBlockComment "{-#Language QuasiQuotes#-}"])])

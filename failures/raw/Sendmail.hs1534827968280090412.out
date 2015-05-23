@@ -1,0 +1,2386 @@
+{-# LANGUAGE CPP #-}
+{- arch-tag: Sendmail utility
+Copyright (c) 2004-2011 John Goerzen <jgoerzen@complete.org>
+
+All rights reserved.
+
+For license and copyright information, see the file LICENSE
+-}
+
+{- |
+   Module     : Network.Email.Sendmail
+   Copyright  : Copyright (C) 2004-2011 John Goerzen
+   License    : BSD3
+
+   Maintainer : John Goerzen <jgoerzen@complete.org>
+   Stability  : provisional
+   Portability: portable
+
+This Haskell module provides an interface to transmitting a mail message.
+
+This is not compatible with Windows at this time.
+
+Written by John Goerzen, jgoerzen\@complete.org
+-}
+
+#if (defined(mingw32_HOST_OS) || defined(mingw32_TARGET_OS) || defined(__MINGW32__))
+module Network.Email.Sendmail
+where
+#else
+module       Network.Email.Sendmail(sendmail)
+where
+
+import System.Cmd.Utils
+import System.Directory
+import System.IO
+import System.IO.Error
+import qualified Control.Exception(try, IOException)
+
+sendmails :: [String]
+sendmails = ["/usr/sbin/sendmail",
+             "/usr/local/sbin/sendmail",
+             "/usr/local/bin/sendmail",
+             "/usr/bin/sendmail",
+             "/etc/sendmail",
+             "/usr/etc/sendmail"]
+
+findsendmail :: IO String
+findsendmail =
+    let worker [] = return "sendmail"
+        worker (this:next) =
+            do
+            e <- doesFileExist this
+            if e then
+               do
+               p <- getPermissions this
+               if executable p then
+                  return this
+                  else worker next
+               else worker next
+        in
+        worker sendmails
+
+{- | Transmits an e-mail message using the system's mail transport agent.
+
+This function takes a message, a list of recipients, and an optional sender,
+and transmits it using the system's MTA, sendmail.
+
+If @sendmail@ is on the @PATH@, it will be used; otherwise, a list of system
+default locations will be searched.
+
+A failure will be logged, since this function uses 'System.Cmd.Utils.safeSystem'
+internally.
+
+This function will first try @sendmail@.  If it does not exist, an error is
+logged under @System.Cmd.Utils.pOpen3@ and various default @sendmail@ locations
+are tried.  If that still fails, an error is logged and an exception raised.
+
+ -}
+sendmail :: Maybe String                -- ^ The envelope from address.  If not specified, takes the system's default, which is usually based on the effective userid of the current process.  This is not necessarily what you want, so I recommend specifying it.
+         -> [String]                    -- ^ A list of recipients for your message.  An empty list is an error.
+         -> String                      -- ^ The message itself.
+         -> IO ()
+sendmail _ [] _ = fail "sendmail: no recipients specified"
+sendmail Nothing recipients msg = sendmail_worker recipients msg
+sendmail (Just from) recipients msg =
+    sendmail_worker (("-f" ++ from) : recipients) msg
+
+sendmail_worker :: [String] -> String -> IO ()
+sendmail_worker args msg =
+    let func h = hPutStr h msg
+        in
+        do
+        --pOpen WriteToPipe "/usr/sbin/sendmail" args func
+        rv <- Control.Exception.try (pOpen WriteToPipe "sendmail" args func)
+        case rv of
+            Right x -> return x
+            Left (_ :: Control.Exception.IOException) -> do
+                      sn <- findsendmail
+                      r <- pOpen WriteToPipe sn args func
+                      return $! r
+
+#endif
+
+
+==============
+../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs
+==============
+lengths:(3409,3403)
+
+==============
+
+({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:1:1
+  }
+ Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((AnnComment DComment (DP (0,0),DP (0,20)) "{-# LANGUAGE CPP #-}" Nothing),DP (0,0)),((AnnComment DComment (DP (1,1),DP (7,3)) "{- arch-tag: Sendmail utility\nCopyright (c) 2004-2011 John Goerzen <jgoerzen@complete.org>\n\nAll rights reserved.\n\nFor license and copyright information, see the file LICENSE\n-}" Nothing),DP (1,1)),((AnnComment DComment (DP (2,1),DP (16,3)) "{- |\n   Module     : Network.Email.Sendmail\n   Copyright  : Copyright (C) 2004-2011 John Goerzen\n   License    : BSD3\n\n   Maintainer : John Goerzen <jgoerzen@complete.org>\n   Stability  : provisional\n   Portability: portable\n\nThis Haskell module provides an interface to transmitting a mail message.\n\nThis is not compatible with Windows at this time.\n\nWritten by John Goerzen, jgoerzen\\@complete.org\n-}" Nothing),DP (2,1)),((AnnComment DComment (DP (2,1),DP (2,84)) "#if (defined(mingw32_HOST_OS) || defined(mingw32_TARGET_OS) || defined(__MINGW32__))" Nothing),DP (2,1)),((AnnComment DComment (DP (1,1),DP (1,7)) "module" Nothing),DP (1,1)),((AnnComment DComment (DP (0,1),DP (0,23)) "Network.Email.Sendmail" Nothing),DP (0,1)),((AnnComment DComment (DP (1,1),DP (1,6)) "where" Nothing),DP (1,1)),((AnnComment DComment (DP (1,1),DP (1,5)) "#else" Nothing),DP (1,1)),((G AnnModule),DP (29,1)),((AnnComment DComment (DP (0,-6),DP (0,-6)) "" Nothing),DP (0,-6)),((G AnnVal),DP (0,1)),((G AnnWhere),DP (1,1)),((AnnComment DComment (DP (2,1),DP (2,6)) "#endif" Nothing),DP (2,1)),((AnnComment DComment (DP (2,1),DP (2,1)) "" Nothing),DP (2,1)),((AnnComment DComment (DP (0,0),DP (0,0)) "" Nothing),DP (0,0)),((AnnComment DComment (DP (0,0),DP (0,0)) "" Nothing),DP (0,0)),((AnnComment DComment (DP (0,0),DP (0,0)) "" Nothing),DP (0,0)),((AnnComment DComment (DP (0,0),DP (0,0)) "" Nothing),DP (0,0)),((G AnnEofPos),DP (5,0))])
+ (HsModule 
+  (Just 
+   ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:30:8-29
+     }
+    Nothing{ModuleName: Network.Email.Sendmail})) 
+  (Just 
+   ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:30:30-39
+     }
+    Just (Ann (DP (0,0)) (ColDelta 30) DP (0,0) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])
+    [
+     ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:30:31-38
+       }
+      Just (Ann (DP (0,0)) (ColDelta 31) DP (0,0) [] [])
+      (IEVar 
+       ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:30:31-38
+         }
+        Just (Ann (DP (0,0)) (ColDelta 31) DP (0,0) [] [((G AnnVal),DP (0,0))])
+        (Unqual {OccName: sendmail}))))])) 
+  [
+   ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:33:1-23
+     }
+    Just (Ann (DP (2,1)) (ColDelta 1) DP (2,1) [DComment (DP (0,-5),DP (0,-5)) "" Nothing] [((G AnnImport),DP (0,0)),((G AnnVal),DP (0,1))])
+    (ImportDecl 
+     (Nothing) 
+     ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:33:8-23
+       }
+      Nothing{ModuleName: System.Cmd.Utils}) 
+     (Nothing) 
+     (False) 
+     (False) 
+     (False) 
+     (False) 
+     (Nothing) 
+     (Nothing))),
+   ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:34:1-23
+     }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [((G AnnImport),DP (0,0)),((G AnnVal),DP (0,1))])
+    (ImportDecl 
+     (Nothing) 
+     ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:34:8-23
+       }
+      Nothing{ModuleName: System.Directory}) 
+     (Nothing) 
+     (False) 
+     (False) 
+     (False) 
+     (False) 
+     (Nothing) 
+     (Nothing))),
+   ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:35:1-16
+     }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [((G AnnImport),DP (0,0)),((G AnnVal),DP (0,1))])
+    (ImportDecl 
+     (Nothing) 
+     ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:35:8-16
+       }
+      Nothing{ModuleName: System.IO}) 
+     (Nothing) 
+     (False) 
+     (False) 
+     (False) 
+     (False) 
+     (Nothing) 
+     (Nothing))),
+   ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:36:1-22
+     }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [((G AnnImport),DP (0,0)),((G AnnVal),DP (0,1))])
+    (ImportDecl 
+     (Nothing) 
+     ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:36:8-22
+       }
+      Nothing{ModuleName: System.IO.Error}) 
+     (Nothing) 
+     (False) 
+     (False) 
+     (False) 
+     (False) 
+     (Nothing) 
+     (Nothing))),
+   ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:37:1-52
+     }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [((G AnnImport),DP (0,0)),((G AnnQualified),DP (0,1)),((G AnnVal),DP (0,1))])
+    (ImportDecl 
+     (Nothing) 
+     ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:37:18-34
+       }
+      Nothing{ModuleName: Control.Exception}) 
+     (Nothing) 
+     (False) 
+     (False) 
+     (True) 
+     (False) 
+     (Nothing) 
+     (Just 
+      ((,) 
+       (False) 
+       ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:37:35-52
+         }
+        Just (Ann (DP (0,0)) (ColDelta 35) DP (0,0) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])
+        [
+         ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:37:36-38
+           }
+          Just (Ann (DP (0,0)) (ColDelta 36) DP (0,0) [] [])
+          (IEVar 
+           ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:37:36-38
+             }
+            Just (Ann (DP (0,0)) (ColDelta 36) DP (0,0) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+            (Unqual {OccName: try})))),
+         ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:37:41-51
+           }
+          Just (Ann (DP (0,1)) (ColDelta 41) DP (0,1) [] [])
+          (IEThingAbs 
+           ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:37:41-51
+             }
+            Just (Ann (DP (0,0)) (ColDelta 41) DP (0,0) [] [((G AnnVal),DP (0,0))])
+            (Unqual {OccName: IOException}))))])))))] 
+  [
+   ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:39:1-21
+     }
+    Just (Ann (DP (2,1)) (ColDelta 1) DP (2,1) [] [((G AnnDcolon),DP (0,1))])
+    (SigD 
+     (TypeSig 
+      [
+       ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:39:1-9
+         }
+        Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+        (Unqual {OccName: sendmails}))] 
+      ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:39:14-21
+        }
+       Just (Ann (DP (0,1)) (ColDelta 14) DP (0,1) [] [])
+       (HsForAllTy 
+        (Implicit) 
+        (Nothing) 
+        (HsQTvs 
+         [] 
+         []) 
+        ({ <no location info> }
+         Nothing
+         []) 
+        ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:39:14-21
+          }
+         Just (Ann (DP (0,0)) (ColDelta 14) DP (0,0) [] [((G AnnOpenS),DP (0,0)),((G AnnCloseS),DP (0,0))])
+         (HsListTy 
+          ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:39:15-20
+            }
+           Just (Ann (DP (0,0)) (ColDelta 15) DP (0,0) [] [((G AnnVal),DP (0,0))])
+           (HsTyVar 
+            (Unqual {OccName: String}))))))) 
+      (PlaceHolder)))),
+   ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(40,1)-(45,33)
+     }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [])
+    (ValD 
+     (FunBind 
+      ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:40:1-9
+        }
+       Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+       (Unqual {OccName: sendmails})) 
+      (False) 
+      (MG 
+       [
+        ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(40,1)-(45,33)
+          }
+         Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnEqual),DP (0,1))])
+         (Match 
+          (Just 
+           ((,) 
+            ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:40:1-9
+              }
+             Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+             (Unqual {OccName: sendmails})) 
+            (False))) 
+          [] 
+          (Nothing) 
+          (GRHSs 
+           [
+            ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(40,11)-(45,33)
+              }
+             Just (Ann (DP (0,-1)) (ColDelta 11) DP (0,-1) [] [])
+             (GRHS 
+              [] 
+              ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(40,13)-(45,33)
+                }
+               Just (Ann (DP (0,1)) (ColDelta 13) DP (0,1) [] [((G AnnOpenS),DP (0,0)),((G AnnCloseS),DP (0,0))])
+               (ExplicitList 
+                (PlaceHolder) 
+                (Nothing) 
+                [
+                 ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:40:14-33
+                   }
+                  Just (Ann (DP (0,0)) (ColDelta 14) DP (0,0) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                  (HsLit 
+                   (HsString "\"/usr/sbin/sendmail\"" {FastString: "/usr/sbin/sendmail"}))),
+                 ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:41:14-39
+                   }
+                  Just (Ann (DP (1,14)) (ColDelta 14) DP (1,14) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                  (HsLit 
+                   (HsString "\"/usr/local/sbin/sendmail\"" {FastString: "/usr/local/sbin/sendmail"}))),
+                 ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:42:14-38
+                   }
+                  Just (Ann (DP (1,14)) (ColDelta 14) DP (1,14) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                  (HsLit 
+                   (HsString "\"/usr/local/bin/sendmail\"" {FastString: "/usr/local/bin/sendmail"}))),
+                 ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:43:14-32
+                   }
+                  Just (Ann (DP (1,14)) (ColDelta 14) DP (1,14) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                  (HsLit 
+                   (HsString "\"/usr/bin/sendmail\"" {FastString: "/usr/bin/sendmail"}))),
+                 ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:44:14-28
+                   }
+                  Just (Ann (DP (1,14)) (ColDelta 14) DP (1,14) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                  (HsLit 
+                   (HsString "\"/etc/sendmail\"" {FastString: "/etc/sendmail"}))),
+                 ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:45:14-32
+                   }
+                  Just (Ann (DP (1,14)) (ColDelta 14) DP (1,14) [] [((G AnnVal),DP (0,0))])
+                  (HsLit 
+                   (HsString "\"/usr/etc/sendmail\"" {FastString: "/usr/etc/sendmail"})))]))))] 
+           (EmptyLocalBinds))))] 
+       [] 
+       (PlaceHolder) 
+       (FromSource)) 
+      (WpHole) 
+      (PlaceHolder) 
+      []))),
+   ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:47:1-25
+     }
+    Just (Ann (DP (2,1)) (ColDelta 1) DP (2,1) [] [((G AnnDcolon),DP (0,1))])
+    (SigD 
+     (TypeSig 
+      [
+       ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:47:1-12
+         }
+        Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+        (Unqual {OccName: findsendmail}))] 
+      ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:47:17-25
+        }
+       Just (Ann (DP (0,1)) (ColDelta 17) DP (0,1) [] [])
+       (HsForAllTy 
+        (Implicit) 
+        (Nothing) 
+        (HsQTvs 
+         [] 
+         []) 
+        ({ <no location info> }
+         Nothing
+         []) 
+        ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:47:17-25
+          }
+         Just (Ann (DP (0,0)) (ColDelta 17) DP (0,0) [] [])
+         (HsAppTy 
+          ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:47:17-18
+            }
+           Just (Ann (DP (0,0)) (ColDelta 17) DP (0,0) [] [((G AnnVal),DP (0,0))])
+           (HsTyVar 
+            (Unqual {OccName: IO}))) 
+          ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:47:20-25
+            }
+           Just (Ann (DP (0,1)) (ColDelta 20) DP (0,1) [] [((G AnnVal),DP (0,0))])
+           (HsTyVar 
+            (Unqual {OccName: String}))))))) 
+      (PlaceHolder)))),
+   ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(48,1)-(61,24)
+     }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [])
+    (ValD 
+     (FunBind 
+      ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:48:1-12
+        }
+       Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+       (Unqual {OccName: findsendmail})) 
+      (False) 
+      (MG 
+       [
+        ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(48,1)-(61,24)
+          }
+         Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnEqual),DP (0,1))])
+         (Match 
+          (Just 
+           ((,) 
+            ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:48:1-12
+              }
+             Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+             (Unqual {OccName: findsendmail})) 
+            (False))) 
+          [] 
+          (Nothing) 
+          (GRHSs 
+           [
+            ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(48,14)-(61,24)
+              }
+             Just (Ann (DP (0,-1)) (ColDelta 14) DP (0,-1) [] [])
+             (GRHS 
+              [] 
+              ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(49,5)-(61,24)
+                }
+               Just (Ann (DP (1,5)) (ColDelta 5) DP (1,5) [] [((G AnnLet),DP (0,0)),((AnnList ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(49,9)-(59,31) NotNeeded),DP (0,0)),((G AnnIn),DP (1,4))])
+               (HsLet 
+                (HsValBinds 
+                 (ValBindsIn {Bag(Located (HsBind RdrName)): 
+                  [
+                   ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(49,9)-(59,31)
+                     }
+                    Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])
+                    (FunBind 
+                     ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:49:9-14
+                       }
+                      Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                      (Unqual {OccName: worker})) 
+                     (False) 
+                     (MG 
+                      [
+                       ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:49:9-37
+                         }
+                        Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnEqual),DP (0,1))])
+                        (Match 
+                         (Just 
+                          ((,) 
+                           ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:49:9-14
+                             }
+                            Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                            (Unqual {OccName: worker})) 
+                           (False))) 
+                         [
+                          ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:49:16-17
+                            }
+                           Just (Ann (DP (0,1)) (ColDelta 7) DP (0,1) [] [])
+                           (ConPatIn 
+                            ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:49:16-17
+                              }
+                             Just (Ann (DP (0,0)) (ColDelta 7) DP (0,0) [] [((G AnnOpenS),DP (0,0)),((G AnnCloseS),DP (0,0))])
+                             (Exact {Name: []})) 
+                            (PrefixCon 
+                             [])))] 
+                         (Nothing) 
+                         (GRHSs 
+                          [
+                           ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:49:19-37
+                             }
+                            Just (Ann (DP (0,-1)) (ColDelta 10) DP (0,-1) [] [])
+                            (GRHS 
+                             [] 
+                             ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:49:21-37
+                               }
+                              Just (Ann (DP (0,1)) (ColDelta 12) DP (0,1) [] [])
+                              (HsApp 
+                               ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:49:21-26
+                                 }
+                                Just (Ann (DP (0,0)) (ColDelta 12) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                                (HsVar 
+                                 (Unqual {OccName: return}))) 
+                               ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:49:28-37
+                                 }
+                                Just (Ann (DP (0,1)) (ColDelta 19) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                                (HsLit 
+                                 (HsString "\"sendmail\"" {FastString: "sendmail"})))))))] 
+                          (EmptyLocalBinds)))),
+                       ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(50,9)-(59,31)
+                         }
+                        Just (Ann (DP (1,0)) (ColDelta 0) DP (1,0) [] [((G AnnEqual),DP (0,1))])
+                        (Match 
+                         (Just 
+                          ((,) 
+                           ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:50:9-14
+                             }
+                            Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                            (Unqual {OccName: worker})) 
+                           (False))) 
+                         [
+                          ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:50:16-26
+                            }
+                           Just (Ann (DP (0,1)) (ColDelta 7) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])
+                           (ParPat 
+                            ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:50:17-25
+                              }
+                             Just (Ann (DP (0,0)) (ColDelta 8) DP (0,0) [] [])
+                             (ConPatIn 
+                              ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:50:21
+                                }
+                               Just (Ann (DP (0,0)) (ColDelta 12) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                               (Exact {Name: :})) 
+                              (InfixCon 
+                               ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:50:17-20
+                                 }
+                                Just (Ann (DP (0,0)) (ColDelta 8) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                                (VarPat 
+                                 (Unqual {OccName: this}))) 
+                               ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:50:22-25
+                                 }
+                                Just (Ann (DP (0,0)) (ColDelta 13) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                                (VarPat 
+                                 (Unqual {OccName: next}))))))))] 
+                         (Nothing) 
+                         (GRHSs 
+                          [
+                           ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(50,28)-(59,31)
+                             }
+                            Just (Ann (DP (0,-1)) (ColDelta 19) DP (0,-1) [] [])
+                            (GRHS 
+                             [] 
+                             ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(51,13)-(59,31)
+                               }
+                              Just (Ann (DP (1,4)) (ColDelta 4) DP (1,4) [] [((G AnnDo),DP (0,0)),((AnnList ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(52,13)-(59,31) Ref "delta-1"),DP (0,0))])
+                              (HsDo 
+                               (DoExpr) 
+                               [
+                                ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:52:13-35
+                                  }
+                                 Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnLarrow),DP (0,1))])
+                                 (BindStmt 
+                                  ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:52:13
+                                    }
+                                   Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                                   (VarPat 
+                                    (Unqual {OccName: e}))) 
+                                  ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:52:18-35
+                                    }
+                                   Just (Ann (DP (0,1)) (ColDelta 5) DP (0,1) [] [])
+                                   (HsApp 
+                                    ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:52:18-30
+                                      }
+                                     Just (Ann (DP (0,0)) (ColDelta 5) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                                     (HsVar 
+                                      (Unqual {OccName: doesFileExist}))) 
+                                    ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:52:32-35
+                                      }
+                                     Just (Ann (DP (0,1)) (ColDelta 19) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                                     (HsVar 
+                                      (Unqual {OccName: this}))))) 
+                                  (HsLit 
+                                   (HsString "" {FastString: "noSyntaxExpr"})) 
+                                  (HsLit 
+                                   (HsString "" {FastString: "noSyntaxExpr"})))),
+                                ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(53,13)-(59,31)
+                                  }
+                                 Just (Ann (DP (1,0)) (ColDelta 0) DP (1,0) [] [])
+                                 (BodyStmt 
+                                  ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(53,13)-(59,31)
+                                    }
+                                   Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnIf),DP (0,0)),((G AnnThen),DP (0,1)),((G AnnElse),DP (1,3))])
+                                   (HsIf 
+                                    (Just 
+                                     (HsLit 
+                                      (HsString "" {FastString: "noSyntaxExpr"}))) 
+                                    ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:53:16
+                                      }
+                                     Just (Ann (DP (0,1)) (ColDelta 3) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                                     (HsVar 
+                                      (Unqual {OccName: e}))) 
+                                    ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(54,16)-(58,34)
+                                      }
+                                     Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnDo),DP (0,0)),((AnnList ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(55,16)-(58,34) Ref "delta-2"),DP (0,0))])
+                                     (HsDo 
+                                      (DoExpr) 
+                                      [
+                                       ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:55:16-39
+                                         }
+                                        Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnLarrow),DP (0,1))])
+                                        (BindStmt 
+                                         ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:55:16
+                                           }
+                                          Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                                          (VarPat 
+                                           (Unqual {OccName: p}))) 
+                                         ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:55:21-39
+                                           }
+                                          Just (Ann (DP (0,1)) (ColDelta 5) DP (0,1) [] [])
+                                          (HsApp 
+                                           ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:55:21-34
+                                             }
+                                            Just (Ann (DP (0,0)) (ColDelta 5) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                                            (HsVar 
+                                             (Unqual {OccName: getPermissions}))) 
+                                           ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:55:36-39
+                                             }
+                                            Just (Ann (DP (0,1)) (ColDelta 20) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                                            (HsVar 
+                                             (Unqual {OccName: this}))))) 
+                                         (HsLit 
+                                          (HsString "" {FastString: "noSyntaxExpr"})) 
+                                         (HsLit 
+                                          (HsString "" {FastString: "noSyntaxExpr"})))),
+                                       ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(56,16)-(58,34)
+                                         }
+                                        Just (Ann (DP (1,0)) (ColDelta 0) DP (1,0) [] [])
+                                        (BodyStmt 
+                                         ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(56,16)-(58,34)
+                                           }
+                                          Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnIf),DP (0,0)),((G AnnThen),DP (0,1)),((G AnnElse),DP (1,3))])
+                                          (HsIf 
+                                           (Just 
+                                            (HsLit 
+                                             (HsString "" {FastString: "noSyntaxExpr"}))) 
+                                           ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:56:19-30
+                                             }
+                                            Just (Ann (DP (0,1)) (ColDelta 3) DP (0,1) [] [])
+                                            (HsApp 
+                                             ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:56:19-28
+                                               }
+                                              Just (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                                              (HsVar 
+                                               (Unqual {OccName: executable}))) 
+                                             ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:56:30
+                                               }
+                                              Just (Ann (DP (0,1)) (ColDelta 14) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                                              (HsVar 
+                                               (Unqual {OccName: p}))))) 
+                                           ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:57:19-29
+                                             }
+                                            Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [])
+                                            (HsApp 
+                                             ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:57:19-24
+                                               }
+                                              Just (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                                              (HsVar 
+                                               (Unqual {OccName: return}))) 
+                                             ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:57:26-29
+                                               }
+                                              Just (Ann (DP (0,1)) (ColDelta 10) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                                              (HsVar 
+                                               (Unqual {OccName: this}))))) 
+                                           ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:58:24-34
+                                             }
+                                            Just (Ann (DP (0,1)) (ColDelta 8) DP (0,1) [] [])
+                                            (HsApp 
+                                             ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:58:24-29
+                                               }
+                                              Just (Ann (DP (0,0)) (ColDelta 8) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                                              (HsVar 
+                                               (Unqual {OccName: worker}))) 
+                                             ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:58:31-34
+                                               }
+                                              Just (Ann (DP (0,1)) (ColDelta 15) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                                              (HsVar 
+                                               (Unqual {OccName: next}))))))) 
+                                         (HsLit 
+                                          (HsString "" {FastString: "noSyntaxExpr"})) 
+                                         (HsLit 
+                                          (HsString "" {FastString: "noSyntaxExpr"})) 
+                                         (PlaceHolder)))] 
+                                      (PlaceHolder))) 
+                                    ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:59:21-31
+                                      }
+                                     Just (Ann (DP (0,1)) (ColDelta 8) DP (0,1) [] [])
+                                     (HsApp 
+                                      ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:59:21-26
+                                        }
+                                       Just (Ann (DP (0,0)) (ColDelta 8) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                                       (HsVar 
+                                        (Unqual {OccName: worker}))) 
+                                      ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:59:28-31
+                                        }
+                                       Just (Ann (DP (0,1)) (ColDelta 15) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                                       (HsVar 
+                                        (Unqual {OccName: next}))))))) 
+                                  (HsLit 
+                                   (HsString "" {FastString: "noSyntaxExpr"})) 
+                                  (HsLit 
+                                   (HsString "" {FastString: "noSyntaxExpr"})) 
+                                  (PlaceHolder)))] 
+                               (PlaceHolder)))))] 
+                          (EmptyLocalBinds))))] 
+                      [] 
+                      (PlaceHolder) 
+                      (FromSource)) 
+                     (WpHole) 
+                     (PlaceHolder) 
+                     []))]} 
+                  [])) 
+                ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:61:9-24
+                  }
+                 Just (Ann (DP (1,4)) (ColDelta 4) DP (1,4) [] [])
+                 (HsApp 
+                  ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:61:9-14
+                    }
+                   Just (Ann (DP (0,0)) (ColDelta 4) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                   (HsVar 
+                    (Unqual {OccName: worker}))) 
+                  ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:61:16-24
+                    }
+                   Just (Ann (DP (0,1)) (ColDelta 11) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                   (HsVar 
+                    (Unqual {OccName: sendmails})))))))))] 
+           (EmptyLocalBinds))))] 
+       [] 
+       (PlaceHolder) 
+       (FromSource)) 
+      (WpHole) 
+      (PlaceHolder) 
+      []))),
+   ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(79,1)-(82,17)
+     }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (18,1) [DComment (DP (2,1),DP (17,4)) "{- | Transmits an e-mail message using the system's mail transport agent.\n\nThis function takes a message, a list of recipients, and an optional sender,\nand transmits it using the system's MTA, sendmail.\n\nIf @sendmail@ is on the @PATH@, it will be used; otherwise, a list of system\ndefault locations will be searched.\n\nA failure will be logged, since this function uses 'System.Cmd.Utils.safeSystem'\ninternally.\n\nThis function will first try @sendmail@.  If it does not exist, an error is\nlogged under @System.Cmd.Utils.pOpen3@ and various default @sendmail@ locations\nare tried.  If that still fails, an error is logged and an exception raised.\n\n -}" Nothing] [((G AnnDcolon),DP (0,1))])
+    (SigD 
+     (TypeSig 
+      [
+       ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:79:1-8
+         }
+        Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+        (Unqual {OccName: sendmail}))] 
+      ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(79,13)-(82,17)
+        }
+       Just (Ann (DP (0,1)) (ColDelta 13) DP (0,1) [] [])
+       (HsForAllTy 
+        (Implicit) 
+        (Nothing) 
+        (HsQTvs 
+         [] 
+         []) 
+        ({ <no location info> }
+         Nothing
+         []) 
+        ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(79,13)-(82,17)
+          }
+         Just (Ann (DP (0,0)) (ColDelta 13) DP (0,0) [] [((AnnComment DComment (DP (0,16),DP (0,235)) "-- ^ The envelope from address.  If not specified, takes the system's default, which is usually based on the effective userid of the current process.  This is not necessarily what you want, so I recommend specifying it." Nothing),DP (0,16)),((G AnnRarrow),DP (1,10))])
+         (HsFunTy 
+          ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:79:13-24
+            }
+           Just (Ann (DP (0,0)) (ColDelta 13) DP (0,0) [] [])
+           (HsAppTy 
+            ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:79:13-17
+              }
+             Just (Ann (DP (0,0)) (ColDelta 13) DP (0,0) [] [((G AnnVal),DP (0,0))])
+             (HsTyVar 
+              (Unqual {OccName: Maybe}))) 
+            ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:79:19-24
+              }
+             Just (Ann (DP (0,1)) (ColDelta 19) DP (0,1) [] [((G AnnVal),DP (0,0))])
+             (HsTyVar 
+              (Unqual {OccName: String}))))) 
+          ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(80,13)-(82,17)
+            }
+           Just (Ann (DP (0,1)) (ColDelta 13) DP (0,1) [] [((AnnComment DComment (DP (0,20),DP (0,91)) "-- ^ A list of recipients for your message.  An empty list is an error." Nothing),DP (0,20)),((G AnnRarrow),DP (1,10))])
+           (HsFunTy 
+            ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:80:13-20
+              }
+             Just (Ann (DP (0,0)) (ColDelta 13) DP (0,0) [] [((G AnnOpenS),DP (0,0)),((G AnnCloseS),DP (0,0))])
+             (HsListTy 
+              ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:80:14-19
+                }
+               Just (Ann (DP (0,0)) (ColDelta 14) DP (0,0) [] [((G AnnVal),DP (0,0))])
+               (HsTyVar 
+                (Unqual {OccName: String}))))) 
+            ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(81,13)-(82,17)
+              }
+             Just (Ann (DP (0,1)) (ColDelta 13) DP (0,1) [] [((AnnComment DComment (DP (0,22),DP (0,46)) "-- ^ The message itself." Nothing),DP (0,22)),((G AnnRarrow),DP (1,10))])
+             (HsFunTy 
+              ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:81:13-18
+                }
+               Just (Ann (DP (0,0)) (ColDelta 13) DP (0,0) [] [((G AnnVal),DP (0,0))])
+               (HsTyVar 
+                (Unqual {OccName: String}))) 
+              ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:82:13-17
+                }
+               Just (Ann (DP (0,1)) (ColDelta 13) DP (0,1) [] [])
+               (HsAppTy 
+                ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:82:13-14
+                  }
+                 Just (Ann (DP (0,0)) (ColDelta 13) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                 (HsTyVar 
+                  (Unqual {OccName: IO}))) 
+                ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:82:16-17
+                  }
+                 Just (Ann (DP (0,1)) (ColDelta 16) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])
+                 (HsTupleTy 
+                  (HsBoxedOrConstraintTuple) 
+                  [])))))))))))) 
+      (PlaceHolder)))),
+   ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(83,1)-(86,53)
+     }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [])
+    (ValD 
+     (FunBind 
+      ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:83:1-8
+        }
+       Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+       (Unqual {OccName: sendmail})) 
+      (False) 
+      (MG 
+       [
+        ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:83:1-58
+          }
+         Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnEqual),DP (0,1))])
+         (Match 
+          (Just 
+           ((,) 
+            ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:83:1-8
+              }
+             Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+             (Unqual {OccName: sendmail})) 
+            (False))) 
+          [
+           ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:83:10
+             }
+            Just (Ann (DP (0,1)) (ColDelta 10) DP (0,1) [] [((G AnnVal),DP (0,0))])
+            (WildPat 
+             (PlaceHolder))),
+           ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:83:12-13
+             }
+            Just (Ann (DP (0,1)) (ColDelta 12) DP (0,1) [] [])
+            (ConPatIn 
+             ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:83:12-13
+               }
+              Just (Ann (DP (0,0)) (ColDelta 12) DP (0,0) [] [((G AnnOpenS),DP (0,0)),((G AnnCloseS),DP (0,0))])
+              (Exact {Name: []})) 
+             (PrefixCon 
+              []))),
+           ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:83:15
+             }
+            Just (Ann (DP (0,1)) (ColDelta 15) DP (0,1) [] [((G AnnVal),DP (0,0))])
+            (WildPat 
+             (PlaceHolder)))] 
+          (Nothing) 
+          (GRHSs 
+           [
+            ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:83:17-58
+              }
+             Just (Ann (DP (0,-1)) (ColDelta 17) DP (0,-1) [] [])
+             (GRHS 
+              [] 
+              ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:83:19-58
+                }
+               Just (Ann (DP (0,1)) (ColDelta 19) DP (0,1) [] [])
+               (HsApp 
+                ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:83:19-22
+                  }
+                 Just (Ann (DP (0,0)) (ColDelta 19) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                 (HsVar 
+                  (Unqual {OccName: fail}))) 
+                ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:83:24-58
+                  }
+                 Just (Ann (DP (0,1)) (ColDelta 24) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                 (HsLit 
+                  (HsString "\"sendmail: no recipients specified\"" {FastString: "sendmail: no recipients specified"})))))))] 
+           (EmptyLocalBinds)))),
+        ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:84:1-64
+          }
+         Just (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [((G AnnEqual),DP (0,1))])
+         (Match 
+          (Just 
+           ((,) 
+            ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:84:1-8
+              }
+             Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+             (Unqual {OccName: sendmail})) 
+            (False))) 
+          [
+           ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:84:10-16
+             }
+            Just (Ann (DP (0,1)) (ColDelta 10) DP (0,1) [] [])
+            (ConPatIn 
+             ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:84:10-16
+               }
+              Just (Ann (DP (0,0)) (ColDelta 10) DP (0,0) [] [((G AnnVal),DP (0,0))])
+              (Unqual {OccName: Nothing})) 
+             (PrefixCon 
+              []))),
+           ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:84:18-27
+             }
+            Just (Ann (DP (0,1)) (ColDelta 18) DP (0,1) [] [((G AnnVal),DP (0,0))])
+            (VarPat 
+             (Unqual {OccName: recipients}))),
+           ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:84:29-31
+             }
+            Just (Ann (DP (0,1)) (ColDelta 29) DP (0,1) [] [((G AnnVal),DP (0,0))])
+            (VarPat 
+             (Unqual {OccName: msg})))] 
+          (Nothing) 
+          (GRHSs 
+           [
+            ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:84:33-64
+              }
+             Just (Ann (DP (0,-1)) (ColDelta 33) DP (0,-1) [] [])
+             (GRHS 
+              [] 
+              ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:84:35-64
+                }
+               Just (Ann (DP (0,1)) (ColDelta 35) DP (0,1) [] [])
+               (HsApp 
+                ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:84:35-60
+                  }
+                 Just (Ann (DP (0,0)) (ColDelta 35) DP (0,0) [] [])
+                 (HsApp 
+                  ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:84:35-49
+                    }
+                   Just (Ann (DP (0,0)) (ColDelta 35) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                   (HsVar 
+                    (Unqual {OccName: sendmail_worker}))) 
+                  ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:84:51-60
+                    }
+                   Just (Ann (DP (0,1)) (ColDelta 51) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                   (HsVar 
+                    (Unqual {OccName: recipients}))))) 
+                ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:84:62-64
+                  }
+                 Just (Ann (DP (0,1)) (ColDelta 62) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                 (HsVar 
+                  (Unqual {OccName: msg})))))))] 
+           (EmptyLocalBinds)))),
+        ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(85,1)-(86,53)
+          }
+         Just (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [((G AnnEqual),DP (0,1))])
+         (Match 
+          (Just 
+           ((,) 
+            ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:85:1-8
+              }
+             Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+             (Unqual {OccName: sendmail})) 
+            (False))) 
+          [
+           ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:85:10-20
+             }
+            Just (Ann (DP (0,1)) (ColDelta 10) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])
+            (ParPat 
+             ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:85:11-19
+               }
+              Just (Ann (DP (0,0)) (ColDelta 11) DP (0,0) [] [])
+              (ConPatIn 
+               ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:85:11-14
+                 }
+                Just (Ann (DP (0,0)) (ColDelta 11) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                (Unqual {OccName: Just})) 
+               (PrefixCon 
+                [
+                 ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:85:16-19
+                   }
+                  Just (Ann (DP (0,1)) (ColDelta 16) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                  (VarPat 
+                   (Unqual {OccName: from})))]))))),
+           ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:85:22-31
+             }
+            Just (Ann (DP (0,1)) (ColDelta 22) DP (0,1) [] [((G AnnVal),DP (0,0))])
+            (VarPat 
+             (Unqual {OccName: recipients}))),
+           ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:85:33-35
+             }
+            Just (Ann (DP (0,1)) (ColDelta 33) DP (0,1) [] [((G AnnVal),DP (0,0))])
+            (VarPat 
+             (Unqual {OccName: msg})))] 
+          (Nothing) 
+          (GRHSs 
+           [
+            ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(85,37)-(86,53)
+              }
+             Just (Ann (DP (0,-1)) (ColDelta 37) DP (0,-1) [] [])
+             (GRHS 
+              [] 
+              ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:86:5-53
+                }
+               Just (Ann (DP (1,5)) (ColDelta 5) DP (1,5) [] [])
+               (HsApp 
+                ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:86:5-49
+                  }
+                 Just (Ann (DP (0,0)) (ColDelta 5) DP (0,0) [] [])
+                 (HsApp 
+                  ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:86:5-19
+                    }
+                   Just (Ann (DP (0,0)) (ColDelta 5) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                   (HsVar 
+                    (Unqual {OccName: sendmail_worker}))) 
+                  ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:86:21-49
+                    }
+                   Just (Ann (DP (0,1)) (ColDelta 21) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])
+                   (HsPar 
+                    ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:86:22-48
+                      }
+                     Just (Ann (DP (0,0)) (ColDelta 22) DP (0,0) [] [])
+                     (OpApp 
+                      ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:86:22-35
+                        }
+                       Just (Ann (DP (0,0)) (ColDelta 22) DP (0,0) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])
+                       (HsPar 
+                        ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:86:23-34
+                          }
+                         Just (Ann (DP (0,0)) (ColDelta 23) DP (0,0) [] [])
+                         (OpApp 
+                          ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:86:23-26
+                            }
+                           Just (Ann (DP (0,0)) (ColDelta 23) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                           (HsLit 
+                            (HsString "\"-f\"" {FastString: "-f"}))) 
+                          ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:86:28-29
+                            }
+                           Just (Ann (DP (0,1)) (ColDelta 28) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                           (HsVar 
+                            (Unqual {OccName: ++}))) 
+                          (PlaceHolder) 
+                          ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:86:31-34
+                            }
+                           Just (Ann (DP (0,1)) (ColDelta 31) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                           (HsVar 
+                            (Unqual {OccName: from}))))))) 
+                      ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:86:37
+                        }
+                       Just (Ann (DP (0,1)) (ColDelta 37) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                       (HsVar 
+                        (Exact {Name: :}))) 
+                      (PlaceHolder) 
+                      ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:86:39-48
+                        }
+                       Just (Ann (DP (0,1)) (ColDelta 39) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                       (HsVar 
+                        (Unqual {OccName: recipients}))))))))) 
+                ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:86:51-53
+                  }
+                 Just (Ann (DP (0,1)) (ColDelta 51) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                 (HsVar 
+                  (Unqual {OccName: msg})))))))] 
+           (EmptyLocalBinds))))] 
+       [] 
+       (PlaceHolder) 
+       (FromSource)) 
+      (WpHole) 
+      (PlaceHolder) 
+      []))),
+   ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:88:1-46
+     }
+    Just (Ann (DP (2,1)) (ColDelta 1) DP (2,1) [] [((G AnnDcolon),DP (0,1))])
+    (SigD 
+     (TypeSig 
+      [
+       ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:88:1-15
+         }
+        Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+        (Unqual {OccName: sendmail_worker}))] 
+      ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:88:20-46
+        }
+       Just (Ann (DP (0,1)) (ColDelta 20) DP (0,1) [] [])
+       (HsForAllTy 
+        (Implicit) 
+        (Nothing) 
+        (HsQTvs 
+         [] 
+         []) 
+        ({ <no location info> }
+         Nothing
+         []) 
+        ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:88:20-46
+          }
+         Just (Ann (DP (0,0)) (ColDelta 20) DP (0,0) [] [((G AnnRarrow),DP (0,1))])
+         (HsFunTy 
+          ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:88:20-27
+            }
+           Just (Ann (DP (0,0)) (ColDelta 20) DP (0,0) [] [((G AnnOpenS),DP (0,0)),((G AnnCloseS),DP (0,0))])
+           (HsListTy 
+            ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:88:21-26
+              }
+             Just (Ann (DP (0,0)) (ColDelta 21) DP (0,0) [] [((G AnnVal),DP (0,0))])
+             (HsTyVar 
+              (Unqual {OccName: String}))))) 
+          ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:88:32-46
+            }
+           Just (Ann (DP (0,1)) (ColDelta 32) DP (0,1) [] [((G AnnRarrow),DP (0,1))])
+           (HsFunTy 
+            ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:88:32-37
+              }
+             Just (Ann (DP (0,0)) (ColDelta 32) DP (0,0) [] [((G AnnVal),DP (0,0))])
+             (HsTyVar 
+              (Unqual {OccName: String}))) 
+            ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:88:42-46
+              }
+             Just (Ann (DP (0,1)) (ColDelta 42) DP (0,1) [] [])
+             (HsAppTy 
+              ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:88:42-43
+                }
+               Just (Ann (DP (0,0)) (ColDelta 42) DP (0,0) [] [((G AnnVal),DP (0,0))])
+               (HsTyVar 
+                (Unqual {OccName: IO}))) 
+              ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:88:45-46
+                }
+               Just (Ann (DP (0,1)) (ColDelta 45) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])
+               (HsTupleTy 
+                (HsBoxedOrConstraintTuple) 
+                [])))))))))) 
+      (PlaceHolder)))),
+   ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(89,1)-(100,33)
+     }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [])
+    (ValD 
+     (FunBind 
+      ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:89:1-15
+        }
+       Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+       (Unqual {OccName: sendmail_worker})) 
+      (False) 
+      (MG 
+       [
+        ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(89,1)-(100,33)
+          }
+         Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnEqual),DP (0,1))])
+         (Match 
+          (Just 
+           ((,) 
+            ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:89:1-15
+              }
+             Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+             (Unqual {OccName: sendmail_worker})) 
+            (False))) 
+          [
+           ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:89:17-20
+             }
+            Just (Ann (DP (0,1)) (ColDelta 17) DP (0,1) [] [((G AnnVal),DP (0,0))])
+            (VarPat 
+             (Unqual {OccName: args}))),
+           ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:89:22-24
+             }
+            Just (Ann (DP (0,1)) (ColDelta 22) DP (0,1) [] [((G AnnVal),DP (0,0))])
+            (VarPat 
+             (Unqual {OccName: msg})))] 
+          (Nothing) 
+          (GRHSs 
+           [
+            ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(89,26)-(100,33)
+              }
+             Just (Ann (DP (0,-1)) (ColDelta 26) DP (0,-1) [] [])
+             (GRHS 
+              [] 
+              ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(90,5)-(100,33)
+                }
+               Just (Ann (DP (1,5)) (ColDelta 5) DP (1,5) [] [((G AnnLet),DP (0,0)),((AnnList ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:90:9-30 NotNeeded),DP (0,0)),((G AnnIn),DP (1,4))])
+               (HsLet 
+                (HsValBinds 
+                 (ValBindsIn {Bag(Located (HsBind RdrName)): 
+                  [
+                   ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:90:9-30
+                     }
+                    Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])
+                    (FunBind 
+                     ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:90:9-12
+                       }
+                      Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                      (Unqual {OccName: func})) 
+                     (False) 
+                     (MG 
+                      [
+                       ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:90:9-30
+                         }
+                        Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnEqual),DP (0,1))])
+                        (Match 
+                         (Just 
+                          ((,) 
+                           ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:90:9-12
+                             }
+                            Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                            (Unqual {OccName: func})) 
+                           (False))) 
+                         [
+                          ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:90:14
+                            }
+                           Just (Ann (DP (0,1)) (ColDelta 5) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                           (VarPat 
+                            (Unqual {OccName: h})))] 
+                         (Nothing) 
+                         (GRHSs 
+                          [
+                           ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:90:16-30
+                             }
+                            Just (Ann (DP (0,-1)) (ColDelta 7) DP (0,-1) [] [])
+                            (GRHS 
+                             [] 
+                             ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:90:18-30
+                               }
+                              Just (Ann (DP (0,1)) (ColDelta 9) DP (0,1) [] [])
+                              (HsApp 
+                               ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:90:18-26
+                                 }
+                                Just (Ann (DP (0,0)) (ColDelta 9) DP (0,0) [] [])
+                                (HsApp 
+                                 ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:90:18-24
+                                   }
+                                  Just (Ann (DP (0,0)) (ColDelta 9) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                                  (HsVar 
+                                   (Unqual {OccName: hPutStr}))) 
+                                 ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:90:26
+                                   }
+                                  Just (Ann (DP (0,1)) (ColDelta 17) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                                  (HsVar 
+                                   (Unqual {OccName: h}))))) 
+                               ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:90:28-30
+                                 }
+                                Just (Ann (DP (0,1)) (ColDelta 19) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                                (HsVar 
+                                 (Unqual {OccName: msg})))))))] 
+                          (EmptyLocalBinds))))] 
+                      [] 
+                      (PlaceHolder) 
+                      (FromSource)) 
+                     (WpHole) 
+                     (PlaceHolder) 
+                     []))]} 
+                  [])) 
+                ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(92,9)-(100,33)
+                  }
+                 Just (Ann (DP (1,4)) (ColDelta 4) DP (1,4) [] [((G AnnDo),DP (0,0)),((AnnList ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(94,9)-(100,33) Ref "delta-3"),DP (0,0))])
+                 (HsDo 
+                  (DoExpr) 
+                  [
+                   ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:94:9-76
+                     }
+                    Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnLarrow),DP (0,1))])
+                    (BindStmt 
+                     ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:94:9-10
+                       }
+                      Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                      (VarPat 
+                       (Unqual {OccName: rv}))) 
+                     ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:94:15-76
+                       }
+                      Just (Ann (DP (0,1)) (ColDelta 6) DP (0,1) [] [])
+                      (HsApp 
+                       ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:94:15-35
+                         }
+                        Just (Ann (DP (0,0)) (ColDelta 6) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                        (HsVar 
+                         (Qual {ModuleName: Control.Exception} {OccName: try}))) 
+                       ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:94:37-76
+                         }
+                        Just (Ann (DP (0,1)) (ColDelta 28) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])
+                        (HsPar 
+                         ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:94:38-75
+                           }
+                          Just (Ann (DP (0,0)) (ColDelta 29) DP (0,0) [] [])
+                          (HsApp 
+                           ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:94:38-70
+                             }
+                            Just (Ann (DP (0,0)) (ColDelta 29) DP (0,0) [] [])
+                            (HsApp 
+                             ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:94:38-65
+                               }
+                              Just (Ann (DP (0,0)) (ColDelta 29) DP (0,0) [] [])
+                              (HsApp 
+                               ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:94:38-54
+                                 }
+                                Just (Ann (DP (0,0)) (ColDelta 29) DP (0,0) [] [])
+                                (HsApp 
+                                 ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:94:38-42
+                                   }
+                                  Just (Ann (DP (0,0)) (ColDelta 29) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                                  (HsVar 
+                                   (Unqual {OccName: pOpen}))) 
+                                 ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:94:44-54
+                                   }
+                                  Just (Ann (DP (0,1)) (ColDelta 35) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                                  (HsVar 
+                                   (Unqual {OccName: WriteToPipe}))))) 
+                               ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:94:56-65
+                                 }
+                                Just (Ann (DP (0,1)) (ColDelta 47) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                                (HsLit 
+                                 (HsString "\"sendmail\"" {FastString: "sendmail"}))))) 
+                             ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:94:67-70
+                               }
+                              Just (Ann (DP (0,1)) (ColDelta 58) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                              (HsVar 
+                               (Unqual {OccName: args}))))) 
+                           ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:94:72-75
+                             }
+                            Just (Ann (DP (0,1)) (ColDelta 63) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                            (HsVar 
+                             (Unqual {OccName: func}))))))))) 
+                     (HsLit 
+                      (HsString "" {FastString: "noSyntaxExpr"})) 
+                     (HsLit 
+                      (HsString "" {FastString: "noSyntaxExpr"})))),
+                   ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(95,9)-(100,33)
+                     }
+                    Just (Ann (DP (1,0)) (ColDelta 0) DP (1,0) [] [])
+                    (BodyStmt 
+                     ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(95,9)-(100,33)
+                       }
+                      Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnCase),DP (0,0)),((G AnnOf),DP (0,1)),((AnnList ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(96,13)-(100,33) Ref "delta-4"),DP (0,0))])
+                      (HsCase 
+                       ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:95:14-15
+                         }
+                        Just (Ann (DP (0,1)) (ColDelta 5) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                        (HsVar 
+                         (Unqual {OccName: rv}))) 
+                       (MG 
+                        [
+                         ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:96:13-31
+                           }
+                          Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])
+                          (Match 
+                           (Nothing) 
+                           [
+                            ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:96:13-19
+                              }
+                             Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])
+                             (ConPatIn 
+                              ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:96:13-17
+                                }
+                               Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                               (Unqual {OccName: Right})) 
+                              (PrefixCon 
+                               [
+                                ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:96:19
+                                  }
+                                 Just (Ann (DP (0,1)) (ColDelta 6) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                                 (VarPat 
+                                  (Unqual {OccName: x})))])))] 
+                           (Nothing) 
+                           (GRHSs 
+                            [
+                             ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:96:21-31
+                               }
+                              Just (Ann (DP (0,1)) (ColDelta 8) DP (0,1) [] [((G AnnRarrow),DP (0,0))])
+                              (GRHS 
+                               [] 
+                               ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:96:24-31
+                                 }
+                                Just (Ann (DP (0,1)) (ColDelta 11) DP (0,1) [] [])
+                                (HsApp 
+                                 ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:96:24-29
+                                   }
+                                  Just (Ann (DP (0,0)) (ColDelta 11) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                                  (HsVar 
+                                   (Unqual {OccName: return}))) 
+                                 ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:96:31
+                                   }
+                                  Just (Ann (DP (0,1)) (ColDelta 18) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                                  (HsVar 
+                                   (Unqual {OccName: x})))))))] 
+                            (EmptyLocalBinds)))),
+                         ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(97,13)-(100,33)
+                           }
+                          Just (Ann (DP (1,0)) (ColDelta 0) DP (1,0) [] [])
+                          (Match 
+                           (Nothing) 
+                           [
+                            ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:97:13-53
+                              }
+                             Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])
+                             (ConPatIn 
+                              ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:97:13-16
+                                }
+                               Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                               (Unqual {OccName: Left})) 
+                              (PrefixCon 
+                               [
+                                ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:97:18-53
+                                  }
+                                 Just (Ann (DP (0,1)) (ColDelta 5) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])
+                                 (ParPat 
+                                  ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:97:19-52
+                                    }
+                                   Just (Ann (DP (0,0)) (ColDelta 6) DP (0,0) [] [((G AnnDcolon),DP (0,1))])
+                                   (SigPatIn 
+                                    ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:97:19
+                                      }
+                                     Just (Ann (DP (0,0)) (ColDelta 6) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                                     (WildPat 
+                                      (PlaceHolder))) 
+                                    (HsWB 
+                                     ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:97:24-52
+                                       }
+                                      Just (Ann (DP (0,1)) (ColDelta 11) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                                      (HsTyVar 
+                                       (Qual {ModuleName: Control.Exception} {OccName: IOException}))) 
+                                     (PlaceHolder) 
+                                     (PlaceHolder) 
+                                     (PlaceHolder))))))])))] 
+                           (Nothing) 
+                           (GRHSs 
+                            [
+                             ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(97,55)-(100,33)
+                               }
+                              Just (Ann (DP (0,1)) (ColDelta 42) DP (0,1) [] [((G AnnRarrow),DP (0,0))])
+                              (GRHS 
+                               [] 
+                               ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(97,58)-(100,33)
+                                 }
+                                Just (Ann (DP (0,1)) (ColDelta 45) DP (0,1) [] [((G AnnDo),DP (0,0)),((AnnList ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(98,23)-(100,33) Ref "delta-5"),DP (0,0))])
+                                (HsDo 
+                                 (DoExpr) 
+                                 [
+                                  ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:98:23-40
+                                    }
+                                   Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnLarrow),DP (0,1))])
+                                   (BindStmt 
+                                    ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:98:23-24
+                                      }
+                                     Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                                     (VarPat 
+                                      (Unqual {OccName: sn}))) 
+                                    ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:98:29-40
+                                      }
+                                     Just (Ann (DP (0,1)) (ColDelta 6) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                                     (HsVar 
+                                      (Unqual {OccName: findsendmail}))) 
+                                    (HsLit 
+                                     (HsString "" {FastString: "noSyntaxExpr"})) 
+                                    (HsLit 
+                                     (HsString "" {FastString: "noSyntaxExpr"})))),
+                                  ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:99:23-57
+                                    }
+                                   Just (Ann (DP (1,0)) (ColDelta 0) DP (1,0) [] [((G AnnLarrow),DP (0,1))])
+                                   (BindStmt 
+                                    ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:99:23
+                                      }
+                                     Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                                     (VarPat 
+                                      (Unqual {OccName: r}))) 
+                                    ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:99:28-57
+                                      }
+                                     Just (Ann (DP (0,1)) (ColDelta 5) DP (0,1) [] [])
+                                     (HsApp 
+                                      ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:99:28-52
+                                        }
+                                       Just (Ann (DP (0,0)) (ColDelta 5) DP (0,0) [] [])
+                                       (HsApp 
+                                        ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:99:28-47
+                                          }
+                                         Just (Ann (DP (0,0)) (ColDelta 5) DP (0,0) [] [])
+                                         (HsApp 
+                                          ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:99:28-44
+                                            }
+                                           Just (Ann (DP (0,0)) (ColDelta 5) DP (0,0) [] [])
+                                           (HsApp 
+                                            ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:99:28-32
+                                              }
+                                             Just (Ann (DP (0,0)) (ColDelta 5) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                                             (HsVar 
+                                              (Unqual {OccName: pOpen}))) 
+                                            ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:99:34-44
+                                              }
+                                             Just (Ann (DP (0,1)) (ColDelta 11) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                                             (HsVar 
+                                              (Unqual {OccName: WriteToPipe}))))) 
+                                          ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:99:46-47
+                                            }
+                                           Just (Ann (DP (0,1)) (ColDelta 23) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                                           (HsVar 
+                                            (Unqual {OccName: sn}))))) 
+                                        ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:99:49-52
+                                          }
+                                         Just (Ann (DP (0,1)) (ColDelta 26) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                                         (HsVar 
+                                          (Unqual {OccName: args}))))) 
+                                      ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:99:54-57
+                                        }
+                                       Just (Ann (DP (0,1)) (ColDelta 31) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                                       (HsVar 
+                                        (Unqual {OccName: func}))))) 
+                                    (HsLit 
+                                     (HsString "" {FastString: "noSyntaxExpr"})) 
+                                    (HsLit 
+                                     (HsString "" {FastString: "noSyntaxExpr"})))),
+                                  ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:100:23-33
+                                    }
+                                   Just (Ann (DP (1,0)) (ColDelta 0) DP (1,0) [] [])
+                                   (BodyStmt 
+                                    ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:100:23-33
+                                      }
+                                     Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])
+                                     (OpApp 
+                                      ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:100:23-28
+                                        }
+                                       Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                                       (HsVar 
+                                        (Unqual {OccName: return}))) 
+                                      ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:100:30-31
+                                        }
+                                       Just (Ann (DP (0,1)) (ColDelta 7) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                                       (HsVar 
+                                        (Unqual {OccName: $!}))) 
+                                      (PlaceHolder) 
+                                      ({ ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:100:33
+                                        }
+                                       Just (Ann (DP (0,1)) (ColDelta 10) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                                       (HsVar 
+                                        (Unqual {OccName: r}))))) 
+                                    (HsLit 
+                                     (HsString "" {FastString: "noSyntaxExpr"})) 
+                                    (HsLit 
+                                     (HsString "" {FastString: "noSyntaxExpr"})) 
+                                    (PlaceHolder)))] 
+                                 (PlaceHolder)))))] 
+                            (EmptyLocalBinds))))] 
+                        [] 
+                        (PlaceHolder) 
+                        (FromSource)))) 
+                     (HsLit 
+                      (HsString "" {FastString: "noSyntaxExpr"})) 
+                     (HsLit 
+                      (HsString "" {FastString: "noSyntaxExpr"})) 
+                     (PlaceHolder)))] 
+                  (PlaceHolder)))))))] 
+           (EmptyLocalBinds))))] 
+       [] 
+       (PlaceHolder) 
+       (FromSource)) 
+      (WpHole) 
+      (PlaceHolder) 
+      [])))] 
+  (Nothing) 
+  (Nothing)))
+==============
+[(AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:1:1 CN "HsModule" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((AnnComment DComment (DP (0,0),DP (0,20)) "{-# LANGUAGE CPP #-}" Nothing),DP (0,0)),((AnnComment DComment (DP (1,1),DP (7,3)) "{- arch-tag: Sendmail utility\nCopyright (c) 2004-2011 John Goerzen <jgoerzen@complete.org>\n\nAll rights reserved.\n\nFor license and copyright information, see the file LICENSE\n-}" Nothing),DP (1,1)),((AnnComment DComment (DP (2,1),DP (16,3)) "{- |\n   Module     : Network.Email.Sendmail\n   Copyright  : Copyright (C) 2004-2011 John Goerzen\n   License    : BSD3\n\n   Maintainer : John Goerzen <jgoerzen@complete.org>\n   Stability  : provisional\n   Portability: portable\n\nThis Haskell module provides an interface to transmitting a mail message.\n\nThis is not compatible with Windows at this time.\n\nWritten by John Goerzen, jgoerzen\\@complete.org\n-}" Nothing),DP (2,1)),((AnnComment DComment (DP (2,1),DP (2,84)) "#if (defined(mingw32_HOST_OS) || defined(mingw32_TARGET_OS) || defined(__MINGW32__))" Nothing),DP (2,1)),((AnnComment DComment (DP (1,1),DP (1,7)) "module" Nothing),DP (1,1)),((AnnComment DComment (DP (0,1),DP (0,23)) "Network.Email.Sendmail" Nothing),DP (0,1)),((AnnComment DComment (DP (1,1),DP (1,6)) "where" Nothing),DP (1,1)),((AnnComment DComment (DP (1,1),DP (1,5)) "#else" Nothing),DP (1,1)),((G AnnModule),DP (29,1)),((AnnComment DComment (DP (0,-6),DP (0,-6)) "" Nothing),DP (0,-6)),((G AnnVal),DP (0,1)),((G AnnWhere),DP (1,1)),((AnnComment DComment (DP (2,1),DP (2,6)) "#endif" Nothing),DP (2,1)),((AnnComment DComment (DP (2,1),DP (2,1)) "" Nothing),DP (2,1)),((AnnComment DComment (DP (0,0),DP (0,0)) "" Nothing),DP (0,0)),((AnnComment DComment (DP (0,0),DP (0,0)) "" Nothing),DP (0,0)),((AnnComment DComment (DP (0,0),DP (0,0)) "" Nothing),DP (0,0)),((AnnComment DComment (DP (0,0),DP (0,0)) "" Nothing),DP (0,0)),((G AnnEofPos),DP (5,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:30:30-39 CN "(:)" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 30) DP (0,0) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:30:31-38 CN "IEVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 31) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:30:31-38 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 31) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:33:1-23 CN "ImportDecl" NotNeeded,
+  (Ann (DP (2,1)) (ColDelta 1) DP (2,1) [DComment (DP (0,-5),DP (0,-5)) "" Nothing] [((G AnnImport),DP (0,0)),((G AnnVal),DP (0,1))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:34:1-23 CN "ImportDecl" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [((G AnnImport),DP (0,0)),((G AnnVal),DP (0,1))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:35:1-16 CN "ImportDecl" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [((G AnnImport),DP (0,0)),((G AnnVal),DP (0,1))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:36:1-22 CN "ImportDecl" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [((G AnnImport),DP (0,0)),((G AnnVal),DP (0,1))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:37:1-52 CN "ImportDecl" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [((G AnnImport),DP (0,0)),((G AnnQualified),DP (0,1)),((G AnnVal),DP (0,1))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:37:35-52 CN "(:)" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 35) DP (0,0) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:37:36-38 CN "IEVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 36) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:37:36-38 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 36) DP (0,0) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:37:41-51 CN "IEThingAbs" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 41) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:37:41-51 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 41) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:39:1-9 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:39:1-21 CN "SigD" NotNeeded,
+  (Ann (DP (2,1)) (ColDelta 1) DP (2,1) [] [((G AnnDcolon),DP (0,1))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:39:14-21 CN "HsForAllTy" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 14) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:39:14-21 CN "HsListTy" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 14) DP (0,0) [] [((G AnnOpenS),DP (0,0)),((G AnnCloseS),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:39:15-20 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 15) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:40:1-9 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(40,1)-(45,33) CN "Match" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnEqual),DP (0,1))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(40,1)-(45,33) CN "ValD" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(40,11)-(45,33) CN "GRHS" NotNeeded,
+  (Ann (DP (0,-1)) (ColDelta 11) DP (0,-1) [] [])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(40,13)-(45,33) CN "ExplicitList" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 13) DP (0,1) [] [((G AnnOpenS),DP (0,0)),((G AnnCloseS),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:40:14-33 CN "HsLit" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 14) DP (0,0) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:41:14-39 CN "HsLit" NotNeeded,
+  (Ann (DP (1,14)) (ColDelta 14) DP (1,14) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:42:14-38 CN "HsLit" NotNeeded,
+  (Ann (DP (1,14)) (ColDelta 14) DP (1,14) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:43:14-32 CN "HsLit" NotNeeded,
+  (Ann (DP (1,14)) (ColDelta 14) DP (1,14) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:44:14-28 CN "HsLit" NotNeeded,
+  (Ann (DP (1,14)) (ColDelta 14) DP (1,14) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:45:14-32 CN "HsLit" NotNeeded,
+  (Ann (DP (1,14)) (ColDelta 14) DP (1,14) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:47:1-12 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:47:1-25 CN "SigD" NotNeeded,
+  (Ann (DP (2,1)) (ColDelta 1) DP (2,1) [] [((G AnnDcolon),DP (0,1))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:47:17-18 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 17) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:47:17-25 CN "HsAppTy" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 17) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:47:17-25 CN "HsForAllTy" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 17) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:47:20-25 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 20) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:48:1-12 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(48,1)-(61,24) CN "Match" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnEqual),DP (0,1))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(48,1)-(61,24) CN "ValD" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(48,14)-(61,24) CN "GRHS" NotNeeded,
+  (Ann (DP (0,-1)) (ColDelta 14) DP (0,-1) [] [])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(49,5)-(61,24) CN "HsLet" NotNeeded,
+  (Ann (DP (1,5)) (ColDelta 5) DP (1,5) [] [((G AnnLet),DP (0,0)),((AnnList ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(49,9)-(59,31) NotNeeded),DP (0,0)),((G AnnIn),DP (1,4))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:49:9-14 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:49:9-37 CN "Match" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnEqual),DP (0,1))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(49,9)-(59,31) CN "FunBind" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(49,9)-(59,31) CN "HsValBinds" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 4) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:49:16-17 CN "ConPatIn" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 7) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:49:16-17 CN "Exact" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 7) DP (0,0) [] [((G AnnOpenS),DP (0,0)),((G AnnCloseS),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:49:19-37 CN "GRHS" NotNeeded,
+  (Ann (DP (0,-1)) (ColDelta 10) DP (0,-1) [] [])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:49:21-26 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 12) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:49:21-37 CN "HsApp" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 12) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:49:28-37 CN "HsLit" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 19) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:50:9-14 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(50,9)-(59,31) CN "Match" NotNeeded,
+  (Ann (DP (1,0)) (ColDelta 0) DP (1,0) [] [((G AnnEqual),DP (0,1))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:50:16-26 CN "ParPat" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 7) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:50:17-20 CN "VarPat" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 8) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:50:17-25 CN "ConPatIn" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 8) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:50:21 CN "Exact" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 12) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:50:22-25 CN "VarPat" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 13) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(50,28)-(59,31) CN "GRHS" NotNeeded,
+  (Ann (DP (0,-1)) (ColDelta 19) DP (0,-1) [] [])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(51,13)-(59,31) CN "HsDo" NotNeeded,
+  (Ann (DP (1,4)) (ColDelta 4) DP (1,4) [] [((G AnnDo),DP (0,0)),((AnnList ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(52,13)-(59,31) Ref "delta-1"),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:52:13 CN "VarPat" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:52:13-35 CN "BindStmt" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnLarrow),DP (0,1))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(52,13)-(59,31) CN "(:)" Ref "delta-1",
+  (Ann (DP (1,0)) (ColDelta 4) DP (1,0) [] [])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:52:18-30 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 5) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:52:18-35 CN "HsApp" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 5) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:52:32-35 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 19) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(53,13)-(59,31) CN "BodyStmt" NotNeeded,
+  (Ann (DP (1,0)) (ColDelta 0) DP (1,0) [] [])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(53,13)-(59,31) CN "HsIf" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnIf),DP (0,0)),((G AnnThen),DP (0,1)),((G AnnElse),DP (1,3))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:53:16 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 3) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(54,16)-(58,34) CN "HsDo" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [((G AnnDo),DP (0,0)),((AnnList ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(55,16)-(58,34) Ref "delta-2"),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:55:16 CN "VarPat" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:55:16-39 CN "BindStmt" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnLarrow),DP (0,1))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(55,16)-(58,34) CN "(:)" Ref "delta-2",
+  (Ann (DP (1,0)) (ColDelta 3) DP (1,0) [] [])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:55:21-34 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 5) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:55:21-39 CN "HsApp" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 5) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:55:36-39 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 20) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(56,16)-(58,34) CN "BodyStmt" NotNeeded,
+  (Ann (DP (1,0)) (ColDelta 0) DP (1,0) [] [])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(56,16)-(58,34) CN "HsIf" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnIf),DP (0,0)),((G AnnThen),DP (0,1)),((G AnnElse),DP (1,3))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:56:19-28 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:56:19-30 CN "HsApp" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 3) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:56:30 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 14) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:57:19-24 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:57:19-29 CN "HsApp" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:57:26-29 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 10) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:58:24-29 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 8) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:58:24-34 CN "HsApp" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 8) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:58:31-34 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 15) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:59:21-26 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 8) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:59:21-31 CN "HsApp" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 8) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:59:28-31 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 15) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:61:9-14 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 4) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:61:9-24 CN "HsApp" NotNeeded,
+  (Ann (DP (1,4)) (ColDelta 4) DP (1,4) [] [])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:61:16-24 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 11) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:79:1-8 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(79,1)-(82,17) CN "SigD" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (18,1) [DComment (DP (2,1),DP (17,4)) "{- | Transmits an e-mail message using the system's mail transport agent.\n\nThis function takes a message, a list of recipients, and an optional sender,\nand transmits it using the system's MTA, sendmail.\n\nIf @sendmail@ is on the @PATH@, it will be used; otherwise, a list of system\ndefault locations will be searched.\n\nA failure will be logged, since this function uses 'System.Cmd.Utils.safeSystem'\ninternally.\n\nThis function will first try @sendmail@.  If it does not exist, an error is\nlogged under @System.Cmd.Utils.pOpen3@ and various default @sendmail@ locations\nare tried.  If that still fails, an error is logged and an exception raised.\n\n -}" Nothing] [((G AnnDcolon),DP (0,1))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:79:13-17 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 13) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:79:13-24 CN "HsAppTy" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 13) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(79,13)-(82,17) CN "HsForAllTy" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 13) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(79,13)-(82,17) CN "HsFunTy" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 13) DP (0,0) [] [((AnnComment DComment (DP (0,16),DP (0,235)) "-- ^ The envelope from address.  If not specified, takes the system's default, which is usually based on the effective userid of the current process.  This is not necessarily what you want, so I recommend specifying it." Nothing),DP (0,16)),((G AnnRarrow),DP (1,10))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:79:19-24 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 19) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:80:13-20 CN "HsListTy" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 13) DP (0,0) [] [((G AnnOpenS),DP (0,0)),((G AnnCloseS),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(80,13)-(82,17) CN "HsFunTy" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 13) DP (0,1) [] [((AnnComment DComment (DP (0,20),DP (0,91)) "-- ^ A list of recipients for your message.  An empty list is an error." Nothing),DP (0,20)),((G AnnRarrow),DP (1,10))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:80:14-19 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 14) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:81:13-18 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 13) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(81,13)-(82,17) CN "HsFunTy" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 13) DP (0,1) [] [((AnnComment DComment (DP (0,22),DP (0,46)) "-- ^ The message itself." Nothing),DP (0,22)),((G AnnRarrow),DP (1,10))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:82:13-14 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 13) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:82:13-17 CN "HsAppTy" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 13) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:82:16-17 CN "HsTupleTy" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 16) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:83:1-8 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:83:1-58 CN "Match" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnEqual),DP (0,1))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(83,1)-(86,53) CN "ValD" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:83:10 CN "WildPat" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 10) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:83:12-13 CN "ConPatIn" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 12) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:83:12-13 CN "Exact" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 12) DP (0,0) [] [((G AnnOpenS),DP (0,0)),((G AnnCloseS),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:83:15 CN "WildPat" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 15) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:83:17-58 CN "GRHS" NotNeeded,
+  (Ann (DP (0,-1)) (ColDelta 17) DP (0,-1) [] [])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:83:19-22 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 19) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:83:19-58 CN "HsApp" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 19) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:83:24-58 CN "HsLit" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 24) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:84:1-8 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:84:1-64 CN "Match" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [((G AnnEqual),DP (0,1))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:84:10-16 CN "ConPatIn" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 10) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:84:10-16 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 10) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:84:18-27 CN "VarPat" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 18) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:84:29-31 CN "VarPat" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 29) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:84:33-64 CN "GRHS" NotNeeded,
+  (Ann (DP (0,-1)) (ColDelta 33) DP (0,-1) [] [])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:84:35-49 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 35) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:84:35-60 CN "HsApp" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 35) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:84:35-64 CN "HsApp" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 35) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:84:51-60 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 51) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:84:62-64 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 62) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:85:1-8 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(85,1)-(86,53) CN "Match" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [((G AnnEqual),DP (0,1))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:85:10-20 CN "ParPat" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 10) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:85:11-14 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 11) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:85:11-19 CN "ConPatIn" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 11) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:85:16-19 CN "VarPat" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 16) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:85:22-31 CN "VarPat" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 22) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:85:33-35 CN "VarPat" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 33) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(85,37)-(86,53) CN "GRHS" NotNeeded,
+  (Ann (DP (0,-1)) (ColDelta 37) DP (0,-1) [] [])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:86:5-19 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 5) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:86:5-49 CN "HsApp" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 5) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:86:5-53 CN "HsApp" NotNeeded,
+  (Ann (DP (1,5)) (ColDelta 5) DP (1,5) [] [])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:86:21-49 CN "HsPar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 21) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:86:22-35 CN "HsPar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 22) DP (0,0) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:86:22-48 CN "OpApp" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 22) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:86:23-26 CN "HsLit" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 23) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:86:23-34 CN "OpApp" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 23) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:86:28-29 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 28) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:86:31-34 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 31) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:86:37 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 37) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:86:39-48 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 39) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:86:51-53 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 51) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:88:1-15 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:88:1-46 CN "SigD" NotNeeded,
+  (Ann (DP (2,1)) (ColDelta 1) DP (2,1) [] [((G AnnDcolon),DP (0,1))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:88:20-27 CN "HsListTy" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 20) DP (0,0) [] [((G AnnOpenS),DP (0,0)),((G AnnCloseS),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:88:20-46 CN "HsForAllTy" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 20) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:88:20-46 CN "HsFunTy" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 20) DP (0,0) [] [((G AnnRarrow),DP (0,1))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:88:21-26 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 21) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:88:32-37 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 32) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:88:32-46 CN "HsFunTy" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 32) DP (0,1) [] [((G AnnRarrow),DP (0,1))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:88:42-43 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 42) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:88:42-46 CN "HsAppTy" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 42) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:88:45-46 CN "HsTupleTy" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 45) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:89:1-15 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(89,1)-(100,33) CN "Match" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnEqual),DP (0,1))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(89,1)-(100,33) CN "ValD" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:89:17-20 CN "VarPat" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 17) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:89:22-24 CN "VarPat" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 22) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(89,26)-(100,33) CN "GRHS" NotNeeded,
+  (Ann (DP (0,-1)) (ColDelta 26) DP (0,-1) [] [])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(90,5)-(100,33) CN "HsLet" NotNeeded,
+  (Ann (DP (1,5)) (ColDelta 5) DP (1,5) [] [((G AnnLet),DP (0,0)),((AnnList ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:90:9-30 NotNeeded),DP (0,0)),((G AnnIn),DP (1,4))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:90:9-12 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:90:9-30 CN "FunBind" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:90:9-30 CN "HsValBinds" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 4) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:90:9-30 CN "Match" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnEqual),DP (0,1))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:90:14 CN "VarPat" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 5) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:90:16-30 CN "GRHS" NotNeeded,
+  (Ann (DP (0,-1)) (ColDelta 7) DP (0,-1) [] [])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:90:18-24 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 9) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:90:18-26 CN "HsApp" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 9) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:90:18-30 CN "HsApp" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 9) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:90:26 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 17) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:90:28-30 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 19) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(92,9)-(100,33) CN "HsDo" NotNeeded,
+  (Ann (DP (1,4)) (ColDelta 4) DP (1,4) [] [((G AnnDo),DP (0,0)),((AnnList ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(94,9)-(100,33) Ref "delta-3"),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:94:9-10 CN "VarPat" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:94:9-76 CN "BindStmt" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnLarrow),DP (0,1))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(94,9)-(100,33) CN "(:)" Ref "delta-3",
+  (Ann (DP (1,0)) (ColDelta 4) DP (2,0) [DComment (DP (1,0),DP (1,50)) "--pOpen WriteToPipe \"/usr/sbin/sendmail\" args func" Nothing] [])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:94:15-35 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 6) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:94:15-76 CN "HsApp" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 6) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:94:37-76 CN "HsPar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 28) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:94:38-42 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 29) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:94:38-54 CN "HsApp" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 29) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:94:38-65 CN "HsApp" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 29) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:94:38-70 CN "HsApp" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 29) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:94:38-75 CN "HsApp" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 29) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:94:44-54 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 35) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:94:56-65 CN "HsLit" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 47) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:94:67-70 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 58) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:94:72-75 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 63) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(95,9)-(100,33) CN "BodyStmt" NotNeeded,
+  (Ann (DP (1,0)) (ColDelta 0) DP (1,0) [] [])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(95,9)-(100,33) CN "HsCase" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnCase),DP (0,0)),((G AnnOf),DP (0,1)),((AnnList ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(96,13)-(100,33) Ref "delta-4"),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:95:14-15 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 5) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:96:13-17 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:96:13-19 CN "ConPatIn" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:96:13-31 CN "Match" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(96,13)-(100,33) CN "(:)" Ref "delta-4",
+  (Ann (DP (1,0)) (ColDelta 4) DP (1,0) [] [])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:96:19 CN "VarPat" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 6) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:96:21-31 CN "GRHS" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 8) DP (0,1) [] [((G AnnRarrow),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:96:24-29 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 11) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:96:24-31 CN "HsApp" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 11) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:96:31 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 18) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:97:13-16 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:97:13-53 CN "ConPatIn" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(97,13)-(100,33) CN "Match" NotNeeded,
+  (Ann (DP (1,0)) (ColDelta 0) DP (1,0) [] [])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:97:18-53 CN "ParPat" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 5) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:97:19 CN "WildPat" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 6) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:97:19-52 CN "SigPatIn" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 6) DP (0,0) [] [((G AnnDcolon),DP (0,1))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:97:24-52 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 11) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(97,55)-(100,33) CN "GRHS" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 42) DP (0,1) [] [((G AnnRarrow),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(97,58)-(100,33) CN "HsDo" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 45) DP (0,1) [] [((G AnnDo),DP (0,0)),((AnnList ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(98,23)-(100,33) Ref "delta-5"),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:98:23-24 CN "VarPat" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:98:23-40 CN "BindStmt" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnLarrow),DP (0,1))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(98,23)-(100,33) CN "(:)" Ref "delta-5",
+  (Ann (DP (1,0)) (ColDelta 10) DP (1,0) [] [])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:98:29-40 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 6) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:99:23 CN "VarPat" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:99:23-57 CN "BindStmt" NotNeeded,
+  (Ann (DP (1,0)) (ColDelta 0) DP (1,0) [] [((G AnnLarrow),DP (0,1))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:99:28-32 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 5) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:99:28-44 CN "HsApp" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 5) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:99:28-47 CN "HsApp" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 5) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:99:28-52 CN "HsApp" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 5) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:99:28-57 CN "HsApp" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 5) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:99:34-44 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 11) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:99:46-47 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 23) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:99:49-52 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 26) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:99:54-57 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 31) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:100:23-28 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:100:23-33 CN "BodyStmt" NotNeeded,
+  (Ann (DP (1,0)) (ColDelta 0) DP (1,0) [] [])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:100:23-33 CN "OpApp" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:100:30-31 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 7) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:100:33 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 10) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey <no location info> CN "EmptyLocalBinds" NotNeeded,
+  (Ann (DP (-45,0)) (ColDelta 0) DP (-45,0) [] []))]
+==============
+([((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:1:1,
+    AnnModule),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:30:1-6]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:1:1,
+    AnnWhere),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:31:1-5]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:30:30-39,
+    AnnCloseP),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:30:39]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:30:30-39,
+    AnnOpenP),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:30:30]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:33:1-23,
+    AnnImport),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:33:1-6]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:33:1-23,
+    AnnSemi),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:34:1]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:34:1-23,
+    AnnImport),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:34:1-6]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:34:1-23,
+    AnnSemi),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:35:1]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:35:1-16,
+    AnnImport),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:35:1-6]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:35:1-16,
+    AnnSemi),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:36:1]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:36:1-22,
+    AnnImport),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:36:1-6]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:36:1-22,
+    AnnSemi),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:37:1]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:37:1-52,
+    AnnImport),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:37:1-6]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:37:1-52,
+    AnnQualified),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:37:8-16]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:37:1-52,
+    AnnSemi),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:39:1]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:37:35-52,
+    AnnCloseP),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:37:52]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:37:35-52,
+    AnnOpenP),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:37:35]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:37:36-38,
+    AnnComma),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:37:39]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:39:1-21,
+    AnnDcolon),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:39:11-12]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:39:1-21,
+    AnnSemi),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:40:1]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:39:14-21,
+    AnnCloseS),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:39:21]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:39:14-21,
+    AnnOpenS),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:39:14]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(40,1)-(45,33),
+    AnnEqual),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:40:11]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(40,1)-(45,33),
+    AnnFunId),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:40:1-9]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(40,1)-(45,33),
+    AnnSemi),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:47:1]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(40,13)-(45,33),
+    AnnCloseS),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:45:33]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(40,13)-(45,33),
+    AnnOpenS),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:40:13]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:40:14-33,
+    AnnComma),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:40:34]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:41:14-39,
+    AnnComma),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:41:40]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:42:14-38,
+    AnnComma),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:42:39]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:43:14-32,
+    AnnComma),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:43:33]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:44:14-28,
+    AnnComma),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:44:29]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:47:1-25,
+    AnnDcolon),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:47:14-15]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:47:1-25,
+    AnnSemi),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:48:1]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(48,1)-(61,24),
+    AnnEqual),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:48:14]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(48,1)-(61,24),
+    AnnFunId),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:48:1-12]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(48,1)-(61,24),
+    AnnSemi),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:79:1]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(49,5)-(61,24),
+    AnnIn),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:60:9-10]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(49,5)-(61,24),
+    AnnLet),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:49:5-7]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:49:9-37,
+    AnnEqual),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:49:19]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:49:9-37,
+    AnnFunId),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:49:9-14]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:49:9-37,
+    AnnSemi),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:50:9]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:49:16-17,
+    AnnCloseS),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:49:17]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:49:16-17,
+    AnnOpenS),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:49:16]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(50,9)-(59,31),
+    AnnEqual),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:50:28]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(50,9)-(59,31),
+    AnnFunId),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:50:9-14]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(50,9)-(59,31),
+    AnnSemi),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:60:9]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:50:16-26,
+    AnnCloseP),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:50:26]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:50:16-26,
+    AnnOpenP),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:50:16]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:50:17-25,
+    AnnVal),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:50:21]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(51,13)-(59,31),
+    AnnDo),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:51:13-14]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:52:13-35,
+    AnnLarrow),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:52:15-16]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:52:13-35,
+    AnnSemi),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:53:13]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(53,13)-(59,31),
+    AnnElse),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:59:16-19]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(53,13)-(59,31),
+    AnnIf),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:53:13-14]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(53,13)-(59,31),
+    AnnThen),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:53:18-21]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(54,16)-(58,34),
+    AnnDo),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:54:16-17]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:55:16-39,
+    AnnLarrow),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:55:18-19]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:55:16-39,
+    AnnSemi),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:56:16]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(56,16)-(58,34),
+    AnnElse),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:58:19-22]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(56,16)-(58,34),
+    AnnIf),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:56:16-17]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(56,16)-(58,34),
+    AnnSemi),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:59:16]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(56,16)-(58,34),
+    AnnThen),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:56:32-35]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(79,1)-(82,17),
+    AnnDcolon),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:79:10-11]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(79,1)-(82,17),
+    AnnSemi),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:83:1]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(79,13)-(82,17),
+    AnnRarrow),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:80:10-11]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:80:13-20,
+    AnnCloseS),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:80:20]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:80:13-20,
+    AnnOpenS),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:80:13]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(80,13)-(82,17),
+    AnnRarrow),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:81:10-11]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(81,13)-(82,17),
+    AnnRarrow),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:82:10-11]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:82:16-17,
+    AnnCloseP),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:82:17]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:82:16-17,
+    AnnOpenP),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:82:16]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:83:1-58,
+    AnnEqual),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:83:17]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:83:1-58,
+    AnnFunId),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:83:1-8]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:83:1-58,
+    AnnSemi),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:84:1]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:83:12-13,
+    AnnCloseS),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:83:13]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:83:12-13,
+    AnnOpenS),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:83:12]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:84:1-64,
+    AnnEqual),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:84:33]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:84:1-64,
+    AnnFunId),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:84:1-8]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:84:1-64,
+    AnnSemi),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:85:1]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(85,1)-(86,53),
+    AnnEqual),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:85:37]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(85,1)-(86,53),
+    AnnFunId),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:85:1-8]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(85,1)-(86,53),
+    AnnSemi),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:88:1]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:85:10-20,
+    AnnCloseP),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:85:20]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:85:10-20,
+    AnnOpenP),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:85:10]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:86:21-49,
+    AnnCloseP),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:86:49]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:86:21-49,
+    AnnOpenP),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:86:21]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:86:22-35,
+    AnnCloseP),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:86:35]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:86:22-35,
+    AnnOpenP),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:86:22]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:86:22-48,
+    AnnVal),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:86:37]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:86:23-34,
+    AnnVal),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:86:28-29]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:88:1-46,
+    AnnDcolon),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:88:17-18]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:88:1-46,
+    AnnSemi),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:89:1]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:88:20-27,
+    AnnCloseS),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:88:27]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:88:20-27,
+    AnnOpenS),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:88:20]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:88:20-46,
+    AnnRarrow),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:88:29-30]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:88:32-46,
+    AnnRarrow),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:88:39-40]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:88:45-46,
+    AnnCloseP),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:88:46]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:88:45-46,
+    AnnOpenP),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:88:45]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(89,1)-(100,33),
+    AnnEqual),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:89:26]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(89,1)-(100,33),
+    AnnFunId),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:89:1-15]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(89,1)-(100,33),
+    AnnSemi),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:105:1]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(90,5)-(100,33),
+    AnnIn),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:91:9-10]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(90,5)-(100,33),
+    AnnLet),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:90:5-7]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:90:9-30,
+    AnnEqual),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:90:16]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:90:9-30,
+    AnnFunId),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:90:9-12]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:90:9-30,
+    AnnSemi),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:91:9]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(92,9)-(100,33),
+    AnnDo),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:92:9-10]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:94:9-76,
+    AnnLarrow),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:94:12-13]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:94:9-76,
+    AnnSemi),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:95:9]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:94:37-76,
+    AnnCloseP),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:94:76]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:94:37-76,
+    AnnOpenP),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:94:37]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(95,9)-(100,33),
+    AnnCase),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:95:9-12]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(95,9)-(100,33),
+    AnnOf),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:95:17-18]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:96:13-31,
+    AnnSemi),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:97:13]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:96:21-31,
+    AnnRarrow),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:96:21-22]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:97:18-53,
+    AnnCloseP),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:97:53]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:97:18-53,
+    AnnOpenP),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:97:18]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:97:19-52,
+    AnnDcolon),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:97:21-22]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(97,55)-(100,33),
+    AnnRarrow),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:97:55-56]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(97,58)-(100,33),
+    AnnDo),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:97:58-59]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:98:23-40,
+    AnnLarrow),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:98:26-27]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:98:23-40,
+    AnnSemi),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:99:23]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:99:23-57,
+    AnnLarrow),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:99:25-26]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:99:23-57,
+    AnnSemi),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:100:23]),
+  ((../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:100:23-33,
+    AnnVal),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:100:30-31]),
+  ((<no location info>, AnnEofPos),
+   [../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:105:1])],
+ [(../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(79,13)-(82,17),
+   [AnnLineComment "-- ^ The envelope from address.  If not specified, takes the system's default, which is usually based on the effective userid of the current process.  This is not necessarily what you want, so I recommend specifying it."]),
+  (../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(80,13)-(82,17),
+   [AnnLineComment "-- ^ A list of recipients for your message.  An empty list is an error."]),
+  (../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(81,13)-(82,17),
+   [AnnLineComment "-- ^ The message itself."]),
+  (../../hackage-packages/MissingH-1.3.0.1/src/Network/Email/Sendmail.hs:(92,9)-(100,33),
+   [AnnLineComment "--pOpen WriteToPipe \"/usr/sbin/sendmail\" args func"]),
+  (<no location info>,
+   [AnnBlockComment "{- | Transmits an e-mail message using the system's mail transport agent.\n\nThis function takes a message, a list of recipients, and an optional sender,\nand transmits it using the system's MTA, sendmail.\n\nIf @sendmail@ is on the @PATH@, it will be used; otherwise, a list of system\ndefault locations will be searched.\n\nA failure will be logged, since this function uses 'System.Cmd.Utils.safeSystem'\ninternally.\n\nThis function will first try @sendmail@.  If it does not exist, an error is\nlogged under @System.Cmd.Utils.pOpen3@ and various default @sendmail@ locations\nare tried.  If that still fails, an error is logged and an exception raised.\n\n -}",
+    AnnBlockComment "{- |\n   Module     : Network.Email.Sendmail\n   Copyright  : Copyright (C) 2004-2011 John Goerzen\n   License    : BSD3\n\n   Maintainer : John Goerzen <jgoerzen@complete.org>\n   Stability  : provisional\n   Portability: portable\n\nThis Haskell module provides an interface to transmitting a mail message.\n\nThis is not compatible with Windows at this time.\n\nWritten by John Goerzen, jgoerzen\\@complete.org\n-}",
+    AnnBlockComment "{- arch-tag: Sendmail utility\nCopyright (c) 2004-2011 John Goerzen <jgoerzen@complete.org>\n\nAll rights reserved.\n\nFor license and copyright information, see the file LICENSE\n-}",
+    AnnBlockComment "{-# LANGUAGE CPP #-}"])])

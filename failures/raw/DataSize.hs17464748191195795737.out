@@ -1,0 +1,1697 @@
+{-# LANGUAGE CPP #-}
+{- |
+   Module      : GHC.DataSize
+   Copyright   : (c) Dennis Felsing
+   License     : 3-Clause BSD-style
+   Maintainer  : dennis@felsin9.de
+ -}
+module GHC.DataSize (
+  closureSize,
+  recursiveSize
+  --mSize
+  )
+  where
+
+import GHC.HeapView hiding (size)
+
+import Control.Monad
+
+import System.Mem
+
+-- This used to be available via GHC.Constants
+#include "MachDeps.h"
+wORD_SIZE :: Int
+wORD_SIZE = 8SIZEOF_HSWORD
+
+--import qualified Data.IntMap as IntMap
+
+--depth :: Int
+--depth = 10^10
+
+-- Inspired by Simon Marlow:
+-- https://ghcmutterings.wordpress.com/2009/02/12/53/
+
+-- | Calculate size of GHC objects in Bytes. Note that an object may not be
+--   evaluated yet and only the size of the initial closure is returned.
+closureSize :: Num b => a -> IO b
+closureSize x = do
+  (_,y,_) <- getClosureRaw x
+  return . fromIntegral $ length y * wORD_SIZE
+
+-- | Calculate the recursive size of GHC objects in Bytes. Note that the actual
+--   size in memory is calculated, so shared values are only counted once.
+--
+--   Call with
+--   @
+--    recursiveSize $! 2
+--   @
+--   to force evaluation to WHNF before calculating the size.
+--
+--   Call with
+--   @
+--    recursiveSize $!! \"foobar\"
+--   @
+--   ($!! from Control.DeepSeq) to force full evaluation before calculating the
+--   size.
+--
+--   A garbage collection is performed before the size is calculated, because
+--   the garbage collector would make heap walks difficult.
+
+recursiveSize :: Num b => a -> IO b
+recursiveSize x = do
+  performGC
+  liftM snd $ go ([], 0) $ asBox x
+  where go (vs, acc) b@(Box y) = do
+          isElem <- liftM or $ mapM (areBoxesEqual b) vs
+          if isElem
+            then return (vs, acc)
+            else do
+             size    <- closureSize y
+             closure <- getClosureData y
+             foldM go (b : vs, acc + size) $ allPtrs closure
+
+==============
+../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs
+==============
+lengths:(1855,1854)
+
+==============
+
+({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:1:1 }
+ Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((AnnComment DComment (DP (0,0),DP (0,20)) "{-# LANGUAGE CPP #-}" Nothing),DP (0,0)),((AnnComment DComment (DP (1,1),DP (6,4)) "{- |\n   Module      : GHC.DataSize\n   Copyright   : (c) Dennis Felsing\n   License     : 3-Clause BSD-style\n   Maintainer  : dennis@felsin9.de\n -}" Nothing),DP (1,1)),((G AnnModule),DP (7,1)),((G AnnVal),DP (0,1)),((G AnnWhere),DP (1,3)),((AnnComment DComment (DP (1,1),DP (1,1)) "" Nothing),DP (1,1)),((AnnComment DComment (DP (0,0),DP (0,0)) "" Nothing),DP (0,0)),((AnnComment DComment (DP (0,0),DP (0,0)) "" Nothing),DP (0,0)),((AnnComment DComment (DP (0,0),DP (0,0)) "" Nothing),DP (0,0)),((AnnComment DComment (DP (0,0),DP (0,0)) "" Nothing),DP (0,0)),((G AnnEofPos),DP (2,0))])
+ (HsModule 
+  (Just 
+   ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:8:8-19
+     }
+    Nothing{ModuleName: GHC.DataSize})) 
+  (Just 
+   ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:(8,21)-(12,3)
+     }
+    Just (Ann (DP (0,1)) (ColDelta 21) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((AnnComment DComment (DP (1,3),DP (1,10)) "--mSize" Nothing),DP (1,3)),((G AnnCloseP),DP (2,3))])
+    [
+     ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:9:3-13
+       }
+      Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [])
+      (IEVar 
+       ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:9:3-13
+         }
+        Just (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+        (Unqual {OccName: closureSize})))),
+     ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:10:3-15
+       }
+      Just (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [])
+      (IEVar 
+       ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:10:3-15
+         }
+        Just (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnVal),DP (0,0))])
+        (Unqual {OccName: recursiveSize}))))])) 
+  [
+   ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:15:1-33
+     }
+    Just (Ann (DP (2,1)) (ColDelta 1) DP (2,1) [] [((G AnnImport),DP (0,0)),((G AnnVal),DP (0,1))])
+    (ImportDecl 
+     (Nothing) 
+     ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:15:8-19
+       }
+      Nothing{ModuleName: GHC.HeapView}) 
+     (Nothing) 
+     (False) 
+     (False) 
+     (False) 
+     (False) 
+     (Nothing) 
+     (Just 
+      ((,) 
+       (True) 
+       ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:15:21-33
+         }
+        Just (Ann (DP (0,1)) (ColDelta 21) DP (0,1) [] [((G AnnHiding),DP (0,0)),((G AnnOpenP),DP (0,1)),((G AnnCloseP),DP (0,0))])
+        [
+         ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:15:29-32
+           }
+          Just (Ann (DP (0,0)) (ColDelta 29) DP (0,0) [] [])
+          (IEVar 
+           ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:15:29-32
+             }
+            Just (Ann (DP (0,0)) (ColDelta 29) DP (0,0) [] [((G AnnVal),DP (0,0))])
+            (Unqual {OccName: size}))))]))))),
+   ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:17:1-20
+     }
+    Just (Ann (DP (2,1)) (ColDelta 1) DP (2,1) [] [((G AnnImport),DP (0,0)),((G AnnVal),DP (0,1))])
+    (ImportDecl 
+     (Nothing) 
+     ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:17:8-20
+       }
+      Nothing{ModuleName: Control.Monad}) 
+     (Nothing) 
+     (False) 
+     (False) 
+     (False) 
+     (False) 
+     (Nothing) 
+     (Nothing))),
+   ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:19:1-17
+     }
+    Just (Ann (DP (2,1)) (ColDelta 1) DP (2,1) [] [((G AnnImport),DP (0,0)),((G AnnVal),DP (0,1))])
+    (ImportDecl 
+     (Nothing) 
+     ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:19:8-17
+       }
+      Nothing{ModuleName: System.Mem}) 
+     (Nothing) 
+     (False) 
+     (False) 
+     (False) 
+     (False) 
+     (Nothing) 
+     (Nothing)))] 
+  [
+   ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:23:1-16
+     }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (4,1) [DComment (DP (2,1),DP (2,47)) "-- This used to be available via GHC.Constants" Nothing,DComment (DP (1,1),DP (1,21)) "#include \"MachDeps.h\"" Nothing] [((G AnnDcolon),DP (0,1))])
+    (SigD 
+     (TypeSig 
+      [
+       ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:23:1-9
+         }
+        Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+        (Unqual {OccName: wORD_SIZE}))] 
+      ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:23:14-16
+        }
+       Just (Ann (DP (0,1)) (ColDelta 14) DP (0,1) [] [])
+       (HsForAllTy 
+        (Implicit) 
+        (Nothing) 
+        (HsQTvs 
+         [] 
+         []) 
+        ({ <no location info> }
+         Nothing
+         []) 
+        ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:23:14-16
+          }
+         Just (Ann (DP (0,0)) (ColDelta 14) DP (0,0) [] [((G AnnVal),DP (0,0))])
+         (HsTyVar 
+          (Unqual {OccName: Int}))))) 
+      (PlaceHolder)))),
+   ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:24:1-13
+     }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [])
+    (ValD 
+     (FunBind 
+      ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:24:1-9
+        }
+       Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+       (Unqual {OccName: wORD_SIZE})) 
+      (False) 
+      (MG 
+       [
+        ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:24:1-13
+          }
+         Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnEqual),DP (0,1))])
+         (Match 
+          (Just 
+           ((,) 
+            ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:24:1-9
+              }
+             Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+             (Unqual {OccName: wORD_SIZE})) 
+            (False))) 
+          [] 
+          (Nothing) 
+          (GRHSs 
+           [
+            ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:24:11-13
+              }
+             Just (Ann (DP (0,-1)) (ColDelta 11) DP (0,-1) [] [])
+             (GRHS 
+              [] 
+              ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:24:13
+                }
+               Just (Ann (DP (0,1)) (ColDelta 13) DP (0,1) [] [((G AnnVal),DP (0,0))])
+               (HsOverLit {HsOverLit:8}))))] 
+           (EmptyLocalBinds))))] 
+       [] 
+       (PlaceHolder) 
+       (FromSource)) 
+      (WpHole) 
+      (PlaceHolder) 
+      []))),
+   ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:36:1-33
+     }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (12,1) [DComment (DP (0,-1),DP (0,12)) "SIZEOF_HSWORD" Nothing,DComment (DP (2,1),DP (2,41)) "--import qualified Data.IntMap as IntMap" Nothing,DComment (DP (2,1),DP (2,15)) "--depth :: Int" Nothing,DComment (DP (1,1),DP (1,16)) "--depth = 10^10" Nothing,DComment (DP (2,1),DP (2,29)) "-- Inspired by Simon Marlow:" Nothing,DComment (DP (1,1),DP (1,54)) "-- https://ghcmutterings.wordpress.com/2009/02/12/53/" Nothing,DComment (DP (2,1),DP (2,76)) "-- | Calculate size of GHC objects in Bytes. Note that an object may not be" Nothing,DComment (DP (1,1),DP (1,73)) "--   evaluated yet and only the size of the initial closure is returned." Nothing] [((G AnnDcolon),DP (0,1))])
+    (SigD 
+     (TypeSig 
+      [
+       ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:36:1-11
+         }
+        Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+        (Unqual {OccName: closureSize}))] 
+      ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:36:16-33
+        }
+       Just (Ann (DP (0,1)) (ColDelta 16) DP (0,1) [] [])
+       (HsForAllTy 
+        (Implicit) 
+        (Nothing) 
+        (HsQTvs 
+         [] 
+         []) 
+        ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:36:16-20
+          }
+         Just (Ann (DP (0,0)) (ColDelta 16) DP (0,0) [] [((G AnnDarrow),DP (0,1))])
+         [
+          ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:36:16-20
+            }
+           Just (Ann (DP (0,0)) (ColDelta 16) DP (0,0) [] [])
+           (HsAppTy 
+            ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:36:16-18
+              }
+             Just (Ann (DP (0,0)) (ColDelta 16) DP (0,0) [] [((G AnnVal),DP (0,0))])
+             (HsTyVar 
+              (Unqual {OccName: Num}))) 
+            ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:36:20
+              }
+             Just (Ann (DP (0,1)) (ColDelta 20) DP (0,1) [] [((G AnnVal),DP (0,0))])
+             (HsTyVar 
+              (Unqual {OccName: b})))))]) 
+        ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:36:25-33
+          }
+         Just (Ann (DP (0,1)) (ColDelta 25) DP (0,1) [] [((G AnnRarrow),DP (0,1))])
+         (HsFunTy 
+          ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:36:25
+            }
+           Just (Ann (DP (0,0)) (ColDelta 25) DP (0,0) [] [((G AnnVal),DP (0,0))])
+           (HsTyVar 
+            (Unqual {OccName: a}))) 
+          ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:36:30-33
+            }
+           Just (Ann (DP (0,1)) (ColDelta 30) DP (0,1) [] [])
+           (HsAppTy 
+            ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:36:30-31
+              }
+             Just (Ann (DP (0,0)) (ColDelta 30) DP (0,0) [] [((G AnnVal),DP (0,0))])
+             (HsTyVar 
+              (Unqual {OccName: IO}))) 
+            ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:36:33
+              }
+             Just (Ann (DP (0,1)) (ColDelta 33) DP (0,1) [] [((G AnnVal),DP (0,0))])
+             (HsTyVar 
+              (Unqual {OccName: b}))))))))) 
+      (PlaceHolder)))),
+   ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:(37,1)-(39,46)
+     }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [])
+    (ValD 
+     (FunBind 
+      ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:37:1-11
+        }
+       Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+       (Unqual {OccName: closureSize})) 
+      (False) 
+      (MG 
+       [
+        ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:(37,1)-(39,46)
+          }
+         Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnEqual),DP (0,1))])
+         (Match 
+          (Just 
+           ((,) 
+            ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:37:1-11
+              }
+             Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+             (Unqual {OccName: closureSize})) 
+            (False))) 
+          [
+           ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:37:13
+             }
+            Just (Ann (DP (0,1)) (ColDelta 13) DP (0,1) [] [((G AnnVal),DP (0,0))])
+            (VarPat 
+             (Unqual {OccName: x})))] 
+          (Nothing) 
+          (GRHSs 
+           [
+            ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:(37,15)-(39,46)
+              }
+             Just (Ann (DP (0,-1)) (ColDelta 15) DP (0,-1) [] [])
+             (GRHS 
+              [] 
+              ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:(37,17)-(39,46)
+                }
+               Just (Ann (DP (0,1)) (ColDelta 17) DP (0,1) [] [((G AnnDo),DP (0,0)),((AnnList ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:(38,3)-(39,46) Ref "delta-1"),DP (0,0))])
+               (HsDo 
+                (DoExpr) 
+                [
+                 ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:38:3-28
+                   }
+                  Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnLarrow),DP (0,1))])
+                  (BindStmt 
+                   ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:38:3-9
+                     }
+                    Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])
+                    (TuplePat 
+                     [
+                      ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:38:4 }
+                       Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                       (WildPat 
+                        (PlaceHolder))),
+                      ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:38:6 }
+                       Just (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                       (VarPat 
+                        (Unqual {OccName: y}))),
+                      ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:38:8 }
+                       Just (Ann (DP (0,0)) (ColDelta 5) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                       (WildPat 
+                        (PlaceHolder)))] 
+                     (Boxed) 
+                     [])) 
+                   ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:38:14-28
+                     }
+                    Just (Ann (DP (0,1)) (ColDelta 11) DP (0,1) [] [])
+                    (HsApp 
+                     ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:38:14-26
+                       }
+                      Just (Ann (DP (0,0)) (ColDelta 11) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                      (HsVar 
+                       (Unqual {OccName: getClosureRaw}))) 
+                     ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:38:28
+                       }
+                      Just (Ann (DP (0,1)) (ColDelta 25) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                      (HsVar 
+                       (Unqual {OccName: x}))))) 
+                   (HsLit 
+                    (HsString "" {FastString: "noSyntaxExpr"})) 
+                   (HsLit 
+                    (HsString "" {FastString: "noSyntaxExpr"})))),
+                 ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:39:3-46
+                   }
+                  Just (Ann (DP (1,0)) (ColDelta 0) DP (1,0) [] [])
+                  (BodyStmt 
+                   ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:39:3-46
+                     }
+                    Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])
+                    (OpApp 
+                     ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:39:3-34
+                       }
+                      Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])
+                      (OpApp 
+                       ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:39:3-23
+                         }
+                        Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])
+                        (OpApp 
+                         ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:39:3-8
+                           }
+                          Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                          (HsVar 
+                           (Unqual {OccName: return}))) 
+                         ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:39:10
+                           }
+                          Just (Ann (DP (0,1)) (ColDelta 7) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                          (HsVar 
+                           (Unqual {OccName: .}))) 
+                         (PlaceHolder) 
+                         ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:39:12-23
+                           }
+                          Just (Ann (DP (0,1)) (ColDelta 9) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                          (HsVar 
+                           (Unqual {OccName: fromIntegral}))))) 
+                       ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:39:25
+                         }
+                        Just (Ann (DP (0,1)) (ColDelta 22) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                        (HsVar 
+                         (Unqual {OccName: $}))) 
+                       (PlaceHolder) 
+                       ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:39:27-34
+                         }
+                        Just (Ann (DP (0,1)) (ColDelta 24) DP (0,1) [] [])
+                        (HsApp 
+                         ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:39:27-32
+                           }
+                          Just (Ann (DP (0,0)) (ColDelta 24) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                          (HsVar 
+                           (Unqual {OccName: length}))) 
+                         ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:39:34
+                           }
+                          Just (Ann (DP (0,1)) (ColDelta 31) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                          (HsVar 
+                           (Unqual {OccName: y}))))))) 
+                     ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:39:36
+                       }
+                      Just (Ann (DP (0,1)) (ColDelta 33) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                      (HsVar 
+                       (Unqual {OccName: *}))) 
+                     (PlaceHolder) 
+                     ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:39:38-46
+                       }
+                      Just (Ann (DP (0,1)) (ColDelta 35) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                      (HsVar 
+                       (Unqual {OccName: wORD_SIZE}))))) 
+                   (HsLit 
+                    (HsString "" {FastString: "noSyntaxExpr"})) 
+                   (HsLit 
+                    (HsString "" {FastString: "noSyntaxExpr"})) 
+                   (PlaceHolder)))] 
+                (PlaceHolder)))))] 
+           (EmptyLocalBinds))))] 
+       [] 
+       (PlaceHolder) 
+       (FromSource)) 
+      (WpHole) 
+      (PlaceHolder) 
+      []))),
+   ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:60:1-35
+     }
+    Just (Ann (DP (2,1)) (ColDelta 1) DP (21,1) [DComment (DP (2,1),DP (2,80)) "-- | Calculate the recursive size of GHC objects in Bytes. Note that the actual" Nothing,DComment (DP (1,1),DP (1,75)) "--   size in memory is calculated, so shared values are only counted once." Nothing,DComment (DP (1,1),DP (1,3)) "--" Nothing,DComment (DP (1,1),DP (1,15)) "--   Call with" Nothing,DComment (DP (1,1),DP (1,7)) "--   @" Nothing,DComment (DP (1,1),DP (1,25)) "--    recursiveSize $! 2" Nothing,DComment (DP (1,1),DP (1,7)) "--   @" Nothing,DComment (DP (1,1),DP (1,62)) "--   to force evaluation to WHNF before calculating the size." Nothing,DComment (DP (1,1),DP (1,3)) "--" Nothing,DComment (DP (1,1),DP (1,15)) "--   Call with" Nothing,DComment (DP (1,1),DP (1,7)) "--   @" Nothing,DComment (DP (1,1),DP (1,35)) "--    recursiveSize $!! \\\"foobar\\\"" Nothing,DComment (DP (1,1),DP (1,7)) "--   @" Nothing,DComment (DP (1,1),DP (1,80)) "--   ($!! from Control.DeepSeq) to force full evaluation before calculating the" Nothing,DComment (DP (1,1),DP (1,11)) "--   size." Nothing,DComment (DP (1,1),DP (1,3)) "--" Nothing,DComment (DP (1,1),DP (1,78)) "--   A garbage collection is performed before the size is calculated, because" Nothing,DComment (DP (1,1),DP (1,60)) "--   the garbage collector would make heap walks difficult." Nothing] [((G AnnDcolon),DP (0,1))])
+    (SigD 
+     (TypeSig 
+      [
+       ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:60:1-13
+         }
+        Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+        (Unqual {OccName: recursiveSize}))] 
+      ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:60:18-35
+        }
+       Just (Ann (DP (0,1)) (ColDelta 18) DP (0,1) [] [])
+       (HsForAllTy 
+        (Implicit) 
+        (Nothing) 
+        (HsQTvs 
+         [] 
+         []) 
+        ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:60:18-22
+          }
+         Just (Ann (DP (0,0)) (ColDelta 18) DP (0,0) [] [((G AnnDarrow),DP (0,1))])
+         [
+          ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:60:18-22
+            }
+           Just (Ann (DP (0,0)) (ColDelta 18) DP (0,0) [] [])
+           (HsAppTy 
+            ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:60:18-20
+              }
+             Just (Ann (DP (0,0)) (ColDelta 18) DP (0,0) [] [((G AnnVal),DP (0,0))])
+             (HsTyVar 
+              (Unqual {OccName: Num}))) 
+            ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:60:22
+              }
+             Just (Ann (DP (0,1)) (ColDelta 22) DP (0,1) [] [((G AnnVal),DP (0,0))])
+             (HsTyVar 
+              (Unqual {OccName: b})))))]) 
+        ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:60:27-35
+          }
+         Just (Ann (DP (0,1)) (ColDelta 27) DP (0,1) [] [((G AnnRarrow),DP (0,1))])
+         (HsFunTy 
+          ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:60:27
+            }
+           Just (Ann (DP (0,0)) (ColDelta 27) DP (0,0) [] [((G AnnVal),DP (0,0))])
+           (HsTyVar 
+            (Unqual {OccName: a}))) 
+          ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:60:32-35
+            }
+           Just (Ann (DP (0,1)) (ColDelta 32) DP (0,1) [] [])
+           (HsAppTy 
+            ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:60:32-33
+              }
+             Just (Ann (DP (0,0)) (ColDelta 32) DP (0,0) [] [((G AnnVal),DP (0,0))])
+             (HsTyVar 
+              (Unqual {OccName: IO}))) 
+            ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:60:35
+              }
+             Just (Ann (DP (0,1)) (ColDelta 35) DP (0,1) [] [((G AnnVal),DP (0,0))])
+             (HsTyVar 
+              (Unqual {OccName: b}))))))))) 
+      (PlaceHolder)))),
+   ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:(61,1)-(71,60)
+     }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [])
+    (ValD 
+     (FunBind 
+      ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:61:1-13
+        }
+       Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+       (Unqual {OccName: recursiveSize})) 
+      (False) 
+      (MG 
+       [
+        ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:(61,1)-(71,60)
+          }
+         Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnEqual),DP (0,1)),((G AnnWhere),DP (1,3))])
+         (Match 
+          (Just 
+           ((,) 
+            ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:61:1-13
+              }
+             Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+             (Unqual {OccName: recursiveSize})) 
+            (False))) 
+          [
+           ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:61:15
+             }
+            Just (Ann (DP (0,1)) (ColDelta 15) DP (0,1) [] [((G AnnVal),DP (0,0))])
+            (VarPat 
+             (Unqual {OccName: x})))] 
+          (Nothing) 
+          (GRHSs 
+           [
+            ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:(61,17)-(71,60)
+              }
+             Just (Ann (DP (0,-1)) (ColDelta 17) DP (0,-1) [] [])
+             (GRHS 
+              [] 
+              ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:(61,19)-(63,34)
+                }
+               Just (Ann (DP (0,1)) (ColDelta 19) DP (0,1) [] [((G AnnDo),DP (0,0)),((AnnList ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:(62,3)-(63,34) Ref "delta-2"),DP (0,0))])
+               (HsDo 
+                (DoExpr) 
+                [
+                 ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:62:3-11
+                   }
+                  Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])
+                  (BodyStmt 
+                   ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:62:3-11
+                     }
+                    Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                    (HsVar 
+                     (Unqual {OccName: performGC}))) 
+                   (HsLit 
+                    (HsString "" {FastString: "noSyntaxExpr"})) 
+                   (HsLit 
+                    (HsString "" {FastString: "noSyntaxExpr"})) 
+                   (PlaceHolder))),
+                 ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:63:3-34
+                   }
+                  Just (Ann (DP (1,0)) (ColDelta 0) DP (1,0) [] [])
+                  (BodyStmt 
+                   ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:63:3-34
+                     }
+                    Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])
+                    (OpApp 
+                     ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:63:3-24
+                       }
+                      Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])
+                      (OpApp 
+                       ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:63:3-11
+                         }
+                        Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])
+                        (HsApp 
+                         ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:63:3-7
+                           }
+                          Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                          (HsVar 
+                           (Unqual {OccName: liftM}))) 
+                         ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:63:9-11
+                           }
+                          Just (Ann (DP (0,1)) (ColDelta 6) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                          (HsVar 
+                           (Unqual {OccName: snd}))))) 
+                       ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:63:13
+                         }
+                        Just (Ann (DP (0,1)) (ColDelta 10) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                        (HsVar 
+                         (Unqual {OccName: $}))) 
+                       (PlaceHolder) 
+                       ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:63:15-24
+                         }
+                        Just (Ann (DP (0,1)) (ColDelta 12) DP (0,1) [] [])
+                        (HsApp 
+                         ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:63:15-16
+                           }
+                          Just (Ann (DP (0,0)) (ColDelta 12) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                          (HsVar 
+                           (Unqual {OccName: go}))) 
+                         ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:63:18-24
+                           }
+                          Just (Ann (DP (0,1)) (ColDelta 15) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])
+                          (ExplicitTuple 
+                           [
+                            ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:63:19-20
+                              }
+                             Just (Ann (DP (0,0)) (ColDelta 16) DP (0,0) [] [])
+                             (Present 
+                              ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:63:19-20
+                                }
+                               Just (Ann (DP (0,0)) (ColDelta 16) DP (0,0) [] [((G AnnOpenS),DP (0,0)),((G AnnCloseS),DP (0,0)),((G AnnComma),DP (0,0))])
+                               (HsVar 
+                                (Exact {Name: []}))))),
+                            ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:63:23
+                              }
+                             Just (Ann (DP (0,1)) (ColDelta 20) DP (0,1) [] [])
+                             (Present 
+                              ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:63:23
+                                }
+                               Just (Ann (DP (0,0)) (ColDelta 20) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                               (HsOverLit {HsOverLit:0}))))] 
+                           (Boxed))))))) 
+                     ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:63:26
+                       }
+                      Just (Ann (DP (0,1)) (ColDelta 23) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                      (HsVar 
+                       (Unqual {OccName: $}))) 
+                     (PlaceHolder) 
+                     ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:63:28-34
+                       }
+                      Just (Ann (DP (0,1)) (ColDelta 25) DP (0,1) [] [])
+                      (HsApp 
+                       ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:63:28-32
+                         }
+                        Just (Ann (DP (0,0)) (ColDelta 25) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                        (HsVar 
+                         (Unqual {OccName: asBox}))) 
+                       ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:63:34
+                         }
+                        Just (Ann (DP (0,1)) (ColDelta 31) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                        (HsVar 
+                         (Unqual {OccName: x}))))))) 
+                   (HsLit 
+                    (HsString "" {FastString: "noSyntaxExpr"})) 
+                   (HsLit 
+                    (HsString "" {FastString: "noSyntaxExpr"})) 
+                   (PlaceHolder)))] 
+                (PlaceHolder)))))] 
+           (HsValBinds 
+            (ValBindsIn {Bag(Located (HsBind RdrName)): 
+             [
+              ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:(64,9)-(71,60)
+                }
+               Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])
+               (FunBind 
+                ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:64:9-10
+                  }
+                 Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                 (Unqual {OccName: go})) 
+                (False) 
+                (MG 
+                 [
+                  ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:(64,9)-(71,60)
+                    }
+                   Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnEqual),DP (0,1))])
+                   (Match 
+                    (Just 
+                     ((,) 
+                      ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:64:9-10
+                        }
+                       Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                       (Unqual {OccName: go})) 
+                      (False))) 
+                    [
+                     ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:64:12-20
+                       }
+                      Just (Ann (DP (0,1)) (ColDelta 3) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])
+                      (TuplePat 
+                       [
+                        ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:64:13-14
+                          }
+                         Just (Ann (DP (0,0)) (ColDelta 4) DP (0,0) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                         (VarPat 
+                          (Unqual {OccName: vs}))),
+                        ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:64:17-19
+                          }
+                         Just (Ann (DP (0,1)) (ColDelta 8) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                         (VarPat 
+                          (Unqual {OccName: acc})))] 
+                       (Boxed) 
+                       [])),
+                     ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:64:22-30
+                       }
+                      Just (Ann (DP (0,1)) (ColDelta 13) DP (0,1) [] [((G AnnAt),DP (0,0))])
+                      (AsPat 
+                       ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:64:22
+                         }
+                        Just (Ann (DP (0,0)) (ColDelta 13) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                        (Unqual {OccName: b})) 
+                       ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:64:24-30
+                         }
+                        Just (Ann (DP (0,0)) (ColDelta 15) DP (0,0) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])
+                        (ParPat 
+                         ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:64:25-29
+                           }
+                          Just (Ann (DP (0,0)) (ColDelta 16) DP (0,0) [] [])
+                          (ConPatIn 
+                           ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:64:25-27
+                             }
+                            Just (Ann (DP (0,0)) (ColDelta 16) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                            (Unqual {OccName: Box})) 
+                           (PrefixCon 
+                            [
+                             ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:64:29
+                               }
+                              Just (Ann (DP (0,1)) (ColDelta 20) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                              (VarPat 
+                               (Unqual {OccName: y})))])))))))] 
+                    (Nothing) 
+                    (GRHSs 
+                     [
+                      ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:(64,32)-(71,60)
+                        }
+                       Just (Ann (DP (0,-1)) (ColDelta 23) DP (0,-1) [] [])
+                       (GRHS 
+                        [] 
+                        ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:(64,34)-(71,60)
+                          }
+                         Just (Ann (DP (0,1)) (ColDelta 25) DP (0,1) [] [((G AnnDo),DP (0,0)),((AnnList ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:(65,11)-(71,60) Ref "delta-3"),DP (0,0))])
+                         (HsDo 
+                          (DoExpr) 
+                          [
+                           ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:65:11-56
+                             }
+                            Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnLarrow),DP (0,1))])
+                            (BindStmt 
+                             ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:65:11-16
+                               }
+                              Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                              (VarPat 
+                               (Unqual {OccName: isElem}))) 
+                             ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:65:21-56
+                               }
+                              Just (Ann (DP (0,1)) (ColDelta 10) DP (0,1) [] [])
+                              (OpApp 
+                               ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:65:21-28
+                                 }
+                                Just (Ann (DP (0,0)) (ColDelta 10) DP (0,0) [] [])
+                                (HsApp 
+                                 ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:65:21-25
+                                   }
+                                  Just (Ann (DP (0,0)) (ColDelta 10) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                                  (HsVar 
+                                   (Unqual {OccName: liftM}))) 
+                                 ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:65:27-28
+                                   }
+                                  Just (Ann (DP (0,1)) (ColDelta 16) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                                  (HsVar 
+                                   (Unqual {OccName: or}))))) 
+                               ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:65:30
+                                 }
+                                Just (Ann (DP (0,1)) (ColDelta 19) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                                (HsVar 
+                                 (Unqual {OccName: $}))) 
+                               (PlaceHolder) 
+                               ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:65:32-56
+                                 }
+                                Just (Ann (DP (0,1)) (ColDelta 21) DP (0,1) [] [])
+                                (HsApp 
+                                 ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:65:32-53
+                                   }
+                                  Just (Ann (DP (0,0)) (ColDelta 21) DP (0,0) [] [])
+                                  (HsApp 
+                                   ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:65:32-35
+                                     }
+                                    Just (Ann (DP (0,0)) (ColDelta 21) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                                    (HsVar 
+                                     (Unqual {OccName: mapM}))) 
+                                   ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:65:37-53
+                                     }
+                                    Just (Ann (DP (0,1)) (ColDelta 26) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])
+                                    (HsPar 
+                                     ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:65:38-52
+                                       }
+                                      Just (Ann (DP (0,0)) (ColDelta 27) DP (0,0) [] [])
+                                      (HsApp 
+                                       ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:65:38-50
+                                         }
+                                        Just (Ann (DP (0,0)) (ColDelta 27) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                                        (HsVar 
+                                         (Unqual {OccName: areBoxesEqual}))) 
+                                       ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:65:52
+                                         }
+                                        Just (Ann (DP (0,1)) (ColDelta 41) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                                        (HsVar 
+                                         (Unqual {OccName: b}))))))))) 
+                                 ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:65:55-56
+                                   }
+                                  Just (Ann (DP (0,1)) (ColDelta 44) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                                  (HsVar 
+                                   (Unqual {OccName: vs}))))))) 
+                             (HsLit 
+                              (HsString "" {FastString: "noSyntaxExpr"})) 
+                             (HsLit 
+                              (HsString "" {FastString: "noSyntaxExpr"})))),
+                           ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:(66,11)-(71,60)
+                             }
+                            Just (Ann (DP (1,0)) (ColDelta 0) DP (1,0) [] [])
+                            (BodyStmt 
+                             ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:(66,11)-(71,60)
+                               }
+                              Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnIf),DP (0,0)),((G AnnThen),DP (1,2)),((G AnnElse),DP (1,2))])
+                              (HsIf 
+                               (Just 
+                                (HsLit 
+                                 (HsString "" {FastString: "noSyntaxExpr"}))) 
+                               ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:66:14-19
+                                 }
+                                Just (Ann (DP (0,1)) (ColDelta 3) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                                (HsVar 
+                                 (Unqual {OccName: isElem}))) 
+                               ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:67:18-33
+                                 }
+                                Just (Ann (DP (0,1)) (ColDelta 7) DP (0,1) [] [])
+                                (HsApp 
+                                 ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:67:18-23
+                                   }
+                                  Just (Ann (DP (0,0)) (ColDelta 7) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                                  (HsVar 
+                                   (Unqual {OccName: return}))) 
+                                 ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:67:25-33
+                                   }
+                                  Just (Ann (DP (0,1)) (ColDelta 14) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])
+                                  (ExplicitTuple 
+                                   [
+                                    ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:67:26-27
+                                      }
+                                     Just (Ann (DP (0,0)) (ColDelta 15) DP (0,0) [] [])
+                                     (Present 
+                                      ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:67:26-27
+                                        }
+                                       Just (Ann (DP (0,0)) (ColDelta 15) DP (0,0) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                                       (HsVar 
+                                        (Unqual {OccName: vs}))))),
+                                    ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:67:30-32
+                                      }
+                                     Just (Ann (DP (0,1)) (ColDelta 19) DP (0,1) [] [])
+                                     (Present 
+                                      ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:67:30-32
+                                        }
+                                       Just (Ann (DP (0,0)) (ColDelta 19) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                                       (HsVar 
+                                        (Unqual {OccName: acc})))))] 
+                                   (Boxed))))) 
+                               ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:(68,18)-(71,60)
+                                 }
+                                Just (Ann (DP (0,1)) (ColDelta 7) DP (0,1) [] [((G AnnDo),DP (0,0)),((AnnList ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:(69,14)-(71,60) Ref "delta-4"),DP (0,0))])
+                                (HsDo 
+                                 (DoExpr) 
+                                 [
+                                  ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:69:14-37
+                                    }
+                                   Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnLarrow),DP (0,4))])
+                                   (BindStmt 
+                                    ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:69:14-17
+                                      }
+                                     Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                                     (VarPat 
+                                      (Unqual {OccName: size}))) 
+                                    ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:69:25-37
+                                      }
+                                     Just (Ann (DP (0,1)) (ColDelta 11) DP (0,1) [] [])
+                                     (HsApp 
+                                      ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:69:25-35
+                                        }
+                                       Just (Ann (DP (0,0)) (ColDelta 11) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                                       (HsVar 
+                                        (Unqual {OccName: closureSize}))) 
+                                      ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:69:37
+                                        }
+                                       Just (Ann (DP (0,1)) (ColDelta 23) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                                       (HsVar 
+                                        (Unqual {OccName: y}))))) 
+                                    (HsLit 
+                                     (HsString "" {FastString: "noSyntaxExpr"})) 
+                                    (HsLit 
+                                     (HsString "" {FastString: "noSyntaxExpr"})))),
+                                  ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:70:14-40
+                                    }
+                                   Just (Ann (DP (1,0)) (ColDelta 0) DP (1,0) [] [((G AnnLarrow),DP (0,1))])
+                                   (BindStmt 
+                                    ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:70:14-20
+                                      }
+                                     Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                                     (VarPat 
+                                      (Unqual {OccName: closure}))) 
+                                    ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:70:25-40
+                                      }
+                                     Just (Ann (DP (0,1)) (ColDelta 11) DP (0,1) [] [])
+                                     (HsApp 
+                                      ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:70:25-38
+                                        }
+                                       Just (Ann (DP (0,0)) (ColDelta 11) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                                       (HsVar 
+                                        (Unqual {OccName: getClosureData}))) 
+                                      ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:70:40
+                                        }
+                                       Just (Ann (DP (0,1)) (ColDelta 26) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                                       (HsVar 
+                                        (Unqual {OccName: y}))))) 
+                                    (HsLit 
+                                     (HsString "" {FastString: "noSyntaxExpr"})) 
+                                    (HsLit 
+                                     (HsString "" {FastString: "noSyntaxExpr"})))),
+                                  ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:71:14-60
+                                    }
+                                   Just (Ann (DP (1,0)) (ColDelta 0) DP (1,0) [] [])
+                                   (BodyStmt 
+                                    ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:71:14-60
+                                      }
+                                     Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])
+                                     (OpApp 
+                                      ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:71:14-42
+                                        }
+                                       Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])
+                                       (HsApp 
+                                        ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:71:14-21
+                                          }
+                                         Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])
+                                         (HsApp 
+                                          ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:71:14-18
+                                            }
+                                           Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                                           (HsVar 
+                                            (Unqual {OccName: foldM}))) 
+                                          ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:71:20-21
+                                            }
+                                           Just (Ann (DP (0,1)) (ColDelta 6) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                                           (HsVar 
+                                            (Unqual {OccName: go}))))) 
+                                        ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:71:23-42
+                                          }
+                                         Just (Ann (DP (0,1)) (ColDelta 9) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])
+                                         (ExplicitTuple 
+                                          [
+                                           ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:71:24-29
+                                             }
+                                            Just (Ann (DP (0,0)) (ColDelta 10) DP (0,0) [] [])
+                                            (Present 
+                                             ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:71:24-29
+                                               }
+                                              Just (Ann (DP (0,0)) (ColDelta 10) DP (0,0) [] [((G AnnComma),DP (0,0))])
+                                              (OpApp 
+                                               ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:71:24
+                                                 }
+                                                Just (Ann (DP (0,0)) (ColDelta 10) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                                                (HsVar 
+                                                 (Unqual {OccName: b}))) 
+                                               ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:71:26
+                                                 }
+                                                Just (Ann (DP (0,1)) (ColDelta 12) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                                                (HsVar 
+                                                 (Exact {Name: :}))) 
+                                               (PlaceHolder) 
+                                               ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:71:28-29
+                                                 }
+                                                Just (Ann (DP (0,1)) (ColDelta 14) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                                                (HsVar 
+                                                 (Unqual {OccName: vs}))))))),
+                                           ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:71:32-41
+                                             }
+                                            Just (Ann (DP (0,1)) (ColDelta 18) DP (0,1) [] [])
+                                            (Present 
+                                             ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:71:32-41
+                                               }
+                                              Just (Ann (DP (0,0)) (ColDelta 18) DP (0,0) [] [])
+                                              (OpApp 
+                                               ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:71:32-34
+                                                 }
+                                                Just (Ann (DP (0,0)) (ColDelta 18) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                                                (HsVar 
+                                                 (Unqual {OccName: acc}))) 
+                                               ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:71:36
+                                                 }
+                                                Just (Ann (DP (0,1)) (ColDelta 22) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                                                (HsVar 
+                                                 (Unqual {OccName: +}))) 
+                                               (PlaceHolder) 
+                                               ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:71:38-41
+                                                 }
+                                                Just (Ann (DP (0,1)) (ColDelta 24) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                                                (HsVar 
+                                                 (Unqual {OccName: size})))))))] 
+                                          (Boxed))))) 
+                                      ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:71:44
+                                        }
+                                       Just (Ann (DP (0,1)) (ColDelta 30) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                                       (HsVar 
+                                        (Unqual {OccName: $}))) 
+                                      (PlaceHolder) 
+                                      ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:71:46-60
+                                        }
+                                       Just (Ann (DP (0,1)) (ColDelta 32) DP (0,1) [] [])
+                                       (HsApp 
+                                        ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:71:46-52
+                                          }
+                                         Just (Ann (DP (0,0)) (ColDelta 32) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                                         (HsVar 
+                                          (Unqual {OccName: allPtrs}))) 
+                                        ({ ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:71:54-60
+                                          }
+                                         Just (Ann (DP (0,1)) (ColDelta 40) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                                         (HsVar 
+                                          (Unqual {OccName: closure}))))))) 
+                                    (HsLit 
+                                     (HsString "" {FastString: "noSyntaxExpr"})) 
+                                    (HsLit 
+                                     (HsString "" {FastString: "noSyntaxExpr"})) 
+                                    (PlaceHolder)))] 
+                                 (PlaceHolder))))) 
+                             (HsLit 
+                              (HsString "" {FastString: "noSyntaxExpr"})) 
+                             (HsLit 
+                              (HsString "" {FastString: "noSyntaxExpr"})) 
+                             (PlaceHolder)))] 
+                          (PlaceHolder)))))] 
+                     (EmptyLocalBinds))))] 
+                 [] 
+                 (PlaceHolder) 
+                 (FromSource)) 
+                (WpHole) 
+                (PlaceHolder) 
+                []))]} 
+             [])))))] 
+       [] 
+       (PlaceHolder) 
+       (FromSource)) 
+      (WpHole) 
+      (PlaceHolder) 
+      [])))] 
+  (Nothing) 
+  (Nothing)))
+==============
+[(AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:1:1 CN "HsModule" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((AnnComment DComment (DP (0,0),DP (0,20)) "{-# LANGUAGE CPP #-}" Nothing),DP (0,0)),((AnnComment DComment (DP (1,1),DP (6,4)) "{- |\n   Module      : GHC.DataSize\n   Copyright   : (c) Dennis Felsing\n   License     : 3-Clause BSD-style\n   Maintainer  : dennis@felsin9.de\n -}" Nothing),DP (1,1)),((G AnnModule),DP (7,1)),((G AnnVal),DP (0,1)),((G AnnWhere),DP (1,3)),((AnnComment DComment (DP (1,1),DP (1,1)) "" Nothing),DP (1,1)),((AnnComment DComment (DP (0,0),DP (0,0)) "" Nothing),DP (0,0)),((AnnComment DComment (DP (0,0),DP (0,0)) "" Nothing),DP (0,0)),((AnnComment DComment (DP (0,0),DP (0,0)) "" Nothing),DP (0,0)),((AnnComment DComment (DP (0,0),DP (0,0)) "" Nothing),DP (0,0)),((G AnnEofPos),DP (2,0))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:(8,21)-(12,3) CN "(:)" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 21) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((AnnComment DComment (DP (1,3),DP (1,10)) "--mSize" Nothing),DP (1,3)),((G AnnCloseP),DP (2,3))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:9:3-13 CN "IEVar" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:9:3-13 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:10:3-15 CN "IEVar" NotNeeded,
+  (Ann (DP (1,3)) (ColDelta 3) DP (1,3) [] [])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:10:3-15 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:15:1-33 CN "ImportDecl" NotNeeded,
+  (Ann (DP (2,1)) (ColDelta 1) DP (2,1) [] [((G AnnImport),DP (0,0)),((G AnnVal),DP (0,1))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:15:21-33 CN "(:)" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 21) DP (0,1) [] [((G AnnHiding),DP (0,0)),((G AnnOpenP),DP (0,1)),((G AnnCloseP),DP (0,0))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:15:29-32 CN "IEVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 29) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:15:29-32 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 29) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:17:1-20 CN "ImportDecl" NotNeeded,
+  (Ann (DP (2,1)) (ColDelta 1) DP (2,1) [] [((G AnnImport),DP (0,0)),((G AnnVal),DP (0,1))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:19:1-17 CN "ImportDecl" NotNeeded,
+  (Ann (DP (2,1)) (ColDelta 1) DP (2,1) [] [((G AnnImport),DP (0,0)),((G AnnVal),DP (0,1))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:23:1-9 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:23:1-16 CN "SigD" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (4,1) [DComment (DP (2,1),DP (2,47)) "-- This used to be available via GHC.Constants" Nothing,DComment (DP (1,1),DP (1,21)) "#include \"MachDeps.h\"" Nothing] [((G AnnDcolon),DP (0,1))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:23:14-16 CN "HsForAllTy" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 14) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:23:14-16 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 14) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:24:1-9 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:24:1-13 CN "Match" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnEqual),DP (0,1))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:24:1-13 CN "ValD" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:24:11-13 CN "GRHS" NotNeeded,
+  (Ann (DP (0,-1)) (ColDelta 11) DP (0,-1) [] [])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:24:13 CN "HsOverLit" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 13) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:36:1-11 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:36:1-33 CN "SigD" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (12,1) [DComment (DP (0,-1),DP (0,12)) "SIZEOF_HSWORD" Nothing,DComment (DP (2,1),DP (2,41)) "--import qualified Data.IntMap as IntMap" Nothing,DComment (DP (2,1),DP (2,15)) "--depth :: Int" Nothing,DComment (DP (1,1),DP (1,16)) "--depth = 10^10" Nothing,DComment (DP (2,1),DP (2,29)) "-- Inspired by Simon Marlow:" Nothing,DComment (DP (1,1),DP (1,54)) "-- https://ghcmutterings.wordpress.com/2009/02/12/53/" Nothing,DComment (DP (2,1),DP (2,76)) "-- | Calculate size of GHC objects in Bytes. Note that an object may not be" Nothing,DComment (DP (1,1),DP (1,73)) "--   evaluated yet and only the size of the initial closure is returned." Nothing] [((G AnnDcolon),DP (0,1))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:36:16-18 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 16) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:36:16-20 CN "(:)" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 16) DP (0,0) [] [((G AnnDarrow),DP (0,1))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:36:16-20 CN "HsAppTy" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 16) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:36:16-33 CN "HsForAllTy" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 16) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:36:20 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 20) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:36:25 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 25) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:36:25-33 CN "HsFunTy" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 25) DP (0,1) [] [((G AnnRarrow),DP (0,1))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:36:30-31 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 30) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:36:30-33 CN "HsAppTy" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 30) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:36:33 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 33) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:37:1-11 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:(37,1)-(39,46) CN "Match" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnEqual),DP (0,1))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:(37,1)-(39,46) CN "ValD" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:37:13 CN "VarPat" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 13) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:(37,15)-(39,46) CN "GRHS" NotNeeded,
+  (Ann (DP (0,-1)) (ColDelta 15) DP (0,-1) [] [])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:(37,17)-(39,46) CN "HsDo" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 17) DP (0,1) [] [((G AnnDo),DP (0,0)),((AnnList ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:(38,3)-(39,46) Ref "delta-1"),DP (0,0))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:38:3-9 CN "TuplePat" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:38:3-28 CN "BindStmt" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnLarrow),DP (0,1))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:(38,3)-(39,46) CN "(:)" Ref "delta-1",
+  (Ann (DP (1,0)) (ColDelta 3) DP (1,0) [] [])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:38:4 CN "WildPat" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:38:6 CN "VarPat" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 3) DP (0,0) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:38:8 CN "WildPat" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 5) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:38:14-26 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 11) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:38:14-28 CN "HsApp" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 11) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:38:28 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 25) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:39:3-8 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:39:3-23 CN "OpApp" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:39:3-34 CN "OpApp" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:39:3-46 CN "BodyStmt" NotNeeded,
+  (Ann (DP (1,0)) (ColDelta 0) DP (1,0) [] [])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:39:3-46 CN "OpApp" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:39:10 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 7) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:39:12-23 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 9) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:39:25 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 22) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:39:27-32 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 24) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:39:27-34 CN "HsApp" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 24) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:39:34 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 31) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:39:36 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 33) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:39:38-46 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 35) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:60:1-13 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:60:1-35 CN "SigD" NotNeeded,
+  (Ann (DP (2,1)) (ColDelta 1) DP (21,1) [DComment (DP (2,1),DP (2,80)) "-- | Calculate the recursive size of GHC objects in Bytes. Note that the actual" Nothing,DComment (DP (1,1),DP (1,75)) "--   size in memory is calculated, so shared values are only counted once." Nothing,DComment (DP (1,1),DP (1,3)) "--" Nothing,DComment (DP (1,1),DP (1,15)) "--   Call with" Nothing,DComment (DP (1,1),DP (1,7)) "--   @" Nothing,DComment (DP (1,1),DP (1,25)) "--    recursiveSize $! 2" Nothing,DComment (DP (1,1),DP (1,7)) "--   @" Nothing,DComment (DP (1,1),DP (1,62)) "--   to force evaluation to WHNF before calculating the size." Nothing,DComment (DP (1,1),DP (1,3)) "--" Nothing,DComment (DP (1,1),DP (1,15)) "--   Call with" Nothing,DComment (DP (1,1),DP (1,7)) "--   @" Nothing,DComment (DP (1,1),DP (1,35)) "--    recursiveSize $!! \\\"foobar\\\"" Nothing,DComment (DP (1,1),DP (1,7)) "--   @" Nothing,DComment (DP (1,1),DP (1,80)) "--   ($!! from Control.DeepSeq) to force full evaluation before calculating the" Nothing,DComment (DP (1,1),DP (1,11)) "--   size." Nothing,DComment (DP (1,1),DP (1,3)) "--" Nothing,DComment (DP (1,1),DP (1,78)) "--   A garbage collection is performed before the size is calculated, because" Nothing,DComment (DP (1,1),DP (1,60)) "--   the garbage collector would make heap walks difficult." Nothing] [((G AnnDcolon),DP (0,1))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:60:18-20 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 18) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:60:18-22 CN "(:)" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 18) DP (0,0) [] [((G AnnDarrow),DP (0,1))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:60:18-22 CN "HsAppTy" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 18) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:60:18-35 CN "HsForAllTy" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 18) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:60:22 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 22) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:60:27 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 27) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:60:27-35 CN "HsFunTy" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 27) DP (0,1) [] [((G AnnRarrow),DP (0,1))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:60:32-33 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 32) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:60:32-35 CN "HsAppTy" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 32) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:60:35 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 35) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:61:1-13 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:(61,1)-(71,60) CN "Match" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnEqual),DP (0,1)),((G AnnWhere),DP (1,3))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:(61,1)-(71,60) CN "ValD" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:61:15 CN "VarPat" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 15) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:(61,17)-(71,60) CN "GRHS" NotNeeded,
+  (Ann (DP (0,-1)) (ColDelta 17) DP (0,-1) [] [])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:(61,19)-(63,34) CN "HsDo" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 19) DP (0,1) [] [((G AnnDo),DP (0,0)),((AnnList ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:(62,3)-(63,34) Ref "delta-2"),DP (0,0))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:62:3-11 CN "BodyStmt" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:62:3-11 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:(62,3)-(63,34) CN "(:)" Ref "delta-2",
+  (Ann (DP (1,0)) (ColDelta 3) DP (1,0) [] [])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:63:3-7 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:63:3-11 CN "HsApp" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:63:3-24 CN "OpApp" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:63:3-34 CN "BodyStmt" NotNeeded,
+  (Ann (DP (1,0)) (ColDelta 0) DP (1,0) [] [])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:63:3-34 CN "OpApp" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:63:9-11 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 6) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:63:13 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 10) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:63:15-16 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 12) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:63:15-24 CN "HsApp" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 12) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:63:18-24 CN "ExplicitTuple" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 15) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:63:19-20 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 16) DP (0,0) [] [((G AnnOpenS),DP (0,0)),((G AnnCloseS),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:63:19-20 CN "Present" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 16) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:63:23 CN "HsOverLit" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 20) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:63:23 CN "Present" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 20) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:63:26 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 23) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:63:28-32 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 25) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:63:28-34 CN "HsApp" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 25) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:63:34 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 31) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:64:9-10 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:(64,9)-(71,60) CN "FunBind" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:(64,9)-(71,60) CN "HsValBinds" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 9) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:(64,9)-(71,60) CN "Match" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnEqual),DP (0,1))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:64:12-20 CN "TuplePat" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 3) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:64:13-14 CN "VarPat" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 4) DP (0,0) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:64:17-19 CN "VarPat" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 8) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:64:22 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 13) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:64:22-30 CN "AsPat" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 13) DP (0,1) [] [((G AnnAt),DP (0,0))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:64:24-30 CN "ParPat" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 15) DP (0,0) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:64:25-27 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 16) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:64:25-29 CN "ConPatIn" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 16) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:64:29 CN "VarPat" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 20) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:(64,32)-(71,60) CN "GRHS" NotNeeded,
+  (Ann (DP (0,-1)) (ColDelta 23) DP (0,-1) [] [])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:(64,34)-(71,60) CN "HsDo" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 25) DP (0,1) [] [((G AnnDo),DP (0,0)),((AnnList ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:(65,11)-(71,60) Ref "delta-3"),DP (0,0))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:65:11-16 CN "VarPat" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:65:11-56 CN "BindStmt" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnLarrow),DP (0,1))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:(65,11)-(71,60) CN "(:)" Ref "delta-3",
+  (Ann (DP (1,0)) (ColDelta 2) DP (1,0) [] [])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:65:21-25 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 10) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:65:21-28 CN "HsApp" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 10) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:65:21-56 CN "OpApp" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 10) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:65:27-28 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 16) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:65:30 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 19) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:65:32-35 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 21) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:65:32-53 CN "HsApp" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 21) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:65:32-56 CN "HsApp" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 21) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:65:37-53 CN "HsPar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 26) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:65:38-50 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 27) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:65:38-52 CN "HsApp" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 27) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:65:52 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 41) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:65:55-56 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 44) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:(66,11)-(71,60) CN "BodyStmt" NotNeeded,
+  (Ann (DP (1,0)) (ColDelta 0) DP (1,0) [] [])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:(66,11)-(71,60) CN "HsIf" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnIf),DP (0,0)),((G AnnThen),DP (1,2)),((G AnnElse),DP (1,2))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:66:14-19 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 3) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:67:18-23 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 7) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:67:18-33 CN "HsApp" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 7) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:67:25-33 CN "ExplicitTuple" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 14) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:67:26-27 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 15) DP (0,0) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:67:26-27 CN "Present" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 15) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:67:30-32 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 19) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:67:30-32 CN "Present" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 19) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:(68,18)-(71,60) CN "HsDo" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 7) DP (0,1) [] [((G AnnDo),DP (0,0)),((AnnList ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:(69,14)-(71,60) Ref "delta-4"),DP (0,0))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:69:14-17 CN "VarPat" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:69:14-37 CN "BindStmt" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnLarrow),DP (0,4))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:(69,14)-(71,60) CN "(:)" Ref "delta-4",
+  (Ann (DP (1,0)) (ColDelta 3) DP (1,0) [] [])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:69:25-35 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 11) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:69:25-37 CN "HsApp" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 11) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:69:37 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 23) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:70:14-20 CN "VarPat" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:70:14-40 CN "BindStmt" NotNeeded,
+  (Ann (DP (1,0)) (ColDelta 0) DP (1,0) [] [((G AnnLarrow),DP (0,1))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:70:25-38 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 11) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:70:25-40 CN "HsApp" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 11) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:70:40 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 26) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:71:14-18 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:71:14-21 CN "HsApp" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:71:14-42 CN "HsApp" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:71:14-60 CN "BodyStmt" NotNeeded,
+  (Ann (DP (1,0)) (ColDelta 0) DP (1,0) [] [])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:71:14-60 CN "OpApp" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:71:20-21 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 6) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:71:23-42 CN "ExplicitTuple" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 9) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:71:24 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 10) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:71:24-29 CN "OpApp" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 10) DP (0,0) [] [((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:71:24-29 CN "Present" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 10) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:71:26 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 12) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:71:28-29 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 14) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:71:32-34 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 18) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:71:32-41 CN "OpApp" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 18) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:71:32-41 CN "Present" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 18) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:71:36 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 22) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:71:38-41 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 24) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:71:44 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 30) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:71:46-52 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 32) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:71:46-60 CN "HsApp" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 32) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:71:54-60 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 40) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey <no location info> CN "EmptyLocalBinds" NotNeeded,
+  (Ann (DP (-24,0)) (ColDelta 0) DP (-24,0) [] []))]
+==============
+([((../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:1:1,
+    AnnModule),
+   [../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:8:1-6]),
+  ((../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:1:1,
+    AnnWhere),
+   [../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:13:3-7]),
+  ((../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:(8,21)-(12,3),
+    AnnCloseP),
+   [../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:12:3]),
+  ((../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:(8,21)-(12,3),
+    AnnOpenP),
+   [../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:8:21]),
+  ((../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:9:3-13,
+    AnnComma),
+   [../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:9:14]),
+  ((../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:15:1-33,
+    AnnImport),
+   [../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:15:1-6]),
+  ((../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:15:1-33,
+    AnnSemi),
+   [../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:17:1]),
+  ((../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:15:21-33,
+    AnnCloseP),
+   [../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:15:33]),
+  ((../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:15:21-33,
+    AnnHiding),
+   [../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:15:21-26]),
+  ((../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:15:21-33,
+    AnnOpenP),
+   [../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:15:28]),
+  ((../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:17:1-20,
+    AnnImport),
+   [../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:17:1-6]),
+  ((../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:17:1-20,
+    AnnSemi),
+   [../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:19:1]),
+  ((../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:19:1-17,
+    AnnImport),
+   [../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:19:1-6]),
+  ((../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:19:1-17,
+    AnnSemi),
+   [../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:23:1]),
+  ((../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:23:1-16,
+    AnnDcolon),
+   [../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:23:11-12]),
+  ((../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:23:1-16,
+    AnnSemi),
+   [../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:24:1]),
+  ((../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:24:1-13,
+    AnnEqual),
+   [../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:24:11]),
+  ((../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:24:1-13,
+    AnnFunId),
+   [../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:24:1-9]),
+  ((../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:24:1-13,
+    AnnSemi),
+   [../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:36:1]),
+  ((../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:36:1-33,
+    AnnDcolon),
+   [../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:36:13-14]),
+  ((../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:36:1-33,
+    AnnSemi),
+   [../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:37:1]),
+  ((../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:36:16-20,
+    AnnDarrow),
+   [../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:36:22-23]),
+  ((../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:36:25-33,
+    AnnRarrow),
+   [../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:36:27-28]),
+  ((../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:(37,1)-(39,46),
+    AnnEqual),
+   [../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:37:15]),
+  ((../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:(37,1)-(39,46),
+    AnnFunId),
+   [../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:37:1-11]),
+  ((../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:(37,1)-(39,46),
+    AnnSemi),
+   [../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:60:1]),
+  ((../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:(37,17)-(39,46),
+    AnnDo),
+   [../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:37:17-18]),
+  ((../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:38:3-9,
+    AnnCloseP),
+   [../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:38:9]),
+  ((../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:38:3-9,
+    AnnOpenP),
+   [../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:38:3]),
+  ((../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:38:3-28,
+    AnnLarrow),
+   [../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:38:11-12]),
+  ((../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:38:3-28,
+    AnnSemi),
+   [../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:39:3]),
+  ((../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:38:4,
+    AnnComma),
+   [../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:38:5]),
+  ((../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:38:6,
+    AnnComma),
+   [../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:38:7]),
+  ((../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:39:3-23,
+    AnnVal),
+   [../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:39:10]),
+  ((../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:39:3-34,
+    AnnVal),
+   [../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:39:25]),
+  ((../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:39:3-46,
+    AnnVal),
+   [../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:39:36]),
+  ((../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:60:1-35,
+    AnnDcolon),
+   [../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:60:15-16]),
+  ((../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:60:1-35,
+    AnnSemi),
+   [../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:61:1]),
+  ((../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:60:18-22,
+    AnnDarrow),
+   [../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:60:24-25]),
+  ((../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:60:27-35,
+    AnnRarrow),
+   [../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:60:29-30]),
+  ((../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:(61,1)-(71,60),
+    AnnEqual),
+   [../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:61:17]),
+  ((../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:(61,1)-(71,60),
+    AnnFunId),
+   [../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:61:1-13]),
+  ((../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:(61,1)-(71,60),
+    AnnSemi),
+   [../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:73:1]),
+  ((../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:(61,1)-(71,60),
+    AnnWhere),
+   [../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:64:3-7]),
+  ((../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:(61,19)-(63,34),
+    AnnDo),
+   [../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:61:19-20]),
+  ((../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:62:3-11,
+    AnnSemi),
+   [../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:63:3]),
+  ((../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:63:3-24,
+    AnnVal),
+   [../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:63:13]),
+  ((../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:63:3-34,
+    AnnSemi),
+   [../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:64:3]),
+  ((../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:63:3-34,
+    AnnVal),
+   [../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:63:26]),
+  ((../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:63:18-24,
+    AnnCloseP),
+   [../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:63:24]),
+  ((../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:63:18-24,
+    AnnOpenP),
+   [../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:63:18]),
+  ((../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:63:19-20,
+    AnnCloseS),
+   [../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:63:20]),
+  ((../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:63:19-20,
+    AnnComma),
+   [../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:63:21]),
+  ((../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:63:19-20,
+    AnnOpenS),
+   [../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:63:19]),
+  ((../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:(64,9)-(71,60),
+    AnnEqual),
+   [../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:64:32]),
+  ((../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:(64,9)-(71,60),
+    AnnFunId),
+   [../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:64:9-10]),
+  ((../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:64:12-20,
+    AnnCloseP),
+   [../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:64:20]),
+  ((../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:64:12-20,
+    AnnOpenP),
+   [../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:64:12]),
+  ((../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:64:13-14,
+    AnnComma),
+   [../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:64:15]),
+  ((../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:64:22-30,
+    AnnAt),
+   [../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:64:23]),
+  ((../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:64:24-30,
+    AnnCloseP),
+   [../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:64:30]),
+  ((../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:64:24-30,
+    AnnOpenP),
+   [../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:64:24]),
+  ((../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:(64,34)-(71,60),
+    AnnDo),
+   [../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:64:34-35]),
+  ((../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:65:11-56,
+    AnnLarrow),
+   [../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:65:18-19]),
+  ((../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:65:11-56,
+    AnnSemi),
+   [../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:66:11]),
+  ((../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:65:21-56,
+    AnnVal),
+   [../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:65:30]),
+  ((../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:65:37-53,
+    AnnCloseP),
+   [../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:65:53]),
+  ((../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:65:37-53,
+    AnnOpenP),
+   [../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:65:37]),
+  ((../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:(66,11)-(71,60),
+    AnnElse),
+   [../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:68:13-16]),
+  ((../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:(66,11)-(71,60),
+    AnnIf),
+   [../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:66:11-12]),
+  ((../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:(66,11)-(71,60),
+    AnnThen),
+   [../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:67:13-16]),
+  ((../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:67:25-33,
+    AnnCloseP),
+   [../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:67:33]),
+  ((../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:67:25-33,
+    AnnOpenP),
+   [../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:67:25]),
+  ((../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:67:26-27,
+    AnnComma),
+   [../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:67:28]),
+  ((../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:(68,18)-(71,60),
+    AnnDo),
+   [../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:68:18-19]),
+  ((../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:69:14-37,
+    AnnLarrow),
+   [../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:69:22-23]),
+  ((../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:69:14-37,
+    AnnSemi),
+   [../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:70:14]),
+  ((../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:70:14-40,
+    AnnLarrow),
+   [../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:70:22-23]),
+  ((../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:70:14-40,
+    AnnSemi),
+   [../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:71:14]),
+  ((../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:71:14-60,
+    AnnVal),
+   [../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:71:44]),
+  ((../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:71:23-42,
+    AnnCloseP),
+   [../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:71:42]),
+  ((../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:71:23-42,
+    AnnOpenP),
+   [../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:71:23]),
+  ((../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:71:24-29,
+    AnnComma),
+   [../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:71:30]),
+  ((../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:71:24-29,
+    AnnVal),
+   [../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:71:26]),
+  ((../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:71:32-41,
+    AnnVal),
+   [../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:71:36]),
+  ((<no location info>, AnnEofPos),
+   [../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:73:1])],
+ [(../../hackage-packages/ghc-datasize-0.1.2/src/GHC/DataSize.hs:(8,21)-(12,3),
+   [AnnLineComment "--mSize"]),
+  (<no location info>,
+   [AnnLineComment "--   the garbage collector would make heap walks difficult.",
+    AnnLineComment "--   A garbage collection is performed before the size is calculated, because",
+    AnnLineComment "--", AnnLineComment "--   size.",
+    AnnLineComment "--   ($!! from Control.DeepSeq) to force full evaluation before calculating the",
+    AnnLineComment "--   @",
+    AnnLineComment "--    recursiveSize $!! \\\"foobar\\\"",
+    AnnLineComment "--   @", AnnLineComment "--   Call with",
+    AnnLineComment "--",
+    AnnLineComment "--   to force evaluation to WHNF before calculating the size.",
+    AnnLineComment "--   @", AnnLineComment "--    recursiveSize $! 2",
+    AnnLineComment "--   @", AnnLineComment "--   Call with",
+    AnnLineComment "--",
+    AnnLineComment "--   size in memory is calculated, so shared values are only counted once.",
+    AnnLineComment "-- | Calculate the recursive size of GHC objects in Bytes. Note that the actual",
+    AnnLineComment "--   evaluated yet and only the size of the initial closure is returned.",
+    AnnLineComment "-- | Calculate size of GHC objects in Bytes. Note that an object may not be",
+    AnnLineComment "-- https://ghcmutterings.wordpress.com/2009/02/12/53/",
+    AnnLineComment "-- Inspired by Simon Marlow:",
+    AnnLineComment "--depth = 10^10", AnnLineComment "--depth :: Int",
+    AnnLineComment "--import qualified Data.IntMap as IntMap",
+    AnnLineComment "-- This used to be available via GHC.Constants",
+    AnnBlockComment "{- |\n   Module      : GHC.DataSize\n   Copyright   : (c) Dennis Felsing\n   License     : 3-Clause BSD-style\n   Maintainer  : dennis@felsin9.de\n -}",
+    AnnBlockComment "{-# LANGUAGE CPP #-}"])])

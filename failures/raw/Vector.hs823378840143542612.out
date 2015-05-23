@@ -1,0 +1,2135 @@
+{-# LANGUAGE CPP #-}
+module Data.RangeMin.Vector (
+    unsafeVecRangeMinBy,
+    unsafeVecRangeMin,
+    unsafeVecRangeMax,
+    vecRangeMinBy,
+    vecRangeMin,
+    vecRangeMax) where
+
+import Data.RangeMin.Common
+import Data.RangeMin.Int
+import Data.RangeMin.Cartesian.Spec
+
+import qualified Data.Vector.Generic as G
+
+#define vec ('PV.fromList' [0,7,-10,4,5,4])
+
+#define cmp (\\ i j -> 'abs' i '>=' 'abs' j)
+{-# INLINE [1] unsafeVecRangeMinBy #-}
+-- | /O(n)/.  Returns a range-min function on the vector, under the specified ordering.
+-- The returned function /does not/ do bounds checks; see 'unsafeIntRangeMin' for details.
+--
+-- Example:
+--
+-- @
+-- -- Finding the element with the /largest absolute value/ in a subrange.
+-- 'unsafeVecRangeMinBy' cmp vec 0 6 == 2-- 'unsafeVecRangeMinBy' (\\ i j -> 'abs' i '>=' 'abs' j) ('PV.fromList' [0,7,-10,4,5,4]) 0 6 == 2
+-- 'unsafeVecRangeMinBy' cmp vec 2 3 == 2-- 'unsafeVecRangeMinBy' (\\ i j -> 'abs' i '>=' 'abs' j) ('PV.fromList' [0,7,-10,4,5,4]) 2 3 == 2
+-- 'unsafeVecRangeMinBy' cmp vec 3 3 == 4-- 'unsafeVecRangeMinBy' (\\ i j -> 'abs' i '>=' 'abs' j) ('PV.fromList' [0,7,-10,4,5,4]) 3 3 == 4
+-- @
+--
+unsafeVecRangeMinBy :: G.Vector v a =>
+    LEq a       -- ^ A total ordering on the type @a@.
+    -> v a      -- ^ A vector of elements of type @a@.
+    -> RangeMin -- ^ A range-min function on the vector which runs in /O(1)/.
+
+{-# INLINE unsafeVecRangeMin #-}
+-- | /O(n)/.  Equivalent to @'unsafeVecRangeMinBy' ('<=')@.  Specialized for instances of 'Injective'.
+-- The returned function /does not/ do bounds checks; see 'unsafeIntRangeMin' for details.
+--
+-- Example:
+--
+-- @
+-- -- In reality, these would be rewritten into calls to 'unsafeIntRangeMin', since 'Char' is an
+-- -- instance of 'Injective'.
+-- 'unsafeVecRangeMin' ('PV.fromList' \"banana\") 0 6 == 1
+-- 'unsafeVecRangeMin' ('PV.fromList' \"banana\") 1 1 == 1
+-- 'unsafeVecRangeMin' ('PV.fromList' \"banana\") 3 3 == 3
+-- @
+unsafeVecRangeMin :: (G.Vector v a, Ord a) =>
+    v a     -- ^ A vector of elements of type @a@.
+    -> RangeMin -- ^ A range-min function (under the natural ordering)
+            -- on the vector which runs in /O(1)/.
+
+{-# INLINE unsafeVecRangeMax #-}
+-- | /O(n)/.  Equivalent to @'unsafeVecRangeMinBy' ('>=')@.  Specialized for instances of 'Injective'.
+-- The returned function /does not/ do bounds checks; see 'unsafeIntRangeMin' for details.
+--
+-- Example:
+--
+-- @
+-- -- In reality, these would be rewritten into calls to 'unsafeIntRangeMin', since 'Char'
+-- -- is an instance of 'Injective'.
+-- 'unsafeVecRangeMax' ('PV.fromList' \"banana\") 0 6 == 2
+-- 'unsafeVecRangeMax' ('PV.fromList' \"banana\") 1 1 == 1
+-- 'unsafeVecRangeMax' ('PV.fromList' \"banana\") 3 3 == 4
+-- @
+unsafeVecRangeMax :: (G.Vector v a, Ord a) =>
+    v a     -- ^ A vector of elements of type @a@.
+    -> RangeMin -- ^ A range-max function (under the natural ordering)
+            -- on the vector which runs in /O(1)/.
+
+{-# INLINE [1] vecRangeMinBy #-}
+-- | /O(n)/.  Returns a range-min function on the vector, under the specified ordering.
+-- The returned function /does/ do bounds checks; see 'intRangeMin' for details.
+vecRangeMinBy :: G.Vector v a =>
+    LEq a       -- ^ A total ordering on the type @a@.
+    -> v a      -- ^ A vector of elements of type @a@.
+    -> RangeMin -- ^ A range-min function on the vector which runs in /O(1)/.
+
+{-# INLINE vecRangeMin #-}
+-- | /O(n)/.  Equivalent to @'vecRangeMinBy' ('<=')@; a safer version of 'unsafeVecRangeMin'.
+-- Specialized for instances of 'Injective'.  The returned function /does/ do bounds checks; see 'intRangeMin' for details.
+vecRangeMin :: (G.Vector v a, Ord a) =>
+    v a     -- ^ A vector of elements of type @a@.
+    -> RangeMin -- ^ A range-min function (under the natural ordering)
+            -- on the vector which runs in /O(1)/.
+
+{-# INLINE vecRangeMax #-}
+-- | /O(n)/.  Equivalent to @'vecRangeMinBy' ('>=')@; a safer version of 'unsafeVecRangeMax'.
+-- Specialized for instances of 'Injective'. The returned function /does/ do bounds checks; see 'intRangeMin' for details.
+vecRangeMax :: (G.Vector v a, Ord a) =>
+    v a     -- ^ A vector of elements of type @a@.
+    -> RangeMin -- ^ A range-max function (under the natural ordering)
+            -- on the vector which runs in /O(1)/.
+
+unsafeVecRangeMinBy (<=?) xs = unsafeIntRangeMin (equivVectorBy (<=?) xs)
+unsafeVecRangeMin xs = unsafeIntRangeMin (equivVectorMin xs)
+unsafeVecRangeMax xs = unsafeIntRangeMin (equivVectorMax xs)
+vecRangeMinBy (<=?) xs = intRangeMin (equivVectorBy (<=?) xs)
+vecRangeMin xs = intRangeMin (equivVectorMin xs)
+vecRangeMax xs = intRangeMin (equivVectorMax xs)
+
+==============
+../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs
+==============
+lengths:(4634,4340)
+
+==============
+
+({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:1:1 }
+ Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((AnnComment DComment (DP (0,0),DP (0,20)) "{-# LANGUAGE CPP #-}" Nothing),DP (0,0)),((G AnnModule),DP (1,1)),((G AnnVal),DP (0,1)),((G AnnWhere),DP (0,1)),((AnnComment DComment (DP (1,1),DP (1,1)) "" Nothing),DP (1,1)),((G AnnEofPos),DP (2,0))])
+ (HsModule 
+  (Just 
+   ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:2:8-27
+     }
+    Nothing{ModuleName: Data.RangeMin.Vector})) 
+  (Just 
+   ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:(2,29)-(8,16)
+     }
+    Just (Ann (DP (0,1)) (ColDelta 29) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])
+    [
+     ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:3:5-23
+       }
+      Just (Ann (DP (1,5)) (ColDelta 5) DP (1,5) [] [])
+      (IEVar 
+       ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:3:5-23
+         }
+        Just (Ann (DP (0,0)) (ColDelta 5) DP (0,0) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+        (Unqual {OccName: unsafeVecRangeMinBy})))),
+     ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:4:5-21
+       }
+      Just (Ann (DP (1,5)) (ColDelta 5) DP (1,5) [] [])
+      (IEVar 
+       ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:4:5-21
+         }
+        Just (Ann (DP (0,0)) (ColDelta 5) DP (0,0) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+        (Unqual {OccName: unsafeVecRangeMin})))),
+     ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:5:5-21
+       }
+      Just (Ann (DP (1,5)) (ColDelta 5) DP (1,5) [] [])
+      (IEVar 
+       ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:5:5-21
+         }
+        Just (Ann (DP (0,0)) (ColDelta 5) DP (0,0) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+        (Unqual {OccName: unsafeVecRangeMax})))),
+     ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:6:5-17
+       }
+      Just (Ann (DP (1,5)) (ColDelta 5) DP (1,5) [] [])
+      (IEVar 
+       ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:6:5-17
+         }
+        Just (Ann (DP (0,0)) (ColDelta 5) DP (0,0) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+        (Unqual {OccName: vecRangeMinBy})))),
+     ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:7:5-15
+       }
+      Just (Ann (DP (1,5)) (ColDelta 5) DP (1,5) [] [])
+      (IEVar 
+       ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:7:5-15
+         }
+        Just (Ann (DP (0,0)) (ColDelta 5) DP (0,0) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+        (Unqual {OccName: vecRangeMin})))),
+     ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:8:5-15
+       }
+      Just (Ann (DP (1,5)) (ColDelta 5) DP (1,5) [] [])
+      (IEVar 
+       ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:8:5-15
+         }
+        Just (Ann (DP (0,0)) (ColDelta 5) DP (0,0) [] [((G AnnVal),DP (0,0))])
+        (Unqual {OccName: vecRangeMax}))))])) 
+  [
+   ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:10:1-27
+     }
+    Just (Ann (DP (2,1)) (ColDelta 1) DP (2,1) [] [((G AnnImport),DP (0,0)),((G AnnVal),DP (0,1))])
+    (ImportDecl 
+     (Nothing) 
+     ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:10:8-27
+       }
+      Nothing{ModuleName: Data.RangeMin.Common}) 
+     (Nothing) 
+     (False) 
+     (False) 
+     (False) 
+     (False) 
+     (Nothing) 
+     (Nothing))),
+   ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:11:1-24
+     }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [((G AnnImport),DP (0,0)),((G AnnVal),DP (0,1))])
+    (ImportDecl 
+     (Nothing) 
+     ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:11:8-24
+       }
+      Nothing{ModuleName: Data.RangeMin.Int}) 
+     (Nothing) 
+     (False) 
+     (False) 
+     (False) 
+     (False) 
+     (Nothing) 
+     (Nothing))),
+   ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:12:1-35
+     }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [((G AnnImport),DP (0,0)),((G AnnVal),DP (0,1))])
+    (ImportDecl 
+     (Nothing) 
+     ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:12:8-35
+       }
+      Nothing{ModuleName: Data.RangeMin.Cartesian.Spec}) 
+     (Nothing) 
+     (False) 
+     (False) 
+     (False) 
+     (False) 
+     (Nothing) 
+     (Nothing))),
+   ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:14:1-41
+     }
+    Just (Ann (DP (2,1)) (ColDelta 1) DP (2,1) [] [((G AnnImport),DP (0,0)),((G AnnQualified),DP (0,1)),((G AnnVal),DP (0,1)),((G AnnAs),DP (0,1)),((G AnnVal),DP (0,1))])
+    (ImportDecl 
+     (Nothing) 
+     ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:14:18-36
+       }
+      Nothing{ModuleName: Data.Vector.Generic}) 
+     (Nothing) 
+     (False) 
+     (False) 
+     (True) 
+     (False) 
+     (Just {ModuleName: G}) 
+     (Nothing)))] 
+  [
+   ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:19:1-38
+     }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (5,1) [DComment (DP (2,1),DP (2,43)) "#define vec ('PV.fromList' [0,7,-10,4,5,4])" Nothing,DComment (DP (2,1),DP (2,44)) "#define cmp (\\\\ i j -> 'abs' i '>=' 'abs' j)" Nothing] [((G AnnOpen),DP (0,0)),((G AnnOpenS),DP (0,1)),((G AnnVal),DP (0,0)),((G AnnCloseS),DP (0,0)),((G AnnClose),DP (0,1))])
+    (SigD 
+     (InlineSig 
+      ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:19:16-34
+        }
+       Just (Ann (DP (0,1)) (ColDelta 16) DP (0,1) [] [((G AnnVal),DP (0,0))])
+       (Unqual {OccName: unsafeVecRangeMinBy})) 
+      (InlinePragma "{-# INLINE" 
+       (Inline) 
+       (Nothing) 
+       (ActiveAfter 
+        (1)) 
+       (FunLike))))),
+   ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:(32,1)-(35,15)
+     }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (13,1) [DComment (DP (1,1),DP (1,88)) "-- | /O(n)/.  Returns a range-min function on the vector, under the specified ordering." Nothing,DComment (DP (1,1),DP (1,91)) "-- The returned function /does not/ do bounds checks; see 'unsafeIntRangeMin' for details." Nothing,DComment (DP (1,1),DP (1,3)) "--" Nothing,DComment (DP (1,1),DP (1,12)) "-- Example:" Nothing,DComment (DP (1,1),DP (1,3)) "--" Nothing,DComment (DP (1,1),DP (1,5)) "-- @" Nothing,DComment (DP (1,1),DP (1,75)) "-- -- Finding the element with the /largest absolute value/ in a subrange." Nothing,DComment (DP (1,1),DP (1,42)) "-- 'unsafeVecRangeMinBy' cmp vec 0 6 == 2" Nothing,DComment (DP (0,-41),DP (0,57)) "-- 'unsafeVecRangeMinBy' (\\\\ i j -> 'abs' i '>=' 'abs' j) ('PV.fromList' [0,7,-10,4,5,4]) 0 6 == 2" Nothing,DComment (DP (1,1),DP (1,42)) "-- 'unsafeVecRangeMinBy' cmp vec 2 3 == 2" Nothing,DComment (DP (0,-41),DP (0,57)) "-- 'unsafeVecRangeMinBy' (\\\\ i j -> 'abs' i '>=' 'abs' j) ('PV.fromList' [0,7,-10,4,5,4]) 2 3 == 2" Nothing,DComment (DP (1,1),DP (1,42)) "-- 'unsafeVecRangeMinBy' cmp vec 3 3 == 4" Nothing,DComment (DP (0,-41),DP (0,57)) "-- 'unsafeVecRangeMinBy' (\\\\ i j -> 'abs' i '>=' 'abs' j) ('PV.fromList' [0,7,-10,4,5,4]) 3 3 == 4" Nothing,DComment (DP (1,1),DP (1,5)) "-- @" Nothing,DComment (DP (1,1),DP (1,3)) "--" Nothing] [((G AnnDcolon),DP (0,1))])
+    (SigD 
+     (TypeSig 
+      [
+       ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:32:1-19
+         }
+        Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+        (Unqual {OccName: unsafeVecRangeMinBy}))] 
+      ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:(32,24)-(35,15)
+        }
+       Just (Ann (DP (0,1)) (ColDelta 24) DP (0,1) [] [])
+       (HsForAllTy 
+        (Implicit) 
+        (Nothing) 
+        (HsQTvs 
+         [] 
+         []) 
+        ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:32:24-35
+          }
+         Just (Ann (DP (0,0)) (ColDelta 24) DP (0,0) [] [((G AnnDarrow),DP (0,1))])
+         [
+          ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:32:24-35
+            }
+           Just (Ann (DP (0,0)) (ColDelta 24) DP (0,0) [] [])
+           (HsAppTy 
+            ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:32:24-33
+              }
+             Just (Ann (DP (0,0)) (ColDelta 24) DP (0,0) [] [])
+             (HsAppTy 
+              ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:32:24-31
+                }
+               Just (Ann (DP (0,0)) (ColDelta 24) DP (0,0) [] [((G AnnVal),DP (0,0))])
+               (HsTyVar 
+                (Qual {ModuleName: G} {OccName: Vector}))) 
+              ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:32:33
+                }
+               Just (Ann (DP (0,1)) (ColDelta 33) DP (0,1) [] [((G AnnVal),DP (0,0))])
+               (HsTyVar 
+                (Unqual {OccName: v}))))) 
+            ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:32:35
+              }
+             Just (Ann (DP (0,1)) (ColDelta 35) DP (0,1) [] [((G AnnVal),DP (0,0))])
+             (HsTyVar 
+              (Unqual {OccName: a})))))]) 
+        ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:(33,5)-(35,15)
+          }
+         Just (Ann (DP (1,5)) (ColDelta 5) DP (1,5) [] [((AnnComment DComment (DP (0,7),DP (0,45)) "-- ^ A total ordering on the type @a@." Nothing),DP (0,7)),((G AnnRarrow),DP (1,5))])
+         (HsFunTy 
+          ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:33:5-9
+            }
+           Just (Ann (DP (0,0)) (ColDelta 5) DP (0,0) [] [])
+           (HsAppTy 
+            ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:33:5-7
+              }
+             Just (Ann (DP (0,0)) (ColDelta 5) DP (0,0) [] [((G AnnVal),DP (0,0))])
+             (HsTyVar 
+              (Unqual {OccName: LEq}))) 
+            ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:33:9 }
+             Just (Ann (DP (0,1)) (ColDelta 9) DP (0,1) [] [((G AnnVal),DP (0,0))])
+             (HsTyVar 
+              (Unqual {OccName: a}))))) 
+          ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:(34,8)-(35,15)
+            }
+           Just (Ann (DP (0,1)) (ColDelta 8) DP (0,1) [] [((AnnComment DComment (DP (0,6),DP (0,44)) "-- ^ A vector of elements of type @a@." Nothing),DP (0,6)),((G AnnRarrow),DP (1,5))])
+           (HsFunTy 
+            ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:34:8-10
+              }
+             Just (Ann (DP (0,0)) (ColDelta 8) DP (0,0) [] [])
+             (HsAppTy 
+              ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:34:8 }
+               Just (Ann (DP (0,0)) (ColDelta 8) DP (0,0) [] [((G AnnVal),DP (0,0))])
+               (HsTyVar 
+                (Unqual {OccName: v}))) 
+              ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:34:10
+                }
+               Just (Ann (DP (0,1)) (ColDelta 10) DP (0,1) [] [((G AnnVal),DP (0,0))])
+               (HsTyVar 
+                (Unqual {OccName: a}))))) 
+            ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:35:8-15
+              }
+             Just (Ann (DP (0,1)) (ColDelta 8) DP (0,1) [] [((G AnnVal),DP (0,0))])
+             (HsTyVar 
+              (Unqual {OccName: RangeMin}))))))))) 
+      (PlaceHolder)))),
+   ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:37:1-32
+     }
+    Just (Ann (DP (2,1)) (ColDelta 1) DP (2,1) [DComment (DP (0,1),DP (0,62)) "-- ^ A range-min function on the vector which runs in /O(1)/." Nothing] [((G AnnOpen),DP (0,0)),((G AnnClose),DP (0,1))])
+    (SigD 
+     (InlineSig 
+      ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:37:12-28
+        }
+       Just (Ann (DP (0,1)) (ColDelta 12) DP (0,1) [] [((G AnnVal),DP (0,0))])
+       (Unqual {OccName: unsafeVecRangeMin})) 
+      (InlinePragma "{-# INLINE" 
+       (Inline) 
+       (Nothing) 
+       (AlwaysActive) 
+       (FunLike))))),
+   ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:(50,1)-(52,15)
+     }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (13,1) [DComment (DP (1,1),DP (1,103)) "-- | /O(n)/.  Equivalent to @'unsafeVecRangeMinBy' ('<=')@.  Specialized for instances of 'Injective'." Nothing,DComment (DP (1,1),DP (1,91)) "-- The returned function /does not/ do bounds checks; see 'unsafeIntRangeMin' for details." Nothing,DComment (DP (1,1),DP (1,3)) "--" Nothing,DComment (DP (1,1),DP (1,12)) "-- Example:" Nothing,DComment (DP (1,1),DP (1,3)) "--" Nothing,DComment (DP (1,1),DP (1,5)) "-- @" Nothing,DComment (DP (1,1),DP (1,97)) "-- -- In reality, these would be rewritten into calls to 'unsafeIntRangeMin', since 'Char' is an" Nothing,DComment (DP (1,1),DP (1,31)) "-- -- instance of 'Injective'." Nothing,DComment (DP (1,1),DP (1,59)) "-- 'unsafeVecRangeMin' ('PV.fromList' \\\"banana\\\") 0 6 == 1" Nothing,DComment (DP (1,1),DP (1,59)) "-- 'unsafeVecRangeMin' ('PV.fromList' \\\"banana\\\") 1 1 == 1" Nothing,DComment (DP (1,1),DP (1,59)) "-- 'unsafeVecRangeMin' ('PV.fromList' \\\"banana\\\") 3 3 == 3" Nothing,DComment (DP (1,1),DP (1,5)) "-- @" Nothing] [((G AnnDcolon),DP (0,1))])
+    (SigD 
+     (TypeSig 
+      [
+       ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:50:1-17
+         }
+        Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+        (Unqual {OccName: unsafeVecRangeMin}))] 
+      ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:(50,22)-(52,15)
+        }
+       Just (Ann (DP (0,1)) (ColDelta 22) DP (0,1) [] [])
+       (HsForAllTy 
+        (Implicit) 
+        (Nothing) 
+        (HsQTvs 
+         [] 
+         []) 
+        ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:50:22-42
+          }
+         Just (Ann (DP (0,0)) (ColDelta 22) DP (0,0) [] [((G AnnOpenP),DP (0,0)),((G AnnOpenP),DP (0,-1)),((G AnnCloseP),DP (0,0)),((G AnnCloseP),DP (0,-1)),((G AnnDarrow),DP (0,1))])
+         [
+          ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:50:23-34
+            }
+           Just (Ann (DP (0,0)) (ColDelta 23) DP (0,0) [] [((G AnnComma),DP (0,0))])
+           (HsAppTy 
+            ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:50:23-32
+              }
+             Just (Ann (DP (0,0)) (ColDelta 23) DP (0,0) [] [])
+             (HsAppTy 
+              ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:50:23-30
+                }
+               Just (Ann (DP (0,0)) (ColDelta 23) DP (0,0) [] [((G AnnVal),DP (0,0))])
+               (HsTyVar 
+                (Qual {ModuleName: G} {OccName: Vector}))) 
+              ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:50:32
+                }
+               Just (Ann (DP (0,1)) (ColDelta 32) DP (0,1) [] [((G AnnVal),DP (0,0))])
+               (HsTyVar 
+                (Unqual {OccName: v}))))) 
+            ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:50:34
+              }
+             Just (Ann (DP (0,1)) (ColDelta 34) DP (0,1) [] [((G AnnVal),DP (0,0))])
+             (HsTyVar 
+              (Unqual {OccName: a}))))),
+          ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:50:37-41
+            }
+           Just (Ann (DP (0,1)) (ColDelta 37) DP (0,1) [] [])
+           (HsAppTy 
+            ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:50:37-39
+              }
+             Just (Ann (DP (0,0)) (ColDelta 37) DP (0,0) [] [((G AnnVal),DP (0,0))])
+             (HsTyVar 
+              (Unqual {OccName: Ord}))) 
+            ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:50:41
+              }
+             Just (Ann (DP (0,1)) (ColDelta 41) DP (0,1) [] [((G AnnVal),DP (0,0))])
+             (HsTyVar 
+              (Unqual {OccName: a})))))]) 
+        ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:(51,5)-(52,15)
+          }
+         Just (Ann (DP (1,5)) (ColDelta 5) DP (1,5) [] [((AnnComment DComment (DP (0,5),DP (0,43)) "-- ^ A vector of elements of type @a@." Nothing),DP (0,5)),((G AnnRarrow),DP (1,5))])
+         (HsFunTy 
+          ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:51:5-7
+            }
+           Just (Ann (DP (0,0)) (ColDelta 5) DP (0,0) [] [])
+           (HsAppTy 
+            ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:51:5 }
+             Just (Ann (DP (0,0)) (ColDelta 5) DP (0,0) [] [((G AnnVal),DP (0,0))])
+             (HsTyVar 
+              (Unqual {OccName: v}))) 
+            ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:51:7 }
+             Just (Ann (DP (0,1)) (ColDelta 7) DP (0,1) [] [((G AnnVal),DP (0,0))])
+             (HsTyVar 
+              (Unqual {OccName: a}))))) 
+          ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:52:8-15
+            }
+           Just (Ann (DP (0,1)) (ColDelta 8) DP (0,1) [] [((G AnnVal),DP (0,0))])
+           (HsTyVar 
+            (Unqual {OccName: RangeMin}))))))) 
+      (PlaceHolder)))),
+   ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:55:1-32
+     }
+    Just (Ann (DP (2,1)) (ColDelta 1) DP (3,1) [DComment (DP (0,1),DP (0,55)) "-- ^ A range-min function (under the natural ordering)" Nothing,DComment (DP (1,13),DP (1,51)) "-- on the vector which runs in /O(1)/." Nothing] [((G AnnOpen),DP (0,0)),((G AnnClose),DP (0,1))])
+    (SigD 
+     (InlineSig 
+      ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:55:12-28
+        }
+       Just (Ann (DP (0,1)) (ColDelta 12) DP (0,1) [] [((G AnnVal),DP (0,0))])
+       (Unqual {OccName: unsafeVecRangeMax})) 
+      (InlinePragma "{-# INLINE" 
+       (Inline) 
+       (Nothing) 
+       (AlwaysActive) 
+       (FunLike))))),
+   ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:(68,1)-(70,15)
+     }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (13,1) [DComment (DP (1,1),DP (1,103)) "-- | /O(n)/.  Equivalent to @'unsafeVecRangeMinBy' ('>=')@.  Specialized for instances of 'Injective'." Nothing,DComment (DP (1,1),DP (1,91)) "-- The returned function /does not/ do bounds checks; see 'unsafeIntRangeMin' for details." Nothing,DComment (DP (1,1),DP (1,3)) "--" Nothing,DComment (DP (1,1),DP (1,12)) "-- Example:" Nothing,DComment (DP (1,1),DP (1,3)) "--" Nothing,DComment (DP (1,1),DP (1,5)) "-- @" Nothing,DComment (DP (1,1),DP (1,91)) "-- -- In reality, these would be rewritten into calls to 'unsafeIntRangeMin', since 'Char'" Nothing,DComment (DP (1,1),DP (1,37)) "-- -- is an instance of 'Injective'." Nothing,DComment (DP (1,1),DP (1,59)) "-- 'unsafeVecRangeMax' ('PV.fromList' \\\"banana\\\") 0 6 == 2" Nothing,DComment (DP (1,1),DP (1,59)) "-- 'unsafeVecRangeMax' ('PV.fromList' \\\"banana\\\") 1 1 == 1" Nothing,DComment (DP (1,1),DP (1,59)) "-- 'unsafeVecRangeMax' ('PV.fromList' \\\"banana\\\") 3 3 == 4" Nothing,DComment (DP (1,1),DP (1,5)) "-- @" Nothing] [((G AnnDcolon),DP (0,1))])
+    (SigD 
+     (TypeSig 
+      [
+       ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:68:1-17
+         }
+        Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+        (Unqual {OccName: unsafeVecRangeMax}))] 
+      ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:(68,22)-(70,15)
+        }
+       Just (Ann (DP (0,1)) (ColDelta 22) DP (0,1) [] [])
+       (HsForAllTy 
+        (Implicit) 
+        (Nothing) 
+        (HsQTvs 
+         [] 
+         []) 
+        ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:68:22-42
+          }
+         Just (Ann (DP (0,0)) (ColDelta 22) DP (0,0) [] [((G AnnOpenP),DP (0,0)),((G AnnOpenP),DP (0,-1)),((G AnnCloseP),DP (0,0)),((G AnnCloseP),DP (0,-1)),((G AnnDarrow),DP (0,1))])
+         [
+          ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:68:23-34
+            }
+           Just (Ann (DP (0,0)) (ColDelta 23) DP (0,0) [] [((G AnnComma),DP (0,0))])
+           (HsAppTy 
+            ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:68:23-32
+              }
+             Just (Ann (DP (0,0)) (ColDelta 23) DP (0,0) [] [])
+             (HsAppTy 
+              ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:68:23-30
+                }
+               Just (Ann (DP (0,0)) (ColDelta 23) DP (0,0) [] [((G AnnVal),DP (0,0))])
+               (HsTyVar 
+                (Qual {ModuleName: G} {OccName: Vector}))) 
+              ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:68:32
+                }
+               Just (Ann (DP (0,1)) (ColDelta 32) DP (0,1) [] [((G AnnVal),DP (0,0))])
+               (HsTyVar 
+                (Unqual {OccName: v}))))) 
+            ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:68:34
+              }
+             Just (Ann (DP (0,1)) (ColDelta 34) DP (0,1) [] [((G AnnVal),DP (0,0))])
+             (HsTyVar 
+              (Unqual {OccName: a}))))),
+          ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:68:37-41
+            }
+           Just (Ann (DP (0,1)) (ColDelta 37) DP (0,1) [] [])
+           (HsAppTy 
+            ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:68:37-39
+              }
+             Just (Ann (DP (0,0)) (ColDelta 37) DP (0,0) [] [((G AnnVal),DP (0,0))])
+             (HsTyVar 
+              (Unqual {OccName: Ord}))) 
+            ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:68:41
+              }
+             Just (Ann (DP (0,1)) (ColDelta 41) DP (0,1) [] [((G AnnVal),DP (0,0))])
+             (HsTyVar 
+              (Unqual {OccName: a})))))]) 
+        ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:(69,5)-(70,15)
+          }
+         Just (Ann (DP (1,5)) (ColDelta 5) DP (1,5) [] [((AnnComment DComment (DP (0,5),DP (0,43)) "-- ^ A vector of elements of type @a@." Nothing),DP (0,5)),((G AnnRarrow),DP (1,5))])
+         (HsFunTy 
+          ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:69:5-7
+            }
+           Just (Ann (DP (0,0)) (ColDelta 5) DP (0,0) [] [])
+           (HsAppTy 
+            ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:69:5 }
+             Just (Ann (DP (0,0)) (ColDelta 5) DP (0,0) [] [((G AnnVal),DP (0,0))])
+             (HsTyVar 
+              (Unqual {OccName: v}))) 
+            ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:69:7 }
+             Just (Ann (DP (0,1)) (ColDelta 7) DP (0,1) [] [((G AnnVal),DP (0,0))])
+             (HsTyVar 
+              (Unqual {OccName: a}))))) 
+          ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:70:8-15
+            }
+           Just (Ann (DP (0,1)) (ColDelta 8) DP (0,1) [] [((G AnnVal),DP (0,0))])
+           (HsTyVar 
+            (Unqual {OccName: RangeMin}))))))) 
+      (PlaceHolder)))),
+   ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:73:1-32
+     }
+    Just (Ann (DP (2,1)) (ColDelta 1) DP (3,1) [DComment (DP (0,1),DP (0,55)) "-- ^ A range-max function (under the natural ordering)" Nothing,DComment (DP (1,13),DP (1,51)) "-- on the vector which runs in /O(1)/." Nothing] [((G AnnOpen),DP (0,0)),((G AnnOpenS),DP (0,1)),((G AnnVal),DP (0,0)),((G AnnCloseS),DP (0,0)),((G AnnClose),DP (0,1))])
+    (SigD 
+     (InlineSig 
+      ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:73:16-28
+        }
+       Just (Ann (DP (0,1)) (ColDelta 16) DP (0,1) [] [((G AnnVal),DP (0,0))])
+       (Unqual {OccName: vecRangeMinBy})) 
+      (InlinePragma "{-# INLINE" 
+       (Inline) 
+       (Nothing) 
+       (ActiveAfter 
+        (1)) 
+       (FunLike))))),
+   ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:(76,1)-(79,15)
+     }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (3,1) [DComment (DP (1,1),DP (1,88)) "-- | /O(n)/.  Returns a range-min function on the vector, under the specified ordering." Nothing,DComment (DP (1,1),DP (1,81)) "-- The returned function /does/ do bounds checks; see 'intRangeMin' for details." Nothing] [((G AnnDcolon),DP (0,1))])
+    (SigD 
+     (TypeSig 
+      [
+       ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:76:1-13
+         }
+        Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+        (Unqual {OccName: vecRangeMinBy}))] 
+      ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:(76,18)-(79,15)
+        }
+       Just (Ann (DP (0,1)) (ColDelta 18) DP (0,1) [] [])
+       (HsForAllTy 
+        (Implicit) 
+        (Nothing) 
+        (HsQTvs 
+         [] 
+         []) 
+        ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:76:18-29
+          }
+         Just (Ann (DP (0,0)) (ColDelta 18) DP (0,0) [] [((G AnnDarrow),DP (0,1))])
+         [
+          ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:76:18-29
+            }
+           Just (Ann (DP (0,0)) (ColDelta 18) DP (0,0) [] [])
+           (HsAppTy 
+            ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:76:18-27
+              }
+             Just (Ann (DP (0,0)) (ColDelta 18) DP (0,0) [] [])
+             (HsAppTy 
+              ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:76:18-25
+                }
+               Just (Ann (DP (0,0)) (ColDelta 18) DP (0,0) [] [((G AnnVal),DP (0,0))])
+               (HsTyVar 
+                (Qual {ModuleName: G} {OccName: Vector}))) 
+              ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:76:27
+                }
+               Just (Ann (DP (0,1)) (ColDelta 27) DP (0,1) [] [((G AnnVal),DP (0,0))])
+               (HsTyVar 
+                (Unqual {OccName: v}))))) 
+            ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:76:29
+              }
+             Just (Ann (DP (0,1)) (ColDelta 29) DP (0,1) [] [((G AnnVal),DP (0,0))])
+             (HsTyVar 
+              (Unqual {OccName: a})))))]) 
+        ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:(77,5)-(79,15)
+          }
+         Just (Ann (DP (1,5)) (ColDelta 5) DP (1,5) [] [((AnnComment DComment (DP (0,7),DP (0,45)) "-- ^ A total ordering on the type @a@." Nothing),DP (0,7)),((G AnnRarrow),DP (1,5))])
+         (HsFunTy 
+          ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:77:5-9
+            }
+           Just (Ann (DP (0,0)) (ColDelta 5) DP (0,0) [] [])
+           (HsAppTy 
+            ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:77:5-7
+              }
+             Just (Ann (DP (0,0)) (ColDelta 5) DP (0,0) [] [((G AnnVal),DP (0,0))])
+             (HsTyVar 
+              (Unqual {OccName: LEq}))) 
+            ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:77:9 }
+             Just (Ann (DP (0,1)) (ColDelta 9) DP (0,1) [] [((G AnnVal),DP (0,0))])
+             (HsTyVar 
+              (Unqual {OccName: a}))))) 
+          ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:(78,8)-(79,15)
+            }
+           Just (Ann (DP (0,1)) (ColDelta 8) DP (0,1) [] [((AnnComment DComment (DP (0,6),DP (0,44)) "-- ^ A vector of elements of type @a@." Nothing),DP (0,6)),((G AnnRarrow),DP (1,5))])
+           (HsFunTy 
+            ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:78:8-10
+              }
+             Just (Ann (DP (0,0)) (ColDelta 8) DP (0,0) [] [])
+             (HsAppTy 
+              ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:78:8 }
+               Just (Ann (DP (0,0)) (ColDelta 8) DP (0,0) [] [((G AnnVal),DP (0,0))])
+               (HsTyVar 
+                (Unqual {OccName: v}))) 
+              ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:78:10
+                }
+               Just (Ann (DP (0,1)) (ColDelta 10) DP (0,1) [] [((G AnnVal),DP (0,0))])
+               (HsTyVar 
+                (Unqual {OccName: a}))))) 
+            ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:79:8-15
+              }
+             Just (Ann (DP (0,1)) (ColDelta 8) DP (0,1) [] [((G AnnVal),DP (0,0))])
+             (HsTyVar 
+              (Unqual {OccName: RangeMin}))))))))) 
+      (PlaceHolder)))),
+   ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:81:1-26
+     }
+    Just (Ann (DP (2,1)) (ColDelta 1) DP (2,1) [DComment (DP (0,1),DP (0,62)) "-- ^ A range-min function on the vector which runs in /O(1)/." Nothing] [((G AnnOpen),DP (0,0)),((G AnnClose),DP (0,1))])
+    (SigD 
+     (InlineSig 
+      ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:81:12-22
+        }
+       Just (Ann (DP (0,1)) (ColDelta 12) DP (0,1) [] [((G AnnVal),DP (0,0))])
+       (Unqual {OccName: vecRangeMin})) 
+      (InlinePragma "{-# INLINE" 
+       (Inline) 
+       (Nothing) 
+       (AlwaysActive) 
+       (FunLike))))),
+   ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:(84,1)-(86,15)
+     }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (3,1) [DComment (DP (1,1),DP (1,94)) "-- | /O(n)/.  Equivalent to @'vecRangeMinBy' ('<=')@; a safer version of 'unsafeVecRangeMin'." Nothing,DComment (DP (1,1),DP (1,124)) "-- Specialized for instances of 'Injective'.  The returned function /does/ do bounds checks; see 'intRangeMin' for details." Nothing] [((G AnnDcolon),DP (0,1))])
+    (SigD 
+     (TypeSig 
+      [
+       ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:84:1-11
+         }
+        Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+        (Unqual {OccName: vecRangeMin}))] 
+      ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:(84,16)-(86,15)
+        }
+       Just (Ann (DP (0,1)) (ColDelta 16) DP (0,1) [] [])
+       (HsForAllTy 
+        (Implicit) 
+        (Nothing) 
+        (HsQTvs 
+         [] 
+         []) 
+        ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:84:16-36
+          }
+         Just (Ann (DP (0,0)) (ColDelta 16) DP (0,0) [] [((G AnnOpenP),DP (0,0)),((G AnnOpenP),DP (0,-1)),((G AnnCloseP),DP (0,0)),((G AnnCloseP),DP (0,-1)),((G AnnDarrow),DP (0,1))])
+         [
+          ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:84:17-28
+            }
+           Just (Ann (DP (0,0)) (ColDelta 17) DP (0,0) [] [((G AnnComma),DP (0,0))])
+           (HsAppTy 
+            ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:84:17-26
+              }
+             Just (Ann (DP (0,0)) (ColDelta 17) DP (0,0) [] [])
+             (HsAppTy 
+              ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:84:17-24
+                }
+               Just (Ann (DP (0,0)) (ColDelta 17) DP (0,0) [] [((G AnnVal),DP (0,0))])
+               (HsTyVar 
+                (Qual {ModuleName: G} {OccName: Vector}))) 
+              ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:84:26
+                }
+               Just (Ann (DP (0,1)) (ColDelta 26) DP (0,1) [] [((G AnnVal),DP (0,0))])
+               (HsTyVar 
+                (Unqual {OccName: v}))))) 
+            ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:84:28
+              }
+             Just (Ann (DP (0,1)) (ColDelta 28) DP (0,1) [] [((G AnnVal),DP (0,0))])
+             (HsTyVar 
+              (Unqual {OccName: a}))))),
+          ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:84:31-35
+            }
+           Just (Ann (DP (0,1)) (ColDelta 31) DP (0,1) [] [])
+           (HsAppTy 
+            ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:84:31-33
+              }
+             Just (Ann (DP (0,0)) (ColDelta 31) DP (0,0) [] [((G AnnVal),DP (0,0))])
+             (HsTyVar 
+              (Unqual {OccName: Ord}))) 
+            ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:84:35
+              }
+             Just (Ann (DP (0,1)) (ColDelta 35) DP (0,1) [] [((G AnnVal),DP (0,0))])
+             (HsTyVar 
+              (Unqual {OccName: a})))))]) 
+        ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:(85,5)-(86,15)
+          }
+         Just (Ann (DP (1,5)) (ColDelta 5) DP (1,5) [] [((AnnComment DComment (DP (0,5),DP (0,43)) "-- ^ A vector of elements of type @a@." Nothing),DP (0,5)),((G AnnRarrow),DP (1,5))])
+         (HsFunTy 
+          ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:85:5-7
+            }
+           Just (Ann (DP (0,0)) (ColDelta 5) DP (0,0) [] [])
+           (HsAppTy 
+            ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:85:5 }
+             Just (Ann (DP (0,0)) (ColDelta 5) DP (0,0) [] [((G AnnVal),DP (0,0))])
+             (HsTyVar 
+              (Unqual {OccName: v}))) 
+            ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:85:7 }
+             Just (Ann (DP (0,1)) (ColDelta 7) DP (0,1) [] [((G AnnVal),DP (0,0))])
+             (HsTyVar 
+              (Unqual {OccName: a}))))) 
+          ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:86:8-15
+            }
+           Just (Ann (DP (0,1)) (ColDelta 8) DP (0,1) [] [((G AnnVal),DP (0,0))])
+           (HsTyVar 
+            (Unqual {OccName: RangeMin}))))))) 
+      (PlaceHolder)))),
+   ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:89:1-26
+     }
+    Just (Ann (DP (2,1)) (ColDelta 1) DP (3,1) [DComment (DP (0,1),DP (0,55)) "-- ^ A range-min function (under the natural ordering)" Nothing,DComment (DP (1,13),DP (1,51)) "-- on the vector which runs in /O(1)/." Nothing] [((G AnnOpen),DP (0,0)),((G AnnClose),DP (0,1))])
+    (SigD 
+     (InlineSig 
+      ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:89:12-22
+        }
+       Just (Ann (DP (0,1)) (ColDelta 12) DP (0,1) [] [((G AnnVal),DP (0,0))])
+       (Unqual {OccName: vecRangeMax})) 
+      (InlinePragma "{-# INLINE" 
+       (Inline) 
+       (Nothing) 
+       (AlwaysActive) 
+       (FunLike))))),
+   ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:(92,1)-(94,15)
+     }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (3,1) [DComment (DP (1,1),DP (1,94)) "-- | /O(n)/.  Equivalent to @'vecRangeMinBy' ('>=')@; a safer version of 'unsafeVecRangeMax'." Nothing,DComment (DP (1,1),DP (1,123)) "-- Specialized for instances of 'Injective'. The returned function /does/ do bounds checks; see 'intRangeMin' for details." Nothing] [((G AnnDcolon),DP (0,1))])
+    (SigD 
+     (TypeSig 
+      [
+       ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:92:1-11
+         }
+        Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+        (Unqual {OccName: vecRangeMax}))] 
+      ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:(92,16)-(94,15)
+        }
+       Just (Ann (DP (0,1)) (ColDelta 16) DP (0,1) [] [])
+       (HsForAllTy 
+        (Implicit) 
+        (Nothing) 
+        (HsQTvs 
+         [] 
+         []) 
+        ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:92:16-36
+          }
+         Just (Ann (DP (0,0)) (ColDelta 16) DP (0,0) [] [((G AnnOpenP),DP (0,0)),((G AnnOpenP),DP (0,-1)),((G AnnCloseP),DP (0,0)),((G AnnCloseP),DP (0,-1)),((G AnnDarrow),DP (0,1))])
+         [
+          ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:92:17-28
+            }
+           Just (Ann (DP (0,0)) (ColDelta 17) DP (0,0) [] [((G AnnComma),DP (0,0))])
+           (HsAppTy 
+            ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:92:17-26
+              }
+             Just (Ann (DP (0,0)) (ColDelta 17) DP (0,0) [] [])
+             (HsAppTy 
+              ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:92:17-24
+                }
+               Just (Ann (DP (0,0)) (ColDelta 17) DP (0,0) [] [((G AnnVal),DP (0,0))])
+               (HsTyVar 
+                (Qual {ModuleName: G} {OccName: Vector}))) 
+              ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:92:26
+                }
+               Just (Ann (DP (0,1)) (ColDelta 26) DP (0,1) [] [((G AnnVal),DP (0,0))])
+               (HsTyVar 
+                (Unqual {OccName: v}))))) 
+            ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:92:28
+              }
+             Just (Ann (DP (0,1)) (ColDelta 28) DP (0,1) [] [((G AnnVal),DP (0,0))])
+             (HsTyVar 
+              (Unqual {OccName: a}))))),
+          ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:92:31-35
+            }
+           Just (Ann (DP (0,1)) (ColDelta 31) DP (0,1) [] [])
+           (HsAppTy 
+            ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:92:31-33
+              }
+             Just (Ann (DP (0,0)) (ColDelta 31) DP (0,0) [] [((G AnnVal),DP (0,0))])
+             (HsTyVar 
+              (Unqual {OccName: Ord}))) 
+            ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:92:35
+              }
+             Just (Ann (DP (0,1)) (ColDelta 35) DP (0,1) [] [((G AnnVal),DP (0,0))])
+             (HsTyVar 
+              (Unqual {OccName: a})))))]) 
+        ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:(93,5)-(94,15)
+          }
+         Just (Ann (DP (1,5)) (ColDelta 5) DP (1,5) [] [((AnnComment DComment (DP (0,5),DP (0,43)) "-- ^ A vector of elements of type @a@." Nothing),DP (0,5)),((G AnnRarrow),DP (1,5))])
+         (HsFunTy 
+          ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:93:5-7
+            }
+           Just (Ann (DP (0,0)) (ColDelta 5) DP (0,0) [] [])
+           (HsAppTy 
+            ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:93:5 }
+             Just (Ann (DP (0,0)) (ColDelta 5) DP (0,0) [] [((G AnnVal),DP (0,0))])
+             (HsTyVar 
+              (Unqual {OccName: v}))) 
+            ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:93:7 }
+             Just (Ann (DP (0,1)) (ColDelta 7) DP (0,1) [] [((G AnnVal),DP (0,0))])
+             (HsTyVar 
+              (Unqual {OccName: a}))))) 
+          ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:94:8-15
+            }
+           Just (Ann (DP (0,1)) (ColDelta 8) DP (0,1) [] [((G AnnVal),DP (0,0))])
+           (HsTyVar 
+            (Unqual {OccName: RangeMin}))))))) 
+      (PlaceHolder)))),
+   ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:97:1-73
+     }
+    Just (Ann (DP (2,1)) (ColDelta 1) DP (3,1) [DComment (DP (0,1),DP (0,55)) "-- ^ A range-max function (under the natural ordering)" Nothing,DComment (DP (1,13),DP (1,51)) "-- on the vector which runs in /O(1)/." Nothing] [])
+    (ValD 
+     (FunBind 
+      ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:97:1-19
+        }
+       Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+       (Unqual {OccName: unsafeVecRangeMinBy})) 
+      (False) 
+      (MG 
+       [
+        ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:97:1-73
+          }
+         Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnEqual),DP (0,1))])
+         (Match 
+          (Just 
+           ((,) 
+            ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:97:1-19
+              }
+             Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+             (Unqual {OccName: unsafeVecRangeMinBy})) 
+            (False))) 
+          [
+           ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:97:21-25
+             }
+            Just (Ann (DP (0,1)) (ColDelta 21) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnVal),DP (0,0)),((G AnnCloseP),DP (0,0))])
+            (VarPat 
+             (Unqual {OccName: <=?}))),
+           ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:97:27-28
+             }
+            Just (Ann (DP (0,1)) (ColDelta 27) DP (0,1) [] [((G AnnVal),DP (0,0))])
+            (VarPat 
+             (Unqual {OccName: xs})))] 
+          (Nothing) 
+          (GRHSs 
+           [
+            ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:97:30-73
+              }
+             Just (Ann (DP (0,-1)) (ColDelta 30) DP (0,-1) [] [])
+             (GRHS 
+              [] 
+              ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:97:32-73
+                }
+               Just (Ann (DP (0,1)) (ColDelta 32) DP (0,1) [] [])
+               (HsApp 
+                ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:97:32-48
+                  }
+                 Just (Ann (DP (0,0)) (ColDelta 32) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                 (HsVar 
+                  (Unqual {OccName: unsafeIntRangeMin}))) 
+                ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:97:50-73
+                  }
+                 Just (Ann (DP (0,1)) (ColDelta 50) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])
+                 (HsPar 
+                  ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:97:51-72
+                    }
+                   Just (Ann (DP (0,0)) (ColDelta 51) DP (0,0) [] [])
+                   (HsApp 
+                    ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:97:51-69
+                      }
+                     Just (Ann (DP (0,0)) (ColDelta 51) DP (0,0) [] [])
+                     (HsApp 
+                      ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:97:51-63
+                        }
+                       Just (Ann (DP (0,0)) (ColDelta 51) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                       (HsVar 
+                        (Unqual {OccName: equivVectorBy}))) 
+                      ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:97:65-69
+                        }
+                       Just (Ann (DP (0,1)) (ColDelta 65) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnVal),DP (0,0)),((G AnnCloseP),DP (0,0))])
+                       (HsVar 
+                        (Unqual {OccName: <=?}))))) 
+                    ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:97:71-72
+                      }
+                     Just (Ann (DP (0,1)) (ColDelta 71) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                     (HsVar 
+                      (Unqual {OccName: xs})))))))))))] 
+           (EmptyLocalBinds))))] 
+       [] 
+       (PlaceHolder) 
+       (FromSource)) 
+      (WpHole) 
+      (PlaceHolder) 
+      []))),
+   ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:98:1-60
+     }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [])
+    (ValD 
+     (FunBind 
+      ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:98:1-17
+        }
+       Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+       (Unqual {OccName: unsafeVecRangeMin})) 
+      (False) 
+      (MG 
+       [
+        ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:98:1-60
+          }
+         Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnEqual),DP (0,1))])
+         (Match 
+          (Just 
+           ((,) 
+            ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:98:1-17
+              }
+             Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+             (Unqual {OccName: unsafeVecRangeMin})) 
+            (False))) 
+          [
+           ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:98:19-20
+             }
+            Just (Ann (DP (0,1)) (ColDelta 19) DP (0,1) [] [((G AnnVal),DP (0,0))])
+            (VarPat 
+             (Unqual {OccName: xs})))] 
+          (Nothing) 
+          (GRHSs 
+           [
+            ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:98:22-60
+              }
+             Just (Ann (DP (0,-1)) (ColDelta 22) DP (0,-1) [] [])
+             (GRHS 
+              [] 
+              ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:98:24-60
+                }
+               Just (Ann (DP (0,1)) (ColDelta 24) DP (0,1) [] [])
+               (HsApp 
+                ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:98:24-40
+                  }
+                 Just (Ann (DP (0,0)) (ColDelta 24) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                 (HsVar 
+                  (Unqual {OccName: unsafeIntRangeMin}))) 
+                ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:98:42-60
+                  }
+                 Just (Ann (DP (0,1)) (ColDelta 42) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])
+                 (HsPar 
+                  ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:98:43-59
+                    }
+                   Just (Ann (DP (0,0)) (ColDelta 43) DP (0,0) [] [])
+                   (HsApp 
+                    ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:98:43-56
+                      }
+                     Just (Ann (DP (0,0)) (ColDelta 43) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                     (HsVar 
+                      (Unqual {OccName: equivVectorMin}))) 
+                    ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:98:58-59
+                      }
+                     Just (Ann (DP (0,1)) (ColDelta 58) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                     (HsVar 
+                      (Unqual {OccName: xs})))))))))))] 
+           (EmptyLocalBinds))))] 
+       [] 
+       (PlaceHolder) 
+       (FromSource)) 
+      (WpHole) 
+      (PlaceHolder) 
+      []))),
+   ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:99:1-60
+     }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [])
+    (ValD 
+     (FunBind 
+      ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:99:1-17
+        }
+       Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+       (Unqual {OccName: unsafeVecRangeMax})) 
+      (False) 
+      (MG 
+       [
+        ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:99:1-60
+          }
+         Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnEqual),DP (0,1))])
+         (Match 
+          (Just 
+           ((,) 
+            ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:99:1-17
+              }
+             Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+             (Unqual {OccName: unsafeVecRangeMax})) 
+            (False))) 
+          [
+           ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:99:19-20
+             }
+            Just (Ann (DP (0,1)) (ColDelta 19) DP (0,1) [] [((G AnnVal),DP (0,0))])
+            (VarPat 
+             (Unqual {OccName: xs})))] 
+          (Nothing) 
+          (GRHSs 
+           [
+            ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:99:22-60
+              }
+             Just (Ann (DP (0,-1)) (ColDelta 22) DP (0,-1) [] [])
+             (GRHS 
+              [] 
+              ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:99:24-60
+                }
+               Just (Ann (DP (0,1)) (ColDelta 24) DP (0,1) [] [])
+               (HsApp 
+                ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:99:24-40
+                  }
+                 Just (Ann (DP (0,0)) (ColDelta 24) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                 (HsVar 
+                  (Unqual {OccName: unsafeIntRangeMin}))) 
+                ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:99:42-60
+                  }
+                 Just (Ann (DP (0,1)) (ColDelta 42) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])
+                 (HsPar 
+                  ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:99:43-59
+                    }
+                   Just (Ann (DP (0,0)) (ColDelta 43) DP (0,0) [] [])
+                   (HsApp 
+                    ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:99:43-56
+                      }
+                     Just (Ann (DP (0,0)) (ColDelta 43) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                     (HsVar 
+                      (Unqual {OccName: equivVectorMax}))) 
+                    ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:99:58-59
+                      }
+                     Just (Ann (DP (0,1)) (ColDelta 58) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                     (HsVar 
+                      (Unqual {OccName: xs})))))))))))] 
+           (EmptyLocalBinds))))] 
+       [] 
+       (PlaceHolder) 
+       (FromSource)) 
+      (WpHole) 
+      (PlaceHolder) 
+      []))),
+   ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:100:1-61
+     }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [])
+    (ValD 
+     (FunBind 
+      ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:100:1-13
+        }
+       Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+       (Unqual {OccName: vecRangeMinBy})) 
+      (False) 
+      (MG 
+       [
+        ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:100:1-61
+          }
+         Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnEqual),DP (0,1))])
+         (Match 
+          (Just 
+           ((,) 
+            ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:100:1-13
+              }
+             Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+             (Unqual {OccName: vecRangeMinBy})) 
+            (False))) 
+          [
+           ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:100:15-19
+             }
+            Just (Ann (DP (0,1)) (ColDelta 15) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnVal),DP (0,0)),((G AnnCloseP),DP (0,0))])
+            (VarPat 
+             (Unqual {OccName: <=?}))),
+           ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:100:21-22
+             }
+            Just (Ann (DP (0,1)) (ColDelta 21) DP (0,1) [] [((G AnnVal),DP (0,0))])
+            (VarPat 
+             (Unqual {OccName: xs})))] 
+          (Nothing) 
+          (GRHSs 
+           [
+            ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:100:24-61
+              }
+             Just (Ann (DP (0,-1)) (ColDelta 24) DP (0,-1) [] [])
+             (GRHS 
+              [] 
+              ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:100:26-61
+                }
+               Just (Ann (DP (0,1)) (ColDelta 26) DP (0,1) [] [])
+               (HsApp 
+                ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:100:26-36
+                  }
+                 Just (Ann (DP (0,0)) (ColDelta 26) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                 (HsVar 
+                  (Unqual {OccName: intRangeMin}))) 
+                ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:100:38-61
+                  }
+                 Just (Ann (DP (0,1)) (ColDelta 38) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])
+                 (HsPar 
+                  ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:100:39-60
+                    }
+                   Just (Ann (DP (0,0)) (ColDelta 39) DP (0,0) [] [])
+                   (HsApp 
+                    ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:100:39-57
+                      }
+                     Just (Ann (DP (0,0)) (ColDelta 39) DP (0,0) [] [])
+                     (HsApp 
+                      ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:100:39-51
+                        }
+                       Just (Ann (DP (0,0)) (ColDelta 39) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                       (HsVar 
+                        (Unqual {OccName: equivVectorBy}))) 
+                      ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:100:53-57
+                        }
+                       Just (Ann (DP (0,1)) (ColDelta 53) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnVal),DP (0,0)),((G AnnCloseP),DP (0,0))])
+                       (HsVar 
+                        (Unqual {OccName: <=?}))))) 
+                    ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:100:59-60
+                      }
+                     Just (Ann (DP (0,1)) (ColDelta 59) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                     (HsVar 
+                      (Unqual {OccName: xs})))))))))))] 
+           (EmptyLocalBinds))))] 
+       [] 
+       (PlaceHolder) 
+       (FromSource)) 
+      (WpHole) 
+      (PlaceHolder) 
+      []))),
+   ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:101:1-48
+     }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [])
+    (ValD 
+     (FunBind 
+      ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:101:1-11
+        }
+       Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+       (Unqual {OccName: vecRangeMin})) 
+      (False) 
+      (MG 
+       [
+        ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:101:1-48
+          }
+         Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnEqual),DP (0,1))])
+         (Match 
+          (Just 
+           ((,) 
+            ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:101:1-11
+              }
+             Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+             (Unqual {OccName: vecRangeMin})) 
+            (False))) 
+          [
+           ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:101:13-14
+             }
+            Just (Ann (DP (0,1)) (ColDelta 13) DP (0,1) [] [((G AnnVal),DP (0,0))])
+            (VarPat 
+             (Unqual {OccName: xs})))] 
+          (Nothing) 
+          (GRHSs 
+           [
+            ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:101:16-48
+              }
+             Just (Ann (DP (0,-1)) (ColDelta 16) DP (0,-1) [] [])
+             (GRHS 
+              [] 
+              ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:101:18-48
+                }
+               Just (Ann (DP (0,1)) (ColDelta 18) DP (0,1) [] [])
+               (HsApp 
+                ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:101:18-28
+                  }
+                 Just (Ann (DP (0,0)) (ColDelta 18) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                 (HsVar 
+                  (Unqual {OccName: intRangeMin}))) 
+                ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:101:30-48
+                  }
+                 Just (Ann (DP (0,1)) (ColDelta 30) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])
+                 (HsPar 
+                  ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:101:31-47
+                    }
+                   Just (Ann (DP (0,0)) (ColDelta 31) DP (0,0) [] [])
+                   (HsApp 
+                    ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:101:31-44
+                      }
+                     Just (Ann (DP (0,0)) (ColDelta 31) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                     (HsVar 
+                      (Unqual {OccName: equivVectorMin}))) 
+                    ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:101:46-47
+                      }
+                     Just (Ann (DP (0,1)) (ColDelta 46) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                     (HsVar 
+                      (Unqual {OccName: xs})))))))))))] 
+           (EmptyLocalBinds))))] 
+       [] 
+       (PlaceHolder) 
+       (FromSource)) 
+      (WpHole) 
+      (PlaceHolder) 
+      []))),
+   ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:102:1-48
+     }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [])
+    (ValD 
+     (FunBind 
+      ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:102:1-11
+        }
+       Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+       (Unqual {OccName: vecRangeMax})) 
+      (False) 
+      (MG 
+       [
+        ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:102:1-48
+          }
+         Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnEqual),DP (0,1))])
+         (Match 
+          (Just 
+           ((,) 
+            ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:102:1-11
+              }
+             Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+             (Unqual {OccName: vecRangeMax})) 
+            (False))) 
+          [
+           ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:102:13-14
+             }
+            Just (Ann (DP (0,1)) (ColDelta 13) DP (0,1) [] [((G AnnVal),DP (0,0))])
+            (VarPat 
+             (Unqual {OccName: xs})))] 
+          (Nothing) 
+          (GRHSs 
+           [
+            ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:102:16-48
+              }
+             Just (Ann (DP (0,-1)) (ColDelta 16) DP (0,-1) [] [])
+             (GRHS 
+              [] 
+              ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:102:18-48
+                }
+               Just (Ann (DP (0,1)) (ColDelta 18) DP (0,1) [] [])
+               (HsApp 
+                ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:102:18-28
+                  }
+                 Just (Ann (DP (0,0)) (ColDelta 18) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                 (HsVar 
+                  (Unqual {OccName: intRangeMin}))) 
+                ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:102:30-48
+                  }
+                 Just (Ann (DP (0,1)) (ColDelta 30) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])
+                 (HsPar 
+                  ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:102:31-47
+                    }
+                   Just (Ann (DP (0,0)) (ColDelta 31) DP (0,0) [] [])
+                   (HsApp 
+                    ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:102:31-44
+                      }
+                     Just (Ann (DP (0,0)) (ColDelta 31) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                     (HsVar 
+                      (Unqual {OccName: equivVectorMax}))) 
+                    ({ ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:102:46-47
+                      }
+                     Just (Ann (DP (0,1)) (ColDelta 46) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                     (HsVar 
+                      (Unqual {OccName: xs})))))))))))] 
+           (EmptyLocalBinds))))] 
+       [] 
+       (PlaceHolder) 
+       (FromSource)) 
+      (WpHole) 
+      (PlaceHolder) 
+      [])))] 
+  (Nothing) 
+  (Nothing)))
+==============
+[(AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:1:1 CN "HsModule" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((AnnComment DComment (DP (0,0),DP (0,20)) "{-# LANGUAGE CPP #-}" Nothing),DP (0,0)),((G AnnModule),DP (1,1)),((G AnnVal),DP (0,1)),((G AnnWhere),DP (0,1)),((AnnComment DComment (DP (1,1),DP (1,1)) "" Nothing),DP (1,1)),((G AnnEofPos),DP (2,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:(2,29)-(8,16) CN "(:)" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 29) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:3:5-23 CN "IEVar" NotNeeded,
+  (Ann (DP (1,5)) (ColDelta 5) DP (1,5) [] [])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:3:5-23 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 5) DP (0,0) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:4:5-21 CN "IEVar" NotNeeded,
+  (Ann (DP (1,5)) (ColDelta 5) DP (1,5) [] [])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:4:5-21 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 5) DP (0,0) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:5:5-21 CN "IEVar" NotNeeded,
+  (Ann (DP (1,5)) (ColDelta 5) DP (1,5) [] [])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:5:5-21 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 5) DP (0,0) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:6:5-17 CN "IEVar" NotNeeded,
+  (Ann (DP (1,5)) (ColDelta 5) DP (1,5) [] [])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:6:5-17 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 5) DP (0,0) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:7:5-15 CN "IEVar" NotNeeded,
+  (Ann (DP (1,5)) (ColDelta 5) DP (1,5) [] [])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:7:5-15 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 5) DP (0,0) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:8:5-15 CN "IEVar" NotNeeded,
+  (Ann (DP (1,5)) (ColDelta 5) DP (1,5) [] [])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:8:5-15 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 5) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:10:1-27 CN "ImportDecl" NotNeeded,
+  (Ann (DP (2,1)) (ColDelta 1) DP (2,1) [] [((G AnnImport),DP (0,0)),((G AnnVal),DP (0,1))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:11:1-24 CN "ImportDecl" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [((G AnnImport),DP (0,0)),((G AnnVal),DP (0,1))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:12:1-35 CN "ImportDecl" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [((G AnnImport),DP (0,0)),((G AnnVal),DP (0,1))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:14:1-41 CN "ImportDecl" NotNeeded,
+  (Ann (DP (2,1)) (ColDelta 1) DP (2,1) [] [((G AnnImport),DP (0,0)),((G AnnQualified),DP (0,1)),((G AnnVal),DP (0,1)),((G AnnAs),DP (0,1)),((G AnnVal),DP (0,1))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:19:1-38 CN "SigD" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (5,1) [DComment (DP (2,1),DP (2,43)) "#define vec ('PV.fromList' [0,7,-10,4,5,4])" Nothing,DComment (DP (2,1),DP (2,44)) "#define cmp (\\\\ i j -> 'abs' i '>=' 'abs' j)" Nothing] [((G AnnOpen),DP (0,0)),((G AnnOpenS),DP (0,1)),((G AnnVal),DP (0,0)),((G AnnCloseS),DP (0,0)),((G AnnClose),DP (0,1))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:19:16-34 CN "Unqual" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 16) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:32:1-19 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:(32,1)-(35,15) CN "SigD" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (13,1) [DComment (DP (1,1),DP (1,88)) "-- | /O(n)/.  Returns a range-min function on the vector, under the specified ordering." Nothing,DComment (DP (1,1),DP (1,91)) "-- The returned function /does not/ do bounds checks; see 'unsafeIntRangeMin' for details." Nothing,DComment (DP (1,1),DP (1,3)) "--" Nothing,DComment (DP (1,1),DP (1,12)) "-- Example:" Nothing,DComment (DP (1,1),DP (1,3)) "--" Nothing,DComment (DP (1,1),DP (1,5)) "-- @" Nothing,DComment (DP (1,1),DP (1,75)) "-- -- Finding the element with the /largest absolute value/ in a subrange." Nothing,DComment (DP (1,1),DP (1,42)) "-- 'unsafeVecRangeMinBy' cmp vec 0 6 == 2" Nothing,DComment (DP (0,-41),DP (0,57)) "-- 'unsafeVecRangeMinBy' (\\\\ i j -> 'abs' i '>=' 'abs' j) ('PV.fromList' [0,7,-10,4,5,4]) 0 6 == 2" Nothing,DComment (DP (1,1),DP (1,42)) "-- 'unsafeVecRangeMinBy' cmp vec 2 3 == 2" Nothing,DComment (DP (0,-41),DP (0,57)) "-- 'unsafeVecRangeMinBy' (\\\\ i j -> 'abs' i '>=' 'abs' j) ('PV.fromList' [0,7,-10,4,5,4]) 2 3 == 2" Nothing,DComment (DP (1,1),DP (1,42)) "-- 'unsafeVecRangeMinBy' cmp vec 3 3 == 4" Nothing,DComment (DP (0,-41),DP (0,57)) "-- 'unsafeVecRangeMinBy' (\\\\ i j -> 'abs' i '>=' 'abs' j) ('PV.fromList' [0,7,-10,4,5,4]) 3 3 == 4" Nothing,DComment (DP (1,1),DP (1,5)) "-- @" Nothing,DComment (DP (1,1),DP (1,3)) "--" Nothing] [((G AnnDcolon),DP (0,1))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:32:24-31 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 24) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:32:24-33 CN "HsAppTy" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 24) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:32:24-35 CN "(:)" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 24) DP (0,0) [] [((G AnnDarrow),DP (0,1))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:32:24-35 CN "HsAppTy" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 24) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:(32,24)-(35,15) CN "HsForAllTy" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 24) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:32:33 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 33) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:32:35 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 35) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:33:5-7 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 5) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:33:5-9 CN "HsAppTy" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 5) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:(33,5)-(35,15) CN "HsFunTy" NotNeeded,
+  (Ann (DP (1,5)) (ColDelta 5) DP (1,5) [] [((AnnComment DComment (DP (0,7),DP (0,45)) "-- ^ A total ordering on the type @a@." Nothing),DP (0,7)),((G AnnRarrow),DP (1,5))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:33:9 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 9) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:34:8 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 8) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:34:8-10 CN "HsAppTy" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 8) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:(34,8)-(35,15) CN "HsFunTy" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 8) DP (0,1) [] [((AnnComment DComment (DP (0,6),DP (0,44)) "-- ^ A vector of elements of type @a@." Nothing),DP (0,6)),((G AnnRarrow),DP (1,5))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:34:10 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 10) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:35:8-15 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 8) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:37:1-32 CN "SigD" NotNeeded,
+  (Ann (DP (2,1)) (ColDelta 1) DP (2,1) [DComment (DP (0,1),DP (0,62)) "-- ^ A range-min function on the vector which runs in /O(1)/." Nothing] [((G AnnOpen),DP (0,0)),((G AnnClose),DP (0,1))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:37:12-28 CN "Unqual" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 12) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:50:1-17 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:(50,1)-(52,15) CN "SigD" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (13,1) [DComment (DP (1,1),DP (1,103)) "-- | /O(n)/.  Equivalent to @'unsafeVecRangeMinBy' ('<=')@.  Specialized for instances of 'Injective'." Nothing,DComment (DP (1,1),DP (1,91)) "-- The returned function /does not/ do bounds checks; see 'unsafeIntRangeMin' for details." Nothing,DComment (DP (1,1),DP (1,3)) "--" Nothing,DComment (DP (1,1),DP (1,12)) "-- Example:" Nothing,DComment (DP (1,1),DP (1,3)) "--" Nothing,DComment (DP (1,1),DP (1,5)) "-- @" Nothing,DComment (DP (1,1),DP (1,97)) "-- -- In reality, these would be rewritten into calls to 'unsafeIntRangeMin', since 'Char' is an" Nothing,DComment (DP (1,1),DP (1,31)) "-- -- instance of 'Injective'." Nothing,DComment (DP (1,1),DP (1,59)) "-- 'unsafeVecRangeMin' ('PV.fromList' \\\"banana\\\") 0 6 == 1" Nothing,DComment (DP (1,1),DP (1,59)) "-- 'unsafeVecRangeMin' ('PV.fromList' \\\"banana\\\") 1 1 == 1" Nothing,DComment (DP (1,1),DP (1,59)) "-- 'unsafeVecRangeMin' ('PV.fromList' \\\"banana\\\") 3 3 == 3" Nothing,DComment (DP (1,1),DP (1,5)) "-- @" Nothing] [((G AnnDcolon),DP (0,1))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:50:22-42 CN "(:)" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 22) DP (0,0) [] [((G AnnOpenP),DP (0,0)),((G AnnOpenP),DP (0,-1)),((G AnnCloseP),DP (0,0)),((G AnnCloseP),DP (0,-1)),((G AnnDarrow),DP (0,1))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:(50,22)-(52,15) CN "HsForAllTy" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 22) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:50:23-30 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 23) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:50:23-32 CN "HsAppTy" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 23) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:50:23-34 CN "HsAppTy" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 23) DP (0,0) [] [((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:50:32 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 32) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:50:34 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 34) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:50:37-39 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 37) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:50:37-41 CN "HsAppTy" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 37) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:50:41 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 41) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:51:5 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 5) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:51:5-7 CN "HsAppTy" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 5) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:(51,5)-(52,15) CN "HsFunTy" NotNeeded,
+  (Ann (DP (1,5)) (ColDelta 5) DP (1,5) [] [((AnnComment DComment (DP (0,5),DP (0,43)) "-- ^ A vector of elements of type @a@." Nothing),DP (0,5)),((G AnnRarrow),DP (1,5))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:51:7 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 7) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:52:8-15 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 8) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:55:1-32 CN "SigD" NotNeeded,
+  (Ann (DP (2,1)) (ColDelta 1) DP (3,1) [DComment (DP (0,1),DP (0,55)) "-- ^ A range-min function (under the natural ordering)" Nothing,DComment (DP (1,13),DP (1,51)) "-- on the vector which runs in /O(1)/." Nothing] [((G AnnOpen),DP (0,0)),((G AnnClose),DP (0,1))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:55:12-28 CN "Unqual" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 12) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:68:1-17 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:(68,1)-(70,15) CN "SigD" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (13,1) [DComment (DP (1,1),DP (1,103)) "-- | /O(n)/.  Equivalent to @'unsafeVecRangeMinBy' ('>=')@.  Specialized for instances of 'Injective'." Nothing,DComment (DP (1,1),DP (1,91)) "-- The returned function /does not/ do bounds checks; see 'unsafeIntRangeMin' for details." Nothing,DComment (DP (1,1),DP (1,3)) "--" Nothing,DComment (DP (1,1),DP (1,12)) "-- Example:" Nothing,DComment (DP (1,1),DP (1,3)) "--" Nothing,DComment (DP (1,1),DP (1,5)) "-- @" Nothing,DComment (DP (1,1),DP (1,91)) "-- -- In reality, these would be rewritten into calls to 'unsafeIntRangeMin', since 'Char'" Nothing,DComment (DP (1,1),DP (1,37)) "-- -- is an instance of 'Injective'." Nothing,DComment (DP (1,1),DP (1,59)) "-- 'unsafeVecRangeMax' ('PV.fromList' \\\"banana\\\") 0 6 == 2" Nothing,DComment (DP (1,1),DP (1,59)) "-- 'unsafeVecRangeMax' ('PV.fromList' \\\"banana\\\") 1 1 == 1" Nothing,DComment (DP (1,1),DP (1,59)) "-- 'unsafeVecRangeMax' ('PV.fromList' \\\"banana\\\") 3 3 == 4" Nothing,DComment (DP (1,1),DP (1,5)) "-- @" Nothing] [((G AnnDcolon),DP (0,1))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:68:22-42 CN "(:)" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 22) DP (0,0) [] [((G AnnOpenP),DP (0,0)),((G AnnOpenP),DP (0,-1)),((G AnnCloseP),DP (0,0)),((G AnnCloseP),DP (0,-1)),((G AnnDarrow),DP (0,1))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:(68,22)-(70,15) CN "HsForAllTy" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 22) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:68:23-30 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 23) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:68:23-32 CN "HsAppTy" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 23) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:68:23-34 CN "HsAppTy" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 23) DP (0,0) [] [((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:68:32 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 32) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:68:34 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 34) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:68:37-39 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 37) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:68:37-41 CN "HsAppTy" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 37) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:68:41 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 41) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:69:5 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 5) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:69:5-7 CN "HsAppTy" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 5) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:(69,5)-(70,15) CN "HsFunTy" NotNeeded,
+  (Ann (DP (1,5)) (ColDelta 5) DP (1,5) [] [((AnnComment DComment (DP (0,5),DP (0,43)) "-- ^ A vector of elements of type @a@." Nothing),DP (0,5)),((G AnnRarrow),DP (1,5))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:69:7 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 7) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:70:8-15 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 8) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:73:1-32 CN "SigD" NotNeeded,
+  (Ann (DP (2,1)) (ColDelta 1) DP (3,1) [DComment (DP (0,1),DP (0,55)) "-- ^ A range-max function (under the natural ordering)" Nothing,DComment (DP (1,13),DP (1,51)) "-- on the vector which runs in /O(1)/." Nothing] [((G AnnOpen),DP (0,0)),((G AnnOpenS),DP (0,1)),((G AnnVal),DP (0,0)),((G AnnCloseS),DP (0,0)),((G AnnClose),DP (0,1))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:73:16-28 CN "Unqual" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 16) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:76:1-13 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:(76,1)-(79,15) CN "SigD" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (3,1) [DComment (DP (1,1),DP (1,88)) "-- | /O(n)/.  Returns a range-min function on the vector, under the specified ordering." Nothing,DComment (DP (1,1),DP (1,81)) "-- The returned function /does/ do bounds checks; see 'intRangeMin' for details." Nothing] [((G AnnDcolon),DP (0,1))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:76:18-25 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 18) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:76:18-27 CN "HsAppTy" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 18) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:76:18-29 CN "(:)" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 18) DP (0,0) [] [((G AnnDarrow),DP (0,1))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:76:18-29 CN "HsAppTy" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 18) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:(76,18)-(79,15) CN "HsForAllTy" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 18) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:76:27 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 27) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:76:29 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 29) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:77:5-7 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 5) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:77:5-9 CN "HsAppTy" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 5) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:(77,5)-(79,15) CN "HsFunTy" NotNeeded,
+  (Ann (DP (1,5)) (ColDelta 5) DP (1,5) [] [((AnnComment DComment (DP (0,7),DP (0,45)) "-- ^ A total ordering on the type @a@." Nothing),DP (0,7)),((G AnnRarrow),DP (1,5))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:77:9 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 9) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:78:8 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 8) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:78:8-10 CN "HsAppTy" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 8) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:(78,8)-(79,15) CN "HsFunTy" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 8) DP (0,1) [] [((AnnComment DComment (DP (0,6),DP (0,44)) "-- ^ A vector of elements of type @a@." Nothing),DP (0,6)),((G AnnRarrow),DP (1,5))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:78:10 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 10) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:79:8-15 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 8) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:81:1-26 CN "SigD" NotNeeded,
+  (Ann (DP (2,1)) (ColDelta 1) DP (2,1) [DComment (DP (0,1),DP (0,62)) "-- ^ A range-min function on the vector which runs in /O(1)/." Nothing] [((G AnnOpen),DP (0,0)),((G AnnClose),DP (0,1))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:81:12-22 CN "Unqual" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 12) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:84:1-11 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:(84,1)-(86,15) CN "SigD" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (3,1) [DComment (DP (1,1),DP (1,94)) "-- | /O(n)/.  Equivalent to @'vecRangeMinBy' ('<=')@; a safer version of 'unsafeVecRangeMin'." Nothing,DComment (DP (1,1),DP (1,124)) "-- Specialized for instances of 'Injective'.  The returned function /does/ do bounds checks; see 'intRangeMin' for details." Nothing] [((G AnnDcolon),DP (0,1))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:84:16-36 CN "(:)" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 16) DP (0,0) [] [((G AnnOpenP),DP (0,0)),((G AnnOpenP),DP (0,-1)),((G AnnCloseP),DP (0,0)),((G AnnCloseP),DP (0,-1)),((G AnnDarrow),DP (0,1))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:(84,16)-(86,15) CN "HsForAllTy" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 16) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:84:17-24 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 17) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:84:17-26 CN "HsAppTy" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 17) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:84:17-28 CN "HsAppTy" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 17) DP (0,0) [] [((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:84:26 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 26) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:84:28 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 28) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:84:31-33 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 31) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:84:31-35 CN "HsAppTy" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 31) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:84:35 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 35) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:85:5 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 5) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:85:5-7 CN "HsAppTy" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 5) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:(85,5)-(86,15) CN "HsFunTy" NotNeeded,
+  (Ann (DP (1,5)) (ColDelta 5) DP (1,5) [] [((AnnComment DComment (DP (0,5),DP (0,43)) "-- ^ A vector of elements of type @a@." Nothing),DP (0,5)),((G AnnRarrow),DP (1,5))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:85:7 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 7) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:86:8-15 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 8) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:89:1-26 CN "SigD" NotNeeded,
+  (Ann (DP (2,1)) (ColDelta 1) DP (3,1) [DComment (DP (0,1),DP (0,55)) "-- ^ A range-min function (under the natural ordering)" Nothing,DComment (DP (1,13),DP (1,51)) "-- on the vector which runs in /O(1)/." Nothing] [((G AnnOpen),DP (0,0)),((G AnnClose),DP (0,1))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:89:12-22 CN "Unqual" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 12) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:92:1-11 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:(92,1)-(94,15) CN "SigD" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (3,1) [DComment (DP (1,1),DP (1,94)) "-- | /O(n)/.  Equivalent to @'vecRangeMinBy' ('>=')@; a safer version of 'unsafeVecRangeMax'." Nothing,DComment (DP (1,1),DP (1,123)) "-- Specialized for instances of 'Injective'. The returned function /does/ do bounds checks; see 'intRangeMin' for details." Nothing] [((G AnnDcolon),DP (0,1))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:92:16-36 CN "(:)" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 16) DP (0,0) [] [((G AnnOpenP),DP (0,0)),((G AnnOpenP),DP (0,-1)),((G AnnCloseP),DP (0,0)),((G AnnCloseP),DP (0,-1)),((G AnnDarrow),DP (0,1))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:(92,16)-(94,15) CN "HsForAllTy" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 16) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:92:17-24 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 17) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:92:17-26 CN "HsAppTy" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 17) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:92:17-28 CN "HsAppTy" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 17) DP (0,0) [] [((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:92:26 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 26) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:92:28 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 28) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:92:31-33 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 31) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:92:31-35 CN "HsAppTy" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 31) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:92:35 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 35) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:93:5 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 5) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:93:5-7 CN "HsAppTy" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 5) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:(93,5)-(94,15) CN "HsFunTy" NotNeeded,
+  (Ann (DP (1,5)) (ColDelta 5) DP (1,5) [] [((AnnComment DComment (DP (0,5),DP (0,43)) "-- ^ A vector of elements of type @a@." Nothing),DP (0,5)),((G AnnRarrow),DP (1,5))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:93:7 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 7) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:94:8-15 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 8) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:97:1-19 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:97:1-73 CN "Match" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnEqual),DP (0,1))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:97:1-73 CN "ValD" NotNeeded,
+  (Ann (DP (2,1)) (ColDelta 1) DP (3,1) [DComment (DP (0,1),DP (0,55)) "-- ^ A range-max function (under the natural ordering)" Nothing,DComment (DP (1,13),DP (1,51)) "-- on the vector which runs in /O(1)/." Nothing] [])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:97:21-25 CN "VarPat" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 21) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnVal),DP (0,0)),((G AnnCloseP),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:97:27-28 CN "VarPat" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 27) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:97:30-73 CN "GRHS" NotNeeded,
+  (Ann (DP (0,-1)) (ColDelta 30) DP (0,-1) [] [])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:97:32-48 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 32) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:97:32-73 CN "HsApp" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 32) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:97:50-73 CN "HsPar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 50) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:97:51-63 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 51) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:97:51-69 CN "HsApp" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 51) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:97:51-72 CN "HsApp" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 51) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:97:65-69 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 65) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnVal),DP (0,0)),((G AnnCloseP),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:97:71-72 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 71) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:98:1-17 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:98:1-60 CN "Match" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnEqual),DP (0,1))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:98:1-60 CN "ValD" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:98:19-20 CN "VarPat" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 19) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:98:22-60 CN "GRHS" NotNeeded,
+  (Ann (DP (0,-1)) (ColDelta 22) DP (0,-1) [] [])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:98:24-40 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 24) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:98:24-60 CN "HsApp" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 24) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:98:42-60 CN "HsPar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 42) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:98:43-56 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 43) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:98:43-59 CN "HsApp" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 43) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:98:58-59 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 58) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:99:1-17 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:99:1-60 CN "Match" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnEqual),DP (0,1))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:99:1-60 CN "ValD" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:99:19-20 CN "VarPat" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 19) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:99:22-60 CN "GRHS" NotNeeded,
+  (Ann (DP (0,-1)) (ColDelta 22) DP (0,-1) [] [])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:99:24-40 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 24) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:99:24-60 CN "HsApp" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 24) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:99:42-60 CN "HsPar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 42) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:99:43-56 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 43) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:99:43-59 CN "HsApp" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 43) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:99:58-59 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 58) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:100:1-13 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:100:1-61 CN "Match" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnEqual),DP (0,1))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:100:1-61 CN "ValD" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:100:15-19 CN "VarPat" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 15) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnVal),DP (0,0)),((G AnnCloseP),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:100:21-22 CN "VarPat" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 21) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:100:24-61 CN "GRHS" NotNeeded,
+  (Ann (DP (0,-1)) (ColDelta 24) DP (0,-1) [] [])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:100:26-36 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 26) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:100:26-61 CN "HsApp" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 26) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:100:38-61 CN "HsPar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 38) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:100:39-51 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 39) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:100:39-57 CN "HsApp" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 39) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:100:39-60 CN "HsApp" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 39) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:100:53-57 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 53) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnVal),DP (0,0)),((G AnnCloseP),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:100:59-60 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 59) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:101:1-11 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:101:1-48 CN "Match" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnEqual),DP (0,1))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:101:1-48 CN "ValD" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:101:13-14 CN "VarPat" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 13) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:101:16-48 CN "GRHS" NotNeeded,
+  (Ann (DP (0,-1)) (ColDelta 16) DP (0,-1) [] [])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:101:18-28 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 18) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:101:18-48 CN "HsApp" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 18) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:101:30-48 CN "HsPar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 30) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:101:31-44 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 31) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:101:31-47 CN "HsApp" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 31) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:101:46-47 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 46) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:102:1-11 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:102:1-48 CN "Match" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnEqual),DP (0,1))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:102:1-48 CN "ValD" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:102:13-14 CN "VarPat" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 13) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:102:16-48 CN "GRHS" NotNeeded,
+  (Ann (DP (0,-1)) (ColDelta 16) DP (0,-1) [] [])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:102:18-28 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 18) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:102:18-48 CN "HsApp" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 18) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:102:30-48 CN "HsPar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 30) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:102:31-44 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 31) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:102:31-47 CN "HsApp" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 31) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:102:46-47 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 46) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey <no location info> CN "EmptyLocalBinds" NotNeeded,
+  (Ann (DP (-97,0)) (ColDelta 0) DP (-97,0) [] []))]
+==============
+([((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:1:1,
+    AnnModule),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:2:1-6]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:1:1,
+    AnnWhere),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:8:18-22]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:(2,29)-(8,16),
+    AnnCloseP),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:8:16]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:(2,29)-(8,16),
+    AnnOpenP),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:2:29]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:3:5-23,
+    AnnComma),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:3:24]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:4:5-21,
+    AnnComma),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:4:22]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:5:5-21,
+    AnnComma),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:5:22]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:6:5-17,
+    AnnComma),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:6:18]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:7:5-15,
+    AnnComma),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:7:16]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:10:1-27,
+    AnnImport),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:10:1-6]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:10:1-27,
+    AnnSemi),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:11:1]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:11:1-24,
+    AnnImport),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:11:1-6]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:11:1-24,
+    AnnSemi),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:12:1]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:12:1-35,
+    AnnImport),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:12:1-6]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:12:1-35,
+    AnnSemi),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:14:1]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:14:1-41,
+    AnnAs),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:14:38-39]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:14:1-41,
+    AnnImport),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:14:1-6]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:14:1-41,
+    AnnQualified),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:14:8-16]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:14:1-41,
+    AnnSemi),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:19:1]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:14:1-41,
+    AnnVal),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:14:41]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:19:1-38,
+    AnnClose),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:19:36-38]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:19:1-38,
+    AnnCloseS),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:19:14]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:19:1-38,
+    AnnOpen),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:19:1-10]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:19:1-38,
+    AnnOpenS),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:19:12]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:19:1-38,
+    AnnSemi),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:32:1]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:19:1-38,
+    AnnVal),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:19:13]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:(32,1)-(35,15),
+    AnnDcolon),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:32:21-22]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:(32,1)-(35,15),
+    AnnSemi),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:37:1]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:32:24-35,
+    AnnDarrow),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:32:37-38]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:(33,5)-(35,15),
+    AnnRarrow),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:34:5-6]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:(34,8)-(35,15),
+    AnnRarrow),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:35:5-6]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:37:1-32,
+    AnnClose),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:37:30-32]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:37:1-32,
+    AnnOpen),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:37:1-10]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:37:1-32,
+    AnnSemi),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:50:1]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:(50,1)-(52,15),
+    AnnDcolon),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:50:19-20]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:(50,1)-(52,15),
+    AnnSemi),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:55:1]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:50:22-42,
+    AnnCloseP),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:50:42,
+    ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:50:42]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:50:22-42,
+    AnnDarrow),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:50:44-45]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:50:22-42,
+    AnnOpenP),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:50:22,
+    ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:50:22]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:50:23-34,
+    AnnComma),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:50:35]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:(51,5)-(52,15),
+    AnnRarrow),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:52:5-6]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:55:1-32,
+    AnnClose),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:55:30-32]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:55:1-32,
+    AnnOpen),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:55:1-10]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:55:1-32,
+    AnnSemi),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:68:1]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:(68,1)-(70,15),
+    AnnDcolon),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:68:19-20]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:(68,1)-(70,15),
+    AnnSemi),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:73:1]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:68:22-42,
+    AnnCloseP),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:68:42,
+    ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:68:42]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:68:22-42,
+    AnnDarrow),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:68:44-45]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:68:22-42,
+    AnnOpenP),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:68:22,
+    ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:68:22]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:68:23-34,
+    AnnComma),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:68:35]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:(69,5)-(70,15),
+    AnnRarrow),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:70:5-6]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:73:1-32,
+    AnnClose),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:73:30-32]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:73:1-32,
+    AnnCloseS),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:73:14]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:73:1-32,
+    AnnOpen),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:73:1-10]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:73:1-32,
+    AnnOpenS),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:73:12]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:73:1-32,
+    AnnSemi),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:76:1]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:73:1-32,
+    AnnVal),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:73:13]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:(76,1)-(79,15),
+    AnnDcolon),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:76:15-16]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:(76,1)-(79,15),
+    AnnSemi),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:81:1]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:76:18-29,
+    AnnDarrow),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:76:31-32]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:(77,5)-(79,15),
+    AnnRarrow),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:78:5-6]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:(78,8)-(79,15),
+    AnnRarrow),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:79:5-6]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:81:1-26,
+    AnnClose),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:81:24-26]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:81:1-26,
+    AnnOpen),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:81:1-10]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:81:1-26,
+    AnnSemi),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:84:1]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:(84,1)-(86,15),
+    AnnDcolon),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:84:13-14]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:(84,1)-(86,15),
+    AnnSemi),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:89:1]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:84:16-36,
+    AnnCloseP),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:84:36,
+    ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:84:36]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:84:16-36,
+    AnnDarrow),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:84:38-39]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:84:16-36,
+    AnnOpenP),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:84:16,
+    ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:84:16]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:84:17-28,
+    AnnComma),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:84:29]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:(85,5)-(86,15),
+    AnnRarrow),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:86:5-6]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:89:1-26,
+    AnnClose),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:89:24-26]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:89:1-26,
+    AnnOpen),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:89:1-10]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:89:1-26,
+    AnnSemi),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:92:1]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:(92,1)-(94,15),
+    AnnDcolon),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:92:13-14]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:(92,1)-(94,15),
+    AnnSemi),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:97:1]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:92:16-36,
+    AnnCloseP),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:92:36,
+    ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:92:36]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:92:16-36,
+    AnnDarrow),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:92:38-39]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:92:16-36,
+    AnnOpenP),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:92:16,
+    ../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:92:16]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:92:17-28,
+    AnnComma),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:92:29]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:(93,5)-(94,15),
+    AnnRarrow),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:94:5-6]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:97:1-73,
+    AnnEqual),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:97:30]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:97:1-73,
+    AnnFunId),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:97:1-19]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:97:1-73,
+    AnnSemi),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:98:1]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:97:21-25,
+    AnnCloseP),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:97:25]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:97:21-25,
+    AnnOpenP),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:97:21]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:97:21-25,
+    AnnVal),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:97:22-24]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:97:50-73,
+    AnnCloseP),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:97:73]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:97:50-73,
+    AnnOpenP),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:97:50]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:97:65-69,
+    AnnCloseP),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:97:69]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:97:65-69,
+    AnnOpenP),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:97:65]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:97:65-69,
+    AnnVal),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:97:66-68]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:98:1-60,
+    AnnEqual),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:98:22]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:98:1-60,
+    AnnFunId),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:98:1-17]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:98:1-60,
+    AnnSemi),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:99:1]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:98:42-60,
+    AnnCloseP),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:98:60]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:98:42-60,
+    AnnOpenP),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:98:42]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:99:1-60,
+    AnnEqual),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:99:22]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:99:1-60,
+    AnnFunId),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:99:1-17]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:99:1-60,
+    AnnSemi),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:100:1]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:99:42-60,
+    AnnCloseP),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:99:60]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:99:42-60,
+    AnnOpenP),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:99:42]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:100:1-61,
+    AnnEqual),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:100:24]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:100:1-61,
+    AnnFunId),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:100:1-13]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:100:1-61,
+    AnnSemi),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:101:1]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:100:15-19,
+    AnnCloseP),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:100:19]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:100:15-19,
+    AnnOpenP),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:100:15]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:100:15-19,
+    AnnVal),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:100:16-18]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:100:38-61,
+    AnnCloseP),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:100:61]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:100:38-61,
+    AnnOpenP),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:100:38]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:100:53-57,
+    AnnCloseP),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:100:57]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:100:53-57,
+    AnnOpenP),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:100:53]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:100:53-57,
+    AnnVal),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:100:54-56]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:101:1-48,
+    AnnEqual),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:101:16]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:101:1-48,
+    AnnFunId),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:101:1-11]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:101:1-48,
+    AnnSemi),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:102:1]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:101:30-48,
+    AnnCloseP),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:101:48]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:101:30-48,
+    AnnOpenP),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:101:30]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:102:1-48,
+    AnnEqual),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:102:16]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:102:1-48,
+    AnnFunId),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:102:1-11]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:102:1-48,
+    AnnSemi),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:104:1]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:102:30-48,
+    AnnCloseP),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:102:48]),
+  ((../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:102:30-48,
+    AnnOpenP),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:102:30]),
+  ((<no location info>, AnnEofPos),
+   [../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:104:1])],
+ [(../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:(33,5)-(35,15),
+   [AnnLineComment "-- ^ A total ordering on the type @a@."]),
+  (../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:(34,8)-(35,15),
+   [AnnLineComment "-- ^ A vector of elements of type @a@."]),
+  (../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:(51,5)-(52,15),
+   [AnnLineComment "-- ^ A vector of elements of type @a@."]),
+  (../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:(69,5)-(70,15),
+   [AnnLineComment "-- ^ A vector of elements of type @a@."]),
+  (../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:(77,5)-(79,15),
+   [AnnLineComment "-- ^ A total ordering on the type @a@."]),
+  (../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:(78,8)-(79,15),
+   [AnnLineComment "-- ^ A vector of elements of type @a@."]),
+  (../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:(85,5)-(86,15),
+   [AnnLineComment "-- ^ A vector of elements of type @a@."]),
+  (../../hackage-packages/rangemin-2.2.2/Data/RangeMin/Vector.hs:(93,5)-(94,15),
+   [AnnLineComment "-- ^ A vector of elements of type @a@."]),
+  (<no location info>,
+   [AnnLineComment "-- on the vector which runs in /O(1)/.",
+    AnnLineComment "-- ^ A range-max function (under the natural ordering)",
+    AnnLineComment "-- Specialized for instances of 'Injective'. The returned function /does/ do bounds checks; see 'intRangeMin' for details.",
+    AnnLineComment "-- | /O(n)/.  Equivalent to @'vecRangeMinBy' ('>=')@; a safer version of 'unsafeVecRangeMax'.",
+    AnnLineComment "-- on the vector which runs in /O(1)/.",
+    AnnLineComment "-- ^ A range-min function (under the natural ordering)",
+    AnnLineComment "-- Specialized for instances of 'Injective'.  The returned function /does/ do bounds checks; see 'intRangeMin' for details.",
+    AnnLineComment "-- | /O(n)/.  Equivalent to @'vecRangeMinBy' ('<=')@; a safer version of 'unsafeVecRangeMin'.",
+    AnnLineComment "-- ^ A range-min function on the vector which runs in /O(1)/.",
+    AnnLineComment "-- The returned function /does/ do bounds checks; see 'intRangeMin' for details.",
+    AnnLineComment "-- | /O(n)/.  Returns a range-min function on the vector, under the specified ordering.",
+    AnnLineComment "-- on the vector which runs in /O(1)/.",
+    AnnLineComment "-- ^ A range-max function (under the natural ordering)",
+    AnnLineComment "-- @",
+    AnnLineComment "-- 'unsafeVecRangeMax' ('PV.fromList' \\\"banana\\\") 3 3 == 4",
+    AnnLineComment "-- 'unsafeVecRangeMax' ('PV.fromList' \\\"banana\\\") 1 1 == 1",
+    AnnLineComment "-- 'unsafeVecRangeMax' ('PV.fromList' \\\"banana\\\") 0 6 == 2",
+    AnnLineComment "-- -- is an instance of 'Injective'.",
+    AnnLineComment "-- -- In reality, these would be rewritten into calls to 'unsafeIntRangeMin', since 'Char'",
+    AnnLineComment "-- @", AnnLineComment "--",
+    AnnLineComment "-- Example:", AnnLineComment "--",
+    AnnLineComment "-- The returned function /does not/ do bounds checks; see 'unsafeIntRangeMin' for details.",
+    AnnLineComment "-- | /O(n)/.  Equivalent to @'unsafeVecRangeMinBy' ('>=')@.  Specialized for instances of 'Injective'.",
+    AnnLineComment "-- on the vector which runs in /O(1)/.",
+    AnnLineComment "-- ^ A range-min function (under the natural ordering)",
+    AnnLineComment "-- @",
+    AnnLineComment "-- 'unsafeVecRangeMin' ('PV.fromList' \\\"banana\\\") 3 3 == 3",
+    AnnLineComment "-- 'unsafeVecRangeMin' ('PV.fromList' \\\"banana\\\") 1 1 == 1",
+    AnnLineComment "-- 'unsafeVecRangeMin' ('PV.fromList' \\\"banana\\\") 0 6 == 1",
+    AnnLineComment "-- -- instance of 'Injective'.",
+    AnnLineComment "-- -- In reality, these would be rewritten into calls to 'unsafeIntRangeMin', since 'Char' is an",
+    AnnLineComment "-- @", AnnLineComment "--",
+    AnnLineComment "-- Example:", AnnLineComment "--",
+    AnnLineComment "-- The returned function /does not/ do bounds checks; see 'unsafeIntRangeMin' for details.",
+    AnnLineComment "-- | /O(n)/.  Equivalent to @'unsafeVecRangeMinBy' ('<=')@.  Specialized for instances of 'Injective'.",
+    AnnLineComment "-- ^ A range-min function on the vector which runs in /O(1)/.",
+    AnnLineComment "--", AnnLineComment "-- @",
+    AnnLineComment "-- 'unsafeVecRangeMinBy' (\\\\ i j -> 'abs' i '>=' 'abs' j) ('PV.fromList' [0,7,-10,4,5,4]) 3 3 == 4",
+    AnnLineComment "-- 'unsafeVecRangeMinBy' (\\\\ i j -> 'abs' i '>=' 'abs' j) ('PV.fromList' [0,7,-10,4,5,4]) 2 3 == 2",
+    AnnLineComment "-- 'unsafeVecRangeMinBy' (\\\\ i j -> 'abs' i '>=' 'abs' j) ('PV.fromList' [0,7,-10,4,5,4]) 0 6 == 2",
+    AnnLineComment "-- -- Finding the element with the /largest absolute value/ in a subrange.",
+    AnnLineComment "-- @", AnnLineComment "--",
+    AnnLineComment "-- Example:", AnnLineComment "--",
+    AnnLineComment "-- The returned function /does not/ do bounds checks; see 'unsafeIntRangeMin' for details.",
+    AnnLineComment "-- | /O(n)/.  Returns a range-min function on the vector, under the specified ordering.",
+    AnnBlockComment "{-# LANGUAGE CPP #-}"])])

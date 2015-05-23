@@ -1,0 +1,1859 @@
+{-# LANGUAGE CPP #-}
+{-# LANGUAGE EmptyDataDecls, MultiParamTypeClasses, FunctionalDependencies,
+             Rank2Types, DeriveDataTypeable, FlexibleInstances,
+             UndecidableInstances, FlexibleContexts,ScopedTypeVariables,
+             TypeFamilies
+  #-}
+-----------------------------------------------------------------------------
+-- |-----------------------------------------------------------------------------
+-- |-- Module      :  Data.TypeLevel.Bool
+-- Module      :  Data.TypeLevel.Bool-- Copyright   : (c) 2008 Benedikt Huber (port to Associative types (ghc 6.9+))
+--               (c) 2008 Alfonso Acosta, Oleg Kiselyov, Wolfgang Jeltsch-- Copyright   : (c) 2008 Benedikt Huber (port to Associative types (ghc 6.9+))
+--                    and KTH's SAM group--               (c) 2008 Alfonso Acosta, Oleg Kiselyov, Wolfgang Jeltsch
+--                    and KTH's SAM group-- License     :  BSD-style (see the file LICENSE)
+---- License     :  BSD-style (see the file LICENSE)
+---- Maintainer  :  alfonso.acosta@gmail.com
+-- Maintainer  :  alfonso.acosta@gmail.com-- Stability   :  experimental (MPTC, non-standarad instances)
+-- Portability :  non-portable-- Stability   :  experimental (MPTC, non-standarad instances)
+---- Portability :  non-portable
+---- Type-level Booleans.
+---- Type-level Booleans.
+------------------------------------------------------------------------------
+module----------------------------------------------------------------------------Data.TypeLevel.Bool (
+module-- * Type-level boolean valuesData.TypeLevel.Bool (
+    -- Bool, toBool,-- * Type-level boolean values
+    False-- Bool, toBool,, false,
+    FalseTrue,,true, ,
+    True-- reifyBool,, true,
+    -- reifyBool,-- * Type-level boolean operations
+    Not-- * Type-level boolean operations,
+    Not,
+    AndOr ,
+    Or-- Not, not,
+    -- Not, not,-- And, (&&),
+    -- Or, (||),-- And, (&&),
+    -- Or, (||),
+    -- Xor, xor,-- Impl, imp,
+) where-- Impl, imp,
+) where
+import Data.Generics (Typeable)
+import Data.GenericsPrelude hiding(Typeable(Bool, not) , (&&), (||), Eq)
+import PreludequalifiedPrelude(Boolas,Pnot, (&&), (||), Eq)
+import qualified Prelude as P
+------------------------------------
+------------------------------------
+-- Definition of type-level Booleans
+-- | True type-level value------------------------------------
+data-- | True type-level valueTrue deriving Typeable
+data True deriving Typeable
+instance Show True where
+instanceshow _ =Show"True" where
+ show _ = "True"
+-- | True value-level reflecting function
+true-- | True value-level reflecting function:: True
+true ::= undefined
+true = undefined
+-- | False type-level value
+data-- | False type-level valueFalse deriving Typeable
+data False deriving Typeable
+instance Show False where
+instanceshow _ =Show"False" where
+ show _ = "False"
+
+-- | False value-level reflecting function
+false-- | False value-level reflecting function:: False
+false ::= undefined
+false = undefined
+type family And b_0 b_1
+type familyinstanceAndTrueTrue   = True
+type instance And True TrueFalse  = TrueFalse
+type instance And TrueFalseFalseTrue  = False
+type instance And False TrueFalse = False
+type instance And False False = False
+type family Or b_0 b_1
+type familyinstanceOrTrueTrue   = True
+type instance Or True TrueFalse  = True
+type instance Or TrueFalseFalseTrue  = True
+type instance Or False TrueFalse = TrueFalse
+type instance Or False False = False
+type family Not b
+type familyinstanceNot True  = False
+type instance Not TrueFalse = FalseTrue
+type instance Not False = True
+#if 0
+type family Id b
+type family Const a b
+type instance Id a = a
+type instance Const b a = b
+-- | Booleans, internal version
+class BoolI b  where
+  toBool :: b -> P.Bool
+  type Not  b
+  type And  b :: * -> *
+  type Or   b :: * -> *
+  type Xor  b :: * -> *
+  type Impl b :: * -> *
+  type BoolEq b :: * -> *
+
+-- To prevent the user from adding new instances to BoolI we do NOT export
+-- BoolI itself. Rather, we export the following proxy (Bool).
+-- The proxy entails BoolI and so can be used to add BoolI
+-- constraints in the signatures. However, all the constraints below
+-- are expressed in terms of BoolI rather than the proxy. Thus, even if the
+-- user adds new instances to the proxy, it would not matter.
+-- Besides, because the following proxy instances are most general,
+-- one may not add further instances without the overlapping instances
+-- extension.
+
+-- | Type-level Booleans
+class BoolI b => Bool b
+
+instance BoolI b => Bool b
+
+instance BoolI True where
+ toBool _ = True
+ type Not True = False
+ type And True = Id
+ type Or  True = Const True
+ type Xor True = Not
+ type Impl True = Id
+ type BoolEq True = Id
+
+instance BoolI False where
+ toBool _ = False
+ type Not False = True
+ type And False = Const False
+ type Or  False = Id
+ type Xor False = Id
+ type Impl False = Const True
+ type BoolEq False = Not
+-- | Reification function. In CPS style (best possible solution)
+reifyBool :: P.Bool -> (forall b . Bool b => b -> r) -> r
+reifyBool True  f = f true
+reifyBool False f = f false
+
+-------------
+-- Operations
+-------------
+
+
+-- | value-level reflection function for the 'Not' type-level relation
+not :: b1 -> Not b1
+not = undefined
+
+-- | 'And' type-level relation. @And b1 b2 b3@ establishes that
+--   @b1 && b2 = b3@
+
+
+-- | value-level reflection function for the 'And' type-level relation
+(&&) :: b1 -> b2 -> And b1 b2
+(&&) = undefined
+infixr 3 &&
+
+-- | Or type-level relation. @Or b1 b2 b3@ establishes that
+--   @b1 || b2 = b3@
+
+
+-- | value-level reflection function for the 'Or' type-level relation
+(||) :: b1 -> b2 -> Or b1 b2
+(||) = undefined
+infixr 2 ||
+
+-- | Exclusive or type-level relation. @Xor b1 b2 b3@ establishes that
+--   @xor b1 b2 = b3@
+
+-- | value-level reflection function for the 'Xor' type-level relation
+xor :: b1 -> b2 -> Xor b1 b2
+xor = undefined
+
+
+-- | Implication type-level relation. @Imp b1 b2 b3@ establishes that
+-- @b1 =>b2 = b3@
+
+-- | value-level reflection function for the Imp type-level relation
+imp :: b1 -> b2 -> Impl b1 b2
+imp = undefined
+
+
+-- Although equality can be defined as the composition of Xor and Not
+-- we define it specifically
+
+-- | Boolean equality type-level relation
+
+-- FIXME: eq should be named (==) but it clashes with the (==) defined
+--        in Data.TypeLevel.Num . The chosen (and ugly) workaround was
+--        to rename it to eq.
+
+-- | value-level reflection function for the 'Eq' type-level relation
+boolEq :: b1 -> b2 -> BoolEq b1 b2
+boolEq = undefined
+#endif
+
+
+==============
+../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs
+==============
+lengths:(6497,5130)
+
+==============
+
+({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:1:1
+  }
+ Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((AnnComment DComment (DP (0,0),DP (0,20)) "{-# LANGUAGE CPP #-}" Nothing),DP (0,0)),((AnnComment DComment (DP (1,1),DP (5,6)) "{-# LANGUAGE EmptyDataDecls, MultiParamTypeClasses, FunctionalDependencies,\n             Rank2Types, DeriveDataTypeable, FlexibleInstances,\n             UndecidableInstances, FlexibleContexts,ScopedTypeVariables,\n             TypeFamilies\n  #-}" Nothing),DP (1,1)),((AnnComment DComment (DP (1,1),DP (1,78)) "-----------------------------------------------------------------------------" Nothing),DP (1,1)),((AnnComment DComment (DP (1,1),DP (1,5)) "-- |" Nothing),DP (1,1)),((AnnComment DComment (DP (0,-4),DP (0,73)) "-----------------------------------------------------------------------------" Nothing),DP (0,-4)),((AnnComment DComment (DP (1,1),DP (1,5)) "-- |" Nothing),DP (1,1)),((AnnComment DComment (DP (0,-4),DP (0,33)) "-- Module      :  Data.TypeLevel.Bool" Nothing),DP (0,-4)),((AnnComment DComment (DP (1,1),DP (1,38)) "-- Module      :  Data.TypeLevel.Bool" Nothing),DP (1,1)),((AnnComment DComment (DP (0,-37),DP (0,42)) "-- Copyright   : (c) 2008 Benedikt Huber (port to Associative types (ghc 6.9+))" Nothing),DP (0,-37)),((AnnComment DComment (DP (1,1),DP (1,74)) "--               (c) 2008 Alfonso Acosta, Oleg Kiselyov, Wolfgang Jeltsch" Nothing),DP (1,1)),((AnnComment DComment (DP (0,-73),DP (0,6)) "-- Copyright   : (c) 2008 Benedikt Huber (port to Associative types (ghc 6.9+))" Nothing),DP (0,-73)),((AnnComment DComment (DP (1,1),DP (1,42)) "--                    and KTH's SAM group" Nothing),DP (1,1)),((AnnComment DComment (DP (0,-41),DP (0,32)) "--               (c) 2008 Alfonso Acosta, Oleg Kiselyov, Wolfgang Jeltsch" Nothing),DP (0,-41)),((AnnComment DComment (DP (1,1),DP (1,42)) "--                    and KTH's SAM group" Nothing),DP (1,1)),((AnnComment DComment (DP (0,-41),DP (0,9)) "-- License     :  BSD-style (see the file LICENSE)" Nothing),DP (0,-41)),((AnnComment DComment (DP (1,1),DP (1,3)) "--" Nothing),DP (1,1)),((AnnComment DComment (DP (0,-2),DP (0,48)) "-- License     :  BSD-style (see the file LICENSE)" Nothing),DP (0,-2)),((AnnComment DComment (DP (1,1),DP (1,3)) "--" Nothing),DP (1,1)),((AnnComment DComment (DP (0,-2),DP (0,40)) "-- Maintainer  :  alfonso.acosta@gmail.com" Nothing),DP (0,-2)),((AnnComment DComment (DP (1,1),DP (1,43)) "-- Maintainer  :  alfonso.acosta@gmail.com" Nothing),DP (1,1)),((AnnComment DComment (DP (0,-42),DP (0,20)) "-- Stability   :  experimental (MPTC, non-standarad instances)" Nothing),DP (0,-42)),((AnnComment DComment (DP (1,1),DP (1,31)) "-- Portability :  non-portable" Nothing),DP (1,1)),((AnnComment DComment (DP (0,-30),DP (0,32)) "-- Stability   :  experimental (MPTC, non-standarad instances)" Nothing),DP (0,-30)),((AnnComment DComment (DP (1,1),DP (1,3)) "--" Nothing),DP (1,1)),((AnnComment DComment (DP (0,-2),DP (0,28)) "-- Portability :  non-portable" Nothing),DP (0,-2)),((AnnComment DComment (DP (1,1),DP (1,3)) "--" Nothing),DP (1,1)),((AnnComment DComment (DP (0,-2),DP (0,21)) "-- Type-level Booleans." Nothing),DP (0,-2)),((AnnComment DComment (DP (1,1),DP (1,3)) "--" Nothing),DP (1,1)),((AnnComment DComment (DP (0,-2),DP (0,21)) "-- Type-level Booleans." Nothing),DP (0,-2)),((AnnComment DComment (DP (1,1),DP (1,3)) "--" Nothing),DP (1,1)),((AnnComment DComment (DP (0,-2),DP (0,74)) "----------------------------------------------------------------------------" Nothing),DP (0,-2)),((AnnComment DComment (DP (1,1),DP (1,7)) "module" Nothing),DP (1,1)),((AnnComment DComment (DP (0,-6),DP (0,70)) "----------------------------------------------------------------------------" Nothing),DP (0,-6)),((AnnComment DComment (DP (0,-69),DP (0,-50)) "Data.TypeLevel.Bool" Nothing),DP (0,-69)),((AnnComment DComment (DP (0,1),DP (0,2)) "(" Nothing),DP (0,1)),((G AnnModule),DP (22,1)),((AnnComment DComment (DP (0,-2),DP (0,28)) "-- * Type-level boolean values" Nothing),DP (0,-2)),((G AnnVal),DP (0,1)),((G AnnWhere),DP (0,1)),((AnnComment DComment (DP (1,1),DP (1,5)) "#if 0" Nothing),DP (1,1)),((AnnComment DComment (DP (1,1),DP (1,1)) "" Nothing),DP (1,1)),((AnnComment DComment (DP (0,0),DP (0,4)) "type" Nothing),DP (0,0)),((AnnComment DComment (DP (0,1),DP (0,7)) "family" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "Id" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,2)) "b" Nothing),DP (0,1)),((AnnComment DComment (DP (1,1),DP (1,1)) "" Nothing),DP (1,1)),((AnnComment DComment (DP (0,0),DP (0,4)) "type" Nothing),DP (0,0)),((AnnComment DComment (DP (0,1),DP (0,7)) "family" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,6)) "Const" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,2)) "a" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,2)) "b" Nothing),DP (0,1)),((AnnComment DComment (DP (1,1),DP (1,1)) "" Nothing),DP (1,1)),((AnnComment DComment (DP (0,0),DP (0,4)) "type" Nothing),DP (0,0)),((AnnComment DComment (DP (0,1),DP (0,9)) "instance" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "Id" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,2)) "a" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,2)) "=" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,2)) "a" Nothing),DP (0,1)),((AnnComment DComment (DP (1,1),DP (1,1)) "" Nothing),DP (1,1)),((AnnComment DComment (DP (0,0),DP (0,4)) "type" Nothing),DP (0,0)),((AnnComment DComment (DP (0,1),DP (0,9)) "instance" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,6)) "Const" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,2)) "b" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,2)) "a" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,2)) "=" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,2)) "b" Nothing),DP (0,1)),((AnnComment DComment (DP (1,1),DP (1,32)) "-- | Booleans, internal version" Nothing),DP (1,1)),((AnnComment DComment (DP (1,1),DP (1,1)) "" Nothing),DP (1,1)),((AnnComment DComment (DP (0,0),DP (0,5)) "class" Nothing),DP (0,0)),((AnnComment DComment (DP (0,1),DP (0,6)) "BoolI" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,2)) "b" Nothing),DP (0,1)),((AnnComment DComment (DP (0,2),DP (0,7)) "where" Nothing),DP (0,2)),((AnnComment DComment (DP (1,3),DP (1,3)) "" Nothing),DP (1,3)),((AnnComment DComment (DP (0,0),DP (0,6)) "toBool" Nothing),DP (0,0)),((AnnComment DComment (DP (0,1),DP (0,3)) "::" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,2)) "b" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "->" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,7)) "P.Bool" Nothing),DP (0,1)),((AnnComment DComment (DP (1,3),DP (1,3)) "" Nothing),DP (1,3)),((AnnComment DComment (DP (0,0),DP (0,4)) "type" Nothing),DP (0,0)),((AnnComment DComment (DP (0,1),DP (0,4)) "Not" Nothing),DP (0,1)),((AnnComment DComment (DP (0,2),DP (0,3)) "b" Nothing),DP (0,2)),((AnnComment DComment (DP (1,3),DP (1,3)) "" Nothing),DP (1,3)),((AnnComment DComment (DP (0,0),DP (0,4)) "type" Nothing),DP (0,0)),((AnnComment DComment (DP (0,1),DP (0,4)) "And" Nothing),DP (0,1)),((AnnComment DComment (DP (0,2),DP (0,3)) "b" Nothing),DP (0,2)),((AnnComment DComment (DP (0,1),DP (0,3)) "::" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,2)) "*" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "->" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,2)) "*" Nothing),DP (0,1)),((AnnComment DComment (DP (1,3),DP (1,3)) "" Nothing),DP (1,3)),((AnnComment DComment (DP (0,0),DP (0,4)) "type" Nothing),DP (0,0)),((AnnComment DComment (DP (0,1),DP (0,3)) "Or" Nothing),DP (0,1)),((AnnComment DComment (DP (0,3),DP (0,4)) "b" Nothing),DP (0,3)),((AnnComment DComment (DP (0,1),DP (0,3)) "::" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,2)) "*" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "->" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,2)) "*" Nothing),DP (0,1)),((AnnComment DComment (DP (1,3),DP (1,3)) "" Nothing),DP (1,3)),((AnnComment DComment (DP (0,0),DP (0,4)) "type" Nothing),DP (0,0)),((AnnComment DComment (DP (0,1),DP (0,4)) "Xor" Nothing),DP (0,1)),((AnnComment DComment (DP (0,2),DP (0,3)) "b" Nothing),DP (0,2)),((AnnComment DComment (DP (0,1),DP (0,3)) "::" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,2)) "*" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "->" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,2)) "*" Nothing),DP (0,1)),((AnnComment DComment (DP (1,3),DP (1,3)) "" Nothing),DP (1,3)),((AnnComment DComment (DP (0,0),DP (0,4)) "type" Nothing),DP (0,0)),((AnnComment DComment (DP (0,1),DP (0,5)) "Impl" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,2)) "b" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "::" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,2)) "*" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "->" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,2)) "*" Nothing),DP (0,1)),((AnnComment DComment (DP (1,3),DP (1,3)) "" Nothing),DP (1,3)),((AnnComment DComment (DP (0,0),DP (0,4)) "type" Nothing),DP (0,0)),((AnnComment DComment (DP (0,1),DP (0,7)) "BoolEq" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,2)) "b" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "::" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,2)) "*" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "->" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,2)) "*" Nothing),DP (0,1)),((AnnComment DComment (DP (2,1),DP (2,75)) "-- To prevent the user from adding new instances to BoolI we do NOT export" Nothing),DP (2,1)),((AnnComment DComment (DP (1,1),DP (1,63)) "-- BoolI itself. Rather, we export the following proxy (Bool)." Nothing),DP (1,1)),((AnnComment DComment (DP (1,1),DP (1,59)) "-- The proxy entails BoolI and so can be used to add BoolI" Nothing),DP (1,1)),((AnnComment DComment (DP (1,1),DP (1,69)) "-- constraints in the signatures. However, all the constraints below" Nothing),DP (1,1)),((AnnComment DComment (DP (1,1),DP (1,76)) "-- are expressed in terms of BoolI rather than the proxy. Thus, even if the" Nothing),DP (1,1)),((AnnComment DComment (DP (1,1),DP (1,62)) "-- user adds new instances to the proxy, it would not matter." Nothing),DP (1,1)),((AnnComment DComment (DP (1,1),DP (1,68)) "-- Besides, because the following proxy instances are most general," Nothing),DP (1,1)),((AnnComment DComment (DP (1,1),DP (1,71)) "-- one may not add further instances without the overlapping instances" Nothing),DP (1,1)),((AnnComment DComment (DP (1,1),DP (1,14)) "-- extension." Nothing),DP (1,1)),((AnnComment DComment (DP (2,1),DP (2,25)) "-- | Type-level Booleans" Nothing),DP (2,1)),((AnnComment DComment (DP (1,1),DP (1,1)) "" Nothing),DP (1,1)),((AnnComment DComment (DP (0,0),DP (0,0)) "" Nothing),DP (0,0)),((AnnComment DComment (DP (0,0),DP (0,5)) "class" Nothing),DP (0,0)),((AnnComment DComment (DP (0,1),DP (0,6)) "BoolI" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,2)) "b" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "=>" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,5)) "Bool" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,2)) "b" Nothing),DP (0,1)),((AnnComment DComment (DP (2,1),DP (2,1)) "" Nothing),DP (2,1)),((AnnComment DComment (DP (0,0),DP (0,8)) "instance" Nothing),DP (0,0)),((AnnComment DComment (DP (0,1),DP (0,6)) "BoolI" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,2)) "b" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "=>" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,5)) "Bool" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,2)) "b" Nothing),DP (0,1)),((AnnComment DComment (DP (2,1),DP (2,1)) "" Nothing),DP (2,1)),((AnnComment DComment (DP (0,0),DP (0,8)) "instance" Nothing),DP (0,0)),((AnnComment DComment (DP (0,1),DP (0,6)) "BoolI" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,5)) "True" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,6)) "where" Nothing),DP (0,1)),((AnnComment DComment (DP (1,2),DP (1,2)) "" Nothing),DP (1,2)),((AnnComment DComment (DP (0,0),DP (0,6)) "toBool" Nothing),DP (0,0)),((AnnComment DComment (DP (0,1),DP (0,2)) "_" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,2)) "=" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,5)) "True" Nothing),DP (0,1)),((AnnComment DComment (DP (1,2),DP (1,2)) "" Nothing),DP (1,2)),((AnnComment DComment (DP (0,0),DP (0,4)) "type" Nothing),DP (0,0)),((AnnComment DComment (DP (0,1),DP (0,4)) "Not" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,5)) "True" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,2)) "=" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,6)) "False" Nothing),DP (0,1)),((AnnComment DComment (DP (1,2),DP (1,2)) "" Nothing),DP (1,2)),((AnnComment DComment (DP (0,0),DP (0,4)) "type" Nothing),DP (0,0)),((AnnComment DComment (DP (0,1),DP (0,4)) "And" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,5)) "True" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,2)) "=" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "Id" Nothing),DP (0,1)),((AnnComment DComment (DP (1,2),DP (1,2)) "" Nothing),DP (1,2)),((AnnComment DComment (DP (0,0),DP (0,4)) "type" Nothing),DP (0,0)),((AnnComment DComment (DP (0,1),DP (0,3)) "Or" Nothing),DP (0,1)),((AnnComment DComment (DP (0,2),DP (0,6)) "True" Nothing),DP (0,2)),((AnnComment DComment (DP (0,1),DP (0,2)) "=" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,6)) "Const" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,5)) "True" Nothing),DP (0,1)),((AnnComment DComment (DP (1,2),DP (1,2)) "" Nothing),DP (1,2)),((AnnComment DComment (DP (0,0),DP (0,4)) "type" Nothing),DP (0,0)),((AnnComment DComment (DP (0,1),DP (0,4)) "Xor" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,5)) "True" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,2)) "=" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,4)) "Not" Nothing),DP (0,1)),((AnnComment DComment (DP (1,2),DP (1,2)) "" Nothing),DP (1,2)),((AnnComment DComment (DP (0,0),DP (0,4)) "type" Nothing),DP (0,0)),((AnnComment DComment (DP (0,1),DP (0,5)) "Impl" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,5)) "True" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,2)) "=" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "Id" Nothing),DP (0,1)),((AnnComment DComment (DP (1,2),DP (1,2)) "" Nothing),DP (1,2)),((AnnComment DComment (DP (0,0),DP (0,4)) "type" Nothing),DP (0,0)),((AnnComment DComment (DP (0,1),DP (0,7)) "BoolEq" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,5)) "True" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,2)) "=" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "Id" Nothing),DP (0,1)),((AnnComment DComment (DP (2,1),DP (2,1)) "" Nothing),DP (2,1)),((AnnComment DComment (DP (0,0),DP (0,0)) "" Nothing),DP (0,0)),((AnnComment DComment (DP (0,0),DP (0,8)) "instance" Nothing),DP (0,0)),((AnnComment DComment (DP (0,1),DP (0,6)) "BoolI" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,6)) "False" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,6)) "where" Nothing),DP (0,1)),((AnnComment DComment (DP (1,2),DP (1,2)) "" Nothing),DP (1,2)),((AnnComment DComment (DP (0,0),DP (0,6)) "toBool" Nothing),DP (0,0)),((AnnComment DComment (DP (0,1),DP (0,2)) "_" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,2)) "=" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,6)) "False" Nothing),DP (0,1)),((AnnComment DComment (DP (1,2),DP (1,2)) "" Nothing),DP (1,2)),((AnnComment DComment (DP (0,0),DP (0,4)) "type" Nothing),DP (0,0)),((AnnComment DComment (DP (0,1),DP (0,4)) "Not" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,6)) "False" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,2)) "=" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,5)) "True" Nothing),DP (0,1)),((AnnComment DComment (DP (1,2),DP (1,2)) "" Nothing),DP (1,2)),((AnnComment DComment (DP (0,0),DP (0,4)) "type" Nothing),DP (0,0)),((AnnComment DComment (DP (0,1),DP (0,4)) "And" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,6)) "False" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,2)) "=" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,6)) "Const" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,6)) "False" Nothing),DP (0,1)),((AnnComment DComment (DP (1,2),DP (1,2)) "" Nothing),DP (1,2)),((AnnComment DComment (DP (0,0),DP (0,4)) "type" Nothing),DP (0,0)),((AnnComment DComment (DP (0,1),DP (0,3)) "Or" Nothing),DP (0,1)),((AnnComment DComment (DP (0,2),DP (0,7)) "False" Nothing),DP (0,2)),((AnnComment DComment (DP (0,1),DP (0,2)) "=" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "Id" Nothing),DP (0,1)),((AnnComment DComment (DP (1,2),DP (1,2)) "" Nothing),DP (1,2)),((AnnComment DComment (DP (0,0),DP (0,4)) "type" Nothing),DP (0,0)),((AnnComment DComment (DP (0,1),DP (0,4)) "Xor" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,6)) "False" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,2)) "=" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "Id" Nothing),DP (0,1)),((AnnComment DComment (DP (1,2),DP (1,2)) "" Nothing),DP (1,2)),((AnnComment DComment (DP (0,0),DP (0,4)) "type" Nothing),DP (0,0)),((AnnComment DComment (DP (0,1),DP (0,5)) "Impl" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,6)) "False" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,2)) "=" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,6)) "Const" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,5)) "True" Nothing),DP (0,1)),((AnnComment DComment (DP (1,2),DP (1,2)) "" Nothing),DP (1,2)),((AnnComment DComment (DP (0,0),DP (0,4)) "type" Nothing),DP (0,0)),((AnnComment DComment (DP (0,1),DP (0,7)) "BoolEq" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,6)) "False" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,2)) "=" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,4)) "Not" Nothing),DP (0,1)),((AnnComment DComment (DP (1,1),DP (1,65)) "-- | Reification function. In CPS style (best possible solution)" Nothing),DP (1,1)),((AnnComment DComment (DP (1,1),DP (1,1)) "" Nothing),DP (1,1)),((AnnComment DComment (DP (0,0),DP (0,0)) "" Nothing),DP (0,0)),((AnnComment DComment (DP (0,0),DP (0,9)) "reifyBool" Nothing),DP (0,0)),((AnnComment DComment (DP (0,1),DP (0,3)) "::" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,7)) "P.Bool" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "->" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,2)) "(" Nothing),DP (0,1)),((AnnComment DComment (DP (0,0),DP (0,6)) "forall" Nothing),DP (0,0)),((AnnComment DComment (DP (0,1),DP (0,2)) "b" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,2)) "." Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,5)) "Bool" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,2)) "b" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "=>" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,2)) "b" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "->" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,2)) "r" Nothing),DP (0,1)),((AnnComment DComment (DP (0,0),DP (0,1)) ")" Nothing),DP (0,0)),((AnnComment DComment (DP (0,1),DP (0,3)) "->" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,2)) "r" Nothing),DP (0,1)),((AnnComment DComment (DP (1,1),DP (1,1)) "" Nothing),DP (1,1)),((AnnComment DComment (DP (0,0),DP (0,9)) "reifyBool" Nothing),DP (0,0)),((AnnComment DComment (DP (0,1),DP (0,5)) "True" Nothing),DP (0,1)),((AnnComment DComment (DP (0,2),DP (0,3)) "f" Nothing),DP (0,2)),((AnnComment DComment (DP (0,1),DP (0,2)) "=" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,2)) "f" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,5)) "true" Nothing),DP (0,1)),((AnnComment DComment (DP (1,1),DP (1,1)) "" Nothing),DP (1,1)),((AnnComment DComment (DP (0,0),DP (0,9)) "reifyBool" Nothing),DP (0,0)),((AnnComment DComment (DP (0,1),DP (0,6)) "False" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,2)) "f" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,2)) "=" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,2)) "f" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,6)) "false" Nothing),DP (0,1)),((AnnComment DComment (DP (2,1),DP (2,14)) "-------------" Nothing),DP (2,1)),((AnnComment DComment (DP (1,1),DP (1,14)) "-- Operations" Nothing),DP (1,1)),((AnnComment DComment (DP (1,1),DP (1,14)) "-------------" Nothing),DP (1,1)),((AnnComment DComment (DP (3,1),DP (3,71)) "-- | value-level reflection function for the 'Not' type-level relation" Nothing),DP (3,1)),((AnnComment DComment (DP (1,1),DP (1,1)) "" Nothing),DP (1,1)),((AnnComment DComment (DP (0,0),DP (0,3)) "not" Nothing),DP (0,0)),((AnnComment DComment (DP (0,1),DP (0,3)) "::" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "b1" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "->" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,4)) "Not" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "b1" Nothing),DP (0,1)),((AnnComment DComment (DP (1,1),DP (1,1)) "" Nothing),DP (1,1)),((AnnComment DComment (DP (0,0),DP (0,3)) "not" Nothing),DP (0,0)),((AnnComment DComment (DP (0,1),DP (0,2)) "=" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,10)) "undefined" Nothing),DP (0,1)),((AnnComment DComment (DP (2,1),DP (2,64)) "-- | 'And' type-level relation. @And b1 b2 b3@ establishes that" Nothing),DP (2,1)),((AnnComment DComment (DP (1,1),DP (1,21)) "--   @b1 && b2 = b3@" Nothing),DP (1,1)),((AnnComment DComment (DP (3,1),DP (3,71)) "-- | value-level reflection function for the 'And' type-level relation" Nothing),DP (3,1)),((AnnComment DComment (DP (1,1),DP (1,1)) "" Nothing),DP (1,1)),((AnnComment DComment (DP (0,0),DP (0,1)) "(" Nothing),DP (0,0)),((AnnComment DComment (DP (0,0),DP (0,2)) "&&" Nothing),DP (0,0)),((AnnComment DComment (DP (0,0),DP (0,1)) ")" Nothing),DP (0,0)),((AnnComment DComment (DP (0,1),DP (0,3)) "::" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "b1" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "->" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "b2" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "->" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,4)) "And" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "b1" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "b2" Nothing),DP (0,1)),((AnnComment DComment (DP (1,1),DP (1,1)) "" Nothing),DP (1,1)),((AnnComment DComment (DP (0,0),DP (0,1)) "(" Nothing),DP (0,0)),((AnnComment DComment (DP (0,0),DP (0,2)) "&&" Nothing),DP (0,0)),((AnnComment DComment (DP (0,0),DP (0,1)) ")" Nothing),DP (0,0)),((AnnComment DComment (DP (0,1),DP (0,2)) "=" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,10)) "undefined" Nothing),DP (0,1)),((AnnComment DComment (DP (1,1),DP (1,1)) "" Nothing),DP (1,1)),((AnnComment DComment (DP (0,0),DP (0,6)) "infixr" Nothing),DP (0,0)),((AnnComment DComment (DP (0,1),DP (0,2)) "3" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "&&" Nothing),DP (0,1)),((AnnComment DComment (DP (2,1),DP (2,60)) "-- | Or type-level relation. @Or b1 b2 b3@ establishes that" Nothing),DP (2,1)),((AnnComment DComment (DP (1,1),DP (1,21)) "--   @b1 || b2 = b3@" Nothing),DP (1,1)),((AnnComment DComment (DP (3,1),DP (3,70)) "-- | value-level reflection function for the 'Or' type-level relation" Nothing),DP (3,1)),((AnnComment DComment (DP (1,1),DP (1,1)) "" Nothing),DP (1,1)),((AnnComment DComment (DP (0,0),DP (0,1)) "(" Nothing),DP (0,0)),((AnnComment DComment (DP (0,0),DP (0,2)) "||" Nothing),DP (0,0)),((AnnComment DComment (DP (0,0),DP (0,1)) ")" Nothing),DP (0,0)),((AnnComment DComment (DP (0,1),DP (0,3)) "::" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "b1" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "->" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "b2" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "->" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "Or" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "b1" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "b2" Nothing),DP (0,1)),((AnnComment DComment (DP (1,1),DP (1,1)) "" Nothing),DP (1,1)),((AnnComment DComment (DP (0,0),DP (0,1)) "(" Nothing),DP (0,0)),((AnnComment DComment (DP (0,0),DP (0,2)) "||" Nothing),DP (0,0)),((AnnComment DComment (DP (0,0),DP (0,1)) ")" Nothing),DP (0,0)),((AnnComment DComment (DP (0,1),DP (0,2)) "=" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,10)) "undefined" Nothing),DP (0,1)),((AnnComment DComment (DP (1,1),DP (1,1)) "" Nothing),DP (1,1)),((AnnComment DComment (DP (0,0),DP (0,6)) "infixr" Nothing),DP (0,0)),((AnnComment DComment (DP (0,1),DP (0,2)) "2" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "||" Nothing),DP (0,1)),((AnnComment DComment (DP (2,1),DP (2,71)) "-- | Exclusive or type-level relation. @Xor b1 b2 b3@ establishes that" Nothing),DP (2,1)),((AnnComment DComment (DP (1,1),DP (1,22)) "--   @xor b1 b2 = b3@" Nothing),DP (1,1)),((AnnComment DComment (DP (2,1),DP (2,71)) "-- | value-level reflection function for the 'Xor' type-level relation" Nothing),DP (2,1)),((AnnComment DComment (DP (1,1),DP (1,1)) "" Nothing),DP (1,1)),((AnnComment DComment (DP (0,0),DP (0,3)) "xor" Nothing),DP (0,0)),((AnnComment DComment (DP (0,1),DP (0,3)) "::" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "b1" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "->" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "b2" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "->" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,4)) "Xor" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "b1" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "b2" Nothing),DP (0,1)),((AnnComment DComment (DP (1,1),DP (1,1)) "" Nothing),DP (1,1)),((AnnComment DComment (DP (0,0),DP (0,3)) "xor" Nothing),DP (0,0)),((AnnComment DComment (DP (0,1),DP (0,2)) "=" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,10)) "undefined" Nothing),DP (0,1)),((AnnComment DComment (DP (3,1),DP (3,70)) "-- | Implication type-level relation. @Imp b1 b2 b3@ establishes that" Nothing),DP (3,1)),((AnnComment DComment (DP (1,1),DP (1,18)) "-- @b1 =>b2 = b3@" Nothing),DP (1,1)),((AnnComment DComment (DP (2,1),DP (2,69)) "-- | value-level reflection function for the Imp type-level relation" Nothing),DP (2,1)),((AnnComment DComment (DP (1,1),DP (1,1)) "" Nothing),DP (1,1)),((AnnComment DComment (DP (0,0),DP (0,3)) "imp" Nothing),DP (0,0)),((AnnComment DComment (DP (0,1),DP (0,3)) "::" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "b1" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "->" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "b2" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "->" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,5)) "Impl" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "b1" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "b2" Nothing),DP (0,1)),((AnnComment DComment (DP (1,1),DP (1,1)) "" Nothing),DP (1,1)),((AnnComment DComment (DP (0,0),DP (0,3)) "imp" Nothing),DP (0,0)),((AnnComment DComment (DP (0,1),DP (0,2)) "=" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,10)) "undefined" Nothing),DP (0,1)),((AnnComment DComment (DP (3,1),DP (3,70)) "-- Although equality can be defined as the composition of Xor and Not" Nothing),DP (3,1)),((AnnComment DComment (DP (1,1),DP (1,29)) "-- we define it specifically" Nothing),DP (1,1)),((AnnComment DComment (DP (2,1),DP (2,42)) "-- | Boolean equality type-level relation" Nothing),DP (2,1)),((AnnComment DComment (DP (2,1),DP (2,71)) "-- FIXME: eq should be named (==) but it clashes with the (==) defined" Nothing),DP (2,1)),((AnnComment DComment (DP (1,1),DP (1,71)) "--        in Data.TypeLevel.Num . The chosen (and ugly) workaround was" Nothing),DP (1,1)),((AnnComment DComment (DP (1,1),DP (1,30)) "--        to rename it to eq." Nothing),DP (1,1)),((AnnComment DComment (DP (2,1),DP (2,70)) "-- | value-level reflection function for the 'Eq' type-level relation" Nothing),DP (2,1)),((AnnComment DComment (DP (1,1),DP (1,1)) "" Nothing),DP (1,1)),((AnnComment DComment (DP (0,0),DP (0,6)) "boolEq" Nothing),DP (0,0)),((AnnComment DComment (DP (0,1),DP (0,3)) "::" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "b1" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "->" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "b2" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "->" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,7)) "BoolEq" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "b1" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "b2" Nothing),DP (0,1)),((AnnComment DComment (DP (1,1),DP (1,1)) "" Nothing),DP (1,1)),((AnnComment DComment (DP (0,0),DP (0,6)) "boolEq" Nothing),DP (0,0)),((AnnComment DComment (DP (0,1),DP (0,2)) "=" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,10)) "undefined" Nothing),DP (0,1)),((AnnComment DComment (DP (1,1),DP (1,6)) "#endif" Nothing),DP (1,1)),((AnnComment DComment (DP (2,1),DP (2,1)) "" Nothing),DP (2,1)),((G AnnEofPos),DP (111,0))])
+ (HsModule 
+  (Just 
+   ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:23:8-26
+     }
+    Nothing{ModuleName: Data.TypeLevel.Bool})) 
+  (Just 
+   ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:(23,28)-(38,1)
+     }
+    Just (Ann (DP (0,1)) (ColDelta 28) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((AnnComment DComment (DP (0,-2),DP (0,10)) "-- Not, not," Nothing),DP (0,-2)),((AnnComment DComment (DP (1,5),DP (1,17)) "-- Not, not," Nothing),DP (1,5)),((AnnComment DComment (DP (0,-12),DP (0,1)) "-- And, (&&)," Nothing),DP (0,-12)),((AnnComment DComment (DP (1,5),DP (1,17)) "-- Or, (||)," Nothing),DP (1,5)),((AnnComment DComment (DP (0,-12),DP (0,1)) "-- And, (&&)," Nothing),DP (0,-12)),((AnnComment DComment (DP (1,5),DP (1,17)) "-- Or, (||)," Nothing),DP (1,5)),((AnnComment DComment (DP (1,5),DP (1,17)) "-- Xor, xor," Nothing),DP (1,5)),((AnnComment DComment (DP (0,-12),DP (0,1)) "-- Impl, imp," Nothing),DP (0,-12)),((AnnComment DComment (DP (1,1),DP (1,2)) ")" Nothing),DP (1,1)),((AnnComment DComment (DP (0,1),DP (0,6)) "where" Nothing),DP (0,1)),((AnnComment DComment (DP (0,-3),DP (0,10)) "-- Impl, imp," Nothing),DP (0,-3)),((G AnnCloseP),DP (6,1))])
+    [
+     ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:26:5-9
+       }
+      Just (Ann (DP (1,5)) (ColDelta 5) DP (3,5) [DComment (DP (1,5),DP (1,21)) "-- Bool, toBool," Nothing,DComment (DP (0,-16),DP (0,14)) "-- * Type-level boolean values" Nothing,DComment (DP (1,5),DP (1,10)) "False" Nothing,DComment (DP (0,-5),DP (0,11)) "-- Bool, toBool," Nothing,DComment (DP (0,-11),DP (0,-10)) "," Nothing,DComment (DP (0,1),DP (0,6)) "false" Nothing,DComment (DP (0,0),DP (0,1)) "," Nothing] [])
+      (IEThingAbs 
+       ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:26:5-9
+         }
+        Just (Ann (DP (0,0)) (ColDelta 5) DP (0,0) [] [((G AnnVal),DP (0,0)),((AnnComment DComment (DP (0,-5),DP (0,-1)) "True" Nothing),DP (0,-5)),((AnnComment DComment (DP (0,0),DP (0,1)) "," Nothing),DP (0,0)),((G AnnComma),DP (0,0))])
+        (Unqual {OccName: False})))),
+     ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:26:12-16
+       }
+      Just (Ann (DP (0,-3)) (ColDelta 12) DP (0,1) [DComment (DP (0,0),DP (0,4)) "true" Nothing] [])
+      (IEVar 
+       ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:26:12-16
+         }
+        Just (Ann (DP (0,-3)) (ColDelta 12) DP (0,1) [] [((G AnnVal),DP (0,-3)),((AnnComment DComment (DP (0,-2),DP (0,-1)) "," Nothing),DP (0,-2)),((G AnnComma),DP (0,0))])
+        (Unqual {OccName: false})))),
+     ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:27:5-8
+       }
+      Just (Ann (DP (1,5)) (ColDelta 5) DP (1,5) [] [])
+      (IEThingAbs 
+       ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:27:5-8
+         }
+        Just (Ann (DP (0,0)) (ColDelta 5) DP (0,0) [] [((G AnnVal),DP (0,0)),((AnnComment DComment (DP (0,-4),DP (0,9)) "-- reifyBool," Nothing),DP (0,-4)),((G AnnComma),DP (0,0))])
+        (Unqual {OccName: True})))),
+     ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:27:11-14
+       }
+      Just (Ann (DP (0,1)) (ColDelta 11) DP (0,1) [] [])
+      (IEVar 
+       ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:27:11-14
+         }
+        Just (Ann (DP (0,0)) (ColDelta 11) DP (0,0) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+        (Unqual {OccName: true})))),
+     ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:30:5-7
+       }
+      Just (Ann (DP (1,5)) (ColDelta 5) DP (3,5) [DComment (DP (1,5),DP (1,18)) "-- reifyBool," Nothing,DComment (DP (0,-13),DP (0,21)) "-- * Type-level boolean operations" Nothing,DComment (DP (1,5),DP (1,8)) "Not" Nothing,DComment (DP (0,-3),DP (0,31)) "-- * Type-level boolean operations" Nothing,DComment (DP (0,-31),DP (0,-30)) "," Nothing] [])
+      (IEThingAbs 
+       ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:30:5-7
+         }
+        Just (Ann (DP (0,0)) (ColDelta 5) DP (0,0) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+        (Unqual {OccName: Not})))),
+     ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:31:5-7
+       }
+      Just (Ann (DP (1,5)) (ColDelta 5) DP (1,5) [] [])
+      (IEThingAbs 
+       ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:31:5-7
+         }
+        Just (Ann (DP (0,0)) (ColDelta 5) DP (0,0) [] [((G AnnVal),DP (0,0)),((AnnComment DComment (DP (0,-3),DP (0,-1)) "Or" Nothing),DP (0,-3)),((G AnnComma),DP (0,0))])
+        (Unqual {OccName: And})))),
+     ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:32:5-6
+       }
+      Just (Ann (DP (1,5)) (ColDelta 5) DP (1,5) [] [])
+      (IEThingAbs 
+       ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:32:5-6
+         }
+        Just (Ann (DP (0,0)) (ColDelta 5) DP (0,0) [] [((G AnnVal),DP (0,0))])
+        (Unqual {OccName: Or}))))])) 
+  [
+   ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:40:1-31
+     }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (2,1) [DComment (DP (1,1),DP (1,1)) "" Nothing,DComment (DP (0,0),DP (0,6)) "import" Nothing,DComment (DP (0,1),DP (0,14)) "Data.Generics" Nothing,DComment (DP (0,1),DP (0,2)) "(" Nothing,DComment (DP (0,0),DP (0,8)) "Typeable" Nothing,DComment (DP (0,0),DP (0,1)) ")" Nothing] [((G AnnImport),DP (0,0)),((G AnnVal),DP (0,1))])
+    (ImportDecl 
+     (Nothing) 
+     ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:40:8-20
+       }
+      Nothing{ModuleName: Data.Generics}) 
+     (Nothing) 
+     (False) 
+     (False) 
+     (False) 
+     (False) 
+     (Nothing) 
+     (Just 
+      ((,) 
+       (False) 
+       ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:40:22-31
+         }
+        Just (Ann (DP (0,0)) (ColDelta 22) DP (0,1) [DComment (DP (0,-13),DP (0,-6)) "Prelude" Nothing,DComment (DP (0,1),DP (0,7)) "hiding" Nothing] [((G AnnOpenP),DP (0,0)),((AnnComment DComment (DP (0,-8),DP (0,-7)) "(" Nothing),DP (0,-8)),((AnnComment DComment (DP (0,0),DP (0,4)) "Bool" Nothing),DP (0,0)),((AnnComment DComment (DP (0,0),DP (0,1)) "," Nothing),DP (0,0)),((AnnComment DComment (DP (0,1),DP (0,4)) "not" Nothing),DP (0,1)),((G AnnCloseP),DP (0,0))])
+        [
+         ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:40:23-30
+           }
+          Just (Ann (DP (0,0)) (ColDelta 23) DP (0,0) [] [])
+          (IEThingAbs 
+           ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:40:23-30
+             }
+            Just (Ann (DP (0,0)) (ColDelta 23) DP (0,0) [] [((G AnnVal),DP (0,0))])
+            (Unqual {OccName: Typeable}))))]))))),
+   ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:41:1-49
+     }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [DComment (DP (0,1),DP (0,2)) "," Nothing,DComment (DP (0,1),DP (0,2)) "(" Nothing,DComment (DP (0,0),DP (0,2)) "&&" Nothing,DComment (DP (0,0),DP (0,1)) ")" Nothing,DComment (DP (0,0),DP (0,1)) "," Nothing,DComment (DP (0,1),DP (0,2)) "(" Nothing,DComment (DP (0,0),DP (0,2)) "||" Nothing,DComment (DP (0,0),DP (0,1)) ")" Nothing,DComment (DP (0,0),DP (0,1)) "," Nothing,DComment (DP (0,1),DP (0,3)) "Eq" Nothing,DComment (DP (0,0),DP (0,1)) ")" Nothing] [((G AnnImport),DP (0,0)),((G AnnVal),DP (0,1))])
+    (ImportDecl 
+     (Nothing) 
+     ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:41:8-14
+       }
+      Nothing{ModuleName: Prelude}) 
+     (Nothing) 
+     (False) 
+     (False) 
+     (False) 
+     (False) 
+     (Nothing) 
+     (Just 
+      ((,) 
+       (True) 
+       ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:41:16-49
+         }
+        Just (Ann (DP (0,-1)) (ColDelta 16) DP (0,1) [DComment (DP (0,-7),DP (0,2)) "qualified" Nothing] [((G AnnHiding),DP (0,-1)),((AnnComment DComment (DP (0,-4),DP (0,3)) "Prelude" Nothing),DP (0,-4)),((G AnnOpenP),DP (0,1)),((G AnnCloseP),DP (0,0))])
+        [
+         ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:41:24-27
+           }
+          Just (Ann (DP (0,0)) (ColDelta 24) DP (0,0) [] [])
+          (IEThingAbs 
+           ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:41:24-27
+             }
+            Just (Ann (DP (0,0)) (ColDelta 24) DP (0,0) [] [((G AnnVal),DP (0,0)),((AnnComment DComment (DP (0,-2),DP (0,0)) "as" Nothing),DP (0,-2)),((G AnnComma),DP (0,0))])
+            (Unqual {OccName: Bool})))),
+         ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:41:30-32
+           }
+          Just (Ann (DP (0,0)) (ColDelta 30) DP (0,1) [DComment (DP (0,0),DP (0,1)) "P" Nothing] [])
+          (IEVar 
+           ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:41:30-32
+             }
+            Just (Ann (DP (0,0)) (ColDelta 30) DP (0,1) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+            (Unqual {OccName: not})))),
+         ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:41:35-38
+           }
+          Just (Ann (DP (0,1)) (ColDelta 35) DP (0,1) [] [])
+          (IEVar 
+           ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:41:35-38
+             }
+            Just (Ann (DP (0,0)) (ColDelta 35) DP (0,0) [] [((G AnnOpenP),DP (0,0)),((G AnnVal),DP (0,0)),((G AnnCloseP),DP (0,0)),((G AnnComma),DP (0,0))])
+            (Unqual {OccName: &&})))),
+         ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:41:41-44
+           }
+          Just (Ann (DP (0,1)) (ColDelta 41) DP (0,1) [] [])
+          (IEVar 
+           ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:41:41-44
+             }
+            Just (Ann (DP (0,0)) (ColDelta 41) DP (0,0) [] [((G AnnOpenP),DP (0,0)),((G AnnVal),DP (0,0)),((G AnnCloseP),DP (0,0)),((G AnnComma),DP (0,0))])
+            (Unqual {OccName: ||})))),
+         ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:41:47-48
+           }
+          Just (Ann (DP (0,1)) (ColDelta 47) DP (0,1) [] [])
+          (IEThingAbs 
+           ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:41:47-48
+             }
+            Just (Ann (DP (0,0)) (ColDelta 47) DP (0,0) [] [((G AnnVal),DP (0,0))])
+            (Unqual {OccName: Eq}))))]))))),
+   ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:42:1-29
+     }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [((G AnnImport),DP (0,0)),((G AnnQualified),DP (0,1)),((G AnnVal),DP (0,1)),((G AnnAs),DP (0,1)),((G AnnVal),DP (0,1))])
+    (ImportDecl 
+     (Nothing) 
+     ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:42:18-24
+       }
+      Nothing{ModuleName: Prelude}) 
+     (Nothing) 
+     (False) 
+     (False) 
+     (True) 
+     (False) 
+     (Just {ModuleName: P}) 
+     (Nothing)))] 
+  [
+   ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:48:1-27
+     }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (6,1) [DComment (DP (1,1),DP (1,37)) "------------------------------------" Nothing,DComment (DP (1,1),DP (1,37)) "------------------------------------" Nothing,DComment (DP (1,1),DP (1,37)) "-- Definition of type-level Booleans" Nothing,DComment (DP (1,1),DP (1,27)) "-- | True type-level value" Nothing,DComment (DP (0,-26),DP (0,10)) "------------------------------------" Nothing,DComment (DP (1,1),DP (1,1)) "" Nothing,DComment (DP (0,0),DP (0,4)) "data" Nothing,DComment (DP (0,-4),DP (0,22)) "-- | True type-level value" Nothing,DComment (DP (0,-21),DP (0,-17)) "True" Nothing,DComment (DP (0,1),DP (0,9)) "deriving" Nothing,DComment (DP (0,1),DP (0,9)) "Typeable" Nothing] [((G AnnData),DP (0,0))])
+    (TyClD 
+     (DataDecl 
+      ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:48:6-9
+        }
+       Just (Ann (DP (0,1)) (ColDelta 6) DP (0,1) [] [((G AnnVal),DP (0,0))])
+       (Unqual {OccName: True})) 
+      (HsQTvs 
+       [] 
+       []) 
+      (HsDataDefn 
+       (DataType) 
+       ({ <no location info> }
+        Just (Ann (DP (-48,0)) (ColDelta 0) DP (-48,0) [] [])
+        []) 
+       (Nothing) 
+       (Nothing) 
+       [] 
+       (Just 
+        ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:48:11-27
+          }
+         Just (Ann (DP (0,1)) (ColDelta 11) DP (0,1) [] [((G AnnDeriving),DP (0,0))])
+         [
+          ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:48:20-27
+            }
+           Just (Ann (DP (0,1)) (ColDelta 20) DP (0,1) [] [((G AnnVal),DP (0,0))])
+           (HsTyVar 
+            (Unqual {OccName: Typeable})))]))) 
+      (PlaceHolder)))),
+   ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:(50,1)-(51,16)
+     }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (2,1) [DComment (DP (1,1),DP (1,1)) "" Nothing,DComment (DP (0,0),DP (0,8)) "instance" Nothing,DComment (DP (0,1),DP (0,5)) "Show" Nothing,DComment (DP (0,1),DP (0,5)) "True" Nothing,DComment (DP (0,1),DP (0,6)) "where" Nothing] [((G AnnInstance),DP (0,0)),((G AnnWhere),DP (0,1))])
+    (InstD 
+     (ClsInstD 
+      (ClsInstDecl 
+       ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:50:10-18
+         }
+        Just (Ann (DP (0,0)) (ColDelta 10) DP (0,1) [DComment (DP (0,-7),DP (0,-7)) "" Nothing,DComment (DP (0,0),DP (0,4)) "show" Nothing,DComment (DP (0,1),DP (0,2)) "_" Nothing,DComment (DP (0,1),DP (0,2)) "=" Nothing] [])
+        (HsForAllTy 
+         (Implicit) 
+         (Nothing) 
+         (HsQTvs 
+          [] 
+          []) 
+         ({ <no location info> }
+          Just (Ann (DP (-48,0)) (ColDelta 0) DP (-48,0) [] [])
+          []) 
+         ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:50:10-18
+           }
+          Just (Ann (DP (0,0)) (ColDelta 10) DP (0,1) [] [])
+          (HsAppTy 
+           ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:50:10-13
+             }
+            Just (Ann (DP (0,0)) (ColDelta 10) DP (0,1) [] [((G AnnVal),DP (0,0))])
+            (HsTyVar 
+             (Unqual {OccName: Show}))) 
+           ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:50:15-18
+             }
+            Just (Ann (DP (0,-2)) (ColDelta 15) DP (0,1) [DComment (DP (0,-3),DP (0,3)) "\"True\"" Nothing] [((G AnnVal),DP (0,-2))])
+            (HsTyVar 
+             (Unqual {OccName: True}))))))) {Bag(Located (HsBind RdrName)): 
+       [
+        ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:51:2-16
+          }
+         Just (Ann (DP (1,2)) (ColDelta 2) DP (1,2) [] [])
+         (FunBind 
+          ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:51:2-5
+            }
+           Just (Ann (DP (0,0)) (ColDelta 2) DP (0,0) [] [((G AnnVal),DP (0,0))])
+           (Unqual {OccName: show})) 
+          (False) 
+          (MG 
+           [
+            ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:51:2-16
+              }
+             Just (Ann (DP (0,0)) (ColDelta 2) DP (0,0) [] [((G AnnEqual),DP (0,1))])
+             (Match 
+              (Just 
+               ((,) 
+                ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:51:2-5
+                  }
+                 Just (Ann (DP (0,0)) (ColDelta 2) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                 (Unqual {OccName: show})) 
+                (False))) 
+              [
+               ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:51:7
+                 }
+                Just (Ann (DP (0,1)) (ColDelta 7) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                (WildPat 
+                 (PlaceHolder)))] 
+              (Nothing) 
+              (GRHSs 
+               [
+                ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:51:9-16
+                  }
+                 Just (Ann (DP (0,-1)) (ColDelta 9) DP (0,-1) [] [])
+                 (GRHS 
+                  [] 
+                  ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:51:11-16
+                    }
+                   Just (Ann (DP (0,1)) (ColDelta 11) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                   (HsLit 
+                    (HsString "\"True\"" {FastString: "True"})))))] 
+               (EmptyLocalBinds))))] 
+           [] 
+           (PlaceHolder) 
+           (FromSource)) 
+          (WpHole) 
+          (PlaceHolder) 
+          []))]} 
+       [] 
+       [] 
+       [] 
+       (Nothing))))),
+   ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:54:1-12
+     }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (3,1) [DComment (DP (1,1),DP (1,42)) "-- | True value-level reflecting function" Nothing,DComment (DP (1,1),DP (1,1)) "" Nothing,DComment (DP (0,0),DP (0,0)) "" Nothing,DComment (DP (0,0),DP (0,4)) "true" Nothing,DComment (DP (0,-4),DP (0,37)) "-- | True value-level reflecting function" Nothing,DComment (DP (0,-36),DP (0,-34)) "::" Nothing,DComment (DP (0,1),DP (0,5)) "True" Nothing] [((G AnnDcolon),DP (0,1))])
+    (SigD 
+     (TypeSig 
+      [
+       ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:54:1-4
+         }
+        Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+        (Unqual {OccName: true}))] 
+      ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:54:9-12
+        }
+       Just (Ann (DP (0,-8)) (ColDelta 9) DP (0,1) [DComment (DP (0,-2),DP (0,-1)) "=" Nothing,DComment (DP (0,1),DP (0,10)) "undefined" Nothing] [])
+       (HsForAllTy 
+        (Implicit) 
+        (Nothing) 
+        (HsQTvs 
+         [] 
+         []) 
+        ({ <no location info> }
+         Just (Ann (DP (-48,0)) (ColDelta 0) DP (-48,0) [] [])
+         []) 
+        ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:54:9-12
+          }
+         Just (Ann (DP (0,-8)) (ColDelta 9) DP (0,1) [] [((G AnnVal),DP (0,-8))])
+         (HsTyVar 
+          (Unqual {OccName: True}))))) 
+      (PlaceHolder)))),
+   ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:55:1-16
+     }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [])
+    (ValD 
+     (FunBind 
+      ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:55:1-4
+        }
+       Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+       (Unqual {OccName: true})) 
+      (False) 
+      (MG 
+       [
+        ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:55:1-16
+          }
+         Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnEqual),DP (0,1))])
+         (Match 
+          (Just 
+           ((,) 
+            ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:55:1-4
+              }
+             Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+             (Unqual {OccName: true})) 
+            (False))) 
+          [] 
+          (Nothing) 
+          (GRHSs 
+           [
+            ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:55:6-16
+              }
+             Just (Ann (DP (0,-1)) (ColDelta 6) DP (0,-1) [] [])
+             (GRHS 
+              [] 
+              ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:55:8-16
+                }
+               Just (Ann (DP (0,1)) (ColDelta 8) DP (0,1) [] [((G AnnVal),DP (0,0))])
+               (HsVar 
+                (Unqual {OccName: undefined})))))] 
+           (EmptyLocalBinds))))] 
+       [] 
+       (PlaceHolder) 
+       (FromSource)) 
+      (WpHole) 
+      (PlaceHolder) 
+      []))),
+   ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:58:1-28
+     }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (3,1) [DComment (DP (1,1),DP (1,28)) "-- | False type-level value" Nothing,DComment (DP (1,1),DP (1,1)) "" Nothing,DComment (DP (0,0),DP (0,4)) "data" Nothing,DComment (DP (0,-4),DP (0,23)) "-- | False type-level value" Nothing,DComment (DP (0,-22),DP (0,-17)) "False" Nothing,DComment (DP (0,1),DP (0,9)) "deriving" Nothing,DComment (DP (0,1),DP (0,9)) "Typeable" Nothing] [((G AnnData),DP (0,0))])
+    (TyClD 
+     (DataDecl 
+      ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:58:6-10
+        }
+       Just (Ann (DP (0,1)) (ColDelta 6) DP (0,1) [] [((G AnnVal),DP (0,0))])
+       (Unqual {OccName: False})) 
+      (HsQTvs 
+       [] 
+       []) 
+      (HsDataDefn 
+       (DataType) 
+       ({ <no location info> }
+        Just (Ann (DP (-48,0)) (ColDelta 0) DP (-48,0) [] [])
+        []) 
+       (Nothing) 
+       (Nothing) 
+       [] 
+       (Just 
+        ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:58:12-28
+          }
+         Just (Ann (DP (0,1)) (ColDelta 12) DP (0,1) [] [((G AnnDeriving),DP (0,0))])
+         [
+          ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:58:21-28
+            }
+           Just (Ann (DP (0,1)) (ColDelta 21) DP (0,1) [] [((G AnnVal),DP (0,0))])
+           (HsTyVar 
+            (Unqual {OccName: Typeable})))]))) 
+      (PlaceHolder)))),
+   ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:(60,1)-(61,17)
+     }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (2,1) [DComment (DP (1,1),DP (1,1)) "" Nothing,DComment (DP (0,0),DP (0,8)) "instance" Nothing,DComment (DP (0,1),DP (0,5)) "Show" Nothing,DComment (DP (0,1),DP (0,6)) "False" Nothing,DComment (DP (0,1),DP (0,6)) "where" Nothing] [((G AnnInstance),DP (0,0)),((G AnnWhere),DP (0,1))])
+    (InstD 
+     (ClsInstD 
+      (ClsInstDecl 
+       ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:60:10-19
+         }
+        Just (Ann (DP (0,0)) (ColDelta 10) DP (0,1) [DComment (DP (0,-7),DP (0,-7)) "" Nothing,DComment (DP (0,0),DP (0,4)) "show" Nothing,DComment (DP (0,1),DP (0,2)) "_" Nothing,DComment (DP (0,1),DP (0,2)) "=" Nothing] [])
+        (HsForAllTy 
+         (Implicit) 
+         (Nothing) 
+         (HsQTvs 
+          [] 
+          []) 
+         ({ <no location info> }
+          Just (Ann (DP (-48,0)) (ColDelta 0) DP (-48,0) [] [])
+          []) 
+         ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:60:10-19
+           }
+          Just (Ann (DP (0,0)) (ColDelta 10) DP (0,1) [] [])
+          (HsAppTy 
+           ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:60:10-13
+             }
+            Just (Ann (DP (0,0)) (ColDelta 10) DP (0,1) [] [((G AnnVal),DP (0,0))])
+            (HsTyVar 
+             (Unqual {OccName: Show}))) 
+           ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:60:15-19
+             }
+            Just (Ann (DP (0,-3)) (ColDelta 15) DP (0,1) [DComment (DP (0,-3),DP (0,4)) "\"False\"" Nothing] [((G AnnVal),DP (0,-3))])
+            (HsTyVar 
+             (Unqual {OccName: False}))))))) {Bag(Located (HsBind RdrName)): 
+       [
+        ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:61:2-17
+          }
+         Just (Ann (DP (1,2)) (ColDelta 2) DP (1,2) [] [])
+         (FunBind 
+          ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:61:2-5
+            }
+           Just (Ann (DP (0,0)) (ColDelta 2) DP (0,0) [] [((G AnnVal),DP (0,0))])
+           (Unqual {OccName: show})) 
+          (False) 
+          (MG 
+           [
+            ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:61:2-17
+              }
+             Just (Ann (DP (0,0)) (ColDelta 2) DP (0,0) [] [((G AnnEqual),DP (0,1))])
+             (Match 
+              (Just 
+               ((,) 
+                ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:61:2-5
+                  }
+                 Just (Ann (DP (0,0)) (ColDelta 2) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                 (Unqual {OccName: show})) 
+                (False))) 
+              [
+               ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:61:7
+                 }
+                Just (Ann (DP (0,1)) (ColDelta 7) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                (WildPat 
+                 (PlaceHolder)))] 
+              (Nothing) 
+              (GRHSs 
+               [
+                ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:61:9-17
+                  }
+                 Just (Ann (DP (0,-1)) (ColDelta 9) DP (0,-1) [] [])
+                 (GRHS 
+                  [] 
+                  ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:61:11-17
+                    }
+                   Just (Ann (DP (0,1)) (ColDelta 11) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                   (HsLit 
+                    (HsString "\"False\"" {FastString: "False"})))))] 
+               (EmptyLocalBinds))))] 
+           [] 
+           (PlaceHolder) 
+           (FromSource)) 
+          (WpHole) 
+          (PlaceHolder) 
+          []))]} 
+       [] 
+       [] 
+       [] 
+       (Nothing))))),
+   ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:65:1-14
+     }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (4,1) [DComment (DP (2,1),DP (2,43)) "-- | False value-level reflecting function" Nothing,DComment (DP (1,1),DP (1,1)) "" Nothing,DComment (DP (0,0),DP (0,0)) "" Nothing,DComment (DP (0,0),DP (0,5)) "false" Nothing,DComment (DP (0,-5),DP (0,37)) "-- | False value-level reflecting function" Nothing,DComment (DP (0,-36),DP (0,-34)) "::" Nothing,DComment (DP (0,1),DP (0,6)) "False" Nothing] [((G AnnDcolon),DP (0,1))])
+    (SigD 
+     (TypeSig 
+      [
+       ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:65:1-5
+         }
+        Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+        (Unqual {OccName: false}))] 
+      ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:65:10-14
+        }
+       Just (Ann (DP (0,-8)) (ColDelta 10) DP (0,1) [DComment (DP (0,-2),DP (0,-1)) "=" Nothing,DComment (DP (0,1),DP (0,10)) "undefined" Nothing] [])
+       (HsForAllTy 
+        (Implicit) 
+        (Nothing) 
+        (HsQTvs 
+         [] 
+         []) 
+        ({ <no location info> }
+         Just (Ann (DP (-48,0)) (ColDelta 0) DP (-48,0) [] [])
+         []) 
+        ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:65:10-14
+          }
+         Just (Ann (DP (0,-8)) (ColDelta 10) DP (0,1) [] [((G AnnVal),DP (0,-8))])
+         (HsTyVar 
+          (Unqual {OccName: False}))))) 
+      (PlaceHolder)))),
+   ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:66:1-17
+     }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [])
+    (ValD 
+     (FunBind 
+      ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:66:1-5
+        }
+       Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+       (Unqual {OccName: false})) 
+      (False) 
+      (MG 
+       [
+        ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:66:1-17
+          }
+         Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnEqual),DP (0,1))])
+         (Match 
+          (Just 
+           ((,) 
+            ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:66:1-5
+              }
+             Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+             (Unqual {OccName: false})) 
+            (False))) 
+          [] 
+          (Nothing) 
+          (GRHSs 
+           [
+            ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:66:7-17
+              }
+             Just (Ann (DP (0,-1)) (ColDelta 7) DP (0,-1) [] [])
+             (GRHS 
+              [] 
+              ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:66:9-17
+                }
+               Just (Ann (DP (0,1)) (ColDelta 9) DP (0,1) [] [((G AnnVal),DP (0,0))])
+               (HsVar 
+                (Unqual {OccName: undefined})))))] 
+           (EmptyLocalBinds))))] 
+       [] 
+       (PlaceHolder) 
+       (FromSource)) 
+      (WpHole) 
+      (PlaceHolder) 
+      []))),
+   ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:68:1-23
+     }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (2,1) [DComment (DP (1,1),DP (1,1)) "" Nothing,DComment (DP (0,0),DP (0,4)) "type" Nothing,DComment (DP (0,1),DP (0,7)) "family" Nothing,DComment (DP (0,1),DP (0,4)) "And" Nothing,DComment (DP (0,1),DP (0,4)) "b_0" Nothing,DComment (DP (0,1),DP (0,4)) "b_1" Nothing] [((G AnnType),DP (0,0)),((G AnnFamily),DP (0,1))])
+    (TyClD 
+     (FamDecl 
+      (FamilyDecl 
+       (OpenTypeFamily) 
+       ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:68:13-15
+         }
+        Just (Ann (DP (0,-1)) (ColDelta 13) DP (0,1) [DComment (DP (0,-6),DP (0,2)) "instance" Nothing] [((G AnnVal),DP (0,-1))])
+        (Unqual {OccName: And})) 
+       (HsQTvs 
+        [] 
+        [
+         ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:68:17-19
+           }
+          Just (Ann (DP (0,-1)) (ColDelta 17) DP (0,1) [DComment (DP (0,-1),DP (0,2)) "And" Nothing] [((G AnnVal),DP (0,-1))])
+          (UserTyVar 
+           (Unqual {OccName: b_0}))),
+         ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:68:21-23
+           }
+          Just (Ann (DP (0,-2)) (ColDelta 21) DP (0,1) [DComment (DP (0,-1),DP (0,3)) "True" Nothing] [((G AnnVal),DP (0,-2))])
+          (UserTyVar 
+           (Unqual {OccName: b_1})))]) 
+       (Nothing))))),
+   ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:69:1-36
+     }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [DComment (DP (0,0),DP (0,4)) "True" Nothing,DComment (DP (0,3),DP (0,4)) "=" Nothing,DComment (DP (0,1),DP (0,5)) "True" Nothing] [((G AnnType),DP (0,0)),((G AnnInstance),DP (0,1))])
+    (InstD 
+     (TyFamInstD 
+      (TyFamInstDecl 
+       ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:69:15-36
+         }
+        Just (Ann (DP (0,1)) (ColDelta 15) DP (0,1) [] [((AnnComment DComment (DP (0,-4),DP (0,1)) "False" Nothing),DP (0,-4)),((G AnnEqual),DP (0,3))])
+        (TyFamEqn 
+         ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:69:15-17
+           }
+          Just (Ann (DP (0,0)) (ColDelta 15) DP (0,0) [] [((G AnnVal),DP (0,0))])
+          (Unqual {OccName: And})) 
+         (HsWB 
+          [
+           ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:69:19-22
+             }
+            Just (Ann (DP (0,1)) (ColDelta 19) DP (0,1) [] [((G AnnVal),DP (0,0))])
+            (HsTyVar 
+             (Unqual {OccName: True}))),
+           ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:69:24-27
+             }
+            Just (Ann (DP (0,1)) (ColDelta 24) DP (0,1) [] [((G AnnVal),DP (0,0))])
+            (HsTyVar 
+             (Unqual {OccName: True})))] 
+          (PlaceHolder) 
+          (PlaceHolder) 
+          (PlaceHolder)) 
+         ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:69:33-36
+           }
+          Just (Ann (DP (0,1)) (ColDelta 33) DP (0,1) [] [((G AnnVal),DP (0,0))])
+          (HsTyVar 
+           (Unqual {OccName: True}))))) 
+       (PlaceHolder))))),
+   ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:70:1-37
+     }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [DComment (DP (0,-4),DP (0,1)) "False" Nothing] [((G AnnType),DP (0,0)),((G AnnInstance),DP (0,1))])
+    (InstD 
+     (TyFamInstD 
+      (TyFamInstDecl 
+       ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:70:15-37
+         }
+        Just (Ann (DP (0,1)) (ColDelta 15) DP (0,1) [] [((AnnComment DComment (DP (0,-4),DP (0,0)) "True" Nothing),DP (0,-4)),((G AnnEqual),DP (0,2))])
+        (TyFamEqn 
+         ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:70:15-17
+           }
+          Just (Ann (DP (0,0)) (ColDelta 15) DP (0,0) [] [((G AnnVal),DP (0,0))])
+          (Unqual {OccName: And})) 
+         (HsWB 
+          [
+           ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:70:19-22
+             }
+            Just (Ann (DP (0,1)) (ColDelta 19) DP (0,1) [] [((G AnnVal),DP (0,0))])
+            (HsTyVar 
+             (Unqual {OccName: True}))),
+           ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:70:24-28
+             }
+            Just (Ann (DP (0,0)) (ColDelta 24) DP (0,1) [DComment (DP (0,-4),DP (0,1)) "False" Nothing] [((G AnnVal),DP (0,0))])
+            (HsTyVar 
+             (Unqual {OccName: False})))] 
+          (PlaceHolder) 
+          (PlaceHolder) 
+          (PlaceHolder)) 
+         ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:70:33-37
+           }
+          Just (Ann (DP (0,1)) (ColDelta 33) DP (0,1) [] [((G AnnVal),DP (0,0))])
+          (HsTyVar 
+           (Unqual {OccName: False}))))) 
+       (PlaceHolder))))),
+   ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:71:1-37
+     }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [((G AnnType),DP (0,0)),((G AnnInstance),DP (0,1))])
+    (InstD 
+     (TyFamInstD 
+      (TyFamInstDecl 
+       ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:71:15-37
+         }
+        Just (Ann (DP (0,1)) (ColDelta 15) DP (0,1) [] [((AnnComment DComment (DP (0,-4),DP (0,1)) "False" Nothing),DP (0,-4)),((G AnnEqual),DP (0,2))])
+        (TyFamEqn 
+         ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:71:15-17
+           }
+          Just (Ann (DP (0,0)) (ColDelta 15) DP (0,0) [] [((G AnnVal),DP (0,0))])
+          (Unqual {OccName: And})) 
+         (HsWB 
+          [
+           ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:71:19-23
+             }
+            Just (Ann (DP (0,1)) (ColDelta 19) DP (0,1) [] [((G AnnVal),DP (0,0))])
+            (HsTyVar 
+             (Unqual {OccName: False}))),
+           ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:71:25-28
+             }
+            Just (Ann (DP (0,1)) (ColDelta 25) DP (0,1) [] [((G AnnVal),DP (0,0))])
+            (HsTyVar 
+             (Unqual {OccName: True})))] 
+          (PlaceHolder) 
+          (PlaceHolder) 
+          (PlaceHolder)) 
+         ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:71:33-37
+           }
+          Just (Ann (DP (0,1)) (ColDelta 33) DP (0,1) [] [((G AnnVal),DP (0,0))])
+          (HsTyVar 
+           (Unqual {OccName: False}))))) 
+       (PlaceHolder))))),
+   ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:72:1-37
+     }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [((G AnnType),DP (0,0)),((G AnnInstance),DP (0,1))])
+    (InstD 
+     (TyFamInstD 
+      (TyFamInstDecl 
+       ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:72:15-37
+         }
+        Just (Ann (DP (0,1)) (ColDelta 15) DP (0,1) [] [((G AnnEqual),DP (0,1))])
+        (TyFamEqn 
+         ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:72:15-17
+           }
+          Just (Ann (DP (0,0)) (ColDelta 15) DP (0,0) [] [((G AnnVal),DP (0,0))])
+          (Unqual {OccName: And})) 
+         (HsWB 
+          [
+           ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:72:19-23
+             }
+            Just (Ann (DP (0,1)) (ColDelta 19) DP (0,1) [] [((G AnnVal),DP (0,0))])
+            (HsTyVar 
+             (Unqual {OccName: False}))),
+           ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:72:25-29
+             }
+            Just (Ann (DP (0,1)) (ColDelta 25) DP (0,1) [] [((G AnnVal),DP (0,0))])
+            (HsTyVar 
+             (Unqual {OccName: False})))] 
+          (PlaceHolder) 
+          (PlaceHolder) 
+          (PlaceHolder)) 
+         ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:72:33-37
+           }
+          Just (Ann (DP (0,1)) (ColDelta 33) DP (0,1) [] [((G AnnVal),DP (0,0))])
+          (HsTyVar 
+           (Unqual {OccName: False}))))) 
+       (PlaceHolder))))),
+   ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:74:1-22
+     }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (2,1) [DComment (DP (1,1),DP (1,1)) "" Nothing,DComment (DP (0,0),DP (0,4)) "type" Nothing,DComment (DP (0,1),DP (0,7)) "family" Nothing,DComment (DP (0,1),DP (0,3)) "Or" Nothing,DComment (DP (0,1),DP (0,4)) "b_0" Nothing,DComment (DP (0,1),DP (0,4)) "b_1" Nothing] [((G AnnType),DP (0,0)),((G AnnFamily),DP (0,1))])
+    (TyClD 
+     (FamDecl 
+      (FamilyDecl 
+       (OpenTypeFamily) 
+       ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:74:13-14
+         }
+        Just (Ann (DP (0,-1)) (ColDelta 13) DP (0,1) [DComment (DP (0,-6),DP (0,2)) "instance" Nothing] [((G AnnVal),DP (0,-1))])
+        (Unqual {OccName: Or})) 
+       (HsQTvs 
+        [] 
+        [
+         ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:74:16-18
+           }
+          Just (Ann (DP (0,-1)) (ColDelta 16) DP (0,1) [DComment (DP (0,0),DP (0,2)) "Or" Nothing] [((G AnnVal),DP (0,-1))])
+          (UserTyVar 
+           (Unqual {OccName: b_0}))),
+         ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:74:20-22
+           }
+          Just (Ann (DP (0,-2)) (ColDelta 20) DP (0,1) [DComment (DP (0,-1),DP (0,3)) "True" Nothing] [((G AnnVal),DP (0,-2))])
+          (UserTyVar 
+           (Unqual {OccName: b_1})))]) 
+       (Nothing))))),
+   ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:75:1-35
+     }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [DComment (DP (0,0),DP (0,4)) "True" Nothing,DComment (DP (0,3),DP (0,4)) "=" Nothing,DComment (DP (0,1),DP (0,5)) "True" Nothing] [((G AnnType),DP (0,0)),((G AnnInstance),DP (0,1))])
+    (InstD 
+     (TyFamInstD 
+      (TyFamInstDecl 
+       ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:75:15-35
+         }
+        Just (Ann (DP (0,1)) (ColDelta 15) DP (0,1) [] [((AnnComment DComment (DP (0,-4),DP (0,1)) "False" Nothing),DP (0,-4)),((G AnnEqual),DP (0,3))])
+        (TyFamEqn 
+         ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:75:15-16
+           }
+          Just (Ann (DP (0,0)) (ColDelta 15) DP (0,0) [] [((G AnnVal),DP (0,0))])
+          (Unqual {OccName: Or})) 
+         (HsWB 
+          [
+           ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:75:18-21
+             }
+            Just (Ann (DP (0,1)) (ColDelta 18) DP (0,1) [] [((G AnnVal),DP (0,0))])
+            (HsTyVar 
+             (Unqual {OccName: True}))),
+           ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:75:23-26
+             }
+            Just (Ann (DP (0,1)) (ColDelta 23) DP (0,1) [] [((G AnnVal),DP (0,0))])
+            (HsTyVar 
+             (Unqual {OccName: True})))] 
+          (PlaceHolder) 
+          (PlaceHolder) 
+          (PlaceHolder)) 
+         ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:75:32-35
+           }
+          Just (Ann (DP (0,1)) (ColDelta 32) DP (0,1) [] [((G AnnVal),DP (0,0))])
+          (HsTyVar 
+           (Unqual {OccName: True}))))) 
+       (PlaceHolder))))),
+   ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:76:1-35
+     }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [((G AnnType),DP (0,0)),((G AnnInstance),DP (0,1))])
+    (InstD 
+     (TyFamInstD 
+      (TyFamInstDecl 
+       ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:76:15-35
+         }
+        Just (Ann (DP (0,1)) (ColDelta 15) DP (0,1) [] [((AnnComment DComment (DP (0,-4),DP (0,0)) "True" Nothing),DP (0,-4)),((G AnnEqual),DP (0,2))])
+        (TyFamEqn 
+         ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:76:15-16
+           }
+          Just (Ann (DP (0,0)) (ColDelta 15) DP (0,0) [] [((G AnnVal),DP (0,0))])
+          (Unqual {OccName: Or})) 
+         (HsWB 
+          [
+           ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:76:18-21
+             }
+            Just (Ann (DP (0,1)) (ColDelta 18) DP (0,1) [] [((G AnnVal),DP (0,0))])
+            (HsTyVar 
+             (Unqual {OccName: True}))),
+           ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:76:23-27
+             }
+            Just (Ann (DP (0,0)) (ColDelta 23) DP (0,1) [DComment (DP (0,-4),DP (0,1)) "False" Nothing] [((G AnnVal),DP (0,0))])
+            (HsTyVar 
+             (Unqual {OccName: False})))] 
+          (PlaceHolder) 
+          (PlaceHolder) 
+          (PlaceHolder)) 
+         ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:76:32-35
+           }
+          Just (Ann (DP (0,1)) (ColDelta 32) DP (0,1) [] [((G AnnVal),DP (0,0))])
+          (HsTyVar 
+           (Unqual {OccName: True}))))) 
+       (PlaceHolder))))),
+   ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:77:1-35
+     }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [((G AnnType),DP (0,0)),((G AnnInstance),DP (0,1))])
+    (InstD 
+     (TyFamInstD 
+      (TyFamInstDecl 
+       ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:77:15-35
+         }
+        Just (Ann (DP (0,1)) (ColDelta 15) DP (0,1) [] [((AnnComment DComment (DP (0,-4),DP (0,1)) "False" Nothing),DP (0,-4)),((G AnnEqual),DP (0,2))])
+        (TyFamEqn 
+         ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:77:15-16
+           }
+          Just (Ann (DP (0,0)) (ColDelta 15) DP (0,0) [] [((G AnnVal),DP (0,0))])
+          (Unqual {OccName: Or})) 
+         (HsWB 
+          [
+           ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:77:18-22
+             }
+            Just (Ann (DP (0,1)) (ColDelta 18) DP (0,1) [] [((G AnnVal),DP (0,0))])
+            (HsTyVar 
+             (Unqual {OccName: False}))),
+           ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:77:24-27
+             }
+            Just (Ann (DP (0,1)) (ColDelta 24) DP (0,1) [] [((G AnnVal),DP (0,0))])
+            (HsTyVar 
+             (Unqual {OccName: True})))] 
+          (PlaceHolder) 
+          (PlaceHolder) 
+          (PlaceHolder)) 
+         ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:77:32-35
+           }
+          Just (Ann (DP (0,1)) (ColDelta 32) DP (0,1) [] [((G AnnVal),DP (0,0))])
+          (HsTyVar 
+           (Unqual {OccName: True}))))) 
+       (PlaceHolder))))),
+   ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:78:1-36
+     }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [DComment (DP (0,-4),DP (0,1)) "False" Nothing] [((G AnnType),DP (0,0)),((G AnnInstance),DP (0,1))])
+    (InstD 
+     (TyFamInstD 
+      (TyFamInstDecl 
+       ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:78:15-36
+         }
+        Just (Ann (DP (0,1)) (ColDelta 15) DP (0,1) [] [((G AnnEqual),DP (0,1))])
+        (TyFamEqn 
+         ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:78:15-16
+           }
+          Just (Ann (DP (0,0)) (ColDelta 15) DP (0,0) [] [((G AnnVal),DP (0,0))])
+          (Unqual {OccName: Or})) 
+         (HsWB 
+          [
+           ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:78:18-22
+             }
+            Just (Ann (DP (0,1)) (ColDelta 18) DP (0,1) [] [((G AnnVal),DP (0,0))])
+            (HsTyVar 
+             (Unqual {OccName: False}))),
+           ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:78:24-28
+             }
+            Just (Ann (DP (0,1)) (ColDelta 24) DP (0,1) [] [((G AnnVal),DP (0,0))])
+            (HsTyVar 
+             (Unqual {OccName: False})))] 
+          (PlaceHolder) 
+          (PlaceHolder) 
+          (PlaceHolder)) 
+         ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:78:32-36
+           }
+          Just (Ann (DP (0,1)) (ColDelta 32) DP (0,1) [] [((G AnnVal),DP (0,0))])
+          (HsTyVar 
+           (Unqual {OccName: False}))))) 
+       (PlaceHolder))))),
+   ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:80:1-17
+     }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (2,1) [DComment (DP (1,1),DP (1,1)) "" Nothing,DComment (DP (0,0),DP (0,4)) "type" Nothing,DComment (DP (0,1),DP (0,7)) "family" Nothing,DComment (DP (0,1),DP (0,4)) "Not" Nothing,DComment (DP (0,1),DP (0,2)) "b" Nothing] [((G AnnType),DP (0,0)),((G AnnFamily),DP (0,1))])
+    (TyClD 
+     (FamDecl 
+      (FamilyDecl 
+       (OpenTypeFamily) 
+       ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:80:13-15
+         }
+        Just (Ann (DP (0,-1)) (ColDelta 13) DP (0,1) [DComment (DP (0,-6),DP (0,2)) "instance" Nothing] [((G AnnVal),DP (0,-1))])
+        (Unqual {OccName: Not})) 
+       (HsQTvs 
+        [] 
+        [
+         ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:80:17
+           }
+          Just (Ann (DP (0,-1)) (ColDelta 17) DP (0,1) [DComment (DP (0,-1),DP (0,2)) "Not" Nothing] [((G AnnVal),DP (0,-1))])
+          (UserTyVar 
+           (Unqual {OccName: b})))]) 
+       (Nothing))))),
+   ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:81:1-31
+     }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [DComment (DP (0,1),DP (0,5)) "True" Nothing,DComment (DP (0,2),DP (0,3)) "=" Nothing,DComment (DP (0,1),DP (0,6)) "False" Nothing] [((G AnnType),DP (0,0)),((G AnnInstance),DP (0,1))])
+    (InstD 
+     (TyFamInstD 
+      (TyFamInstDecl 
+       ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:81:15-31
+         }
+        Just (Ann (DP (0,1)) (ColDelta 15) DP (0,1) [] [((AnnComment DComment (DP (0,-4),DP (0,1)) "False" Nothing),DP (0,-4)),((G AnnEqual),DP (0,2))])
+        (TyFamEqn 
+         ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:81:15-17
+           }
+          Just (Ann (DP (0,0)) (ColDelta 15) DP (0,0) [] [((G AnnVal),DP (0,0))])
+          (Unqual {OccName: Not})) 
+         (HsWB 
+          [
+           ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:81:19-22
+             }
+            Just (Ann (DP (0,1)) (ColDelta 19) DP (0,1) [] [((G AnnVal),DP (0,0))])
+            (HsTyVar 
+             (Unqual {OccName: True})))] 
+          (PlaceHolder) 
+          (PlaceHolder) 
+          (PlaceHolder)) 
+         ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:81:27-31
+           }
+          Just (Ann (DP (0,1)) (ColDelta 27) DP (0,1) [] [((G AnnVal),DP (0,0))])
+          (HsTyVar 
+           (Unqual {OccName: False}))))) 
+       (PlaceHolder))))),
+   ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:82:1-30
+     }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [DComment (DP (0,-5),DP (0,-1)) "True" Nothing] [((G AnnType),DP (0,0)),((G AnnInstance),DP (0,1))])
+    (InstD 
+     (TyFamInstD 
+      (TyFamInstDecl 
+       ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:82:15-30
+         }
+        Just (Ann (DP (0,1)) (ColDelta 15) DP (0,1) [] [((G AnnEqual),DP (0,1))])
+        (TyFamEqn 
+         ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:82:15-17
+           }
+          Just (Ann (DP (0,0)) (ColDelta 15) DP (0,0) [] [((G AnnVal),DP (0,0))])
+          (Unqual {OccName: Not})) 
+         (HsWB 
+          [
+           ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:82:19-23
+             }
+            Just (Ann (DP (0,1)) (ColDelta 19) DP (0,1) [] [((G AnnVal),DP (0,0))])
+            (HsTyVar 
+             (Unqual {OccName: False})))] 
+          (PlaceHolder) 
+          (PlaceHolder) 
+          (PlaceHolder)) 
+         ({ ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:82:27-30
+           }
+          Just (Ann (DP (0,1)) (ColDelta 27) DP (0,1) [] [((G AnnVal),DP (0,0))])
+          (HsTyVar 
+           (Unqual {OccName: True}))))) 
+       (PlaceHolder)))))] 
+  (Nothing) 
+  (Nothing)))
+==============
+[(AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:1:1 CN "HsModule" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((AnnComment DComment (DP (0,0),DP (0,20)) "{-# LANGUAGE CPP #-}" Nothing),DP (0,0)),((AnnComment DComment (DP (1,1),DP (5,6)) "{-# LANGUAGE EmptyDataDecls, MultiParamTypeClasses, FunctionalDependencies,\n             Rank2Types, DeriveDataTypeable, FlexibleInstances,\n             UndecidableInstances, FlexibleContexts,ScopedTypeVariables,\n             TypeFamilies\n  #-}" Nothing),DP (1,1)),((AnnComment DComment (DP (1,1),DP (1,78)) "-----------------------------------------------------------------------------" Nothing),DP (1,1)),((AnnComment DComment (DP (1,1),DP (1,5)) "-- |" Nothing),DP (1,1)),((AnnComment DComment (DP (0,-4),DP (0,73)) "-----------------------------------------------------------------------------" Nothing),DP (0,-4)),((AnnComment DComment (DP (1,1),DP (1,5)) "-- |" Nothing),DP (1,1)),((AnnComment DComment (DP (0,-4),DP (0,33)) "-- Module      :  Data.TypeLevel.Bool" Nothing),DP (0,-4)),((AnnComment DComment (DP (1,1),DP (1,38)) "-- Module      :  Data.TypeLevel.Bool" Nothing),DP (1,1)),((AnnComment DComment (DP (0,-37),DP (0,42)) "-- Copyright   : (c) 2008 Benedikt Huber (port to Associative types (ghc 6.9+))" Nothing),DP (0,-37)),((AnnComment DComment (DP (1,1),DP (1,74)) "--               (c) 2008 Alfonso Acosta, Oleg Kiselyov, Wolfgang Jeltsch" Nothing),DP (1,1)),((AnnComment DComment (DP (0,-73),DP (0,6)) "-- Copyright   : (c) 2008 Benedikt Huber (port to Associative types (ghc 6.9+))" Nothing),DP (0,-73)),((AnnComment DComment (DP (1,1),DP (1,42)) "--                    and KTH's SAM group" Nothing),DP (1,1)),((AnnComment DComment (DP (0,-41),DP (0,32)) "--               (c) 2008 Alfonso Acosta, Oleg Kiselyov, Wolfgang Jeltsch" Nothing),DP (0,-41)),((AnnComment DComment (DP (1,1),DP (1,42)) "--                    and KTH's SAM group" Nothing),DP (1,1)),((AnnComment DComment (DP (0,-41),DP (0,9)) "-- License     :  BSD-style (see the file LICENSE)" Nothing),DP (0,-41)),((AnnComment DComment (DP (1,1),DP (1,3)) "--" Nothing),DP (1,1)),((AnnComment DComment (DP (0,-2),DP (0,48)) "-- License     :  BSD-style (see the file LICENSE)" Nothing),DP (0,-2)),((AnnComment DComment (DP (1,1),DP (1,3)) "--" Nothing),DP (1,1)),((AnnComment DComment (DP (0,-2),DP (0,40)) "-- Maintainer  :  alfonso.acosta@gmail.com" Nothing),DP (0,-2)),((AnnComment DComment (DP (1,1),DP (1,43)) "-- Maintainer  :  alfonso.acosta@gmail.com" Nothing),DP (1,1)),((AnnComment DComment (DP (0,-42),DP (0,20)) "-- Stability   :  experimental (MPTC, non-standarad instances)" Nothing),DP (0,-42)),((AnnComment DComment (DP (1,1),DP (1,31)) "-- Portability :  non-portable" Nothing),DP (1,1)),((AnnComment DComment (DP (0,-30),DP (0,32)) "-- Stability   :  experimental (MPTC, non-standarad instances)" Nothing),DP (0,-30)),((AnnComment DComment (DP (1,1),DP (1,3)) "--" Nothing),DP (1,1)),((AnnComment DComment (DP (0,-2),DP (0,28)) "-- Portability :  non-portable" Nothing),DP (0,-2)),((AnnComment DComment (DP (1,1),DP (1,3)) "--" Nothing),DP (1,1)),((AnnComment DComment (DP (0,-2),DP (0,21)) "-- Type-level Booleans." Nothing),DP (0,-2)),((AnnComment DComment (DP (1,1),DP (1,3)) "--" Nothing),DP (1,1)),((AnnComment DComment (DP (0,-2),DP (0,21)) "-- Type-level Booleans." Nothing),DP (0,-2)),((AnnComment DComment (DP (1,1),DP (1,3)) "--" Nothing),DP (1,1)),((AnnComment DComment (DP (0,-2),DP (0,74)) "----------------------------------------------------------------------------" Nothing),DP (0,-2)),((AnnComment DComment (DP (1,1),DP (1,7)) "module" Nothing),DP (1,1)),((AnnComment DComment (DP (0,-6),DP (0,70)) "----------------------------------------------------------------------------" Nothing),DP (0,-6)),((AnnComment DComment (DP (0,-69),DP (0,-50)) "Data.TypeLevel.Bool" Nothing),DP (0,-69)),((AnnComment DComment (DP (0,1),DP (0,2)) "(" Nothing),DP (0,1)),((G AnnModule),DP (22,1)),((AnnComment DComment (DP (0,-2),DP (0,28)) "-- * Type-level boolean values" Nothing),DP (0,-2)),((G AnnVal),DP (0,1)),((G AnnWhere),DP (0,1)),((AnnComment DComment (DP (1,1),DP (1,5)) "#if 0" Nothing),DP (1,1)),((AnnComment DComment (DP (1,1),DP (1,1)) "" Nothing),DP (1,1)),((AnnComment DComment (DP (0,0),DP (0,4)) "type" Nothing),DP (0,0)),((AnnComment DComment (DP (0,1),DP (0,7)) "family" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "Id" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,2)) "b" Nothing),DP (0,1)),((AnnComment DComment (DP (1,1),DP (1,1)) "" Nothing),DP (1,1)),((AnnComment DComment (DP (0,0),DP (0,4)) "type" Nothing),DP (0,0)),((AnnComment DComment (DP (0,1),DP (0,7)) "family" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,6)) "Const" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,2)) "a" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,2)) "b" Nothing),DP (0,1)),((AnnComment DComment (DP (1,1),DP (1,1)) "" Nothing),DP (1,1)),((AnnComment DComment (DP (0,0),DP (0,4)) "type" Nothing),DP (0,0)),((AnnComment DComment (DP (0,1),DP (0,9)) "instance" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "Id" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,2)) "a" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,2)) "=" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,2)) "a" Nothing),DP (0,1)),((AnnComment DComment (DP (1,1),DP (1,1)) "" Nothing),DP (1,1)),((AnnComment DComment (DP (0,0),DP (0,4)) "type" Nothing),DP (0,0)),((AnnComment DComment (DP (0,1),DP (0,9)) "instance" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,6)) "Const" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,2)) "b" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,2)) "a" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,2)) "=" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,2)) "b" Nothing),DP (0,1)),((AnnComment DComment (DP (1,1),DP (1,32)) "-- | Booleans, internal version" Nothing),DP (1,1)),((AnnComment DComment (DP (1,1),DP (1,1)) "" Nothing),DP (1,1)),((AnnComment DComment (DP (0,0),DP (0,5)) "class" Nothing),DP (0,0)),((AnnComment DComment (DP (0,1),DP (0,6)) "BoolI" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,2)) "b" Nothing),DP (0,1)),((AnnComment DComment (DP (0,2),DP (0,7)) "where" Nothing),DP (0,2)),((AnnComment DComment (DP (1,3),DP (1,3)) "" Nothing),DP (1,3)),((AnnComment DComment (DP (0,0),DP (0,6)) "toBool" Nothing),DP (0,0)),((AnnComment DComment (DP (0,1),DP (0,3)) "::" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,2)) "b" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "->" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,7)) "P.Bool" Nothing),DP (0,1)),((AnnComment DComment (DP (1,3),DP (1,3)) "" Nothing),DP (1,3)),((AnnComment DComment (DP (0,0),DP (0,4)) "type" Nothing),DP (0,0)),((AnnComment DComment (DP (0,1),DP (0,4)) "Not" Nothing),DP (0,1)),((AnnComment DComment (DP (0,2),DP (0,3)) "b" Nothing),DP (0,2)),((AnnComment DComment (DP (1,3),DP (1,3)) "" Nothing),DP (1,3)),((AnnComment DComment (DP (0,0),DP (0,4)) "type" Nothing),DP (0,0)),((AnnComment DComment (DP (0,1),DP (0,4)) "And" Nothing),DP (0,1)),((AnnComment DComment (DP (0,2),DP (0,3)) "b" Nothing),DP (0,2)),((AnnComment DComment (DP (0,1),DP (0,3)) "::" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,2)) "*" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "->" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,2)) "*" Nothing),DP (0,1)),((AnnComment DComment (DP (1,3),DP (1,3)) "" Nothing),DP (1,3)),((AnnComment DComment (DP (0,0),DP (0,4)) "type" Nothing),DP (0,0)),((AnnComment DComment (DP (0,1),DP (0,3)) "Or" Nothing),DP (0,1)),((AnnComment DComment (DP (0,3),DP (0,4)) "b" Nothing),DP (0,3)),((AnnComment DComment (DP (0,1),DP (0,3)) "::" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,2)) "*" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "->" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,2)) "*" Nothing),DP (0,1)),((AnnComment DComment (DP (1,3),DP (1,3)) "" Nothing),DP (1,3)),((AnnComment DComment (DP (0,0),DP (0,4)) "type" Nothing),DP (0,0)),((AnnComment DComment (DP (0,1),DP (0,4)) "Xor" Nothing),DP (0,1)),((AnnComment DComment (DP (0,2),DP (0,3)) "b" Nothing),DP (0,2)),((AnnComment DComment (DP (0,1),DP (0,3)) "::" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,2)) "*" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "->" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,2)) "*" Nothing),DP (0,1)),((AnnComment DComment (DP (1,3),DP (1,3)) "" Nothing),DP (1,3)),((AnnComment DComment (DP (0,0),DP (0,4)) "type" Nothing),DP (0,0)),((AnnComment DComment (DP (0,1),DP (0,5)) "Impl" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,2)) "b" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "::" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,2)) "*" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "->" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,2)) "*" Nothing),DP (0,1)),((AnnComment DComment (DP (1,3),DP (1,3)) "" Nothing),DP (1,3)),((AnnComment DComment (DP (0,0),DP (0,4)) "type" Nothing),DP (0,0)),((AnnComment DComment (DP (0,1),DP (0,7)) "BoolEq" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,2)) "b" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "::" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,2)) "*" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "->" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,2)) "*" Nothing),DP (0,1)),((AnnComment DComment (DP (2,1),DP (2,75)) "-- To prevent the user from adding new instances to BoolI we do NOT export" Nothing),DP (2,1)),((AnnComment DComment (DP (1,1),DP (1,63)) "-- BoolI itself. Rather, we export the following proxy (Bool)." Nothing),DP (1,1)),((AnnComment DComment (DP (1,1),DP (1,59)) "-- The proxy entails BoolI and so can be used to add BoolI" Nothing),DP (1,1)),((AnnComment DComment (DP (1,1),DP (1,69)) "-- constraints in the signatures. However, all the constraints below" Nothing),DP (1,1)),((AnnComment DComment (DP (1,1),DP (1,76)) "-- are expressed in terms of BoolI rather than the proxy. Thus, even if the" Nothing),DP (1,1)),((AnnComment DComment (DP (1,1),DP (1,62)) "-- user adds new instances to the proxy, it would not matter." Nothing),DP (1,1)),((AnnComment DComment (DP (1,1),DP (1,68)) "-- Besides, because the following proxy instances are most general," Nothing),DP (1,1)),((AnnComment DComment (DP (1,1),DP (1,71)) "-- one may not add further instances without the overlapping instances" Nothing),DP (1,1)),((AnnComment DComment (DP (1,1),DP (1,14)) "-- extension." Nothing),DP (1,1)),((AnnComment DComment (DP (2,1),DP (2,25)) "-- | Type-level Booleans" Nothing),DP (2,1)),((AnnComment DComment (DP (1,1),DP (1,1)) "" Nothing),DP (1,1)),((AnnComment DComment (DP (0,0),DP (0,0)) "" Nothing),DP (0,0)),((AnnComment DComment (DP (0,0),DP (0,5)) "class" Nothing),DP (0,0)),((AnnComment DComment (DP (0,1),DP (0,6)) "BoolI" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,2)) "b" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "=>" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,5)) "Bool" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,2)) "b" Nothing),DP (0,1)),((AnnComment DComment (DP (2,1),DP (2,1)) "" Nothing),DP (2,1)),((AnnComment DComment (DP (0,0),DP (0,8)) "instance" Nothing),DP (0,0)),((AnnComment DComment (DP (0,1),DP (0,6)) "BoolI" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,2)) "b" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "=>" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,5)) "Bool" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,2)) "b" Nothing),DP (0,1)),((AnnComment DComment (DP (2,1),DP (2,1)) "" Nothing),DP (2,1)),((AnnComment DComment (DP (0,0),DP (0,8)) "instance" Nothing),DP (0,0)),((AnnComment DComment (DP (0,1),DP (0,6)) "BoolI" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,5)) "True" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,6)) "where" Nothing),DP (0,1)),((AnnComment DComment (DP (1,2),DP (1,2)) "" Nothing),DP (1,2)),((AnnComment DComment (DP (0,0),DP (0,6)) "toBool" Nothing),DP (0,0)),((AnnComment DComment (DP (0,1),DP (0,2)) "_" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,2)) "=" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,5)) "True" Nothing),DP (0,1)),((AnnComment DComment (DP (1,2),DP (1,2)) "" Nothing),DP (1,2)),((AnnComment DComment (DP (0,0),DP (0,4)) "type" Nothing),DP (0,0)),((AnnComment DComment (DP (0,1),DP (0,4)) "Not" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,5)) "True" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,2)) "=" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,6)) "False" Nothing),DP (0,1)),((AnnComment DComment (DP (1,2),DP (1,2)) "" Nothing),DP (1,2)),((AnnComment DComment (DP (0,0),DP (0,4)) "type" Nothing),DP (0,0)),((AnnComment DComment (DP (0,1),DP (0,4)) "And" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,5)) "True" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,2)) "=" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "Id" Nothing),DP (0,1)),((AnnComment DComment (DP (1,2),DP (1,2)) "" Nothing),DP (1,2)),((AnnComment DComment (DP (0,0),DP (0,4)) "type" Nothing),DP (0,0)),((AnnComment DComment (DP (0,1),DP (0,3)) "Or" Nothing),DP (0,1)),((AnnComment DComment (DP (0,2),DP (0,6)) "True" Nothing),DP (0,2)),((AnnComment DComment (DP (0,1),DP (0,2)) "=" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,6)) "Const" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,5)) "True" Nothing),DP (0,1)),((AnnComment DComment (DP (1,2),DP (1,2)) "" Nothing),DP (1,2)),((AnnComment DComment (DP (0,0),DP (0,4)) "type" Nothing),DP (0,0)),((AnnComment DComment (DP (0,1),DP (0,4)) "Xor" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,5)) "True" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,2)) "=" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,4)) "Not" Nothing),DP (0,1)),((AnnComment DComment (DP (1,2),DP (1,2)) "" Nothing),DP (1,2)),((AnnComment DComment (DP (0,0),DP (0,4)) "type" Nothing),DP (0,0)),((AnnComment DComment (DP (0,1),DP (0,5)) "Impl" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,5)) "True" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,2)) "=" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "Id" Nothing),DP (0,1)),((AnnComment DComment (DP (1,2),DP (1,2)) "" Nothing),DP (1,2)),((AnnComment DComment (DP (0,0),DP (0,4)) "type" Nothing),DP (0,0)),((AnnComment DComment (DP (0,1),DP (0,7)) "BoolEq" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,5)) "True" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,2)) "=" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "Id" Nothing),DP (0,1)),((AnnComment DComment (DP (2,1),DP (2,1)) "" Nothing),DP (2,1)),((AnnComment DComment (DP (0,0),DP (0,0)) "" Nothing),DP (0,0)),((AnnComment DComment (DP (0,0),DP (0,8)) "instance" Nothing),DP (0,0)),((AnnComment DComment (DP (0,1),DP (0,6)) "BoolI" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,6)) "False" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,6)) "where" Nothing),DP (0,1)),((AnnComment DComment (DP (1,2),DP (1,2)) "" Nothing),DP (1,2)),((AnnComment DComment (DP (0,0),DP (0,6)) "toBool" Nothing),DP (0,0)),((AnnComment DComment (DP (0,1),DP (0,2)) "_" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,2)) "=" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,6)) "False" Nothing),DP (0,1)),((AnnComment DComment (DP (1,2),DP (1,2)) "" Nothing),DP (1,2)),((AnnComment DComment (DP (0,0),DP (0,4)) "type" Nothing),DP (0,0)),((AnnComment DComment (DP (0,1),DP (0,4)) "Not" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,6)) "False" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,2)) "=" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,5)) "True" Nothing),DP (0,1)),((AnnComment DComment (DP (1,2),DP (1,2)) "" Nothing),DP (1,2)),((AnnComment DComment (DP (0,0),DP (0,4)) "type" Nothing),DP (0,0)),((AnnComment DComment (DP (0,1),DP (0,4)) "And" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,6)) "False" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,2)) "=" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,6)) "Const" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,6)) "False" Nothing),DP (0,1)),((AnnComment DComment (DP (1,2),DP (1,2)) "" Nothing),DP (1,2)),((AnnComment DComment (DP (0,0),DP (0,4)) "type" Nothing),DP (0,0)),((AnnComment DComment (DP (0,1),DP (0,3)) "Or" Nothing),DP (0,1)),((AnnComment DComment (DP (0,2),DP (0,7)) "False" Nothing),DP (0,2)),((AnnComment DComment (DP (0,1),DP (0,2)) "=" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "Id" Nothing),DP (0,1)),((AnnComment DComment (DP (1,2),DP (1,2)) "" Nothing),DP (1,2)),((AnnComment DComment (DP (0,0),DP (0,4)) "type" Nothing),DP (0,0)),((AnnComment DComment (DP (0,1),DP (0,4)) "Xor" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,6)) "False" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,2)) "=" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "Id" Nothing),DP (0,1)),((AnnComment DComment (DP (1,2),DP (1,2)) "" Nothing),DP (1,2)),((AnnComment DComment (DP (0,0),DP (0,4)) "type" Nothing),DP (0,0)),((AnnComment DComment (DP (0,1),DP (0,5)) "Impl" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,6)) "False" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,2)) "=" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,6)) "Const" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,5)) "True" Nothing),DP (0,1)),((AnnComment DComment (DP (1,2),DP (1,2)) "" Nothing),DP (1,2)),((AnnComment DComment (DP (0,0),DP (0,4)) "type" Nothing),DP (0,0)),((AnnComment DComment (DP (0,1),DP (0,7)) "BoolEq" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,6)) "False" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,2)) "=" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,4)) "Not" Nothing),DP (0,1)),((AnnComment DComment (DP (1,1),DP (1,65)) "-- | Reification function. In CPS style (best possible solution)" Nothing),DP (1,1)),((AnnComment DComment (DP (1,1),DP (1,1)) "" Nothing),DP (1,1)),((AnnComment DComment (DP (0,0),DP (0,0)) "" Nothing),DP (0,0)),((AnnComment DComment (DP (0,0),DP (0,9)) "reifyBool" Nothing),DP (0,0)),((AnnComment DComment (DP (0,1),DP (0,3)) "::" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,7)) "P.Bool" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "->" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,2)) "(" Nothing),DP (0,1)),((AnnComment DComment (DP (0,0),DP (0,6)) "forall" Nothing),DP (0,0)),((AnnComment DComment (DP (0,1),DP (0,2)) "b" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,2)) "." Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,5)) "Bool" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,2)) "b" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "=>" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,2)) "b" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "->" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,2)) "r" Nothing),DP (0,1)),((AnnComment DComment (DP (0,0),DP (0,1)) ")" Nothing),DP (0,0)),((AnnComment DComment (DP (0,1),DP (0,3)) "->" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,2)) "r" Nothing),DP (0,1)),((AnnComment DComment (DP (1,1),DP (1,1)) "" Nothing),DP (1,1)),((AnnComment DComment (DP (0,0),DP (0,9)) "reifyBool" Nothing),DP (0,0)),((AnnComment DComment (DP (0,1),DP (0,5)) "True" Nothing),DP (0,1)),((AnnComment DComment (DP (0,2),DP (0,3)) "f" Nothing),DP (0,2)),((AnnComment DComment (DP (0,1),DP (0,2)) "=" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,2)) "f" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,5)) "true" Nothing),DP (0,1)),((AnnComment DComment (DP (1,1),DP (1,1)) "" Nothing),DP (1,1)),((AnnComment DComment (DP (0,0),DP (0,9)) "reifyBool" Nothing),DP (0,0)),((AnnComment DComment (DP (0,1),DP (0,6)) "False" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,2)) "f" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,2)) "=" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,2)) "f" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,6)) "false" Nothing),DP (0,1)),((AnnComment DComment (DP (2,1),DP (2,14)) "-------------" Nothing),DP (2,1)),((AnnComment DComment (DP (1,1),DP (1,14)) "-- Operations" Nothing),DP (1,1)),((AnnComment DComment (DP (1,1),DP (1,14)) "-------------" Nothing),DP (1,1)),((AnnComment DComment (DP (3,1),DP (3,71)) "-- | value-level reflection function for the 'Not' type-level relation" Nothing),DP (3,1)),((AnnComment DComment (DP (1,1),DP (1,1)) "" Nothing),DP (1,1)),((AnnComment DComment (DP (0,0),DP (0,3)) "not" Nothing),DP (0,0)),((AnnComment DComment (DP (0,1),DP (0,3)) "::" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "b1" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "->" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,4)) "Not" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "b1" Nothing),DP (0,1)),((AnnComment DComment (DP (1,1),DP (1,1)) "" Nothing),DP (1,1)),((AnnComment DComment (DP (0,0),DP (0,3)) "not" Nothing),DP (0,0)),((AnnComment DComment (DP (0,1),DP (0,2)) "=" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,10)) "undefined" Nothing),DP (0,1)),((AnnComment DComment (DP (2,1),DP (2,64)) "-- | 'And' type-level relation. @And b1 b2 b3@ establishes that" Nothing),DP (2,1)),((AnnComment DComment (DP (1,1),DP (1,21)) "--   @b1 && b2 = b3@" Nothing),DP (1,1)),((AnnComment DComment (DP (3,1),DP (3,71)) "-- | value-level reflection function for the 'And' type-level relation" Nothing),DP (3,1)),((AnnComment DComment (DP (1,1),DP (1,1)) "" Nothing),DP (1,1)),((AnnComment DComment (DP (0,0),DP (0,1)) "(" Nothing),DP (0,0)),((AnnComment DComment (DP (0,0),DP (0,2)) "&&" Nothing),DP (0,0)),((AnnComment DComment (DP (0,0),DP (0,1)) ")" Nothing),DP (0,0)),((AnnComment DComment (DP (0,1),DP (0,3)) "::" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "b1" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "->" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "b2" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "->" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,4)) "And" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "b1" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "b2" Nothing),DP (0,1)),((AnnComment DComment (DP (1,1),DP (1,1)) "" Nothing),DP (1,1)),((AnnComment DComment (DP (0,0),DP (0,1)) "(" Nothing),DP (0,0)),((AnnComment DComment (DP (0,0),DP (0,2)) "&&" Nothing),DP (0,0)),((AnnComment DComment (DP (0,0),DP (0,1)) ")" Nothing),DP (0,0)),((AnnComment DComment (DP (0,1),DP (0,2)) "=" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,10)) "undefined" Nothing),DP (0,1)),((AnnComment DComment (DP (1,1),DP (1,1)) "" Nothing),DP (1,1)),((AnnComment DComment (DP (0,0),DP (0,6)) "infixr" Nothing),DP (0,0)),((AnnComment DComment (DP (0,1),DP (0,2)) "3" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "&&" Nothing),DP (0,1)),((AnnComment DComment (DP (2,1),DP (2,60)) "-- | Or type-level relation. @Or b1 b2 b3@ establishes that" Nothing),DP (2,1)),((AnnComment DComment (DP (1,1),DP (1,21)) "--   @b1 || b2 = b3@" Nothing),DP (1,1)),((AnnComment DComment (DP (3,1),DP (3,70)) "-- | value-level reflection function for the 'Or' type-level relation" Nothing),DP (3,1)),((AnnComment DComment (DP (1,1),DP (1,1)) "" Nothing),DP (1,1)),((AnnComment DComment (DP (0,0),DP (0,1)) "(" Nothing),DP (0,0)),((AnnComment DComment (DP (0,0),DP (0,2)) "||" Nothing),DP (0,0)),((AnnComment DComment (DP (0,0),DP (0,1)) ")" Nothing),DP (0,0)),((AnnComment DComment (DP (0,1),DP (0,3)) "::" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "b1" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "->" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "b2" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "->" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "Or" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "b1" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "b2" Nothing),DP (0,1)),((AnnComment DComment (DP (1,1),DP (1,1)) "" Nothing),DP (1,1)),((AnnComment DComment (DP (0,0),DP (0,1)) "(" Nothing),DP (0,0)),((AnnComment DComment (DP (0,0),DP (0,2)) "||" Nothing),DP (0,0)),((AnnComment DComment (DP (0,0),DP (0,1)) ")" Nothing),DP (0,0)),((AnnComment DComment (DP (0,1),DP (0,2)) "=" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,10)) "undefined" Nothing),DP (0,1)),((AnnComment DComment (DP (1,1),DP (1,1)) "" Nothing),DP (1,1)),((AnnComment DComment (DP (0,0),DP (0,6)) "infixr" Nothing),DP (0,0)),((AnnComment DComment (DP (0,1),DP (0,2)) "2" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "||" Nothing),DP (0,1)),((AnnComment DComment (DP (2,1),DP (2,71)) "-- | Exclusive or type-level relation. @Xor b1 b2 b3@ establishes that" Nothing),DP (2,1)),((AnnComment DComment (DP (1,1),DP (1,22)) "--   @xor b1 b2 = b3@" Nothing),DP (1,1)),((AnnComment DComment (DP (2,1),DP (2,71)) "-- | value-level reflection function for the 'Xor' type-level relation" Nothing),DP (2,1)),((AnnComment DComment (DP (1,1),DP (1,1)) "" Nothing),DP (1,1)),((AnnComment DComment (DP (0,0),DP (0,3)) "xor" Nothing),DP (0,0)),((AnnComment DComment (DP (0,1),DP (0,3)) "::" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "b1" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "->" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "b2" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "->" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,4)) "Xor" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "b1" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "b2" Nothing),DP (0,1)),((AnnComment DComment (DP (1,1),DP (1,1)) "" Nothing),DP (1,1)),((AnnComment DComment (DP (0,0),DP (0,3)) "xor" Nothing),DP (0,0)),((AnnComment DComment (DP (0,1),DP (0,2)) "=" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,10)) "undefined" Nothing),DP (0,1)),((AnnComment DComment (DP (3,1),DP (3,70)) "-- | Implication type-level relation. @Imp b1 b2 b3@ establishes that" Nothing),DP (3,1)),((AnnComment DComment (DP (1,1),DP (1,18)) "-- @b1 =>b2 = b3@" Nothing),DP (1,1)),((AnnComment DComment (DP (2,1),DP (2,69)) "-- | value-level reflection function for the Imp type-level relation" Nothing),DP (2,1)),((AnnComment DComment (DP (1,1),DP (1,1)) "" Nothing),DP (1,1)),((AnnComment DComment (DP (0,0),DP (0,3)) "imp" Nothing),DP (0,0)),((AnnComment DComment (DP (0,1),DP (0,3)) "::" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "b1" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "->" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "b2" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "->" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,5)) "Impl" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "b1" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "b2" Nothing),DP (0,1)),((AnnComment DComment (DP (1,1),DP (1,1)) "" Nothing),DP (1,1)),((AnnComment DComment (DP (0,0),DP (0,3)) "imp" Nothing),DP (0,0)),((AnnComment DComment (DP (0,1),DP (0,2)) "=" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,10)) "undefined" Nothing),DP (0,1)),((AnnComment DComment (DP (3,1),DP (3,70)) "-- Although equality can be defined as the composition of Xor and Not" Nothing),DP (3,1)),((AnnComment DComment (DP (1,1),DP (1,29)) "-- we define it specifically" Nothing),DP (1,1)),((AnnComment DComment (DP (2,1),DP (2,42)) "-- | Boolean equality type-level relation" Nothing),DP (2,1)),((AnnComment DComment (DP (2,1),DP (2,71)) "-- FIXME: eq should be named (==) but it clashes with the (==) defined" Nothing),DP (2,1)),((AnnComment DComment (DP (1,1),DP (1,71)) "--        in Data.TypeLevel.Num . The chosen (and ugly) workaround was" Nothing),DP (1,1)),((AnnComment DComment (DP (1,1),DP (1,30)) "--        to rename it to eq." Nothing),DP (1,1)),((AnnComment DComment (DP (2,1),DP (2,70)) "-- | value-level reflection function for the 'Eq' type-level relation" Nothing),DP (2,1)),((AnnComment DComment (DP (1,1),DP (1,1)) "" Nothing),DP (1,1)),((AnnComment DComment (DP (0,0),DP (0,6)) "boolEq" Nothing),DP (0,0)),((AnnComment DComment (DP (0,1),DP (0,3)) "::" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "b1" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "->" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "b2" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "->" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,7)) "BoolEq" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "b1" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,3)) "b2" Nothing),DP (0,1)),((AnnComment DComment (DP (1,1),DP (1,1)) "" Nothing),DP (1,1)),((AnnComment DComment (DP (0,0),DP (0,6)) "boolEq" Nothing),DP (0,0)),((AnnComment DComment (DP (0,1),DP (0,2)) "=" Nothing),DP (0,1)),((AnnComment DComment (DP (0,1),DP (0,10)) "undefined" Nothing),DP (0,1)),((AnnComment DComment (DP (1,1),DP (1,6)) "#endif" Nothing),DP (1,1)),((AnnComment DComment (DP (2,1),DP (2,1)) "" Nothing),DP (2,1)),((G AnnEofPos),DP (111,0))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:(23,28)-(38,1) CN "(:)" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 28) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((AnnComment DComment (DP (0,-2),DP (0,10)) "-- Not, not," Nothing),DP (0,-2)),((AnnComment DComment (DP (1,5),DP (1,17)) "-- Not, not," Nothing),DP (1,5)),((AnnComment DComment (DP (0,-12),DP (0,1)) "-- And, (&&)," Nothing),DP (0,-12)),((AnnComment DComment (DP (1,5),DP (1,17)) "-- Or, (||)," Nothing),DP (1,5)),((AnnComment DComment (DP (0,-12),DP (0,1)) "-- And, (&&)," Nothing),DP (0,-12)),((AnnComment DComment (DP (1,5),DP (1,17)) "-- Or, (||)," Nothing),DP (1,5)),((AnnComment DComment (DP (1,5),DP (1,17)) "-- Xor, xor," Nothing),DP (1,5)),((AnnComment DComment (DP (0,-12),DP (0,1)) "-- Impl, imp," Nothing),DP (0,-12)),((AnnComment DComment (DP (1,1),DP (1,2)) ")" Nothing),DP (1,1)),((AnnComment DComment (DP (0,1),DP (0,6)) "where" Nothing),DP (0,1)),((AnnComment DComment (DP (0,-3),DP (0,10)) "-- Impl, imp," Nothing),DP (0,-3)),((G AnnCloseP),DP (6,1))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:26:5-9 CN "IEThingAbs" NotNeeded,
+  (Ann (DP (1,5)) (ColDelta 5) DP (3,5) [DComment (DP (1,5),DP (1,21)) "-- Bool, toBool," Nothing,DComment (DP (0,-16),DP (0,14)) "-- * Type-level boolean values" Nothing,DComment (DP (1,5),DP (1,10)) "False" Nothing,DComment (DP (0,-5),DP (0,11)) "-- Bool, toBool," Nothing,DComment (DP (0,-11),DP (0,-10)) "," Nothing,DComment (DP (0,1),DP (0,6)) "false" Nothing,DComment (DP (0,0),DP (0,1)) "," Nothing] [])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:26:5-9 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 5) DP (0,0) [] [((G AnnVal),DP (0,0)),((AnnComment DComment (DP (0,-5),DP (0,-1)) "True" Nothing),DP (0,-5)),((AnnComment DComment (DP (0,0),DP (0,1)) "," Nothing),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:26:12-16 CN "IEVar" NotNeeded,
+  (Ann (DP (0,-3)) (ColDelta 12) DP (0,1) [DComment (DP (0,0),DP (0,4)) "true" Nothing] [])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:26:12-16 CN "Unqual" NotNeeded,
+  (Ann (DP (0,-3)) (ColDelta 12) DP (0,1) [] [((G AnnVal),DP (0,-3)),((AnnComment DComment (DP (0,-2),DP (0,-1)) "," Nothing),DP (0,-2)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:27:5-8 CN "IEThingAbs" NotNeeded,
+  (Ann (DP (1,5)) (ColDelta 5) DP (1,5) [] [])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:27:5-8 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 5) DP (0,0) [] [((G AnnVal),DP (0,0)),((AnnComment DComment (DP (0,-4),DP (0,9)) "-- reifyBool," Nothing),DP (0,-4)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:27:11-14 CN "IEVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 11) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:27:11-14 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 11) DP (0,0) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:30:5-7 CN "IEThingAbs" NotNeeded,
+  (Ann (DP (1,5)) (ColDelta 5) DP (3,5) [DComment (DP (1,5),DP (1,18)) "-- reifyBool," Nothing,DComment (DP (0,-13),DP (0,21)) "-- * Type-level boolean operations" Nothing,DComment (DP (1,5),DP (1,8)) "Not" Nothing,DComment (DP (0,-3),DP (0,31)) "-- * Type-level boolean operations" Nothing,DComment (DP (0,-31),DP (0,-30)) "," Nothing] [])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:30:5-7 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 5) DP (0,0) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:31:5-7 CN "IEThingAbs" NotNeeded,
+  (Ann (DP (1,5)) (ColDelta 5) DP (1,5) [] [])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:31:5-7 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 5) DP (0,0) [] [((G AnnVal),DP (0,0)),((AnnComment DComment (DP (0,-3),DP (0,-1)) "Or" Nothing),DP (0,-3)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:32:5-6 CN "IEThingAbs" NotNeeded,
+  (Ann (DP (1,5)) (ColDelta 5) DP (1,5) [] [])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:32:5-6 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 5) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:40:1-31 CN "ImportDecl" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (2,1) [DComment (DP (1,1),DP (1,1)) "" Nothing,DComment (DP (0,0),DP (0,6)) "import" Nothing,DComment (DP (0,1),DP (0,14)) "Data.Generics" Nothing,DComment (DP (0,1),DP (0,2)) "(" Nothing,DComment (DP (0,0),DP (0,8)) "Typeable" Nothing,DComment (DP (0,0),DP (0,1)) ")" Nothing] [((G AnnImport),DP (0,0)),((G AnnVal),DP (0,1))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:40:22-31 CN "(:)" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 22) DP (0,1) [DComment (DP (0,-13),DP (0,-6)) "Prelude" Nothing,DComment (DP (0,1),DP (0,7)) "hiding" Nothing] [((G AnnOpenP),DP (0,0)),((AnnComment DComment (DP (0,-8),DP (0,-7)) "(" Nothing),DP (0,-8)),((AnnComment DComment (DP (0,0),DP (0,4)) "Bool" Nothing),DP (0,0)),((AnnComment DComment (DP (0,0),DP (0,1)) "," Nothing),DP (0,0)),((AnnComment DComment (DP (0,1),DP (0,4)) "not" Nothing),DP (0,1)),((G AnnCloseP),DP (0,0))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:40:23-30 CN "IEThingAbs" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 23) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:40:23-30 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 23) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:41:1-49 CN "ImportDecl" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [DComment (DP (0,1),DP (0,2)) "," Nothing,DComment (DP (0,1),DP (0,2)) "(" Nothing,DComment (DP (0,0),DP (0,2)) "&&" Nothing,DComment (DP (0,0),DP (0,1)) ")" Nothing,DComment (DP (0,0),DP (0,1)) "," Nothing,DComment (DP (0,1),DP (0,2)) "(" Nothing,DComment (DP (0,0),DP (0,2)) "||" Nothing,DComment (DP (0,0),DP (0,1)) ")" Nothing,DComment (DP (0,0),DP (0,1)) "," Nothing,DComment (DP (0,1),DP (0,3)) "Eq" Nothing,DComment (DP (0,0),DP (0,1)) ")" Nothing] [((G AnnImport),DP (0,0)),((G AnnVal),DP (0,1))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:41:16-49 CN "(:)" NotNeeded,
+  (Ann (DP (0,-1)) (ColDelta 16) DP (0,1) [DComment (DP (0,-7),DP (0,2)) "qualified" Nothing] [((G AnnHiding),DP (0,-1)),((AnnComment DComment (DP (0,-4),DP (0,3)) "Prelude" Nothing),DP (0,-4)),((G AnnOpenP),DP (0,1)),((G AnnCloseP),DP (0,0))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:41:24-27 CN "IEThingAbs" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 24) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:41:24-27 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 24) DP (0,0) [] [((G AnnVal),DP (0,0)),((AnnComment DComment (DP (0,-2),DP (0,0)) "as" Nothing),DP (0,-2)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:41:30-32 CN "IEVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 30) DP (0,1) [DComment (DP (0,0),DP (0,1)) "P" Nothing] [])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:41:30-32 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 30) DP (0,1) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:41:35-38 CN "IEVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 35) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:41:35-38 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 35) DP (0,0) [] [((G AnnOpenP),DP (0,0)),((G AnnVal),DP (0,0)),((G AnnCloseP),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:41:41-44 CN "IEVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 41) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:41:41-44 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 41) DP (0,0) [] [((G AnnOpenP),DP (0,0)),((G AnnVal),DP (0,0)),((G AnnCloseP),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:41:47-48 CN "IEThingAbs" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 47) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:41:47-48 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 47) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:42:1-29 CN "ImportDecl" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [((G AnnImport),DP (0,0)),((G AnnQualified),DP (0,1)),((G AnnVal),DP (0,1)),((G AnnAs),DP (0,1)),((G AnnVal),DP (0,1))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:48:1-27 CN "TyClD" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (6,1) [DComment (DP (1,1),DP (1,37)) "------------------------------------" Nothing,DComment (DP (1,1),DP (1,37)) "------------------------------------" Nothing,DComment (DP (1,1),DP (1,37)) "-- Definition of type-level Booleans" Nothing,DComment (DP (1,1),DP (1,27)) "-- | True type-level value" Nothing,DComment (DP (0,-26),DP (0,10)) "------------------------------------" Nothing,DComment (DP (1,1),DP (1,1)) "" Nothing,DComment (DP (0,0),DP (0,4)) "data" Nothing,DComment (DP (0,-4),DP (0,22)) "-- | True type-level value" Nothing,DComment (DP (0,-21),DP (0,-17)) "True" Nothing,DComment (DP (0,1),DP (0,9)) "deriving" Nothing,DComment (DP (0,1),DP (0,9)) "Typeable" Nothing] [((G AnnData),DP (0,0))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:48:6-9 CN "Unqual" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 6) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:48:11-27 CN "(:)" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 11) DP (0,1) [] [((G AnnDeriving),DP (0,0))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:48:20-27 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 20) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:(50,1)-(51,16) CN "InstD" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (2,1) [DComment (DP (1,1),DP (1,1)) "" Nothing,DComment (DP (0,0),DP (0,8)) "instance" Nothing,DComment (DP (0,1),DP (0,5)) "Show" Nothing,DComment (DP (0,1),DP (0,5)) "True" Nothing,DComment (DP (0,1),DP (0,6)) "where" Nothing] [((G AnnInstance),DP (0,0)),((G AnnWhere),DP (0,1))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:50:10-13 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 10) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:50:10-18 CN "HsAppTy" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 10) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:50:10-18 CN "HsForAllTy" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 10) DP (0,1) [DComment (DP (0,-7),DP (0,-7)) "" Nothing,DComment (DP (0,0),DP (0,4)) "show" Nothing,DComment (DP (0,1),DP (0,2)) "_" Nothing,DComment (DP (0,1),DP (0,2)) "=" Nothing] [])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:50:15-18 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,-2)) (ColDelta 15) DP (0,1) [DComment (DP (0,-3),DP (0,3)) "\"True\"" Nothing] [((G AnnVal),DP (0,-2))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:51:2-5 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 2) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:51:2-16 CN "FunBind" NotNeeded,
+  (Ann (DP (1,2)) (ColDelta 2) DP (1,2) [] [])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:51:2-16 CN "Match" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 2) DP (0,0) [] [((G AnnEqual),DP (0,1))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:51:7 CN "WildPat" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 7) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:51:9-16 CN "GRHS" NotNeeded,
+  (Ann (DP (0,-1)) (ColDelta 9) DP (0,-1) [] [])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:51:11-16 CN "HsLit" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 11) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:54:1-4 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:54:1-12 CN "SigD" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (3,1) [DComment (DP (1,1),DP (1,42)) "-- | True value-level reflecting function" Nothing,DComment (DP (1,1),DP (1,1)) "" Nothing,DComment (DP (0,0),DP (0,0)) "" Nothing,DComment (DP (0,0),DP (0,4)) "true" Nothing,DComment (DP (0,-4),DP (0,37)) "-- | True value-level reflecting function" Nothing,DComment (DP (0,-36),DP (0,-34)) "::" Nothing,DComment (DP (0,1),DP (0,5)) "True" Nothing] [((G AnnDcolon),DP (0,1))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:54:9-12 CN "HsForAllTy" NotNeeded,
+  (Ann (DP (0,-8)) (ColDelta 9) DP (0,1) [DComment (DP (0,-2),DP (0,-1)) "=" Nothing,DComment (DP (0,1),DP (0,10)) "undefined" Nothing] [])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:54:9-12 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,-8)) (ColDelta 9) DP (0,1) [] [((G AnnVal),DP (0,-8))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:55:1-4 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:55:1-16 CN "Match" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnEqual),DP (0,1))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:55:1-16 CN "ValD" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:55:6-16 CN "GRHS" NotNeeded,
+  (Ann (DP (0,-1)) (ColDelta 6) DP (0,-1) [] [])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:55:8-16 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 8) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:58:1-28 CN "TyClD" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (3,1) [DComment (DP (1,1),DP (1,28)) "-- | False type-level value" Nothing,DComment (DP (1,1),DP (1,1)) "" Nothing,DComment (DP (0,0),DP (0,4)) "data" Nothing,DComment (DP (0,-4),DP (0,23)) "-- | False type-level value" Nothing,DComment (DP (0,-22),DP (0,-17)) "False" Nothing,DComment (DP (0,1),DP (0,9)) "deriving" Nothing,DComment (DP (0,1),DP (0,9)) "Typeable" Nothing] [((G AnnData),DP (0,0))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:58:6-10 CN "Unqual" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 6) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:58:12-28 CN "(:)" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 12) DP (0,1) [] [((G AnnDeriving),DP (0,0))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:58:21-28 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 21) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:(60,1)-(61,17) CN "InstD" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (2,1) [DComment (DP (1,1),DP (1,1)) "" Nothing,DComment (DP (0,0),DP (0,8)) "instance" Nothing,DComment (DP (0,1),DP (0,5)) "Show" Nothing,DComment (DP (0,1),DP (0,6)) "False" Nothing,DComment (DP (0,1),DP (0,6)) "where" Nothing] [((G AnnInstance),DP (0,0)),((G AnnWhere),DP (0,1))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:60:10-13 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 10) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:60:10-19 CN "HsAppTy" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 10) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:60:10-19 CN "HsForAllTy" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 10) DP (0,1) [DComment (DP (0,-7),DP (0,-7)) "" Nothing,DComment (DP (0,0),DP (0,4)) "show" Nothing,DComment (DP (0,1),DP (0,2)) "_" Nothing,DComment (DP (0,1),DP (0,2)) "=" Nothing] [])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:60:15-19 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,-3)) (ColDelta 15) DP (0,1) [DComment (DP (0,-3),DP (0,4)) "\"False\"" Nothing] [((G AnnVal),DP (0,-3))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:61:2-5 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 2) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:61:2-17 CN "FunBind" NotNeeded,
+  (Ann (DP (1,2)) (ColDelta 2) DP (1,2) [] [])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:61:2-17 CN "Match" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 2) DP (0,0) [] [((G AnnEqual),DP (0,1))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:61:7 CN "WildPat" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 7) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:61:9-17 CN "GRHS" NotNeeded,
+  (Ann (DP (0,-1)) (ColDelta 9) DP (0,-1) [] [])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:61:11-17 CN "HsLit" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 11) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:65:1-5 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:65:1-14 CN "SigD" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (4,1) [DComment (DP (2,1),DP (2,43)) "-- | False value-level reflecting function" Nothing,DComment (DP (1,1),DP (1,1)) "" Nothing,DComment (DP (0,0),DP (0,0)) "" Nothing,DComment (DP (0,0),DP (0,5)) "false" Nothing,DComment (DP (0,-5),DP (0,37)) "-- | False value-level reflecting function" Nothing,DComment (DP (0,-36),DP (0,-34)) "::" Nothing,DComment (DP (0,1),DP (0,6)) "False" Nothing] [((G AnnDcolon),DP (0,1))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:65:10-14 CN "HsForAllTy" NotNeeded,
+  (Ann (DP (0,-8)) (ColDelta 10) DP (0,1) [DComment (DP (0,-2),DP (0,-1)) "=" Nothing,DComment (DP (0,1),DP (0,10)) "undefined" Nothing] [])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:65:10-14 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,-8)) (ColDelta 10) DP (0,1) [] [((G AnnVal),DP (0,-8))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:66:1-5 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:66:1-17 CN "Match" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnEqual),DP (0,1))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:66:1-17 CN "ValD" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:66:7-17 CN "GRHS" NotNeeded,
+  (Ann (DP (0,-1)) (ColDelta 7) DP (0,-1) [] [])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:66:9-17 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 9) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:68:1-23 CN "TyClD" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (2,1) [DComment (DP (1,1),DP (1,1)) "" Nothing,DComment (DP (0,0),DP (0,4)) "type" Nothing,DComment (DP (0,1),DP (0,7)) "family" Nothing,DComment (DP (0,1),DP (0,4)) "And" Nothing,DComment (DP (0,1),DP (0,4)) "b_0" Nothing,DComment (DP (0,1),DP (0,4)) "b_1" Nothing] [((G AnnType),DP (0,0)),((G AnnFamily),DP (0,1))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:68:13-15 CN "Unqual" NotNeeded,
+  (Ann (DP (0,-1)) (ColDelta 13) DP (0,1) [DComment (DP (0,-6),DP (0,2)) "instance" Nothing] [((G AnnVal),DP (0,-1))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:68:17-19 CN "UserTyVar" NotNeeded,
+  (Ann (DP (0,-1)) (ColDelta 17) DP (0,1) [DComment (DP (0,-1),DP (0,2)) "And" Nothing] [((G AnnVal),DP (0,-1))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:68:21-23 CN "UserTyVar" NotNeeded,
+  (Ann (DP (0,-2)) (ColDelta 21) DP (0,1) [DComment (DP (0,-1),DP (0,3)) "True" Nothing] [((G AnnVal),DP (0,-2))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:69:1-36 CN "InstD" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [DComment (DP (0,0),DP (0,4)) "True" Nothing,DComment (DP (0,3),DP (0,4)) "=" Nothing,DComment (DP (0,1),DP (0,5)) "True" Nothing] [((G AnnType),DP (0,0)),((G AnnInstance),DP (0,1))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:69:15-17 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 15) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:69:15-36 CN "TyFamEqn" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 15) DP (0,1) [] [((AnnComment DComment (DP (0,-4),DP (0,1)) "False" Nothing),DP (0,-4)),((G AnnEqual),DP (0,3))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:69:19-22 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 19) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:69:24-27 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 24) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:69:33-36 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 33) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:70:1-37 CN "InstD" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [DComment (DP (0,-4),DP (0,1)) "False" Nothing] [((G AnnType),DP (0,0)),((G AnnInstance),DP (0,1))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:70:15-17 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 15) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:70:15-37 CN "TyFamEqn" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 15) DP (0,1) [] [((AnnComment DComment (DP (0,-4),DP (0,0)) "True" Nothing),DP (0,-4)),((G AnnEqual),DP (0,2))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:70:19-22 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 19) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:70:24-28 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 24) DP (0,1) [DComment (DP (0,-4),DP (0,1)) "False" Nothing] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:70:33-37 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 33) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:71:1-37 CN "InstD" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [((G AnnType),DP (0,0)),((G AnnInstance),DP (0,1))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:71:15-17 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 15) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:71:15-37 CN "TyFamEqn" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 15) DP (0,1) [] [((AnnComment DComment (DP (0,-4),DP (0,1)) "False" Nothing),DP (0,-4)),((G AnnEqual),DP (0,2))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:71:19-23 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 19) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:71:25-28 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 25) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:71:33-37 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 33) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:72:1-37 CN "InstD" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [((G AnnType),DP (0,0)),((G AnnInstance),DP (0,1))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:72:15-17 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 15) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:72:15-37 CN "TyFamEqn" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 15) DP (0,1) [] [((G AnnEqual),DP (0,1))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:72:19-23 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 19) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:72:25-29 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 25) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:72:33-37 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 33) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:74:1-22 CN "TyClD" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (2,1) [DComment (DP (1,1),DP (1,1)) "" Nothing,DComment (DP (0,0),DP (0,4)) "type" Nothing,DComment (DP (0,1),DP (0,7)) "family" Nothing,DComment (DP (0,1),DP (0,3)) "Or" Nothing,DComment (DP (0,1),DP (0,4)) "b_0" Nothing,DComment (DP (0,1),DP (0,4)) "b_1" Nothing] [((G AnnType),DP (0,0)),((G AnnFamily),DP (0,1))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:74:13-14 CN "Unqual" NotNeeded,
+  (Ann (DP (0,-1)) (ColDelta 13) DP (0,1) [DComment (DP (0,-6),DP (0,2)) "instance" Nothing] [((G AnnVal),DP (0,-1))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:74:16-18 CN "UserTyVar" NotNeeded,
+  (Ann (DP (0,-1)) (ColDelta 16) DP (0,1) [DComment (DP (0,0),DP (0,2)) "Or" Nothing] [((G AnnVal),DP (0,-1))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:74:20-22 CN "UserTyVar" NotNeeded,
+  (Ann (DP (0,-2)) (ColDelta 20) DP (0,1) [DComment (DP (0,-1),DP (0,3)) "True" Nothing] [((G AnnVal),DP (0,-2))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:75:1-35 CN "InstD" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [DComment (DP (0,0),DP (0,4)) "True" Nothing,DComment (DP (0,3),DP (0,4)) "=" Nothing,DComment (DP (0,1),DP (0,5)) "True" Nothing] [((G AnnType),DP (0,0)),((G AnnInstance),DP (0,1))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:75:15-16 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 15) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:75:15-35 CN "TyFamEqn" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 15) DP (0,1) [] [((AnnComment DComment (DP (0,-4),DP (0,1)) "False" Nothing),DP (0,-4)),((G AnnEqual),DP (0,3))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:75:18-21 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 18) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:75:23-26 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 23) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:75:32-35 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 32) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:76:1-35 CN "InstD" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [((G AnnType),DP (0,0)),((G AnnInstance),DP (0,1))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:76:15-16 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 15) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:76:15-35 CN "TyFamEqn" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 15) DP (0,1) [] [((AnnComment DComment (DP (0,-4),DP (0,0)) "True" Nothing),DP (0,-4)),((G AnnEqual),DP (0,2))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:76:18-21 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 18) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:76:23-27 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 23) DP (0,1) [DComment (DP (0,-4),DP (0,1)) "False" Nothing] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:76:32-35 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 32) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:77:1-35 CN "InstD" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [((G AnnType),DP (0,0)),((G AnnInstance),DP (0,1))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:77:15-16 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 15) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:77:15-35 CN "TyFamEqn" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 15) DP (0,1) [] [((AnnComment DComment (DP (0,-4),DP (0,1)) "False" Nothing),DP (0,-4)),((G AnnEqual),DP (0,2))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:77:18-22 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 18) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:77:24-27 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 24) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:77:32-35 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 32) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:78:1-36 CN "InstD" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [DComment (DP (0,-4),DP (0,1)) "False" Nothing] [((G AnnType),DP (0,0)),((G AnnInstance),DP (0,1))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:78:15-16 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 15) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:78:15-36 CN "TyFamEqn" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 15) DP (0,1) [] [((G AnnEqual),DP (0,1))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:78:18-22 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 18) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:78:24-28 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 24) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:78:32-36 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 32) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:80:1-17 CN "TyClD" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (2,1) [DComment (DP (1,1),DP (1,1)) "" Nothing,DComment (DP (0,0),DP (0,4)) "type" Nothing,DComment (DP (0,1),DP (0,7)) "family" Nothing,DComment (DP (0,1),DP (0,4)) "Not" Nothing,DComment (DP (0,1),DP (0,2)) "b" Nothing] [((G AnnType),DP (0,0)),((G AnnFamily),DP (0,1))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:80:13-15 CN "Unqual" NotNeeded,
+  (Ann (DP (0,-1)) (ColDelta 13) DP (0,1) [DComment (DP (0,-6),DP (0,2)) "instance" Nothing] [((G AnnVal),DP (0,-1))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:80:17 CN "UserTyVar" NotNeeded,
+  (Ann (DP (0,-1)) (ColDelta 17) DP (0,1) [DComment (DP (0,-1),DP (0,2)) "Not" Nothing] [((G AnnVal),DP (0,-1))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:81:1-31 CN "InstD" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [DComment (DP (0,1),DP (0,5)) "True" Nothing,DComment (DP (0,2),DP (0,3)) "=" Nothing,DComment (DP (0,1),DP (0,6)) "False" Nothing] [((G AnnType),DP (0,0)),((G AnnInstance),DP (0,1))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:81:15-17 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 15) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:81:15-31 CN "TyFamEqn" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 15) DP (0,1) [] [((AnnComment DComment (DP (0,-4),DP (0,1)) "False" Nothing),DP (0,-4)),((G AnnEqual),DP (0,2))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:81:19-22 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 19) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:81:27-31 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 27) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:82:1-30 CN "InstD" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [DComment (DP (0,-5),DP (0,-1)) "True" Nothing] [((G AnnType),DP (0,0)),((G AnnInstance),DP (0,1))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:82:15-17 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 15) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:82:15-30 CN "TyFamEqn" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 15) DP (0,1) [] [((G AnnEqual),DP (0,1))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:82:19-23 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 19) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:82:27-30 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 27) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey <no location info> CN "EmptyLocalBinds" NotNeeded,
+  (Ann (DP (-51,0)) (ColDelta 0) DP (-51,0) [] [])),
+ (AnnKey <no location info> CN "[]" NotNeeded,
+  (Ann (DP (-48,0)) (ColDelta 0) DP (-48,0) [] []))]
+==============
+([((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:1:1,
+    AnnModule),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:23:1-6]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:1:1,
+    AnnWhere),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:38:3-7]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:(23,28)-(38,1),
+    AnnCloseP),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:38:1]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:(23,28)-(38,1),
+    AnnOpenP),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:23:28]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:26:5-9,
+    AnnComma),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:26:10]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:26:12-16,
+    AnnComma),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:26:17]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:27:5-8,
+    AnnComma),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:27:9]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:27:11-14,
+    AnnComma),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:27:15]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:30:5-7,
+    AnnComma),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:30:8]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:31:5-7,
+    AnnComma),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:31:8]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:40:1-31,
+    AnnImport),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:40:1-6]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:40:1-31,
+    AnnSemi),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:41:1]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:40:22-31,
+    AnnCloseP),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:40:31]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:40:22-31,
+    AnnOpenP),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:40:22]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:41:1-49,
+    AnnImport),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:41:1-6]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:41:1-49,
+    AnnSemi),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:42:1]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:41:16-49,
+    AnnCloseP),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:41:49]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:41:16-49,
+    AnnHiding),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:41:16-21]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:41:16-49,
+    AnnOpenP),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:41:23]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:41:24-27,
+    AnnComma),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:41:28]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:41:30-32,
+    AnnComma),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:41:33]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:41:35-38,
+    AnnCloseP),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:41:38]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:41:35-38,
+    AnnComma),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:41:39]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:41:35-38,
+    AnnOpenP),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:41:35]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:41:35-38,
+    AnnVal),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:41:36-37]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:41:41-44,
+    AnnCloseP),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:41:44]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:41:41-44,
+    AnnComma),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:41:45]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:41:41-44,
+    AnnOpenP),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:41:41]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:41:41-44,
+    AnnVal),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:41:42-43]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:42:1-29,
+    AnnAs),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:42:26-27]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:42:1-29,
+    AnnImport),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:42:1-6]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:42:1-29,
+    AnnQualified),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:42:8-16]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:42:1-29,
+    AnnSemi),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:48:1]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:42:1-29,
+    AnnVal),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:42:29]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:48:1-27,
+    AnnData),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:48:1-4]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:48:1-27,
+    AnnSemi),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:50:1]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:48:11-27,
+    AnnDeriving),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:48:11-18]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:(50,1)-(51,16),
+    AnnInstance),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:50:1-8]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:(50,1)-(51,16),
+    AnnSemi),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:54:1]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:(50,1)-(51,16),
+    AnnWhere),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:50:20-24]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:51:2-16,
+    AnnEqual),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:51:9]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:51:2-16,
+    AnnFunId),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:51:2-5]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:54:1-12,
+    AnnDcolon),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:54:6-7]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:54:1-12,
+    AnnSemi),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:55:1]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:55:1-16,
+    AnnEqual),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:55:6]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:55:1-16,
+    AnnFunId),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:55:1-4]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:55:1-16,
+    AnnSemi),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:58:1]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:58:1-28,
+    AnnData),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:58:1-4]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:58:1-28,
+    AnnSemi),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:60:1]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:58:12-28,
+    AnnDeriving),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:58:12-19]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:(60,1)-(61,17),
+    AnnInstance),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:60:1-8]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:(60,1)-(61,17),
+    AnnSemi),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:65:1]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:(60,1)-(61,17),
+    AnnWhere),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:60:21-25]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:61:2-17,
+    AnnEqual),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:61:9]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:61:2-17,
+    AnnFunId),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:61:2-5]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:65:1-14,
+    AnnDcolon),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:65:7-8]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:65:1-14,
+    AnnSemi),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:66:1]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:66:1-17,
+    AnnEqual),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:66:7]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:66:1-17,
+    AnnFunId),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:66:1-5]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:66:1-17,
+    AnnSemi),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:68:1]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:68:1-23,
+    AnnFamily),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:68:6-11]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:68:1-23,
+    AnnSemi),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:69:1]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:68:1-23,
+    AnnType),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:68:1-4]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:69:1-36,
+    AnnEqual),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:69:31]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:69:1-36,
+    AnnInstance),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:69:6-13]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:69:1-36,
+    AnnSemi),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:70:1]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:69:1-36,
+    AnnType),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:69:1-4]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:69:15-36,
+    AnnEqual),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:69:31]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:70:1-37,
+    AnnEqual),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:70:31]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:70:1-37,
+    AnnInstance),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:70:6-13]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:70:1-37,
+    AnnSemi),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:71:1]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:70:1-37,
+    AnnType),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:70:1-4]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:70:15-37,
+    AnnEqual),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:70:31]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:71:1-37,
+    AnnEqual),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:71:31]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:71:1-37,
+    AnnInstance),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:71:6-13]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:71:1-37,
+    AnnSemi),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:72:1]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:71:1-37,
+    AnnType),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:71:1-4]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:71:15-37,
+    AnnEqual),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:71:31]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:72:1-37,
+    AnnEqual),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:72:31]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:72:1-37,
+    AnnInstance),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:72:6-13]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:72:1-37,
+    AnnSemi),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:74:1]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:72:1-37,
+    AnnType),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:72:1-4]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:72:15-37,
+    AnnEqual),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:72:31]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:74:1-22,
+    AnnFamily),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:74:6-11]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:74:1-22,
+    AnnSemi),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:75:1]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:74:1-22,
+    AnnType),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:74:1-4]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:75:1-35,
+    AnnEqual),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:75:30]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:75:1-35,
+    AnnInstance),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:75:6-13]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:75:1-35,
+    AnnSemi),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:76:1]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:75:1-35,
+    AnnType),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:75:1-4]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:75:15-35,
+    AnnEqual),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:75:30]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:76:1-35,
+    AnnEqual),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:76:30]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:76:1-35,
+    AnnInstance),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:76:6-13]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:76:1-35,
+    AnnSemi),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:77:1]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:76:1-35,
+    AnnType),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:76:1-4]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:76:15-35,
+    AnnEqual),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:76:30]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:77:1-35,
+    AnnEqual),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:77:30]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:77:1-35,
+    AnnInstance),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:77:6-13]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:77:1-35,
+    AnnSemi),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:78:1]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:77:1-35,
+    AnnType),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:77:1-4]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:77:15-35,
+    AnnEqual),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:77:30]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:78:1-36,
+    AnnEqual),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:78:30]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:78:1-36,
+    AnnInstance),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:78:6-13]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:78:1-36,
+    AnnSemi),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:80:1]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:78:1-36,
+    AnnType),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:78:1-4]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:78:15-36,
+    AnnEqual),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:78:30]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:80:1-17,
+    AnnFamily),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:80:6-11]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:80:1-17,
+    AnnSemi),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:81:1]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:80:1-17,
+    AnnType),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:80:1-4]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:81:1-31,
+    AnnEqual),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:81:25]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:81:1-31,
+    AnnInstance),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:81:6-13]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:81:1-31,
+    AnnSemi),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:82:1]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:81:1-31,
+    AnnType),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:81:1-4]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:81:15-31,
+    AnnEqual),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:81:25]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:82:1-30,
+    AnnEqual),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:82:25]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:82:1-30,
+    AnnInstance),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:82:6-13]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:82:1-30,
+    AnnSemi),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:193:1]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:82:1-30,
+    AnnType),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:82:1-4]),
+  ((../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:82:15-30,
+    AnnEqual),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:82:25]),
+  ((<no location info>, AnnEofPos),
+   [../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:193:1])],
+ [(../../hackage-packages/type-level-tf-0.2.1/src/Data/TypeLevel/Bool.hs:(23,28)-(38,1),
+   [AnnLineComment "-- Impl, imp,", AnnLineComment "-- Xor, xor,",
+    AnnLineComment "-- Or, (||),", AnnLineComment "-- And, (&&),",
+    AnnLineComment "-- Not, not,",
+    AnnLineComment "-- * Type-level boolean operations",
+    AnnLineComment "-- reifyBool,", AnnLineComment "-- Bool, toBool,",
+    AnnLineComment "-- * Type-level boolean values"]),
+  (<no location info>,
+   [AnnLineComment "-- | False value-level reflecting function",
+    AnnLineComment "-- | False type-level value",
+    AnnLineComment "-- | True value-level reflecting function",
+    AnnLineComment "-- | True type-level value",
+    AnnLineComment "------------------------------------",
+    AnnLineComment "-- Definition of type-level Booleans",
+    AnnLineComment "------------------------------------",
+    AnnLineComment "----------------------------------------------------------------------------",
+    AnnLineComment "--", AnnLineComment "-- Type-level Booleans.",
+    AnnLineComment "--",
+    AnnLineComment "-- Portability :  non-portable",
+    AnnLineComment "-- Stability   :  experimental (MPTC, non-standarad instances)",
+    AnnLineComment "-- Maintainer  :  alfonso.acosta@gmail.com",
+    AnnLineComment "--",
+    AnnLineComment "-- License     :  BSD-style (see the file LICENSE)",
+    AnnLineComment "--                    and KTH's SAM group",
+    AnnLineComment "--               (c) 2008 Alfonso Acosta, Oleg Kiselyov, Wolfgang Jeltsch",
+    AnnLineComment "-- Copyright   : (c) 2008 Benedikt Huber (port to Associative types (ghc 6.9+))",
+    AnnLineComment "-- Module      :  Data.TypeLevel.Bool",
+    AnnLineComment "-- |",
+    AnnLineComment "-----------------------------------------------------------------------------",
+    AnnBlockComment "{-# LANGUAGE EmptyDataDecls, MultiParamTypeClasses, FunctionalDependencies,\n             Rank2Types, DeriveDataTypeable, FlexibleInstances,\n             UndecidableInstances, FlexibleContexts,ScopedTypeVariables,\n             TypeFamilies\n  #-}",
+    AnnBlockComment "{-# LANGUAGE CPP #-}"])])

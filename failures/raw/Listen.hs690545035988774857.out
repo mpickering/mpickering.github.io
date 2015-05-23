@@ -1,0 +1,2456 @@
+{-# OPTIONS -cpp -XPatternSignatures #-}
+module HAppS.Server.HTTP.Listen(listen) where
+
+import System.Log.Logger
+
+import HAppS.Server.HTTP.Types
+import HAppS.Server.HTTP.Handler
+
+import Control.Exception as E
+import Control.Concurrent
+import Network
+import System.IO
+
+{-
+
+-}
+
+import System.Posix.Signals
+{-
+
+-}
+
+
+listen :: Conf -> (Request -> IO Response) -> IO ()
+listen conf hand = do
+{-
+
+-}
+
+  installHandler openEndedPipe Ignore Nothing
+{-
+
+-}
+
+  s <- listenOn $ PortNumber $ toEnum $ port conf
+  let work (h,hn,p) = do -- hSetBuffering h NoBuffering
+                         let eh (x::EXCEPTION_TYPE) = logM "HAppS.Server.HTTP.Listen" ERROR ("HTTP request failed with: "++show x)
+                         request conf h (hn,fromIntegral p) hand `E.catch` eh
+                         hClose h
+  let msg = "\nIPV6 is not supported yet. \nLikely you made a localhost request \n"++
+            "and your machine resolved localhost to an IPv6 address. \n"++
+            "Use http://127.0.0.1:"++(show $ port conf)++"\n"
+      loop = do accept s >>= forkIO . work
+                loop
+  --  let loop = accept s >>= forkIO . work >> loop
+  let pe e = logM "HAppS.Server.HTTP.Listen" ERROR ("ERROR in accept thread: "++
+                                                    show e)
+  let infi = loop `catchSome` pe >> infi -- loop `E.catch` pe >> infi
+  infi `finally` sClose s
+{--
+
+-}
+
+  installHandler openEndedPipe Ignore Nothing
+  return ()
+{-
+
+-}
+  where  -- why are these handlers needed?
+#ifdef EXTENSIBLE_EXCEPTIONS
+    -- catchSome op h :: IO () -> (E.SomeExcpetion -> IO () ) -> IO ()
+    catchSome op h = op `E.catches` [
+            Handler $ \(e :: ArithException) -> h (toException e),
+            Handler $ \(e :: ArrayException) -> h (toException e)
+          ]
+#else
+
+==============
+../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs
+==============
+lengths:(1780,2088)
+
+==============
+
+({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:1:1
+  }
+ Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((AnnComment DComment (DP (0,0),DP (0,40)) "{-# OPTIONS -cpp -XPatternSignatures #-}" Nothing),DP (0,0)),((G AnnModule),DP (1,1)),((G AnnVal),DP (0,1)),((G AnnWhere),DP (0,1)),((AnnComment DComment (DP (1,1),DP (1,6)) "#endif" Nothing),DP (1,1)),((G AnnEofPos),DP (2,0))])
+ (HsModule 
+  (Just 
+   ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:2:8-31
+     }
+    Nothing{ModuleName: HAppS.Server.HTTP.Listen})) 
+  (Just 
+   ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:2:32-39
+     }
+    Just (Ann (DP (0,0)) (ColDelta 32) DP (0,0) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])
+    [
+     ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:2:33-38
+       }
+      Just (Ann (DP (0,0)) (ColDelta 33) DP (0,0) [] [])
+      (IEVar 
+       ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:2:33-38
+         }
+        Just (Ann (DP (0,0)) (ColDelta 33) DP (0,0) [] [((G AnnVal),DP (0,0))])
+        (Unqual {OccName: listen}))))])) 
+  [
+   ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:4:1-24
+     }
+    Just (Ann (DP (2,1)) (ColDelta 1) DP (2,1) [] [((G AnnImport),DP (0,0)),((G AnnVal),DP (0,1))])
+    (ImportDecl 
+     (Nothing) 
+     ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:4:8-24
+       }
+      Nothing{ModuleName: System.Log.Logger}) 
+     (Nothing) 
+     (False) 
+     (False) 
+     (False) 
+     (False) 
+     (Nothing) 
+     (Nothing))),
+   ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:6:1-30
+     }
+    Just (Ann (DP (2,1)) (ColDelta 1) DP (2,1) [] [((G AnnImport),DP (0,0)),((G AnnVal),DP (0,1))])
+    (ImportDecl 
+     (Nothing) 
+     ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:6:8-30
+       }
+      Nothing{ModuleName: HAppS.Server.HTTP.Types}) 
+     (Nothing) 
+     (False) 
+     (False) 
+     (False) 
+     (False) 
+     (Nothing) 
+     (Nothing))),
+   ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:7:1-32
+     }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [((G AnnImport),DP (0,0)),((G AnnVal),DP (0,1))])
+    (ImportDecl 
+     (Nothing) 
+     ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:7:8-32
+       }
+      Nothing{ModuleName: HAppS.Server.HTTP.Handler}) 
+     (Nothing) 
+     (False) 
+     (False) 
+     (False) 
+     (False) 
+     (Nothing) 
+     (Nothing))),
+   ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:9:1-29
+     }
+    Just (Ann (DP (2,1)) (ColDelta 1) DP (2,1) [] [((G AnnImport),DP (0,0)),((G AnnVal),DP (0,1)),((G AnnAs),DP (0,1)),((G AnnVal),DP (0,1))])
+    (ImportDecl 
+     (Nothing) 
+     ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:9:8-24
+       }
+      Nothing{ModuleName: Control.Exception}) 
+     (Nothing) 
+     (False) 
+     (False) 
+     (False) 
+     (False) 
+     (Just {ModuleName: E}) 
+     (Nothing))),
+   ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:10:1-25
+     }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [((G AnnImport),DP (0,0)),((G AnnVal),DP (0,1))])
+    (ImportDecl 
+     (Nothing) 
+     ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:10:8-25
+       }
+      Nothing{ModuleName: Control.Concurrent}) 
+     (Nothing) 
+     (False) 
+     (False) 
+     (False) 
+     (False) 
+     (Nothing) 
+     (Nothing))),
+   ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:11:1-14
+     }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [((G AnnImport),DP (0,0)),((G AnnVal),DP (0,1))])
+    (ImportDecl 
+     (Nothing) 
+     ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:11:8-14
+       }
+      Nothing{ModuleName: Network}) 
+     (Nothing) 
+     (False) 
+     (False) 
+     (False) 
+     (False) 
+     (Nothing) 
+     (Nothing))),
+   ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:12:1-16
+     }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [((G AnnImport),DP (0,0)),((G AnnVal),DP (0,1))])
+    (ImportDecl 
+     (Nothing) 
+     ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:12:8-16
+       }
+      Nothing{ModuleName: System.IO}) 
+     (Nothing) 
+     (False) 
+     (False) 
+     (False) 
+     (False) 
+     (Nothing) 
+     (Nothing))),
+   ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:17:1-27
+     }
+    Just (Ann (DP (2,1)) (ColDelta 1) DP (5,1) [DComment (DP (2,1),DP (4,3)) "{-\n\n-}" Nothing,DComment (DP (-1,1),DP (-1,23)) "#ifndef mingw32_HOST_OS" Nothing] [((G AnnImport),DP (0,0)),((G AnnVal),DP (0,1))])
+    (ImportDecl 
+     (Nothing) 
+     ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:17:8-27
+       }
+      Nothing{ModuleName: System.Posix.Signals}) 
+     (Nothing) 
+     (False) 
+     (False) 
+     (False) 
+     (False) 
+     (Nothing) 
+     (Nothing)))] 
+  [
+   ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:22:1-51
+     }
+    Just (Ann (DP (3,1)) (ColDelta 1) DP (5,1) [DComment (DP (1,1),DP (3,3)) "{-\n\n-}" Nothing,DComment (DP (-1,1),DP (-1,6)) "#endif" Nothing] [((G AnnDcolon),DP (0,1))])
+    (SigD 
+     (TypeSig 
+      [
+       ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:22:1-6
+         }
+        Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+        (Unqual {OccName: listen}))] 
+      ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:22:11-51
+        }
+       Just (Ann (DP (0,1)) (ColDelta 11) DP (0,1) [] [])
+       (HsForAllTy 
+        (Implicit) 
+        (Nothing) 
+        (HsQTvs 
+         [] 
+         []) 
+        ({ <no location info> }
+         Nothing
+         []) 
+        ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:22:11-51
+          }
+         Just (Ann (DP (0,0)) (ColDelta 11) DP (0,0) [] [((G AnnRarrow),DP (0,1))])
+         (HsFunTy 
+          ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:22:11-14
+            }
+           Just (Ann (DP (0,0)) (ColDelta 11) DP (0,0) [] [((G AnnVal),DP (0,0))])
+           (HsTyVar 
+            (Unqual {OccName: Conf}))) 
+          ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:22:19-51
+            }
+           Just (Ann (DP (0,1)) (ColDelta 19) DP (0,1) [] [((G AnnRarrow),DP (0,1))])
+           (HsFunTy 
+            ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:22:19-42
+              }
+             Just (Ann (DP (0,0)) (ColDelta 19) DP (0,0) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])
+             (HsParTy 
+              ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:22:20-41
+                }
+               Just (Ann (DP (0,0)) (ColDelta 20) DP (0,0) [] [((G AnnRarrow),DP (0,1))])
+               (HsFunTy 
+                ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:22:20-26
+                  }
+                 Just (Ann (DP (0,0)) (ColDelta 20) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                 (HsTyVar 
+                  (Unqual {OccName: Request}))) 
+                ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:22:31-41
+                  }
+                 Just (Ann (DP (0,1)) (ColDelta 31) DP (0,1) [] [])
+                 (HsAppTy 
+                  ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:22:31-32
+                    }
+                   Just (Ann (DP (0,0)) (ColDelta 31) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                   (HsTyVar 
+                    (Unqual {OccName: IO}))) 
+                  ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:22:34-41
+                    }
+                   Just (Ann (DP (0,1)) (ColDelta 34) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                   (HsTyVar 
+                    (Unqual {OccName: Response}))))))))) 
+            ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:22:47-51
+              }
+             Just (Ann (DP (0,1)) (ColDelta 47) DP (0,1) [] [])
+             (HsAppTy 
+              ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:22:47-48
+                }
+               Just (Ann (DP (0,0)) (ColDelta 47) DP (0,0) [] [((G AnnVal),DP (0,0))])
+               (HsTyVar 
+                (Unqual {OccName: IO}))) 
+              ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:22:50-51
+                }
+               Just (Ann (DP (0,1)) (ColDelta 50) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])
+               (HsTupleTy 
+                (HsBoxedOrConstraintTuple) 
+                [])))))))))) 
+      (PlaceHolder)))),
+   ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:(23,1)-(65,56)
+     }
+    Just (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [])
+    (ValD 
+     (FunBind 
+      ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:23:1-6
+        }
+       Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+       (Unqual {OccName: listen})) 
+      (False) 
+      (MG 
+       [
+        ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:(23,1)-(65,56)
+          }
+         Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnEqual),DP (0,1)),((AnnComment DComment (DP (1,1),DP (3,3)) "{-\n\n-}" Nothing),DP (1,1)),((AnnComment DComment (DP (-1,1),DP (-1,6)) "#endif" Nothing),DP (-1,1)),((G AnnWhere),DP (4,3))])
+         (Match 
+          (Just 
+           ((,) 
+            ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:23:1-6
+              }
+             Just (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])
+             (Unqual {OccName: listen})) 
+            (False))) 
+          [
+           ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:23:8-11
+             }
+            Just (Ann (DP (0,1)) (ColDelta 8) DP (0,1) [] [((G AnnVal),DP (0,0))])
+            (VarPat 
+             (Unqual {OccName: conf}))),
+           ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:23:13-16
+             }
+            Just (Ann (DP (0,1)) (ColDelta 13) DP (0,1) [] [((G AnnVal),DP (0,0))])
+            (VarPat 
+             (Unqual {OccName: hand})))] 
+          (Nothing) 
+          (GRHSs 
+           [
+            ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:(23,18)-(65,56)
+              }
+             Just (Ann (DP (0,-1)) (ColDelta 18) DP (0,-1) [] [])
+             (GRHS 
+              [] 
+              ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:(23,20)-(50,11)
+                }
+               Just (Ann (DP (0,1)) (ColDelta 20) DP (0,1) [] [((G AnnDo),DP (0,0)),((AnnList ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:(27,3)-(50,11) Ref "delta-1"),DP (0,0))])
+               (HsDo 
+                (DoExpr) 
+                [
+                 ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:27:3-45
+                   }
+                  Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])
+                  (BodyStmt 
+                   ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:27:3-45
+                     }
+                    Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])
+                    (HsApp 
+                     ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:27:3-37
+                       }
+                      Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])
+                      (HsApp 
+                       ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:27:3-30
+                         }
+                        Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])
+                        (HsApp 
+                         ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:27:3-16
+                           }
+                          Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                          (HsVar 
+                           (Unqual {OccName: installHandler}))) 
+                         ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:27:18-30
+                           }
+                          Just (Ann (DP (0,1)) (ColDelta 15) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                          (HsVar 
+                           (Unqual {OccName: openEndedPipe}))))) 
+                       ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:27:32-37
+                         }
+                        Just (Ann (DP (0,1)) (ColDelta 29) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                        (HsVar 
+                         (Unqual {OccName: Ignore}))))) 
+                     ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:27:39-45
+                       }
+                      Just (Ann (DP (0,1)) (ColDelta 36) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                      (HsVar 
+                       (Unqual {OccName: Nothing}))))) 
+                   (HsLit 
+                    (HsString "" {FastString: "noSyntaxExpr"})) 
+                   (HsLit 
+                    (HsString "" {FastString: "noSyntaxExpr"})) 
+                   (PlaceHolder))),
+                 ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:31:3-49
+                   }
+                  Just (Ann (DP (2,0)) (ColDelta 0) DP (4,0) [DComment (DP (1,-2),DP (3,0)) "{-\n\n-}" Nothing,DComment (DP (-1,-2),DP (-1,3)) "#endif" Nothing] [((G AnnLarrow),DP (0,1))])
+                  (BindStmt 
+                   ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:31:3
+                     }
+                    Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                    (VarPat 
+                     (Unqual {OccName: s}))) 
+                   ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:31:8-49
+                     }
+                    Just (Ann (DP (0,1)) (ColDelta 5) DP (0,1) [] [])
+                    (OpApp 
+                     ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:31:8-37
+                       }
+                      Just (Ann (DP (0,0)) (ColDelta 5) DP (0,0) [] [])
+                      (OpApp 
+                       ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:31:8-28
+                         }
+                        Just (Ann (DP (0,0)) (ColDelta 5) DP (0,0) [] [])
+                        (OpApp 
+                         ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:31:8-15
+                           }
+                          Just (Ann (DP (0,0)) (ColDelta 5) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                          (HsVar 
+                           (Unqual {OccName: listenOn}))) 
+                         ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:31:17
+                           }
+                          Just (Ann (DP (0,1)) (ColDelta 14) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                          (HsVar 
+                           (Unqual {OccName: $}))) 
+                         (PlaceHolder) 
+                         ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:31:19-28
+                           }
+                          Just (Ann (DP (0,1)) (ColDelta 16) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                          (HsVar 
+                           (Unqual {OccName: PortNumber}))))) 
+                       ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:31:30
+                         }
+                        Just (Ann (DP (0,1)) (ColDelta 27) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                        (HsVar 
+                         (Unqual {OccName: $}))) 
+                       (PlaceHolder) 
+                       ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:31:32-37
+                         }
+                        Just (Ann (DP (0,1)) (ColDelta 29) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                        (HsVar 
+                         (Unqual {OccName: toEnum}))))) 
+                     ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:31:39
+                       }
+                      Just (Ann (DP (0,1)) (ColDelta 36) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                      (HsVar 
+                       (Unqual {OccName: $}))) 
+                     (PlaceHolder) 
+                     ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:31:41-49
+                       }
+                      Just (Ann (DP (0,1)) (ColDelta 38) DP (0,1) [] [])
+                      (HsApp 
+                       ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:31:41-44
+                         }
+                        Just (Ann (DP (0,0)) (ColDelta 38) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                        (HsVar 
+                         (Unqual {OccName: port}))) 
+                       ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:31:46-49
+                         }
+                        Just (Ann (DP (0,1)) (ColDelta 43) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                        (HsVar 
+                         (Unqual {OccName: conf}))))))) 
+                   (HsLit 
+                    (HsString "" {FastString: "noSyntaxExpr"})) 
+                   (HsLit 
+                    (HsString "" {FastString: "noSyntaxExpr"})))),
+                 ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:(32,3)-(35,33)
+                   }
+                  Just (Ann (DP (1,0)) (ColDelta 0) DP (1,0) [] [((G AnnLet),DP (0,0))])
+                  (LetStmt 
+                   (HsValBinds 
+                    (ValBindsIn {Bag(Located (HsBind RdrName)): 
+                     [
+                      ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:(32,7)-(35,33)
+                        }
+                       Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])
+                       (FunBind 
+                        ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:32:7-10
+                          }
+                         Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                         (Unqual {OccName: work})) 
+                        (False) 
+                        (MG 
+                         [
+                          ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:(32,7)-(35,33)
+                            }
+                           Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnEqual),DP (0,1))])
+                           (Match 
+                            (Just 
+                             ((,) 
+                              ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:32:7-10
+                                }
+                               Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                               (Unqual {OccName: work})) 
+                              (False))) 
+                            [
+                             ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:32:12-19
+                               }
+                              Just (Ann (DP (0,1)) (ColDelta 5) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])
+                              (TuplePat 
+                               [
+                                ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:32:13
+                                  }
+                                 Just (Ann (DP (0,0)) (ColDelta 6) DP (0,0) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                                 (VarPat 
+                                  (Unqual {OccName: h}))),
+                                ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:32:15-16
+                                  }
+                                 Just (Ann (DP (0,0)) (ColDelta 8) DP (0,0) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                                 (VarPat 
+                                  (Unqual {OccName: hn}))),
+                                ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:32:18
+                                  }
+                                 Just (Ann (DP (0,0)) (ColDelta 11) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                                 (VarPat 
+                                  (Unqual {OccName: p})))] 
+                               (Boxed) 
+                               []))] 
+                            (Nothing) 
+                            (GRHSs 
+                             [
+                              ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:(32,21)-(35,33)
+                                }
+                               Just (Ann (DP (0,-1)) (ColDelta 14) DP (0,-1) [] [])
+                               (GRHS 
+                                [] 
+                                ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:(32,23)-(35,33)
+                                  }
+                                 Just (Ann (DP (0,1)) (ColDelta 16) DP (0,1) [] [((G AnnDo),DP (0,0)),((AnnList ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:(33,26)-(35,33) Ref "delta-2"),DP (0,0))])
+                                 (HsDo 
+                                  (DoExpr) 
+                                  [
+                                   ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:33:26-130
+                                     }
+                                    Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnLet),DP (0,0))])
+                                    (LetStmt 
+                                     (HsValBinds 
+                                      (ValBindsIn {Bag(Located (HsBind RdrName)): 
+                                       [
+                                        ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:33:30-130
+                                          }
+                                         Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])
+                                         (FunBind 
+                                          ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:33:30-31
+                                            }
+                                           Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                                           (Unqual {OccName: eh})) 
+                                          (False) 
+                                          (MG 
+                                           [
+                                            ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:33:30-130
+                                              }
+                                             Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnEqual),DP (0,1))])
+                                             (Match 
+                                              (Just 
+                                               ((,) 
+                                                ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:33:30-31
+                                                  }
+                                                 Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                                                 (Unqual {OccName: eh})) 
+                                                (False))) 
+                                              [
+                                               ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:33:33-51
+                                                 }
+                                                Just (Ann (DP (0,1)) (ColDelta 3) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])
+                                                (ParPat 
+                                                 ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:33:34-50
+                                                   }
+                                                  Just (Ann (DP (0,0)) (ColDelta 4) DP (0,0) [] [((G AnnDcolon),DP (0,0))])
+                                                  (SigPatIn 
+                                                   ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:33:34
+                                                     }
+                                                    Just (Ann (DP (0,0)) (ColDelta 4) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                                                    (VarPat 
+                                                     (Unqual {OccName: x}))) 
+                                                   (HsWB 
+                                                    ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:33:37-50
+                                                      }
+                                                     Just (Ann (DP (0,0)) (ColDelta 7) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                                                     (HsTyVar 
+                                                      (Unqual {OccName: EXCEPTION_TYPE}))) 
+                                                    (PlaceHolder) 
+                                                    (PlaceHolder) 
+                                                    (PlaceHolder))))))] 
+                                              (Nothing) 
+                                              (GRHSs 
+                                               [
+                                                ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:33:53-130
+                                                  }
+                                                 Just (Ann (DP (0,-1)) (ColDelta 23) DP (0,-1) [] [])
+                                                 (GRHS 
+                                                  [] 
+                                                  ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:33:55-130
+                                                    }
+                                                   Just (Ann (DP (0,1)) (ColDelta 25) DP (0,1) [] [])
+                                                   (HsApp 
+                                                    ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:33:55-91
+                                                      }
+                                                     Just (Ann (DP (0,0)) (ColDelta 25) DP (0,0) [] [])
+                                                     (HsApp 
+                                                      ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:33:55-85
+                                                        }
+                                                       Just (Ann (DP (0,0)) (ColDelta 25) DP (0,0) [] [])
+                                                       (HsApp 
+                                                        ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:33:55-58
+                                                          }
+                                                         Just (Ann (DP (0,0)) (ColDelta 25) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                                                         (HsVar 
+                                                          (Unqual {OccName: logM}))) 
+                                                        ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:33:60-85
+                                                          }
+                                                         Just (Ann (DP (0,1)) (ColDelta 30) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                                                         (HsLit 
+                                                          (HsString "\"HAppS.Server.HTTP.Listen\"" {FastString: "HAppS.Server.HTTP.Listen"}))))) 
+                                                      ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:33:87-91
+                                                        }
+                                                       Just (Ann (DP (0,1)) (ColDelta 57) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                                                       (HsVar 
+                                                        (Unqual {OccName: ERROR}))))) 
+                                                    ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:33:93-130
+                                                      }
+                                                     Just (Ann (DP (0,1)) (ColDelta 63) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])
+                                                     (HsPar 
+                                                      ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:33:94-129
+                                                        }
+                                                       Just (Ann (DP (0,0)) (ColDelta 64) DP (0,0) [] [])
+                                                       (OpApp 
+                                                        ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:33:94-121
+                                                          }
+                                                         Just (Ann (DP (0,0)) (ColDelta 64) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                                                         (HsLit 
+                                                          (HsString "\"HTTP request failed with: \"" {FastString: "HTTP request failed with: "}))) 
+                                                        ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:33:122-123
+                                                          }
+                                                         Just (Ann (DP (0,0)) (ColDelta 92) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                                                         (HsVar 
+                                                          (Unqual {OccName: ++}))) 
+                                                        (PlaceHolder) 
+                                                        ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:33:124-129
+                                                          }
+                                                         Just (Ann (DP (0,0)) (ColDelta 94) DP (0,0) [] [])
+                                                         (HsApp 
+                                                          ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:33:124-127
+                                                            }
+                                                           Just (Ann (DP (0,0)) (ColDelta 94) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                                                           (HsVar 
+                                                            (Unqual {OccName: show}))) 
+                                                          ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:33:129
+                                                            }
+                                                           Just (Ann (DP (0,1)) (ColDelta 99) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                                                           (HsVar 
+                                                            (Unqual {OccName: x})))))))))))))] 
+                                               (EmptyLocalBinds))))] 
+                                           [] 
+                                           (PlaceHolder) 
+                                           (FromSource)) 
+                                          (WpHole) 
+                                          (PlaceHolder) 
+                                          []))]} 
+                                       [])))),
+                                   ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:34:26-77
+                                     }
+                                    Just (Ann (DP (1,0)) (ColDelta 0) DP (1,0) [] [])
+                                    (BodyStmt 
+                                     ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:34:26-77
+                                       }
+                                      Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])
+                                      (OpApp 
+                                       ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:34:26-64
+                                         }
+                                        Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])
+                                        (HsApp 
+                                         ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:34:26-59
+                                           }
+                                          Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])
+                                          (HsApp 
+                                           ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:34:26-39
+                                             }
+                                            Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])
+                                            (HsApp 
+                                             ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:34:26-37
+                                               }
+                                              Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])
+                                              (HsApp 
+                                               ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:34:26-32
+                                                 }
+                                                Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                                                (HsVar 
+                                                 (Unqual {OccName: request}))) 
+                                               ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:34:34-37
+                                                 }
+                                                Just (Ann (DP (0,1)) (ColDelta 8) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                                                (HsVar 
+                                                 (Unqual {OccName: conf}))))) 
+                                             ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:34:39
+                                               }
+                                              Just (Ann (DP (0,1)) (ColDelta 13) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                                              (HsVar 
+                                               (Unqual {OccName: h}))))) 
+                                           ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:34:41-59
+                                             }
+                                            Just (Ann (DP (0,1)) (ColDelta 15) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])
+                                            (ExplicitTuple 
+                                             [
+                                              ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:34:42-43
+                                                }
+                                               Just (Ann (DP (0,0)) (ColDelta 16) DP (0,0) [] [])
+                                               (Present 
+                                                ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:34:42-43
+                                                  }
+                                                 Just (Ann (DP (0,0)) (ColDelta 16) DP (0,0) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])
+                                                 (HsVar 
+                                                  (Unqual {OccName: hn}))))),
+                                              ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:34:45-58
+                                                }
+                                               Just (Ann (DP (0,0)) (ColDelta 19) DP (0,0) [] [])
+                                               (Present 
+                                                ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:34:45-58
+                                                  }
+                                                 Just (Ann (DP (0,0)) (ColDelta 19) DP (0,0) [] [])
+                                                 (HsApp 
+                                                  ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:34:45-56
+                                                    }
+                                                   Just (Ann (DP (0,0)) (ColDelta 19) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                                                   (HsVar 
+                                                    (Unqual {OccName: fromIntegral}))) 
+                                                  ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:34:58
+                                                    }
+                                                   Just (Ann (DP (0,1)) (ColDelta 32) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                                                   (HsVar 
+                                                    (Unqual {OccName: p})))))))] 
+                                             (Boxed))))) 
+                                         ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:34:61-64
+                                           }
+                                          Just (Ann (DP (0,1)) (ColDelta 35) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                                          (HsVar 
+                                           (Unqual {OccName: hand}))))) 
+                                       ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:34:66-74
+                                         }
+                                        Just (Ann (DP (0,1)) (ColDelta 40) DP (0,1) [] [((G AnnBackquote),DP (0,0)),((G AnnVal),DP (0,0)),((G AnnBackquote),DP (0,0))])
+                                        (HsVar 
+                                         (Qual {ModuleName: E} {OccName: catch}))) 
+                                       (PlaceHolder) 
+                                       ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:34:76-77
+                                         }
+                                        Just (Ann (DP (0,1)) (ColDelta 50) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                                        (HsVar 
+                                         (Unqual {OccName: eh}))))) 
+                                     (HsLit 
+                                      (HsString "" {FastString: "noSyntaxExpr"})) 
+                                     (HsLit 
+                                      (HsString "" {FastString: "noSyntaxExpr"})) 
+                                     (PlaceHolder))),
+                                   ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:35:26-33
+                                     }
+                                    Just (Ann (DP (1,0)) (ColDelta 0) DP (1,0) [] [])
+                                    (BodyStmt 
+                                     ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:35:26-33
+                                       }
+                                      Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])
+                                      (HsApp 
+                                       ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:35:26-31
+                                         }
+                                        Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                                        (HsVar 
+                                         (Unqual {OccName: hClose}))) 
+                                       ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:35:33
+                                         }
+                                        Just (Ann (DP (0,1)) (ColDelta 7) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                                        (HsVar 
+                                         (Unqual {OccName: h}))))) 
+                                     (HsLit 
+                                      (HsString "" {FastString: "noSyntaxExpr"})) 
+                                     (HsLit 
+                                      (HsString "" {FastString: "noSyntaxExpr"})) 
+                                     (PlaceHolder)))] 
+                                  (PlaceHolder)))))] 
+                             (EmptyLocalBinds))))] 
+                         [] 
+                         (PlaceHolder) 
+                         (FromSource)) 
+                        (WpHole) 
+                        (PlaceHolder) 
+                        []))]} 
+                     [])))),
+                 ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:(36,3)-(40,20)
+                   }
+                  Just (Ann (DP (1,0)) (ColDelta 0) DP (1,0) [] [((G AnnLet),DP (0,0))])
+                  (LetStmt 
+                   (HsValBinds 
+                    (ValBindsIn {Bag(Located (HsBind RdrName)): 
+                     [
+                      ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:(36,7)-(38,61)
+                        }
+                       Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])
+                       (FunBind 
+                        ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:36:7-9
+                          }
+                         Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                         (Unqual {OccName: msg})) 
+                        (False) 
+                        (MG 
+                         [
+                          ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:(36,7)-(38,61)
+                            }
+                           Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnEqual),DP (0,1))])
+                           (Match 
+                            (Just 
+                             ((,) 
+                              ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:36:7-9
+                                }
+                               Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                               (Unqual {OccName: msg})) 
+                              (False))) 
+                            [] 
+                            (Nothing) 
+                            (GRHSs 
+                             [
+                              ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:(36,11)-(38,61)
+                                }
+                               Just (Ann (DP (0,-1)) (ColDelta 4) DP (0,-1) [] [])
+                               (GRHS 
+                                [] 
+                                ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:(36,13)-(38,61)
+                                  }
+                                 Just (Ann (DP (0,1)) (ColDelta 6) DP (0,1) [] [])
+                                 (OpApp 
+                                  ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:(36,13)-(38,55)
+                                    }
+                                   Just (Ann (DP (0,0)) (ColDelta 6) DP (0,0) [] [])
+                                   (OpApp 
+                                    ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:(36,13)-(38,35)
+                                      }
+                                     Just (Ann (DP (0,0)) (ColDelta 6) DP (0,0) [] [])
+                                     (OpApp 
+                                      ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:(36,13)-(37,72)
+                                        }
+                                       Just (Ann (DP (0,0)) (ColDelta 6) DP (0,0) [] [])
+                                       (OpApp 
+                                        ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:36:13-83
+                                          }
+                                         Just (Ann (DP (0,0)) (ColDelta 6) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                                         (HsLit 
+                                          (HsString "\"\\nIPV6 is not supported yet. \\nLikely you made a localhost request \\n\"" {FastString: "\nIPV6 is not supported yet. \nLikely you made a localhost request \n"}))) 
+                                        ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:36:84-85
+                                          }
+                                         Just (Ann (DP (0,0)) (ColDelta 77) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                                         (HsVar 
+                                          (Unqual {OccName: ++}))) 
+                                        (PlaceHolder) 
+                                        ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:37:13-72
+                                          }
+                                         Just (Ann (DP (1,6)) (ColDelta 6) DP (1,6) [] [((G AnnVal),DP (0,0))])
+                                         (HsLit 
+                                          (HsString "\"and your machine resolved localhost to an IPv6 address. \\n\"" {FastString: "and your machine resolved localhost to an IPv6 address. \n"}))))) 
+                                      ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:37:73-74
+                                        }
+                                       Just (Ann (DP (0,0)) (ColDelta 66) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                                       (HsVar 
+                                        (Unqual {OccName: ++}))) 
+                                      (PlaceHolder) 
+                                      ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:38:13-35
+                                        }
+                                       Just (Ann (DP (1,6)) (ColDelta 6) DP (1,6) [] [((G AnnVal),DP (0,0))])
+                                       (HsLit 
+                                        (HsString "\"Use http://127.0.0.1:\"" {FastString: "Use http://127.0.0.1:"}))))) 
+                                    ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:38:36-37
+                                      }
+                                     Just (Ann (DP (0,0)) (ColDelta 29) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                                     (HsVar 
+                                      (Unqual {OccName: ++}))) 
+                                    (PlaceHolder) 
+                                    ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:38:38-55
+                                      }
+                                     Just (Ann (DP (0,0)) (ColDelta 31) DP (0,0) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])
+                                     (HsPar 
+                                      ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:38:39-54
+                                        }
+                                       Just (Ann (DP (0,0)) (ColDelta 32) DP (0,0) [] [])
+                                       (OpApp 
+                                        ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:38:39-42
+                                          }
+                                         Just (Ann (DP (0,0)) (ColDelta 32) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                                         (HsVar 
+                                          (Unqual {OccName: show}))) 
+                                        ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:38:44
+                                          }
+                                         Just (Ann (DP (0,1)) (ColDelta 37) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                                         (HsVar 
+                                          (Unqual {OccName: $}))) 
+                                        (PlaceHolder) 
+                                        ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:38:46-54
+                                          }
+                                         Just (Ann (DP (0,1)) (ColDelta 39) DP (0,1) [] [])
+                                         (HsApp 
+                                          ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:38:46-49
+                                            }
+                                           Just (Ann (DP (0,0)) (ColDelta 39) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                                           (HsVar 
+                                            (Unqual {OccName: port}))) 
+                                          ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:38:51-54
+                                            }
+                                           Just (Ann (DP (0,1)) (ColDelta 44) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                                           (HsVar 
+                                            (Unqual {OccName: conf}))))))))))) 
+                                  ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:38:56-57
+                                    }
+                                   Just (Ann (DP (0,0)) (ColDelta 49) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                                   (HsVar 
+                                    (Unqual {OccName: ++}))) 
+                                  (PlaceHolder) 
+                                  ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:38:58-61
+                                    }
+                                   Just (Ann (DP (0,0)) (ColDelta 51) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                                   (HsLit 
+                                    (HsString "\"\\n\"" {FastString: "\n"})))))))] 
+                             (EmptyLocalBinds))))] 
+                         [] 
+                         (PlaceHolder) 
+                         (FromSource)) 
+                        (WpHole) 
+                        (PlaceHolder) 
+                        [])),
+                      ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:(39,7)-(40,20)
+                        }
+                       Just (Ann (DP (1,0)) (ColDelta 0) DP (1,0) [] [])
+                       (FunBind 
+                        ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:39:7-10
+                          }
+                         Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                         (Unqual {OccName: loop})) 
+                        (False) 
+                        (MG 
+                         [
+                          ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:(39,7)-(40,20)
+                            }
+                           Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnEqual),DP (0,1))])
+                           (Match 
+                            (Just 
+                             ((,) 
+                              ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:39:7-10
+                                }
+                               Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                               (Unqual {OccName: loop})) 
+                              (False))) 
+                            [] 
+                            (Nothing) 
+                            (GRHSs 
+                             [
+                              ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:(39,12)-(40,20)
+                                }
+                               Just (Ann (DP (0,-1)) (ColDelta 5) DP (0,-1) [] [])
+                               (GRHS 
+                                [] 
+                                ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:(39,14)-(40,20)
+                                  }
+                                 Just (Ann (DP (0,1)) (ColDelta 7) DP (0,1) [] [((G AnnDo),DP (0,0)),((AnnList ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:(39,17)-(40,20) Ref "delta-3"),DP (0,0))])
+                                 (HsDo 
+                                  (DoExpr) 
+                                  [
+                                   ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:39:17-42
+                                     }
+                                    Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])
+                                    (BodyStmt 
+                                     ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:39:17-42
+                                       }
+                                      Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])
+                                      (OpApp 
+                                       ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:39:17-35
+                                         }
+                                        Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])
+                                        (OpApp 
+                                         ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:39:17-24
+                                           }
+                                          Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])
+                                          (HsApp 
+                                           ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:39:17-22
+                                             }
+                                            Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                                            (HsVar 
+                                             (Unqual {OccName: accept}))) 
+                                           ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:39:24
+                                             }
+                                            Just (Ann (DP (0,1)) (ColDelta 7) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                                            (HsVar 
+                                             (Unqual {OccName: s}))))) 
+                                         ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:39:26-28
+                                           }
+                                          Just (Ann (DP (0,1)) (ColDelta 9) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                                          (HsVar 
+                                           (Unqual {OccName: >>=}))) 
+                                         (PlaceHolder) 
+                                         ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:39:30-35
+                                           }
+                                          Just (Ann (DP (0,1)) (ColDelta 13) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                                          (HsVar 
+                                           (Unqual {OccName: forkIO}))))) 
+                                       ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:39:37
+                                         }
+                                        Just (Ann (DP (0,1)) (ColDelta 20) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                                        (HsVar 
+                                         (Unqual {OccName: .}))) 
+                                       (PlaceHolder) 
+                                       ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:39:39-42
+                                         }
+                                        Just (Ann (DP (0,1)) (ColDelta 22) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                                        (HsVar 
+                                         (Unqual {OccName: work}))))) 
+                                     (HsLit 
+                                      (HsString "" {FastString: "noSyntaxExpr"})) 
+                                     (HsLit 
+                                      (HsString "" {FastString: "noSyntaxExpr"})) 
+                                     (PlaceHolder))),
+                                   ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:40:17-20
+                                     }
+                                    Just (Ann (DP (1,0)) (ColDelta 0) DP (1,0) [] [])
+                                    (BodyStmt 
+                                     ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:40:17-20
+                                       }
+                                      Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                                      (HsVar 
+                                       (Unqual {OccName: loop}))) 
+                                     (HsLit 
+                                      (HsString "" {FastString: "noSyntaxExpr"})) 
+                                     (HsLit 
+                                      (HsString "" {FastString: "noSyntaxExpr"})) 
+                                     (PlaceHolder)))] 
+                                  (PlaceHolder)))))] 
+                             (EmptyLocalBinds))))] 
+                         [] 
+                         (PlaceHolder) 
+                         (FromSource)) 
+                        (WpHole) 
+                        (PlaceHolder) 
+                        []))]} 
+                     [])))),
+                 ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:(42,3)-(43,59)
+                   }
+                  Just (Ann (DP (1,0)) (ColDelta 0) DP (2,0) [DComment (DP (1,0),DP (1,49)) "--  let loop = accept s >>= forkIO . work >> loop" Nothing] [((G AnnLet),DP (0,0))])
+                  (LetStmt 
+                   (HsValBinds 
+                    (ValBindsIn {Bag(Located (HsBind RdrName)): 
+                     [
+                      ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:(42,7)-(43,59)
+                        }
+                       Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])
+                       (FunBind 
+                        ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:42:7-8
+                          }
+                         Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                         (Unqual {OccName: pe})) 
+                        (False) 
+                        (MG 
+                         [
+                          ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:(42,7)-(43,59)
+                            }
+                           Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnEqual),DP (0,1))])
+                           (Match 
+                            (Just 
+                             ((,) 
+                              ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:42:7-8
+                                }
+                               Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                               (Unqual {OccName: pe})) 
+                              (False))) 
+                            [
+                             ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:42:10
+                               }
+                              Just (Ann (DP (0,1)) (ColDelta 3) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                              (VarPat 
+                               (Unqual {OccName: e})))] 
+                            (Nothing) 
+                            (GRHSs 
+                             [
+                              ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:(42,12)-(43,59)
+                                }
+                               Just (Ann (DP (0,-1)) (ColDelta 5) DP (0,-1) [] [])
+                               (GRHS 
+                                [] 
+                                ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:(42,14)-(43,59)
+                                  }
+                                 Just (Ann (DP (0,1)) (ColDelta 7) DP (0,1) [] [])
+                                 (HsApp 
+                                  ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:42:14-50
+                                    }
+                                   Just (Ann (DP (0,0)) (ColDelta 7) DP (0,0) [] [])
+                                   (HsApp 
+                                    ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:42:14-44
+                                      }
+                                     Just (Ann (DP (0,0)) (ColDelta 7) DP (0,0) [] [])
+                                     (HsApp 
+                                      ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:42:14-17
+                                        }
+                                       Just (Ann (DP (0,0)) (ColDelta 7) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                                       (HsVar 
+                                        (Unqual {OccName: logM}))) 
+                                      ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:42:19-44
+                                        }
+                                       Just (Ann (DP (0,1)) (ColDelta 12) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                                       (HsLit 
+                                        (HsString "\"HAppS.Server.HTTP.Listen\"" {FastString: "HAppS.Server.HTTP.Listen"}))))) 
+                                    ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:42:46-50
+                                      }
+                                     Just (Ann (DP (0,1)) (ColDelta 39) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                                     (HsVar 
+                                      (Unqual {OccName: ERROR}))))) 
+                                  ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:(42,52)-(43,59)
+                                    }
+                                   Just (Ann (DP (0,1)) (ColDelta 45) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])
+                                   (HsPar 
+                                    ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:(42,53)-(43,58)
+                                      }
+                                     Just (Ann (DP (0,0)) (ColDelta 46) DP (0,0) [] [])
+                                     (OpApp 
+                                      ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:42:53-78
+                                        }
+                                       Just (Ann (DP (0,0)) (ColDelta 46) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                                       (HsLit 
+                                        (HsString "\"ERROR in accept thread: \"" {FastString: "ERROR in accept thread: "}))) 
+                                      ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:42:79-80
+                                        }
+                                       Just (Ann (DP (0,0)) (ColDelta 72) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                                       (HsVar 
+                                        (Unqual {OccName: ++}))) 
+                                      (PlaceHolder) 
+                                      ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:43:53-58
+                                        }
+                                       Just (Ann (DP (1,46)) (ColDelta 46) DP (1,46) [] [])
+                                       (HsApp 
+                                        ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:43:53-56
+                                          }
+                                         Just (Ann (DP (0,0)) (ColDelta 46) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                                         (HsVar 
+                                          (Unqual {OccName: show}))) 
+                                        ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:43:58
+                                          }
+                                         Just (Ann (DP (0,1)) (ColDelta 51) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                                         (HsVar 
+                                          (Unqual {OccName: e})))))))))))))] 
+                             (EmptyLocalBinds))))] 
+                         [] 
+                         (PlaceHolder) 
+                         (FromSource)) 
+                        (WpHole) 
+                        (PlaceHolder) 
+                        []))]} 
+                     [])))),
+                 ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:44:3-40
+                   }
+                  Just (Ann (DP (1,0)) (ColDelta 0) DP (1,0) [] [((G AnnLet),DP (0,0))])
+                  (LetStmt 
+                   (HsValBinds 
+                    (ValBindsIn {Bag(Located (HsBind RdrName)): 
+                     [
+                      ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:44:7-40
+                        }
+                       Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])
+                       (FunBind 
+                        ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:44:7-10
+                          }
+                         Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                         (Unqual {OccName: infi})) 
+                        (False) 
+                        (MG 
+                         [
+                          ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:44:7-40
+                            }
+                           Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnEqual),DP (0,1))])
+                           (Match 
+                            (Just 
+                             ((,) 
+                              ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:44:7-10
+                                }
+                               Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                               (Unqual {OccName: infi})) 
+                              (False))) 
+                            [] 
+                            (Nothing) 
+                            (GRHSs 
+                             [
+                              ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:44:12-40
+                                }
+                               Just (Ann (DP (0,-1)) (ColDelta 5) DP (0,-1) [] [])
+                               (GRHS 
+                                [] 
+                                ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:44:14-40
+                                  }
+                                 Just (Ann (DP (0,1)) (ColDelta 7) DP (0,1) [] [])
+                                 (OpApp 
+                                  ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:44:14-32
+                                    }
+                                   Just (Ann (DP (0,0)) (ColDelta 7) DP (0,0) [] [])
+                                   (OpApp 
+                                    ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:44:14-17
+                                      }
+                                     Just (Ann (DP (0,0)) (ColDelta 7) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                                     (HsVar 
+                                      (Unqual {OccName: loop}))) 
+                                    ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:44:19-29
+                                      }
+                                     Just (Ann (DP (0,1)) (ColDelta 12) DP (0,1) [] [((G AnnBackquote),DP (0,0)),((G AnnVal),DP (0,0)),((G AnnBackquote),DP (0,0))])
+                                     (HsVar 
+                                      (Unqual {OccName: catchSome}))) 
+                                    (PlaceHolder) 
+                                    ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:44:31-32
+                                      }
+                                     Just (Ann (DP (0,1)) (ColDelta 24) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                                     (HsVar 
+                                      (Unqual {OccName: pe}))))) 
+                                  ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:44:34-35
+                                    }
+                                   Just (Ann (DP (0,1)) (ColDelta 27) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                                   (HsVar 
+                                    (Unqual {OccName: >>}))) 
+                                  (PlaceHolder) 
+                                  ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:44:37-40
+                                    }
+                                   Just (Ann (DP (0,1)) (ColDelta 30) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                                   (HsVar 
+                                    (Unqual {OccName: infi})))))))] 
+                             (EmptyLocalBinds))))] 
+                         [] 
+                         (PlaceHolder) 
+                         (FromSource)) 
+                        (WpHole) 
+                        (PlaceHolder) 
+                        []))]} 
+                     [])))),
+                 ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:45:3-25
+                   }
+                  Just (Ann (DP (1,0)) (ColDelta 0) DP (1,0) [DComment (DP (0,1),DP (0,29)) "-- loop `E.catch` pe >> infi" Nothing] [])
+                  (BodyStmt 
+                   ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:45:3-25
+                     }
+                    Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])
+                    (OpApp 
+                     ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:45:3-6
+                       }
+                      Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                      (HsVar 
+                       (Unqual {OccName: infi}))) 
+                     ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:45:8-16
+                       }
+                      Just (Ann (DP (0,1)) (ColDelta 5) DP (0,1) [] [((G AnnBackquote),DP (0,0)),((G AnnVal),DP (0,0)),((G AnnBackquote),DP (0,0))])
+                      (HsVar 
+                       (Unqual {OccName: finally}))) 
+                     (PlaceHolder) 
+                     ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:45:18-25
+                       }
+                      Just (Ann (DP (0,1)) (ColDelta 15) DP (0,1) [] [])
+                      (HsApp 
+                       ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:45:18-23
+                         }
+                        Just (Ann (DP (0,0)) (ColDelta 15) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                        (HsVar 
+                         (Unqual {OccName: sClose}))) 
+                       ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:45:25
+                         }
+                        Just (Ann (DP (0,1)) (ColDelta 22) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                        (HsVar 
+                         (Unqual {OccName: s}))))))) 
+                   (HsLit 
+                    (HsString "" {FastString: "noSyntaxExpr"})) 
+                   (HsLit 
+                    (HsString "" {FastString: "noSyntaxExpr"})) 
+                   (PlaceHolder))),
+                 ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:49:3-45
+                   }
+                  Just (Ann (DP (2,0)) (ColDelta 0) DP (4,0) [DComment (DP (1,-2),DP (3,0)) "{--\n\n-}" Nothing,DComment (DP (-1,-2),DP (-1,20)) "#ifndef mingw32_HOST_OS" Nothing] [])
+                  (BodyStmt 
+                   ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:49:3-45
+                     }
+                    Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])
+                    (HsApp 
+                     ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:49:3-37
+                       }
+                      Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])
+                      (HsApp 
+                       ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:49:3-30
+                         }
+                        Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])
+                        (HsApp 
+                         ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:49:3-16
+                           }
+                          Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                          (HsVar 
+                           (Unqual {OccName: installHandler}))) 
+                         ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:49:18-30
+                           }
+                          Just (Ann (DP (0,1)) (ColDelta 15) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                          (HsVar 
+                           (Unqual {OccName: openEndedPipe}))))) 
+                       ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:49:32-37
+                         }
+                        Just (Ann (DP (0,1)) (ColDelta 29) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                        (HsVar 
+                         (Unqual {OccName: Ignore}))))) 
+                     ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:49:39-45
+                       }
+                      Just (Ann (DP (0,1)) (ColDelta 36) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                      (HsVar 
+                       (Unqual {OccName: Nothing}))))) 
+                   (HsLit 
+                    (HsString "" {FastString: "noSyntaxExpr"})) 
+                   (HsLit 
+                    (HsString "" {FastString: "noSyntaxExpr"})) 
+                   (PlaceHolder))),
+                 ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:50:3-11
+                   }
+                  Just (Ann (DP (1,0)) (ColDelta 0) DP (1,0) [] [])
+                  (BodyStmt 
+                   ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:50:3-11
+                     }
+                    Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])
+                    (HsApp 
+                     ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:50:3-8
+                       }
+                      Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                      (HsVar 
+                       (Unqual {OccName: return}))) 
+                     ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:50:10-11
+                       }
+                      Just (Ann (DP (0,1)) (ColDelta 7) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])
+                      (HsVar 
+                       (Exact {Name: ()}))))) 
+                   (HsLit 
+                    (HsString "" {FastString: "noSyntaxExpr"})) 
+                   (HsLit 
+                    (HsString "" {FastString: "noSyntaxExpr"})) 
+                   (PlaceHolder)))] 
+                (PlaceHolder)))))] 
+           (HsValBinds 
+            (ValBindsIn {Bag(Located (HsBind RdrName)): 
+             [
+              ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:62:5-49
+                }
+               Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])
+               (FunBind 
+                ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:62:5-13
+                  }
+                 Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                 (Unqual {OccName: catchSome})) 
+                (False) 
+                (MG 
+                 [
+                  ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:62:5-49
+                    }
+                   Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnEqual),DP (0,1))])
+                   (Match 
+                    (Just 
+                     ((,) 
+                      ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:62:5-13
+                        }
+                       Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                       (Unqual {OccName: catchSome})) 
+                      (False))) 
+                    [] 
+                    (Nothing) 
+                    (GRHSs 
+                     [
+                      ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:62:15-49
+                        }
+                       Just (Ann (DP (0,-1)) (ColDelta 10) DP (0,-1) [] [])
+                       (GRHS 
+                        [] 
+                        ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:62:17-49
+                          }
+                         Just (Ann (DP (0,1)) (ColDelta 12) DP (0,1) [] [])
+                         (HsApp 
+                          ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:62:17-27
+                            }
+                           Just (Ann (DP (0,0)) (ColDelta 12) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                           (HsVar 
+                            (Qual {ModuleName: E} {OccName: catchJust}))) 
+                          ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:62:29-49
+                            }
+                           Just (Ann (DP (0,1)) (ColDelta 24) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                           (HsVar 
+                            (Unqual {OccName: interestingExceptions})))))))] 
+                     (EmptyLocalBinds))))] 
+                 [] 
+                 (PlaceHolder) 
+                 (FromSource)) 
+                (WpHole) 
+                (PlaceHolder) 
+                [])),
+              ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:(63,5)-(65,56)
+                }
+               Just (Ann (DP (1,0)) (ColDelta 0) DP (1,0) [] [])
+               (FunBind 
+                ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:63:5-25
+                  }
+                 Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                 (Unqual {OccName: interestingExceptions})) 
+                (False) 
+                (MG 
+                 [
+                  ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:63:5-55
+                    }
+                   Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnEqual),DP (0,1))])
+                   (Match 
+                    (Just 
+                     ((,) 
+                      ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:63:5-25
+                        }
+                       Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                       (Unqual {OccName: interestingExceptions})) 
+                      (False))) 
+                    [
+                     ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:63:27-46
+                       }
+                      Just (Ann (DP (0,1)) (ColDelta 22) DP (0,1) [] [((G AnnAt),DP (0,0))])
+                      (AsPat 
+                       ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:63:27
+                         }
+                        Just (Ann (DP (0,0)) (ColDelta 22) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                        (Unqual {OccName: x})) 
+                       ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:63:29-46
+                         }
+                        Just (Ann (DP (0,0)) (ColDelta 24) DP (0,0) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])
+                        (ParPat 
+                         ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:63:30-45
+                           }
+                          Just (Ann (DP (0,0)) (ColDelta 25) DP (0,0) [] [])
+                          (ConPatIn 
+                           ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:63:30-43
+                             }
+                            Just (Ann (DP (0,0)) (ColDelta 25) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                            (Unqual {OccName: ArithException})) 
+                           (PrefixCon 
+                            [
+                             ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:63:45
+                               }
+                              Just (Ann (DP (0,1)) (ColDelta 40) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                              (WildPat 
+                               (PlaceHolder)))])))))))] 
+                    (Nothing) 
+                    (GRHSs 
+                     [
+                      ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:63:48-55
+                        }
+                       Just (Ann (DP (0,-1)) (ColDelta 43) DP (0,-1) [] [])
+                       (GRHS 
+                        [] 
+                        ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:63:50-55
+                          }
+                         Just (Ann (DP (0,1)) (ColDelta 45) DP (0,1) [] [])
+                         (HsApp 
+                          ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:63:50-53
+                            }
+                           Just (Ann (DP (0,0)) (ColDelta 45) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                           (HsVar 
+                            (Unqual {OccName: Just}))) 
+                          ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:63:55
+                            }
+                           Just (Ann (DP (0,1)) (ColDelta 50) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                           (HsVar 
+                            (Unqual {OccName: x})))))))] 
+                     (EmptyLocalBinds)))),
+                  ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:64:5-55
+                    }
+                   Just (Ann (DP (1,0)) (ColDelta 0) DP (1,0) [] [((G AnnEqual),DP (0,1))])
+                   (Match 
+                    (Just 
+                     ((,) 
+                      ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:64:5-25
+                        }
+                       Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                       (Unqual {OccName: interestingExceptions})) 
+                      (False))) 
+                    [
+                     ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:64:27-46
+                       }
+                      Just (Ann (DP (0,1)) (ColDelta 22) DP (0,1) [] [((G AnnAt),DP (0,0))])
+                      (AsPat 
+                       ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:64:27
+                         }
+                        Just (Ann (DP (0,0)) (ColDelta 22) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                        (Unqual {OccName: x})) 
+                       ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:64:29-46
+                         }
+                        Just (Ann (DP (0,0)) (ColDelta 24) DP (0,0) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])
+                        (ParPat 
+                         ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:64:30-45
+                           }
+                          Just (Ann (DP (0,0)) (ColDelta 25) DP (0,0) [] [])
+                          (ConPatIn 
+                           ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:64:30-43
+                             }
+                            Just (Ann (DP (0,0)) (ColDelta 25) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                            (Unqual {OccName: ArrayException})) 
+                           (PrefixCon 
+                            [
+                             ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:64:45
+                               }
+                              Just (Ann (DP (0,1)) (ColDelta 40) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                              (WildPat 
+                               (PlaceHolder)))])))))))] 
+                    (Nothing) 
+                    (GRHSs 
+                     [
+                      ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:64:48-55
+                        }
+                       Just (Ann (DP (0,-1)) (ColDelta 43) DP (0,-1) [] [])
+                       (GRHS 
+                        [] 
+                        ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:64:50-55
+                          }
+                         Just (Ann (DP (0,1)) (ColDelta 45) DP (0,1) [] [])
+                         (HsApp 
+                          ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:64:50-53
+                            }
+                           Just (Ann (DP (0,0)) (ColDelta 45) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                           (HsVar 
+                            (Unqual {OccName: Just}))) 
+                          ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:64:55
+                            }
+                           Just (Ann (DP (0,1)) (ColDelta 50) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                           (HsVar 
+                            (Unqual {OccName: x})))))))] 
+                     (EmptyLocalBinds)))),
+                  ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:65:5-56
+                    }
+                   Just (Ann (DP (1,0)) (ColDelta 0) DP (1,0) [] [((G AnnEqual),DP (0,20))])
+                   (Match 
+                    (Just 
+                     ((,) 
+                      ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:65:5-25
+                        }
+                       Just (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])
+                       (Unqual {OccName: interestingExceptions})) 
+                      (False))) 
+                    [
+                     ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:65:27
+                       }
+                      Just (Ann (DP (0,1)) (ColDelta 22) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                      (WildPat 
+                       (PlaceHolder)))] 
+                    (Nothing) 
+                    (GRHSs 
+                     [
+                      ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:65:48-56
+                        }
+                       Just (Ann (DP (0,-1)) (ColDelta 43) DP (0,-1) [] [])
+                       (GRHS 
+                        [] 
+                        ({ ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:65:50-56
+                          }
+                         Just (Ann (DP (0,1)) (ColDelta 45) DP (0,1) [] [((G AnnVal),DP (0,0))])
+                         (HsVar 
+                          (Unqual {OccName: Nothing})))))] 
+                     (EmptyLocalBinds))))] 
+                 [] 
+                 (PlaceHolder) 
+                 (FromSource)) 
+                (WpHole) 
+                (PlaceHolder) 
+                []))]} 
+             [])))))] 
+       [] 
+       (PlaceHolder) 
+       (FromSource)) 
+      (WpHole) 
+      (PlaceHolder) 
+      [])))] 
+  (Nothing) 
+  (Nothing)))
+==============
+[(AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:1:1 CN "HsModule" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((AnnComment DComment (DP (0,0),DP (0,40)) "{-# OPTIONS -cpp -XPatternSignatures #-}" Nothing),DP (0,0)),((G AnnModule),DP (1,1)),((G AnnVal),DP (0,1)),((G AnnWhere),DP (0,1)),((AnnComment DComment (DP (1,1),DP (1,6)) "#endif" Nothing),DP (1,1)),((G AnnEofPos),DP (2,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:2:32-39 CN "(:)" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 32) DP (0,0) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:2:33-38 CN "IEVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 33) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:2:33-38 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 33) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:4:1-24 CN "ImportDecl" NotNeeded,
+  (Ann (DP (2,1)) (ColDelta 1) DP (2,1) [] [((G AnnImport),DP (0,0)),((G AnnVal),DP (0,1))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:6:1-30 CN "ImportDecl" NotNeeded,
+  (Ann (DP (2,1)) (ColDelta 1) DP (2,1) [] [((G AnnImport),DP (0,0)),((G AnnVal),DP (0,1))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:7:1-32 CN "ImportDecl" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [((G AnnImport),DP (0,0)),((G AnnVal),DP (0,1))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:9:1-29 CN "ImportDecl" NotNeeded,
+  (Ann (DP (2,1)) (ColDelta 1) DP (2,1) [] [((G AnnImport),DP (0,0)),((G AnnVal),DP (0,1)),((G AnnAs),DP (0,1)),((G AnnVal),DP (0,1))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:10:1-25 CN "ImportDecl" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [((G AnnImport),DP (0,0)),((G AnnVal),DP (0,1))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:11:1-14 CN "ImportDecl" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [((G AnnImport),DP (0,0)),((G AnnVal),DP (0,1))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:12:1-16 CN "ImportDecl" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [((G AnnImport),DP (0,0)),((G AnnVal),DP (0,1))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:17:1-27 CN "ImportDecl" NotNeeded,
+  (Ann (DP (2,1)) (ColDelta 1) DP (5,1) [DComment (DP (2,1),DP (4,3)) "{-\n\n-}" Nothing,DComment (DP (-1,1),DP (-1,23)) "#ifndef mingw32_HOST_OS" Nothing] [((G AnnImport),DP (0,0)),((G AnnVal),DP (0,1))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:22:1-6 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:22:1-51 CN "SigD" NotNeeded,
+  (Ann (DP (3,1)) (ColDelta 1) DP (5,1) [DComment (DP (1,1),DP (3,3)) "{-\n\n-}" Nothing,DComment (DP (-1,1),DP (-1,6)) "#endif" Nothing] [((G AnnDcolon),DP (0,1))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:22:11-14 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 11) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:22:11-51 CN "HsForAllTy" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 11) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:22:11-51 CN "HsFunTy" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 11) DP (0,0) [] [((G AnnRarrow),DP (0,1))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:22:19-42 CN "HsParTy" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 19) DP (0,0) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:22:19-51 CN "HsFunTy" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 19) DP (0,1) [] [((G AnnRarrow),DP (0,1))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:22:20-26 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 20) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:22:20-41 CN "HsFunTy" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 20) DP (0,0) [] [((G AnnRarrow),DP (0,1))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:22:31-32 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 31) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:22:31-41 CN "HsAppTy" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 31) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:22:34-41 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 34) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:22:47-48 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 47) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:22:47-51 CN "HsAppTy" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 47) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:22:50-51 CN "HsTupleTy" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 50) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:23:1-6 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:(23,1)-(65,56) CN "Match" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 1) DP (0,0) [] [((G AnnEqual),DP (0,1)),((AnnComment DComment (DP (1,1),DP (3,3)) "{-\n\n-}" Nothing),DP (1,1)),((AnnComment DComment (DP (-1,1),DP (-1,6)) "#endif" Nothing),DP (-1,1)),((G AnnWhere),DP (4,3))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:(23,1)-(65,56) CN "ValD" NotNeeded,
+  (Ann (DP (1,1)) (ColDelta 1) DP (1,1) [] [])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:23:8-11 CN "VarPat" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 8) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:23:13-16 CN "VarPat" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 13) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:(23,18)-(65,56) CN "GRHS" NotNeeded,
+  (Ann (DP (0,-1)) (ColDelta 18) DP (0,-1) [] [])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:(23,20)-(50,11) CN "HsDo" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 20) DP (0,1) [] [((G AnnDo),DP (0,0)),((AnnList ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:(27,3)-(50,11) Ref "delta-1"),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:27:3-16 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:27:3-30 CN "HsApp" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:27:3-37 CN "HsApp" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:27:3-45 CN "BodyStmt" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:27:3-45 CN "HsApp" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:(27,3)-(50,11) CN "(:)" Ref "delta-1",
+  (Ann (DP (2,0)) (ColDelta 3) DP (4,0) [DComment (DP (1,-2),DP (3,0)) "{-\n\n-}" Nothing,DComment (DP (-1,-2),DP (-1,20)) "#ifndef mingw32_HOST_OS" Nothing] [])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:27:18-30 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 15) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:27:32-37 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 29) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:27:39-45 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 36) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:31:3 CN "VarPat" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:31:3-49 CN "BindStmt" NotNeeded,
+  (Ann (DP (2,0)) (ColDelta 0) DP (4,0) [DComment (DP (1,-2),DP (3,0)) "{-\n\n-}" Nothing,DComment (DP (-1,-2),DP (-1,3)) "#endif" Nothing] [((G AnnLarrow),DP (0,1))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:31:8-15 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 5) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:31:8-28 CN "OpApp" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 5) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:31:8-37 CN "OpApp" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 5) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:31:8-49 CN "OpApp" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 5) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:31:17 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 14) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:31:19-28 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 16) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:31:30 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 27) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:31:32-37 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 29) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:31:39 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 36) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:31:41-44 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 38) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:31:41-49 CN "HsApp" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 38) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:31:46-49 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 43) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:(32,3)-(35,33) CN "LetStmt" NotNeeded,
+  (Ann (DP (1,0)) (ColDelta 0) DP (1,0) [] [((G AnnLet),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:32:7-10 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:(32,7)-(35,33) CN "FunBind" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:(32,7)-(35,33) CN "HsValBinds" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 4) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:(32,7)-(35,33) CN "Match" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnEqual),DP (0,1))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:32:12-19 CN "TuplePat" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 5) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:32:13 CN "VarPat" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 6) DP (0,0) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:32:15-16 CN "VarPat" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 8) DP (0,0) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:32:18 CN "VarPat" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 11) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:(32,21)-(35,33) CN "GRHS" NotNeeded,
+  (Ann (DP (0,-1)) (ColDelta 14) DP (0,-1) [] [])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:(32,23)-(35,33) CN "HsDo" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 16) DP (0,1) [] [((G AnnDo),DP (0,0)),((AnnList ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:(33,26)-(35,33) Ref "delta-2"),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:33:26-130 CN "LetStmt" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnLet),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:(33,26)-(35,33) CN "(:)" Ref "delta-2",
+  (Ann (DP (1,0)) (ColDelta 19) DP (1,0) [DComment (DP (0,1),DP (0,31)) "-- hSetBuffering h NoBuffering" Nothing] [])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:33:30-31 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:33:30-130 CN "FunBind" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:33:30-130 CN "HsValBinds" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 4) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:33:30-130 CN "Match" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnEqual),DP (0,1))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:33:33-51 CN "ParPat" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 3) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:33:34 CN "VarPat" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 4) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:33:34-50 CN "SigPatIn" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 4) DP (0,0) [] [((G AnnDcolon),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:33:37-50 CN "HsTyVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 7) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:33:53-130 CN "GRHS" NotNeeded,
+  (Ann (DP (0,-1)) (ColDelta 23) DP (0,-1) [] [])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:33:55-58 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 25) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:33:55-85 CN "HsApp" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 25) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:33:55-91 CN "HsApp" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 25) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:33:55-130 CN "HsApp" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 25) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:33:60-85 CN "HsLit" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 30) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:33:87-91 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 57) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:33:93-130 CN "HsPar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 63) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:33:94-121 CN "HsLit" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 64) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:33:94-129 CN "OpApp" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 64) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:33:122-123 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 92) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:33:124-127 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 94) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:33:124-129 CN "HsApp" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 94) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:33:129 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 99) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:34:26-32 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:34:26-37 CN "HsApp" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:34:26-39 CN "HsApp" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:34:26-59 CN "HsApp" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:34:26-64 CN "HsApp" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:34:26-77 CN "BodyStmt" NotNeeded,
+  (Ann (DP (1,0)) (ColDelta 0) DP (1,0) [] [])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:34:26-77 CN "OpApp" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:34:34-37 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 8) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:34:39 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 13) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:34:41-59 CN "ExplicitTuple" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 15) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:34:42-43 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 16) DP (0,0) [] [((G AnnVal),DP (0,0)),((G AnnComma),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:34:42-43 CN "Present" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 16) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:34:45-56 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 19) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:34:45-58 CN "HsApp" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 19) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:34:45-58 CN "Present" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 19) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:34:58 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 32) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:34:61-64 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 35) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:34:66-74 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 40) DP (0,1) [] [((G AnnBackquote),DP (0,0)),((G AnnVal),DP (0,0)),((G AnnBackquote),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:34:76-77 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 50) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:35:26-31 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:35:26-33 CN "BodyStmt" NotNeeded,
+  (Ann (DP (1,0)) (ColDelta 0) DP (1,0) [] [])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:35:26-33 CN "HsApp" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:35:33 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 7) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:(36,3)-(40,20) CN "LetStmt" NotNeeded,
+  (Ann (DP (1,0)) (ColDelta 0) DP (1,0) [] [((G AnnLet),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:36:7-9 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:(36,7)-(38,61) CN "FunBind" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:(36,7)-(38,61) CN "Match" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnEqual),DP (0,1))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:(36,7)-(40,20) CN "HsValBinds" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 4) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:(36,11)-(38,61) CN "GRHS" NotNeeded,
+  (Ann (DP (0,-1)) (ColDelta 4) DP (0,-1) [] [])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:36:13-83 CN "HsLit" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 6) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:(36,13)-(37,72) CN "OpApp" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 6) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:(36,13)-(38,35) CN "OpApp" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 6) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:(36,13)-(38,55) CN "OpApp" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 6) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:(36,13)-(38,61) CN "OpApp" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 6) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:36:84-85 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 77) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:37:13-72 CN "HsLit" NotNeeded,
+  (Ann (DP (1,6)) (ColDelta 6) DP (1,6) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:37:73-74 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 66) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:38:13-35 CN "HsLit" NotNeeded,
+  (Ann (DP (1,6)) (ColDelta 6) DP (1,6) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:38:36-37 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 29) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:38:38-55 CN "HsPar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 31) DP (0,0) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:38:39-42 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 32) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:38:39-54 CN "OpApp" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 32) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:38:44 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 37) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:38:46-49 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 39) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:38:46-54 CN "HsApp" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 39) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:38:51-54 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 44) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:38:56-57 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 49) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:38:58-61 CN "HsLit" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 51) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:39:7-10 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:(39,7)-(40,20) CN "FunBind" NotNeeded,
+  (Ann (DP (1,0)) (ColDelta 0) DP (1,0) [] [])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:(39,7)-(40,20) CN "Match" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnEqual),DP (0,1))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:(39,12)-(40,20) CN "GRHS" NotNeeded,
+  (Ann (DP (0,-1)) (ColDelta 5) DP (0,-1) [] [])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:(39,14)-(40,20) CN "HsDo" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 7) DP (0,1) [] [((G AnnDo),DP (0,0)),((AnnList ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:(39,17)-(40,20) Ref "delta-3"),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:39:17-22 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:39:17-24 CN "HsApp" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:39:17-35 CN "OpApp" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:39:17-42 CN "BodyStmt" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:39:17-42 CN "OpApp" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:(39,17)-(40,20) CN "(:)" Ref "delta-3",
+  (Ann (DP (0,1)) (ColDelta 10) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:39:24 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 7) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:39:26-28 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 9) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:39:30-35 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 13) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:39:37 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 20) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:39:39-42 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 22) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:40:17-20 CN "BodyStmt" NotNeeded,
+  (Ann (DP (1,0)) (ColDelta 0) DP (1,0) [] [])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:40:17-20 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:(42,3)-(43,59) CN "LetStmt" NotNeeded,
+  (Ann (DP (1,0)) (ColDelta 0) DP (2,0) [DComment (DP (1,0),DP (1,49)) "--  let loop = accept s >>= forkIO . work >> loop" Nothing] [((G AnnLet),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:42:7-8 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:(42,7)-(43,59) CN "FunBind" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:(42,7)-(43,59) CN "HsValBinds" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 4) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:(42,7)-(43,59) CN "Match" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnEqual),DP (0,1))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:42:10 CN "VarPat" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 3) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:(42,12)-(43,59) CN "GRHS" NotNeeded,
+  (Ann (DP (0,-1)) (ColDelta 5) DP (0,-1) [] [])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:42:14-17 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 7) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:42:14-44 CN "HsApp" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 7) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:42:14-50 CN "HsApp" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 7) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:(42,14)-(43,59) CN "HsApp" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 7) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:42:19-44 CN "HsLit" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 12) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:42:46-50 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 39) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:(42,52)-(43,59) CN "HsPar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 45) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:42:53-78 CN "HsLit" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 46) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:(42,53)-(43,58) CN "OpApp" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 46) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:42:79-80 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 72) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:43:53-56 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 46) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:43:53-58 CN "HsApp" NotNeeded,
+  (Ann (DP (1,46)) (ColDelta 46) DP (1,46) [] [])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:43:58 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 51) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:44:3-40 CN "LetStmt" NotNeeded,
+  (Ann (DP (1,0)) (ColDelta 0) DP (1,0) [] [((G AnnLet),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:44:7-10 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:44:7-40 CN "FunBind" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:44:7-40 CN "HsValBinds" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 4) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:44:7-40 CN "Match" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnEqual),DP (0,1))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:44:12-40 CN "GRHS" NotNeeded,
+  (Ann (DP (0,-1)) (ColDelta 5) DP (0,-1) [] [])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:44:14-17 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 7) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:44:14-32 CN "OpApp" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 7) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:44:14-40 CN "OpApp" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 7) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:44:19-29 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 12) DP (0,1) [] [((G AnnBackquote),DP (0,0)),((G AnnVal),DP (0,0)),((G AnnBackquote),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:44:31-32 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 24) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:44:34-35 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 27) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:44:37-40 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 30) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:45:3-6 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:45:3-25 CN "BodyStmt" NotNeeded,
+  (Ann (DP (1,0)) (ColDelta 0) DP (1,0) [DComment (DP (0,1),DP (0,29)) "-- loop `E.catch` pe >> infi" Nothing] [])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:45:3-25 CN "OpApp" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:45:8-16 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 5) DP (0,1) [] [((G AnnBackquote),DP (0,0)),((G AnnVal),DP (0,0)),((G AnnBackquote),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:45:18-23 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 15) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:45:18-25 CN "HsApp" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 15) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:45:25 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 22) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:49:3-16 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:49:3-30 CN "HsApp" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:49:3-37 CN "HsApp" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:49:3-45 CN "BodyStmt" NotNeeded,
+  (Ann (DP (2,0)) (ColDelta 0) DP (4,0) [DComment (DP (1,-2),DP (3,0)) "{--\n\n-}" Nothing,DComment (DP (-1,-2),DP (-1,20)) "#ifndef mingw32_HOST_OS" Nothing] [])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:49:3-45 CN "HsApp" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:49:18-30 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 15) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:49:32-37 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 29) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:49:39-45 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 36) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:50:3-8 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:50:3-11 CN "BodyStmt" NotNeeded,
+  (Ann (DP (1,0)) (ColDelta 0) DP (1,0) [] [])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:50:3-11 CN "HsApp" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:50:10-11 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 7) DP (0,1) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:62:5-13 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:62:5-49 CN "FunBind" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:62:5-49 CN "Match" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnEqual),DP (0,1))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:(62,5)-(65,56) CN "HsValBinds" NotNeeded,
+  (Ann (DP (1,0)) (ColDelta 5) DP (8,0) [DComment (DP (0,2),DP (0,35)) "-- why are these handlers needed?" Nothing,DComment (DP (1,-4),DP (1,23)) "#ifdef EXTENSIBLE_EXCEPTIONS" Nothing,DComment (DP (1,0),DP (1,66)) "-- catchSome op h :: IO () -> (E.SomeExcpetion -> IO () ) -> IO ()" Nothing,DComment (DP (1,0),DP (1,0)) "" Nothing,DComment (DP (0,0),DP (0,9)) "catchSome" Nothing,DComment (DP (0,1),DP (0,3)) "op" Nothing,DComment (DP (0,1),DP (0,2)) "h" Nothing,DComment (DP (0,1),DP (0,2)) "=" Nothing,DComment (DP (0,1),DP (0,3)) "op" Nothing,DComment (DP (0,1),DP (0,2)) "`" Nothing,DComment (DP (0,0),DP (0,9)) "E.catches" Nothing,DComment (DP (0,0),DP (0,1)) "`" Nothing,DComment (DP (0,1),DP (0,2)) "[" Nothing,DComment (DP (1,8),DP (1,15)) "Handler" Nothing,DComment (DP (0,1),DP (0,2)) "$" Nothing,DComment (DP (0,1),DP (0,2)) "\\" Nothing,DComment (DP (0,0),DP (0,1)) "(" Nothing,DComment (DP (0,0),DP (0,1)) "e" Nothing,DComment (DP (0,1),DP (0,3)) "::" Nothing,DComment (DP (0,1),DP (0,15)) "ArithException" Nothing,DComment (DP (0,0),DP (0,1)) ")" Nothing,DComment (DP (0,1),DP (0,3)) "->" Nothing,DComment (DP (0,1),DP (0,2)) "h" Nothing,DComment (DP (0,1),DP (0,2)) "(" Nothing,DComment (DP (0,0),DP (0,11)) "toException" Nothing,DComment (DP (0,1),DP (0,2)) "e" Nothing,DComment (DP (0,0),DP (0,1)) ")" Nothing,DComment (DP (0,0),DP (0,1)) "," Nothing,DComment (DP (1,8),DP (1,15)) "Handler" Nothing,DComment (DP (0,1),DP (0,2)) "$" Nothing,DComment (DP (0,1),DP (0,2)) "\\" Nothing,DComment (DP (0,0),DP (0,1)) "(" Nothing,DComment (DP (0,0),DP (0,1)) "e" Nothing,DComment (DP (0,1),DP (0,3)) "::" Nothing,DComment (DP (0,1),DP (0,15)) "ArrayException" Nothing,DComment (DP (0,0),DP (0,1)) ")" Nothing,DComment (DP (0,1),DP (0,3)) "->" Nothing,DComment (DP (0,1),DP (0,2)) "h" Nothing,DComment (DP (0,1),DP (0,2)) "(" Nothing,DComment (DP (0,0),DP (0,11)) "toException" Nothing,DComment (DP (0,1),DP (0,2)) "e" Nothing,DComment (DP (0,0),DP (0,1)) ")" Nothing,DComment (DP (1,6),DP (1,7)) "]" Nothing,DComment (DP (1,-4),DP (1,0)) "#else" Nothing] [])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:62:15-49 CN "GRHS" NotNeeded,
+  (Ann (DP (0,-1)) (ColDelta 10) DP (0,-1) [] [])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:62:17-27 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 12) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:62:17-49 CN "HsApp" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 12) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:62:29-49 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 24) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:63:5-25 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:63:5-55 CN "Match" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnEqual),DP (0,1))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:(63,5)-(65,56) CN "FunBind" NotNeeded,
+  (Ann (DP (1,0)) (ColDelta 0) DP (1,0) [] [])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:63:27 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 22) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:63:27-46 CN "AsPat" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 22) DP (0,1) [] [((G AnnAt),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:63:29-46 CN "ParPat" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 24) DP (0,0) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:63:30-43 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 25) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:63:30-45 CN "ConPatIn" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 25) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:63:45 CN "WildPat" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 40) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:63:48-55 CN "GRHS" NotNeeded,
+  (Ann (DP (0,-1)) (ColDelta 43) DP (0,-1) [] [])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:63:50-53 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 45) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:63:50-55 CN "HsApp" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 45) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:63:55 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 50) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:64:5-25 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:64:5-55 CN "Match" NotNeeded,
+  (Ann (DP (1,0)) (ColDelta 0) DP (1,0) [] [((G AnnEqual),DP (0,1))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:64:27 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 22) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:64:27-46 CN "AsPat" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 22) DP (0,1) [] [((G AnnAt),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:64:29-46 CN "ParPat" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 24) DP (0,0) [] [((G AnnOpenP),DP (0,0)),((G AnnCloseP),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:64:30-43 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 25) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:64:30-45 CN "ConPatIn" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 25) DP (0,0) [] [])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:64:45 CN "WildPat" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 40) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:64:48-55 CN "GRHS" NotNeeded,
+  (Ann (DP (0,-1)) (ColDelta 43) DP (0,-1) [] [])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:64:50-53 CN "HsVar" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 45) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:64:50-55 CN "HsApp" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 45) DP (0,1) [] [])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:64:55 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 50) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:65:5-25 CN "Unqual" NotNeeded,
+  (Ann (DP (0,0)) (ColDelta 0) DP (0,0) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:65:5-56 CN "Match" NotNeeded,
+  (Ann (DP (1,0)) (ColDelta 0) DP (1,0) [] [((G AnnEqual),DP (0,20))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:65:27 CN "WildPat" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 22) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:65:48-56 CN "GRHS" NotNeeded,
+  (Ann (DP (0,-1)) (ColDelta 43) DP (0,-1) [] [])),
+ (AnnKey ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:65:50-56 CN "HsVar" NotNeeded,
+  (Ann (DP (0,1)) (ColDelta 45) DP (0,1) [] [((G AnnVal),DP (0,0))])),
+ (AnnKey <no location info> CN "EmptyLocalBinds" NotNeeded,
+  (Ann (DP (-33,0)) (ColDelta -30) DP (-33,0) [] []))]
+==============
+([((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:1:1,
+    AnnModule),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:2:1-6]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:1:1,
+    AnnWhere),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:2:41-45]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:2:32-39,
+    AnnCloseP),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:2:39]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:2:32-39,
+    AnnOpenP),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:2:32]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:4:1-24,
+    AnnImport),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:4:1-6]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:4:1-24,
+    AnnSemi),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:6:1]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:6:1-30,
+    AnnImport),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:6:1-6]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:6:1-30,
+    AnnSemi),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:7:1]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:7:1-32,
+    AnnImport),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:7:1-6]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:7:1-32,
+    AnnSemi),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:9:1]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:9:1-29,
+    AnnAs),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:9:26-27]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:9:1-29,
+    AnnImport),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:9:1-6]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:9:1-29,
+    AnnSemi),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:10:1]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:9:1-29,
+    AnnVal),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:9:29]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:10:1-25,
+    AnnImport),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:10:1-6]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:10:1-25,
+    AnnSemi),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:11:1]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:11:1-14,
+    AnnImport),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:11:1-6]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:11:1-14,
+    AnnSemi),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:12:1]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:12:1-16,
+    AnnImport),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:12:1-6]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:12:1-16,
+    AnnSemi),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:17:1]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:17:1-27,
+    AnnImport),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:17:1-6]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:17:1-27,
+    AnnSemi),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:22:1]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:22:1-51,
+    AnnDcolon),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:22:8-9]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:22:1-51,
+    AnnSemi),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:23:1]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:22:11-51,
+    AnnRarrow),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:22:16-17]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:22:19-42,
+    AnnCloseP),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:22:42]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:22:19-42,
+    AnnOpenP),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:22:19]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:22:19-51,
+    AnnRarrow),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:22:44-45]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:22:20-26,
+    AnnRarrow),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:22:28-29]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:22:20-41,
+    AnnRarrow),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:22:28-29]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:22:50-51,
+    AnnCloseP),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:22:51]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:22:50-51,
+    AnnOpenP),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:22:50]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:(23,1)-(65,56),
+    AnnEqual),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:23:18]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:(23,1)-(65,56),
+    AnnFunId),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:23:1-6]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:(23,1)-(65,56),
+    AnnSemi),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:67:1]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:(23,1)-(65,56),
+    AnnWhere),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:54:3-7]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:(23,20)-(50,11),
+    AnnDo),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:23:20-21]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:27:3-45,
+    AnnSemi),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:31:3]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:31:3-49,
+    AnnLarrow),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:31:5-6]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:31:3-49,
+    AnnSemi),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:32:3]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:31:8-28,
+    AnnVal),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:31:17]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:31:8-37,
+    AnnVal),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:31:30]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:31:8-49,
+    AnnVal),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:31:39]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:(32,3)-(35,33),
+    AnnLet),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:32:3-5]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:(32,3)-(35,33),
+    AnnSemi),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:36:3]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:(32,7)-(35,33),
+    AnnEqual),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:32:21]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:(32,7)-(35,33),
+    AnnFunId),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:32:7-10]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:32:12-19,
+    AnnCloseP),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:32:19]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:32:12-19,
+    AnnOpenP),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:32:12]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:32:13,
+    AnnComma),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:32:14]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:32:15-16,
+    AnnComma),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:32:17]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:(32,23)-(35,33),
+    AnnDo),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:32:23-24]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:33:26-130,
+    AnnLet),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:33:26-28]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:33:26-130,
+    AnnSemi),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:34:26]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:33:30-130,
+    AnnEqual),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:33:53]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:33:30-130,
+    AnnFunId),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:33:30-31]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:33:33-51,
+    AnnCloseP),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:33:51]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:33:33-51,
+    AnnOpenP),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:33:33]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:33:34-50,
+    AnnDcolon),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:33:35-36]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:33:93-130,
+    AnnCloseP),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:33:130]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:33:93-130,
+    AnnOpenP),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:33:93]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:33:94-129,
+    AnnVal),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:33:122-123]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:34:26-77,
+    AnnSemi),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:35:26]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:34:26-77,
+    AnnVal),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:34:66-74]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:34:41-59,
+    AnnCloseP),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:34:59]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:34:41-59,
+    AnnOpenP),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:34:41]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:34:42-43,
+    AnnComma),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:34:44]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:34:66-74,
+    AnnBackquote),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:34:66,
+    ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:34:74]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:34:66-74,
+    AnnVal),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:34:67-73]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:(36,3)-(40,20),
+    AnnLet),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:36:3-5]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:(36,3)-(40,20),
+    AnnSemi),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:42:3]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:(36,7)-(38,61),
+    AnnEqual),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:36:11]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:(36,7)-(38,61),
+    AnnFunId),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:36:7-9]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:(36,7)-(38,61),
+    AnnSemi),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:39:7]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:(36,13)-(37,72),
+    AnnVal),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:36:84-85]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:(36,13)-(38,35),
+    AnnVal),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:37:73-74]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:(36,13)-(38,55),
+    AnnVal),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:38:36-37]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:(36,13)-(38,61),
+    AnnVal),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:38:56-57]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:38:38-55,
+    AnnCloseP),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:38:55]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:38:38-55,
+    AnnOpenP),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:38:38]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:38:39-54,
+    AnnVal),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:38:44]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:(39,7)-(40,20),
+    AnnEqual),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:39:12]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:(39,7)-(40,20),
+    AnnFunId),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:39:7-10]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:(39,14)-(40,20),
+    AnnDo),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:39:14-15]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:39:17-35,
+    AnnVal),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:39:26-28]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:39:17-42,
+    AnnSemi),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:40:17]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:39:17-42,
+    AnnVal),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:39:37]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:(42,3)-(43,59),
+    AnnLet),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:42:3-5]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:(42,3)-(43,59),
+    AnnSemi),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:44:3]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:(42,7)-(43,59),
+    AnnEqual),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:42:12]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:(42,7)-(43,59),
+    AnnFunId),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:42:7-8]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:(42,52)-(43,59),
+    AnnCloseP),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:43:59]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:(42,52)-(43,59),
+    AnnOpenP),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:42:52]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:(42,53)-(43,58),
+    AnnVal),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:42:79-80]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:44:3-40,
+    AnnLet),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:44:3-5]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:44:3-40,
+    AnnSemi),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:45:3]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:44:7-40,
+    AnnEqual),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:44:12]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:44:7-40,
+    AnnFunId),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:44:7-10]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:44:14-32,
+    AnnVal),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:44:19-29]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:44:14-40,
+    AnnVal),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:44:34-35]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:44:19-29,
+    AnnBackquote),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:44:19,
+    ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:44:29]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:44:19-29,
+    AnnVal),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:44:20-28]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:45:3-25,
+    AnnSemi),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:49:3]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:45:3-25,
+    AnnVal),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:45:8-16]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:45:8-16,
+    AnnBackquote),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:45:8,
+    ../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:45:16]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:45:8-16,
+    AnnVal),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:45:9-15]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:49:3-45,
+    AnnSemi),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:50:3]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:50:3-11,
+    AnnSemi),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:54:3]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:50:10-11,
+    AnnCloseP),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:50:11]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:50:10-11,
+    AnnOpenP),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:50:10]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:62:5-49,
+    AnnEqual),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:62:15]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:62:5-49,
+    AnnFunId),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:62:5-13]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:62:5-49,
+    AnnSemi),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:63:5]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:63:5-55,
+    AnnEqual),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:63:48]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:63:5-55,
+    AnnFunId),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:63:5-25]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:63:5-55,
+    AnnSemi),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:64:5]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:63:27-46,
+    AnnAt),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:63:28]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:63:29-46,
+    AnnCloseP),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:63:46]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:63:29-46,
+    AnnOpenP),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:63:29]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:64:5-55,
+    AnnEqual),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:64:48]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:64:5-55,
+    AnnFunId),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:64:5-25]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:64:5-55,
+    AnnSemi),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:65:5]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:64:27-46,
+    AnnAt),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:64:28]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:64:29-46,
+    AnnCloseP),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:64:46]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:64:29-46,
+    AnnOpenP),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:64:29]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:65:5-56,
+    AnnEqual),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:65:48]),
+  ((../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:65:5-56,
+    AnnFunId),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:65:5-25]),
+  ((<no location info>, AnnEofPos),
+   [../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:67:1])],
+ [(../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:(23,1)-(65,56),
+   [AnnLineComment "-- why are these handlers needed?",
+    AnnBlockComment "{-\n\n-}"]),
+  (../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:(23,20)-(50,11),
+   [AnnBlockComment "{--\n\n-}",
+    AnnLineComment "-- loop `E.catch` pe >> infi",
+    AnnLineComment "--  let loop = accept s >>= forkIO . work >> loop",
+    AnnBlockComment "{-\n\n-}", AnnBlockComment "{-\n\n-}"]),
+  (../../hackage-packages/HAppS-Server-0.9.3.1/src/HAppS/Server/HTTP/Listen.hs:(32,23)-(35,33),
+   [AnnLineComment "-- hSetBuffering h NoBuffering"]),
+  (<no location info>,
+   [AnnBlockComment "{-\n\n-}", AnnBlockComment "{-\n\n-}",
+    AnnBlockComment "{-# OPTIONS -cpp -XPatternSignatures #-}"])])
