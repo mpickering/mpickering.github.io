@@ -1,0 +1,354 @@
+<a href="Haskell.hs19427277221083454666.out.html">prev</a></br><a href="failures.html">home</a></br><a href="HUnit.hs15519013931617819336.out.html">next</a></br></br><pre>18c18
+< #!/bin/bash -uxe
+---
+> 
+28a29
+> 
+28a30
+> 
+28a31
+> 
+28a32
+> 
+28a33
+> 
+28a34
+> 
+28a35
+> 
+28a36
+> 
+28a37
+> 
+28a38
+> 
+158a169
+> 
+</pre></br><h2>original</h2></br><pre>{-# LANGUAGE ScopedTypeVariables #-}
+module Happstack.Server.Helpers
+    -- ( smartserver, exactdir, smartserver',getData',vhosts,vhost, cleanUpLockFile, scrapeUrl, websiteUp, stateShutDown )
+  where
+
+import Control.Monad.Error
+import Happstack.Server
+import Happstack.State
+import Control.Concurrent
+import System.Time
+import Data.Maybe (fromMaybe)
+import qualified Data.ByteString.Char8 as B
+
+-- run the happs server on some port
+-- using simpleHTTPWithSocket instead of simpleHTTP helps the app restart sanely when daemonized with supervisord, instead of getting bind failed
+--   error because of lingering open socket when kill-9'd or out-of-memory errord.
+{- supervisord start file with lock cleanup looks something like
+#!/bin/bash -uxe
+#ulimit -v 262144
+#ulimit -v 600000
+ulimit -v 300000
+cd /home/thartman/appserver
+/bin/rm -f _local/appserver_state.lock
+./dist/build/patchtagserver/patchtagserver --port=80 --pubdomain=localhost --privdomain=localhost --analytics=False --adminusers=['"'tphyahoo21'"']
+/bin/rm -f _local/appserver_state.lock
+echo sleeping for 1 seconds
+sleep 1
+-}
+smartserver conf h stateProxy = do
+      socket <- bindPort conf
+      webserverTid <- forkIO $ simpleHTTPWithSocket socket conf h
+      putStrLn . ( "starting happs server" ++ ) =<< time
+
+      control <- startSystemState stateProxy -- start the HAppS state system
+      putStrLn . ( "happs state started" ++ ) =<< time
+
+      waitForTermination
+      killThread webserverTid
+      stateShutdown control
+
+time = return . ("\ntime: " ++ ) . show  =<< getClockTime
+
+stateShutdown control = do
+
+
+      putStrLn . ( "creating checkpoint: " ++ ) =<< time
+      createCheckpoint control
+
+      putStrLn .  ( "shutting down system: " ++ ) =<< time
+      shutdownSystem control
+      putStrLn .  ( "exiting: " ++ ) =<< time
+
+exactdir :: (Monad m) => String -> ServerPartT m a -> ServerPartT m a
+exactdir staticPath = spsIf (\rq -> rqURL rq == staticPath)
+
+spsIf :: (Monad m) => (Request -> Bool) -> ServerPartT m a -> ServerPartT m a
+spsIf p sps = do
+  rq <- askRq
+  if p rq
+    then sps
+    else mzero
+
+getData' :: (ServerMonad m, FromData a, MonadPlus m) => m a
+getData' = getData >>= maybe mzero return
+
+-- | multiple vhosts to a server, eg
+-- | vhosts [("mysite.com",80),("www.mysite.com",80)] mySiteController
+vhosts hosts sp = msum . map (\h -> vhost h sp) $ hosts
+
+{- | vhost doms h = msum . map (\d -> site d h) doms
+     similar to apache vhost. given (domain,port) and a main request handler, handle requests if it's the specified domain and port
+     vhost ("mysite.com",80) mySiteController
+-}
+vhost :: (String,Int) ->  ServerPartT IO Response -> ServerPartT IO Response
+vhost  vh@(_, _) sp = do
+  (p :: Int) <- liftM ( snd . rqPeer ) askRq
+  (d :: String) <- (B.unpack . fromMaybe (error "Happstack.Helpers.Server.vhost, no host header")) `liftM` getHeaderM "host"
+  guardRq $ \_ -> (d,p) == vh
+  sp
+
+
+-- REMOVED. The better way to solve this problem is to use simpleHTTPWithWebSocket, which doesn't prevent startup on kill-9 that leaves
+--  ghost socket around.
+{-| If a forked IO action throws an exception within a certain amount of time, return the exception along with the threadId.
+    wait time needs to be long enough for the exception to arise, so when in doubt, err on the side of longer wait time
+
+-}
+{-
+catchStartupErrorInForkIO :: IO () -> Int -> IO (ThreadId, Either E.SomeException ())
+catchStartupErrorInForkIO ioAction waitSeconds = do
+  eIOref <- newIORef $ Right ()
+  tid <- forkIO $ ioAction `E.catch` (\e -> writeIORef eIOref (Left e))
+  threadDelay $ waitSeconds * (10^6)
+  new <- readIORef eIOref
+  return (tid,new)
+-}
+
+-- REMOVED. The better way to solve this problem is to use simpleHTTPWithWebSocket, which doesn't prevent startup on kill-9 that leaves
+--  ghost socket around.
+-- WAS:
+-- This is useful if you have a web server that crashes, but sometimes leaves the lock file hanging around.
+-- But sometimes, due to unknown reasons, has a false restart that should quickly exit because the lock file exists and the app is really running.
+-- What this function does is clean up the lock file, but only if a curl request for the actual web site fails.
+-- This feels like risky business, try to find a better way (unclear on what the race condition, if any, is exactly but uneasy...)
+-- Another danger is, what if the generated lock file doesn't match the actual lock file? (like if the underlying library call changes?)
+{-
+cleanUpLockFile thisprog checkurl teststring waitSecs = do
+  progName <- getProgName
+  -- prevents inadvertent running from inside ghci.
+  unless (thisprog == progName) $ error $ "prog name isn't " ++ progName ++  " exiting: " ++ progName
+
+  lockFile <- liftM (</> "_local" </> progName ++ "_state.lock") getCurrentDirectory
+  putStrLn $ "cleanUpLockFile, lock file: " ++ lockFile
+  lock_fileExists <- doesFileExist lockFile
+  when lock_fileExists $ do
+      -- Q: What if website really is up, but slower to respond than waitSecs.
+      -- A: The lock would be deleted and the app would attempt to start
+      --    It would probably fail because port is blocked.
+      --    It would keep trying to start because that's what supervisord does.
+      -- Q. Can I conceive of scenario where website is up and a second server process is attempted to be started,
+      --      when daemonized under supervisord?
+      -- A. Not at the moment.
+      up <- websiteUp waitSecs checkurl teststring
+      if up
+        then do
+          threadDelay $ 2 * 10^6
+          error $ " cleanUpLockFile: " ++ progName ++ " is already running. That's odd. Exiting now."
+        else removeFile lockFile
+-}
+
+-- REMOVED. The better way to solve this problem is to use simpleHTTPWithWebSocket, which doesn't prevent startup on kill-9 that leaves
+--  ghost socket around.
+-- WAS:
+{-
+websiteUp secsWaitRequest url teststring = do
+  let timeoutSecs n = timeout $ (10^6) * n
+  mbEtR <- timeoutSecs secsWaitRequest $ runErrorT $ scrapeUrl url
+  case mbEtR of
+    Nothing -> do putStrLn $ "scrapeUrl returned nothing after " ++ (show secsWaitRequest) ++ "seconds, so we conclude it's donwn"
+                  return False
+    Just etR -> case etR of
+      Left e -> return False
+      Right s -> return $ isInfixOf (lc teststring) (lc s)
+  where lc = map toLower
+scrapeUrl :: String -> ErrorT String IO String
+scrapeUrl url = do
+     rq <- ErrorT $ case Network.URI.parseURI url of
+                Nothing -> return . Left $ "bad url: " ++ url
+                Just uri -> return . Right $ HTTP.Request uri HTTP.GET [] ""
+
+     ErrorT $ do r <- catch ( HTTP.simpleHTTP rq )
+                            ( \e -> return . Left . Network.Stream.ErrorMisc . show $ e)
+                 case r of
+                   Right x -> return . Right . HTTP.rspBody $ x
+                   Left y -> return . Left $ "web fetch failed: " ++ (show rq)
+-}
+
+
+</pre></br><h2>printed</h2></br><pre>{-# LANGUAGE ScopedTypeVariables #-}
+module Happstack.Server.Helpers
+    -- ( smartserver, exactdir, smartserver',getData',vhosts,vhost, cleanUpLockFile, scrapeUrl, websiteUp, stateShutDown )
+  where
+
+import Control.Monad.Error
+import Happstack.Server
+import Happstack.State
+import Control.Concurrent
+import System.Time
+import Data.Maybe (fromMaybe)
+import qualified Data.ByteString.Char8 as B
+
+-- run the happs server on some port
+-- using simpleHTTPWithSocket instead of simpleHTTP helps the app restart sanely when daemonized with supervisord, instead of getting bind failed
+--   error because of lingering open socket when kill-9'd or out-of-memory errord.
+{- supervisord start file with lock cleanup looks something like
+
+#ulimit -v 262144
+#ulimit -v 600000
+ulimit -v 300000
+cd /home/thartman/appserver
+/bin/rm -f _local/appserver_state.lock
+./dist/build/patchtagserver/patchtagserver --port=80 --pubdomain=localhost --privdomain=localhost --analytics=False --adminusers=['"'tphyahoo21'"']
+/bin/rm -f _local/appserver_state.lock
+echo sleeping for 1 seconds
+sleep 1
+-}
+
+
+
+
+
+
+
+
+
+
+smartserver conf h stateProxy = do
+      socket <- bindPort conf
+      webserverTid <- forkIO $ simpleHTTPWithSocket socket conf h
+      putStrLn . ( "starting happs server" ++ ) =<< time
+
+      control <- startSystemState stateProxy -- start the HAppS state system
+      putStrLn . ( "happs state started" ++ ) =<< time
+
+      waitForTermination
+      killThread webserverTid
+      stateShutdown control
+
+time = return . ("\ntime: " ++ ) . show  =<< getClockTime
+
+stateShutdown control = do
+
+
+      putStrLn . ( "creating checkpoint: " ++ ) =<< time
+      createCheckpoint control
+
+      putStrLn .  ( "shutting down system: " ++ ) =<< time
+      shutdownSystem control
+      putStrLn .  ( "exiting: " ++ ) =<< time
+
+exactdir :: (Monad m) => String -> ServerPartT m a -> ServerPartT m a
+exactdir staticPath = spsIf (\rq -> rqURL rq == staticPath)
+
+spsIf :: (Monad m) => (Request -> Bool) -> ServerPartT m a -> ServerPartT m a
+spsIf p sps = do
+  rq <- askRq
+  if p rq
+    then sps
+    else mzero
+
+getData' :: (ServerMonad m, FromData a, MonadPlus m) => m a
+getData' = getData >>= maybe mzero return
+
+-- | multiple vhosts to a server, eg
+-- | vhosts [("mysite.com",80),("www.mysite.com",80)] mySiteController
+vhosts hosts sp = msum . map (\h -> vhost h sp) $ hosts
+
+{- | vhost doms h = msum . map (\d -> site d h) doms
+     similar to apache vhost. given (domain,port) and a main request handler, handle requests if it's the specified domain and port
+     vhost ("mysite.com",80) mySiteController
+-}
+vhost :: (String,Int) ->  ServerPartT IO Response -> ServerPartT IO Response
+vhost  vh@(_, _) sp = do
+  (p :: Int) <- liftM ( snd . rqPeer ) askRq
+  (d :: String) <- (B.unpack . fromMaybe (error "Happstack.Helpers.Server.vhost, no host header")) `liftM` getHeaderM "host"
+  guardRq $ \_ -> (d,p) == vh
+  sp
+
+
+-- REMOVED. The better way to solve this problem is to use simpleHTTPWithWebSocket, which doesn't prevent startup on kill-9 that leaves
+--  ghost socket around.
+{-| If a forked IO action throws an exception within a certain amount of time, return the exception along with the threadId.
+    wait time needs to be long enough for the exception to arise, so when in doubt, err on the side of longer wait time
+
+-}
+{-
+catchStartupErrorInForkIO :: IO () -> Int -> IO (ThreadId, Either E.SomeException ())
+catchStartupErrorInForkIO ioAction waitSeconds = do
+  eIOref <- newIORef $ Right ()
+  tid <- forkIO $ ioAction `E.catch` (\e -> writeIORef eIOref (Left e))
+  threadDelay $ waitSeconds * (10^6)
+  new <- readIORef eIOref
+  return (tid,new)
+-}
+
+-- REMOVED. The better way to solve this problem is to use simpleHTTPWithWebSocket, which doesn't prevent startup on kill-9 that leaves
+--  ghost socket around.
+-- WAS:
+-- This is useful if you have a web server that crashes, but sometimes leaves the lock file hanging around.
+-- But sometimes, due to unknown reasons, has a false restart that should quickly exit because the lock file exists and the app is really running.
+-- What this function does is clean up the lock file, but only if a curl request for the actual web site fails.
+-- This feels like risky business, try to find a better way (unclear on what the race condition, if any, is exactly but uneasy...)
+-- Another danger is, what if the generated lock file doesn't match the actual lock file? (like if the underlying library call changes?)
+{-
+cleanUpLockFile thisprog checkurl teststring waitSecs = do
+  progName <- getProgName
+  -- prevents inadvertent running from inside ghci.
+  unless (thisprog == progName) $ error $ "prog name isn't " ++ progName ++  " exiting: " ++ progName
+
+  lockFile <- liftM (</> "_local" </> progName ++ "_state.lock") getCurrentDirectory
+  putStrLn $ "cleanUpLockFile, lock file: " ++ lockFile
+  lock_fileExists <- doesFileExist lockFile
+  when lock_fileExists $ do
+      -- Q: What if website really is up, but slower to respond than waitSecs.
+      -- A: The lock would be deleted and the app would attempt to start
+      --    It would probably fail because port is blocked.
+      --    It would keep trying to start because that's what supervisord does.
+      -- Q. Can I conceive of scenario where website is up and a second server process is attempted to be started,
+      --      when daemonized under supervisord?
+      -- A. Not at the moment.
+      up <- websiteUp waitSecs checkurl teststring
+      if up
+        then do
+          threadDelay $ 2 * 10^6
+          error $ " cleanUpLockFile: " ++ progName ++ " is already running. That's odd. Exiting now."
+        else removeFile lockFile
+-}
+
+-- REMOVED. The better way to solve this problem is to use simpleHTTPWithWebSocket, which doesn't prevent startup on kill-9 that leaves
+--  ghost socket around.
+-- WAS:
+{-
+websiteUp secsWaitRequest url teststring = do
+  let timeoutSecs n = timeout $ (10^6) * n
+  mbEtR <- timeoutSecs secsWaitRequest $ runErrorT $ scrapeUrl url
+  case mbEtR of
+    Nothing -> do putStrLn $ "scrapeUrl returned nothing after " ++ (show secsWaitRequest) ++ "seconds, so we conclude it's donwn"
+                  return False
+    Just etR -> case etR of
+      Left e -> return False
+      Right s -> return $ isInfixOf (lc teststring) (lc s)
+  where lc = map toLower
+scrapeUrl :: String -> ErrorT String IO String
+scrapeUrl url = do
+     rq <- ErrorT $ case Network.URI.parseURI url of
+                Nothing -> return . Left $ "bad url: " ++ url
+                Just uri -> return . Right $ HTTP.Request uri HTTP.GET [] ""
+
+     ErrorT $ do r <- catch ( HTTP.simpleHTTP rq )
+                            ( \e -> return . Left . Network.Stream.ErrorMisc . show $ e)
+                 case r of
+                   Right x -> return . Right . HTTP.rspBody $ x
+                   Left y -> return . Left $ "web fetch failed: " ++ (show rq)
+-}
+
+
+
+</pre>

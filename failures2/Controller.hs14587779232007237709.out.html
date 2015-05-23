@@ -1,0 +1,1236 @@
+<a href="Connection.hs585640194937186357.out.html">prev</a></br><a href="failures.html">home</a></br><a href="Core.hs5305119672110010672.out.html">next</a></br></br><pre>67c67
+< data Controller (r ∷ ★ → ★)
+---
+> data Controller (r ∷ * → *)
+162c162
+< data Sample (r ∷ ★ → ★)
+---
+> data Sample (r ∷ * → *)
+612a613
+> 
+</pre></br><h2>original</h2></br><pre>{-# LANGUAGE
+    FlexibleContexts
+  , FlexibleInstances
+  , KindSignatures
+  , MultiParamTypeClasses
+  , UnicodeSyntax
+  , ScopedTypeVariables
+  #-}
+-- | EsounD controlling handles.
+module Sound.EsounD.Controller
+    ( Controller
+    , openController
+
+    , lock
+    , unlock
+
+    , standby
+    , resume
+
+    , Sample
+    , SampleSource(..)
+    , playSample
+    , loopSample
+    , stopSample
+    , killSample
+
+    , ServerInfo(..)
+    , FrameType(..)
+    , NumChannels(..)
+    , getServerInfo
+
+    , PlayerInfo(..)
+    , SampleInfo(..)
+    , AllInfo(..)
+    , getAllInfo
+
+    , setStreamPan
+    , setDefaultSamplePan
+
+    , ServerState(..)
+    , getServerState
+    )
+    where
+import Bindings.EsounD
+import Control.Exception.Control
+import Control.Monad.IO.Class
+import Control.Monad.IO.Control
+import Control.Monad.Trans.Region
+import Control.Monad.Trans.Region.OnExit
+import Control.Monad.Unicode
+import Data.Bits
+import Data.Char
+import qualified Data.StorableVector.Lazy as L
+import Foreign.C.Types
+import Foreign.Ptr
+import Foreign.Storable
+import Network
+import Prelude hiding (pi)
+import Prelude.Unicode
+import Sound.EsounD.Internals
+import System.IO.SaferFileHandles.Unsafe
+import System.Posix.IO hiding (dup)
+import System.Posix.Types
+import Text.Printf
+
+-- ^ An opaque ESD handle for controlling ESD.
+data Controller (r ∷ ★ → ★)
+    = Controller {
+        coSocket ∷ !Fd
+      , coCloseH ∷ !(FinalizerHandle r)
+      }
+
+instance Dup Controller where
+    dup co = do ch' ← dup (coCloseH co)
+                return co { coCloseH = ch' }
+
+-- | Open an ESD handle for controlling ESD.
+openController ∷ MonadControlIO pr
+               ⇒ Maybe HostName -- ^ host to connect to.
+               → RegionT s pr (Controller (RegionT s pr))
+openController host
+    = mask_ $
+      do s  ← liftIO openSocket
+         ch ← onExit $ closeSocket' s
+         return Controller {
+                      coSocket = s
+                    , coCloseH = ch
+                    }
+    where
+      openSocket ∷ IO Fd
+      openSocket = withCStrOrNull host $ \hostPtr →
+                       c'esd_open_sound hostPtr
+                       ≫= wrapSocket'
+
+      wrapSocket' ∷ Monad m ⇒ CInt → m Fd
+      wrapSocket' (-1) = fail ( printf "esd_open_sound(%s) returned an error"
+                                       (show host)
+                              )
+      wrapSocket' fd   = return $ Fd fd
+
+      closeSocket' ∷ Fd → IO ()
+      closeSocket' fd
+          = do _ ← c'esd_close $ fdToCInt fd
+               return ()
+
+fdToCInt ∷ Fd → CInt
+fdToCInt (Fd fd) = fromIntegral fd
+
+-- | Lock the ESD so that it won't accept connections from remote
+-- hosts.
+lock ∷ ( AncestorRegion pr cr
+        , MonadIO cr
+        )
+     ⇒ Controller pr
+     → cr ()
+lock co
+    = liftIO $
+      c'esd_lock (fdToCInt $ coSocket co)
+          ≫= failOnError "esd_lock(fd) returned an error" (≤ 0)
+          ≫  return ()
+
+-- | Unlock the ESD so that it will accept connections from remote
+-- hosts.
+unlock ∷ ( AncestorRegion pr cr
+          , MonadIO cr
+          )
+       ⇒ Controller pr
+       → cr ()
+unlock co
+    = liftIO $
+      c'esd_unlock (fdToCInt $ coSocket co)
+          ≫= failOnError "esd_unlock(fd) returned an error" (≤ 0)
+          ≫  return ()
+
+-- | Let ESD stop playing sounds and release its connection to the
+-- audio device so that other processes may use it.
+standby ∷ ( AncestorRegion pr cr
+           , MonadIO cr
+           )
+        ⇒ Controller pr
+        → cr ()
+standby co
+    = liftIO $
+      c'esd_standby (fdToCInt $ coSocket co)
+          ≫= failOnError "esd_standby(fd) returned an error" (≤ 0)
+          ≫  return ()
+
+-- | Let ESD attempt to reconnect to the audio device and start
+-- playing sounds again.
+resume ∷ ( AncestorRegion pr cr
+          , MonadIO cr
+          )
+       ⇒ Controller pr
+       → cr ()
+resume co
+    = liftIO $
+      c'esd_resume (fdToCInt $ coSocket co)
+          ≫= failOnError "esd_resume(fd) returned an error" (≤ 0)
+          ≫  return ()
+
+-- | An opaque ESD sample handle.
+data Sample (r ∷ ★ → ★)
+    = Sample {
+        saID     ∷ !CInt
+      , saCtrl   ∷ !(Controller r)
+      , saCloseH ∷ !(FinalizerHandle r)
+      }
+
+instance Dup Sample where
+    dup sa = do ctrl' ← dup (saCtrl   sa)
+                ch'   ← dup (saCloseH sa)
+                return sa {
+                         saCtrl   = ctrl'
+                       , saCloseH = ch'
+                       }
+
+class (Frame fr, Channels ch) ⇒ SampleSource fr ch dvec where
+    -- | Cache a sample in the server.
+    cacheSample ∷ (MonadControlIO pr)
+                ⇒ Controller (RegionT s pr)
+                → Maybe String  -- ^ name used to identify this sample to
+                → Int           -- ^ sample rate
+                → dvec          -- ^ frames in deinterleaved vectors
+                → RegionT s pr (Sample (RegionT s pr))
+
+instance Frame fr ⇒ SampleSource fr Mono (L.Vector fr) where
+    cacheSample co name rate v
+        = mask_ $
+          do sa ← createSample
+                   co
+                   name
+                   rate
+                   ((⊥) ∷ fr  )
+                   ((⊥) ∷ Mono)
+                   (L.length v)
+             _  ← liftIO $
+                   sanitizeIOError $
+                   do h       ← fdToHandle $ coSocket co
+                      _       ← L.hPut h v
+                      (Fd fd) ← handleToFd h
+                      c'esd_confirm_sample_cache fd
+                          ≫= failOnError "esd_confirm_sample_cache(fd) returned an error" (< 0)
+             return sa
+
+instance Frame fr ⇒ SampleSource fr Stereo (L.Vector fr, L.Vector fr) where
+    cacheSample co name rate (l, r)
+        = mask_ $
+          do sa ← createSample
+                   co
+                   name
+                   rate
+                   ((⊥) ∷ fr    )
+                   ((⊥) ∷ Stereo)
+                   (L.length l)
+             _  ← liftIO $
+                   sanitizeIOError $
+                   do h       ← fdToHandle $ coSocket co
+                      _       ← L.hPut h (interleave l r)
+                      (Fd fd) ← handleToFd h
+                      c'esd_confirm_sample_cache fd
+                          ≫= failOnError "esd_confirm_sample_cache(fd) returned an error" (< 0)
+             return sa
+
+createSample ∷ ∀fr ch s pr.
+                ( Frame fr
+                , Channels ch
+                , MonadControlIO pr
+                )
+             ⇒ Controller (RegionT s pr)
+             → Maybe String
+             → Int
+             → fr
+             → ch
+             → Int
+             → RegionT s pr (Sample (RegionT s pr))
+createSample co name rate _ _ len
+    = mask_ $
+      do sid ← liftIO newCache
+         ch  ← onExit $ deleteCache sid
+         return Sample {
+                      saID     = sid
+                    , saCtrl   = co
+                    , saCloseH = ch
+                    }
+    where
+      fmt ∷ C'esd_format_t
+      fmt = frameFmt   ((⊥) ∷ fr) .|.
+            channelFmt ((⊥) ∷ ch) .|.
+            c'ESD_SAMPLE
+
+      sampleSize ∷ Int
+      sampleSize = len
+                   ⋅ frameSize   ((⊥) ∷ fr)
+                   ⋅ numChannels ((⊥) ∷ ch)
+
+      newCache ∷ IO CInt
+      newCache = withCStrOrNull name $ \namePtr →
+                     c'esd_sample_cache
+                     (fdToCInt $ coSocket co)
+                     fmt
+                     (fromIntegral rate)
+                     (fromIntegral sampleSize)
+                     namePtr
+                     ≫= failOnError ( printf "esd_sample_cache(%s, %s, %s, %s, %s) returned an error"
+                                              (show $ coSocket co)
+                                              (show fmt)
+                                              (show rate)
+                                              (show sampleSize)
+                                              (show name)
+                                     ) (< 0)
+
+      deleteCache ∷ CInt → IO ()
+      deleteCache sid
+          = c'esd_sample_free (fdToCInt $ coSocket co) sid
+            ≫= failOnError ( printf "esd_sample_free(%s) returned an error"
+                                     (show $ coSocket co)
+                                     (show sid)
+                            ) (< 0)
+            ≫  return ()
+
+-- | Play a cached sample once.
+playSample ∷ ( AncestorRegion pr cr
+              , MonadIO cr
+              )
+           ⇒ Sample pr
+           → cr ()
+playSample sa
+    = liftIO $
+      c'esd_sample_play (fdToCInt $ coSocket $ saCtrl sa) (saID sa)
+          ≫= failOnError ( printf "esd_sample_play(%s, %s) returned an error"
+                                   (show $ coSocket $ saCtrl sa)
+                                   (show $ saID sa)
+                          ) (≤ 0)
+          ≫  return ()
+
+-- | Play a cached sample repeatedly.
+loopSample ∷ ( AncestorRegion pr cr
+              , MonadIO cr
+              )
+           ⇒ Sample pr
+           → cr ()
+loopSample sa
+    = liftIO $
+      c'esd_sample_loop (fdToCInt $ coSocket $ saCtrl sa) (saID sa)
+          ≫= failOnError ( printf "esd_sample_loop(%s, %s) returned an error"
+                                   (show $ coSocket $ saCtrl sa)
+                                   (show $ saID sa)
+                          ) (≤ 0)
+          ≫  return ()
+
+-- | Stop a looping sample at end.
+stopSample ∷ ( AncestorRegion pr cr
+              , MonadIO cr
+              )
+           ⇒ Sample pr
+           → cr ()
+stopSample sa
+    = liftIO $
+      c'esd_sample_stop (fdToCInt $ coSocket $ saCtrl sa) (saID sa)
+          ≫= failOnError ( printf "esd_sample_stop(%s, %s) returned an error"
+                                   (show $ coSocket $ saCtrl sa)
+                                   (show $ saID sa)
+                          ) (≤ 0)
+          ≫  return ()
+
+-- | Stop a playing sample immediately.
+killSample ∷ ( AncestorRegion pr cr
+              , MonadIO cr
+              )
+           ⇒ Sample pr
+           → cr ()
+killSample sa
+    = liftIO $
+      c'esd_sample_kill (fdToCInt $ coSocket $ saCtrl sa) (saID sa)
+          ≫= failOnError ( printf "esd_sample_kill(%s, %s) returned an error"
+                                   (show $ coSocket $ saCtrl sa)
+                                   (show $ saID sa)
+                          ) (≤ 0)
+          ≫  return ()
+
+data FrameType
+    = Int8 | Int16
+    deriving (Show, Eq)
+
+data NumChannels
+    = Mono | Stereo
+    deriving (Show, Eq)
+
+-- | A data type to represent the server info.
+data ServerInfo
+    = ServerInfo {
+        serverVersion    ∷ !Int
+      , serverFrameType  ∷ !FrameType
+      , serverChannels   ∷ !NumChannels
+      , serverSampleRate ∷ !Int
+      }
+    deriving (Show, Eq)
+
+extractServerInfo ∷ Ptr C'esd_server_info → IO ServerInfo
+extractServerInfo siPtr
+    = do si ← peek siPtr
+         return ServerInfo {
+                      serverVersion
+                        = fromIntegral $ c'esd_server_info'version si
+                    , serverFrameType
+                        = extractFrameType $ c'esd_server_info'format si
+                    , serverChannels
+                        = extractNumChannels $ c'esd_server_info'format si
+                    , serverSampleRate
+                        = fromIntegral $ c'esd_server_info'rate si
+                    }
+
+extractFrameType ∷ C'esd_format_t → FrameType
+extractFrameType fmt
+    | fmt .&. c'ESD_BITS8  ≢ 0 = Int8
+    | fmt .&. c'ESD_BITS16 ≢ 0 = Int16
+    | otherwise                = error ("Unknown format: " ⧺ show fmt)
+
+extractNumChannels ∷ C'esd_format_t → NumChannels
+extractNumChannels fmt
+    | fmt .&. c'ESD_MONO   ≢ 0 = Mono
+    | fmt .&. c'ESD_STEREO ≢ 0 = Stereo
+    | otherwise                = error ("Unknown format: " ⧺ show fmt)
+
+-- | Retrieve server properties.
+getServerInfo ∷ ( AncestorRegion pr cr
+                 , MonadIO cr
+                 )
+              ⇒ Controller pr
+              → cr ServerInfo
+getServerInfo co
+    = liftIO $
+      bracket retrieve dispose extractServerInfo
+    where
+      retrieve ∷ IO (Ptr C'esd_server_info)
+      retrieve = c'esd_get_server_info (fdToCInt $ coSocket co)
+                 ≫= failOnError "esd_get_server_info(fd) returned an error" (≡ nullPtr)
+
+      dispose ∷ Ptr C'esd_server_info → IO ()
+      dispose = c'esd_free_server_info
+
+-- | A data type to represent a player stream info.
+data PlayerInfo
+    = PlayerInfo {
+        playerID               ∷ !Int
+      , playerName             ∷ !String
+      , playerSampleRate       ∷ !Int
+      , playerFrameType        ∷ !FrameType
+      , playerChannels         ∷ !NumChannels
+      , playerLeftVolumeScale  ∷ !Double -- ^ 0 <= scale <= 1
+      , playerRightVolumeScale ∷ !Double -- ^ 0 <= scale <= 1
+      }
+    deriving (Show, Eq)
+
+extractPlayerInfo ∷ Ptr C'esd_player_info → IO [PlayerInfo]
+extractPlayerInfo piPtr
+    | piPtr ≡ nullPtr = return []
+    | otherwise
+        = do pi ← peek piPtr
+             let next = c'esd_player_info'next pi
+                 pi'  = PlayerInfo {
+                          playerID
+                            = fromIntegral $ c'esd_player_info'source_id pi
+                        , playerName
+                            = map (chr ∘ fromIntegral) $ c'esd_player_info'name pi
+                        , playerSampleRate
+                            = fromIntegral $ c'esd_player_info'rate pi
+                        , playerFrameType
+                            = extractFrameType $ c'esd_player_info'format pi
+                        , playerChannels
+                            = extractNumChannels $ c'esd_player_info'format pi
+                        , playerLeftVolumeScale
+                            = (fromIntegral $ c'esd_player_info'left_vol_scale pi)
+                              ÷
+                              c'ESD_VOLUME_BASE
+                        , playerRightVolumeScale
+                            = (fromIntegral $ c'esd_player_info'right_vol_scale pi)
+                              ÷
+                              c'ESD_VOLUME_BASE
+                        }
+             pi'' ← extractPlayerInfo next
+             return (pi' : pi'')
+
+-- | A data type to represent a cached sample info.
+data SampleInfo
+    = SampleInfo {
+        sampleID               ∷ !Int
+      , sampleName             ∷ !String
+      , sampleSampleRate       ∷ !Int
+      , sampleFrameType        ∷ !FrameType
+      , sampleChannels         ∷ !NumChannels
+      , sampleLength           ∷ !Int
+      , sampleLeftVolumeScale  ∷ !Double -- ^ 0 <= scale <= 1
+      , sampleRightVolumeScale ∷ !Double -- ^ 0 <= scale <= 1
+      }
+    deriving (Show, Eq)
+
+extractSampleLength ∷ FrameType → NumChannels → Int → Int
+extractSampleLength fr ch bufLen
+    = bufLen
+      `div`
+      case fr of
+        Int8  → 1
+        Int16 → 2
+      `div`
+      case ch of
+        Mono   → 1
+        Stereo → 2
+
+extractSampleInfo ∷ Ptr C'esd_sample_info → IO [SampleInfo]
+extractSampleInfo piPtr
+    | piPtr ≡ nullPtr = return []
+    | otherwise
+        = do pi ← peek piPtr
+             let next = c'esd_sample_info'next pi
+                 fr   = extractFrameType $ c'esd_sample_info'format pi
+                 ch   = extractNumChannels $ c'esd_sample_info'format pi
+                 pi'  = SampleInfo {
+                          sampleID
+                            = fromIntegral $ c'esd_sample_info'sample_id pi
+                        , sampleName
+                            = map (chr ∘ fromIntegral) $ c'esd_sample_info'name pi
+                        , sampleSampleRate
+                            = fromIntegral $ c'esd_sample_info'rate pi
+                        , sampleFrameType
+                            = fr
+                        , sampleChannels
+                            = ch
+                        , sampleLength
+                            = extractSampleLength fr ch $
+                              fromIntegral $ c'esd_sample_info'length pi
+                        , sampleLeftVolumeScale
+                            = (fromIntegral $ c'esd_sample_info'left_vol_scale pi)
+                              ÷
+                              c'ESD_VOLUME_BASE
+                        , sampleRightVolumeScale
+                            = (fromIntegral $ c'esd_sample_info'right_vol_scale pi)
+                              ÷
+                              c'ESD_VOLUME_BASE
+                        }
+             pi'' ← extractSampleInfo next
+             return (pi' : pi'')
+
+-- | A data type to represent all info in the ESD server.
+data AllInfo
+    = AllInfo {
+        serverInfo  ∷ !ServerInfo
+      , playersInfo ∷ ![PlayerInfo]
+      , samplesInfo ∷ ![SampleInfo]
+      }
+    deriving (Show, Eq)
+
+extractAllInfo ∷ Ptr C'esd_info → IO AllInfo
+extractAllInfo eiPtr
+    = do ei  ← peek eiPtr
+         srv ← extractServerInfo $ c'esd_info'server      ei
+         pis ← extractPlayerInfo $ c'esd_info'player_list ei
+         sis ← extractSampleInfo $ c'esd_info'sample_list ei
+         return AllInfo {
+                      serverInfo  = srv
+                    , playersInfo = pis
+                    , samplesInfo = sis
+                    }
+
+-- | Retrieve all info in the ESD server.
+getAllInfo ∷ ( AncestorRegion pr cr
+              , MonadIO cr
+              )
+           ⇒ Controller pr
+           → cr AllInfo
+getAllInfo co
+    = liftIO $
+      bracket retrieve dispose extractAllInfo
+    where
+      retrieve ∷ IO (Ptr C'esd_info)
+      retrieve = c'esd_get_all_info (fdToCInt $ coSocket co)
+                 ≫= failOnError "esd_get_all_info(fd) returned an error" (≡ nullPtr)
+
+      dispose ∷ Ptr C'esd_info → IO ()
+      dispose = c'esd_free_all_info
+
+-- | Reset the volume panning for a stream.
+setStreamPan ∷ ( AncestorRegion pr cr
+                , MonadIO cr
+                )
+             ⇒ Controller pr
+             → Int    -- ^ Stream ID
+             → Double -- ^ left volume: 0 <= scale <= 1
+             → Double -- ^ right volume: 0 <= scale <= 1
+             → cr ()
+setStreamPan co sid l r
+    = liftIO $
+      c'esd_set_stream_pan (fdToCInt $ coSocket co)
+                           (fromIntegral sid)
+                           (floor $ l ⋅ c'ESD_VOLUME_BASE)
+                           (floor $ r ⋅ c'ESD_VOLUME_BASE)
+          ≫= failOnError ( printf "esd_set_stream_pan(%s, %s, %s, %s) returned an error"
+                                   (show $ coSocket co)
+                                   (show sid)
+                                   (show l  )
+                                   (show r  )
+                          ) (≤ 0)
+          ≫  return ()
+
+-- | Reset the default volume panning for a sample.
+setDefaultSamplePan ∷ ( AncestorRegion pr cr
+                       , MonadIO cr
+                       )
+                    ⇒ Controller pr
+                    → Int    -- ^ Sample ID
+                    → Double -- ^ left volume: 0 <= scale <= 1
+                    → Double -- ^ right volume: 0 <= scale <= 1
+                    → cr ()
+setDefaultSamplePan co sid l r
+    = liftIO $
+      c'esd_set_default_sample_pan (fdToCInt $ coSocket co)
+                                   (fromIntegral sid)
+                                   (floor $ l ⋅ c'ESD_VOLUME_BASE)
+                                   (floor $ r ⋅ c'ESD_VOLUME_BASE)
+          ≫= failOnError ( printf "esd_set_default_sample_pan(%s, %s, %s, %s) returned an error"
+                                   (show $ coSocket co)
+                                   (show sid)
+                                   (show l  )
+                                   (show r  )
+                          ) (≤ 0)
+          ≫  return ()
+
+-- | A data type to represent server's state.
+data ServerState
+    = Standby
+    | AutoStandby
+    | Running
+    deriving (Eq, Show)
+
+extractServerState ∷ C'esd_standby_mode_t → ServerState
+extractServerState st
+    | st ≡ c'ESM_ON_STANDBY     = Standby
+    | st ≡ c'ESM_ON_AUTOSTANDBY = AutoStandby
+    | st ≡ c'ESM_RUNNING        = Running
+    | otherwise                  = error ("unknown state: " ⧺ show st)
+
+-- | Retrieve the server's state.
+getServerState ∷ ( AncestorRegion pr cr
+                  , MonadIO cr
+                  )
+               ⇒ Controller pr
+               → cr ServerState
+getServerState co
+    = liftIO $
+      fmap extractServerState $
+      c'esd_get_standby_mode (fdToCInt $ coSocket co)
+          ≫= failOnError "esd_get_standby_mode(fd) returned an error" (≡ c'ESM_ERROR)
+</pre></br><h2>printed</h2></br><pre>{-# LANGUAGE
+    FlexibleContexts
+  , FlexibleInstances
+  , KindSignatures
+  , MultiParamTypeClasses
+  , UnicodeSyntax
+  , ScopedTypeVariables
+  #-}
+-- | EsounD controlling handles.
+module Sound.EsounD.Controller
+    ( Controller
+    , openController
+
+    , lock
+    , unlock
+
+    , standby
+    , resume
+
+    , Sample
+    , SampleSource(..)
+    , playSample
+    , loopSample
+    , stopSample
+    , killSample
+
+    , ServerInfo(..)
+    , FrameType(..)
+    , NumChannels(..)
+    , getServerInfo
+
+    , PlayerInfo(..)
+    , SampleInfo(..)
+    , AllInfo(..)
+    , getAllInfo
+
+    , setStreamPan
+    , setDefaultSamplePan
+
+    , ServerState(..)
+    , getServerState
+    )
+    where
+import Bindings.EsounD
+import Control.Exception.Control
+import Control.Monad.IO.Class
+import Control.Monad.IO.Control
+import Control.Monad.Trans.Region
+import Control.Monad.Trans.Region.OnExit
+import Control.Monad.Unicode
+import Data.Bits
+import Data.Char
+import qualified Data.StorableVector.Lazy as L
+import Foreign.C.Types
+import Foreign.Ptr
+import Foreign.Storable
+import Network
+import Prelude hiding (pi)
+import Prelude.Unicode
+import Sound.EsounD.Internals
+import System.IO.SaferFileHandles.Unsafe
+import System.Posix.IO hiding (dup)
+import System.Posix.Types
+import Text.Printf
+
+-- ^ An opaque ESD handle for controlling ESD.
+data Controller (r ∷ * → *)
+    = Controller {
+        coSocket ∷ !Fd
+      , coCloseH ∷ !(FinalizerHandle r)
+      }
+
+instance Dup Controller where
+    dup co = do ch' ← dup (coCloseH co)
+                return co { coCloseH = ch' }
+
+-- | Open an ESD handle for controlling ESD.
+openController ∷ MonadControlIO pr
+               ⇒ Maybe HostName -- ^ host to connect to.
+               → RegionT s pr (Controller (RegionT s pr))
+openController host
+    = mask_ $
+      do s  ← liftIO openSocket
+         ch ← onExit $ closeSocket' s
+         return Controller {
+                      coSocket = s
+                    , coCloseH = ch
+                    }
+    where
+      openSocket ∷ IO Fd
+      openSocket = withCStrOrNull host $ \hostPtr →
+                       c'esd_open_sound hostPtr
+                       ≫= wrapSocket'
+
+      wrapSocket' ∷ Monad m ⇒ CInt → m Fd
+      wrapSocket' (-1) = fail ( printf "esd_open_sound(%s) returned an error"
+                                       (show host)
+                              )
+      wrapSocket' fd   = return $ Fd fd
+
+      closeSocket' ∷ Fd → IO ()
+      closeSocket' fd
+          = do _ ← c'esd_close $ fdToCInt fd
+               return ()
+
+fdToCInt ∷ Fd → CInt
+fdToCInt (Fd fd) = fromIntegral fd
+
+-- | Lock the ESD so that it won't accept connections from remote
+-- hosts.
+lock ∷ ( AncestorRegion pr cr
+        , MonadIO cr
+        )
+     ⇒ Controller pr
+     → cr ()
+lock co
+    = liftIO $
+      c'esd_lock (fdToCInt $ coSocket co)
+          ≫= failOnError "esd_lock(fd) returned an error" (≤ 0)
+          ≫  return ()
+
+-- | Unlock the ESD so that it will accept connections from remote
+-- hosts.
+unlock ∷ ( AncestorRegion pr cr
+          , MonadIO cr
+          )
+       ⇒ Controller pr
+       → cr ()
+unlock co
+    = liftIO $
+      c'esd_unlock (fdToCInt $ coSocket co)
+          ≫= failOnError "esd_unlock(fd) returned an error" (≤ 0)
+          ≫  return ()
+
+-- | Let ESD stop playing sounds and release its connection to the
+-- audio device so that other processes may use it.
+standby ∷ ( AncestorRegion pr cr
+           , MonadIO cr
+           )
+        ⇒ Controller pr
+        → cr ()
+standby co
+    = liftIO $
+      c'esd_standby (fdToCInt $ coSocket co)
+          ≫= failOnError "esd_standby(fd) returned an error" (≤ 0)
+          ≫  return ()
+
+-- | Let ESD attempt to reconnect to the audio device and start
+-- playing sounds again.
+resume ∷ ( AncestorRegion pr cr
+          , MonadIO cr
+          )
+       ⇒ Controller pr
+       → cr ()
+resume co
+    = liftIO $
+      c'esd_resume (fdToCInt $ coSocket co)
+          ≫= failOnError "esd_resume(fd) returned an error" (≤ 0)
+          ≫  return ()
+
+-- | An opaque ESD sample handle.
+data Sample (r ∷ * → *)
+    = Sample {
+        saID     ∷ !CInt
+      , saCtrl   ∷ !(Controller r)
+      , saCloseH ∷ !(FinalizerHandle r)
+      }
+
+instance Dup Sample where
+    dup sa = do ctrl' ← dup (saCtrl   sa)
+                ch'   ← dup (saCloseH sa)
+                return sa {
+                         saCtrl   = ctrl'
+                       , saCloseH = ch'
+                       }
+
+class (Frame fr, Channels ch) ⇒ SampleSource fr ch dvec where
+    -- | Cache a sample in the server.
+    cacheSample ∷ (MonadControlIO pr)
+                ⇒ Controller (RegionT s pr)
+                → Maybe String  -- ^ name used to identify this sample to
+                → Int           -- ^ sample rate
+                → dvec          -- ^ frames in deinterleaved vectors
+                → RegionT s pr (Sample (RegionT s pr))
+
+instance Frame fr ⇒ SampleSource fr Mono (L.Vector fr) where
+    cacheSample co name rate v
+        = mask_ $
+          do sa ← createSample
+                   co
+                   name
+                   rate
+                   ((⊥) ∷ fr  )
+                   ((⊥) ∷ Mono)
+                   (L.length v)
+             _  ← liftIO $
+                   sanitizeIOError $
+                   do h       ← fdToHandle $ coSocket co
+                      _       ← L.hPut h v
+                      (Fd fd) ← handleToFd h
+                      c'esd_confirm_sample_cache fd
+                          ≫= failOnError "esd_confirm_sample_cache(fd) returned an error" (< 0)
+             return sa
+
+instance Frame fr ⇒ SampleSource fr Stereo (L.Vector fr, L.Vector fr) where
+    cacheSample co name rate (l, r)
+        = mask_ $
+          do sa ← createSample
+                   co
+                   name
+                   rate
+                   ((⊥) ∷ fr    )
+                   ((⊥) ∷ Stereo)
+                   (L.length l)
+             _  ← liftIO $
+                   sanitizeIOError $
+                   do h       ← fdToHandle $ coSocket co
+                      _       ← L.hPut h (interleave l r)
+                      (Fd fd) ← handleToFd h
+                      c'esd_confirm_sample_cache fd
+                          ≫= failOnError "esd_confirm_sample_cache(fd) returned an error" (< 0)
+             return sa
+
+createSample ∷ ∀fr ch s pr.
+                ( Frame fr
+                , Channels ch
+                , MonadControlIO pr
+                )
+             ⇒ Controller (RegionT s pr)
+             → Maybe String
+             → Int
+             → fr
+             → ch
+             → Int
+             → RegionT s pr (Sample (RegionT s pr))
+createSample co name rate _ _ len
+    = mask_ $
+      do sid ← liftIO newCache
+         ch  ← onExit $ deleteCache sid
+         return Sample {
+                      saID     = sid
+                    , saCtrl   = co
+                    , saCloseH = ch
+                    }
+    where
+      fmt ∷ C'esd_format_t
+      fmt = frameFmt   ((⊥) ∷ fr) .|.
+            channelFmt ((⊥) ∷ ch) .|.
+            c'ESD_SAMPLE
+
+      sampleSize ∷ Int
+      sampleSize = len
+                   ⋅ frameSize   ((⊥) ∷ fr)
+                   ⋅ numChannels ((⊥) ∷ ch)
+
+      newCache ∷ IO CInt
+      newCache = withCStrOrNull name $ \namePtr →
+                     c'esd_sample_cache
+                     (fdToCInt $ coSocket co)
+                     fmt
+                     (fromIntegral rate)
+                     (fromIntegral sampleSize)
+                     namePtr
+                     ≫= failOnError ( printf "esd_sample_cache(%s, %s, %s, %s, %s) returned an error"
+                                              (show $ coSocket co)
+                                              (show fmt)
+                                              (show rate)
+                                              (show sampleSize)
+                                              (show name)
+                                     ) (< 0)
+
+      deleteCache ∷ CInt → IO ()
+      deleteCache sid
+          = c'esd_sample_free (fdToCInt $ coSocket co) sid
+            ≫= failOnError ( printf "esd_sample_free(%s) returned an error"
+                                     (show $ coSocket co)
+                                     (show sid)
+                            ) (< 0)
+            ≫  return ()
+
+-- | Play a cached sample once.
+playSample ∷ ( AncestorRegion pr cr
+              , MonadIO cr
+              )
+           ⇒ Sample pr
+           → cr ()
+playSample sa
+    = liftIO $
+      c'esd_sample_play (fdToCInt $ coSocket $ saCtrl sa) (saID sa)
+          ≫= failOnError ( printf "esd_sample_play(%s, %s) returned an error"
+                                   (show $ coSocket $ saCtrl sa)
+                                   (show $ saID sa)
+                          ) (≤ 0)
+          ≫  return ()
+
+-- | Play a cached sample repeatedly.
+loopSample ∷ ( AncestorRegion pr cr
+              , MonadIO cr
+              )
+           ⇒ Sample pr
+           → cr ()
+loopSample sa
+    = liftIO $
+      c'esd_sample_loop (fdToCInt $ coSocket $ saCtrl sa) (saID sa)
+          ≫= failOnError ( printf "esd_sample_loop(%s, %s) returned an error"
+                                   (show $ coSocket $ saCtrl sa)
+                                   (show $ saID sa)
+                          ) (≤ 0)
+          ≫  return ()
+
+-- | Stop a looping sample at end.
+stopSample ∷ ( AncestorRegion pr cr
+              , MonadIO cr
+              )
+           ⇒ Sample pr
+           → cr ()
+stopSample sa
+    = liftIO $
+      c'esd_sample_stop (fdToCInt $ coSocket $ saCtrl sa) (saID sa)
+          ≫= failOnError ( printf "esd_sample_stop(%s, %s) returned an error"
+                                   (show $ coSocket $ saCtrl sa)
+                                   (show $ saID sa)
+                          ) (≤ 0)
+          ≫  return ()
+
+-- | Stop a playing sample immediately.
+killSample ∷ ( AncestorRegion pr cr
+              , MonadIO cr
+              )
+           ⇒ Sample pr
+           → cr ()
+killSample sa
+    = liftIO $
+      c'esd_sample_kill (fdToCInt $ coSocket $ saCtrl sa) (saID sa)
+          ≫= failOnError ( printf "esd_sample_kill(%s, %s) returned an error"
+                                   (show $ coSocket $ saCtrl sa)
+                                   (show $ saID sa)
+                          ) (≤ 0)
+          ≫  return ()
+
+data FrameType
+    = Int8 | Int16
+    deriving (Show, Eq)
+
+data NumChannels
+    = Mono | Stereo
+    deriving (Show, Eq)
+
+-- | A data type to represent the server info.
+data ServerInfo
+    = ServerInfo {
+        serverVersion    ∷ !Int
+      , serverFrameType  ∷ !FrameType
+      , serverChannels   ∷ !NumChannels
+      , serverSampleRate ∷ !Int
+      }
+    deriving (Show, Eq)
+
+extractServerInfo ∷ Ptr C'esd_server_info → IO ServerInfo
+extractServerInfo siPtr
+    = do si ← peek siPtr
+         return ServerInfo {
+                      serverVersion
+                        = fromIntegral $ c'esd_server_info'version si
+                    , serverFrameType
+                        = extractFrameType $ c'esd_server_info'format si
+                    , serverChannels
+                        = extractNumChannels $ c'esd_server_info'format si
+                    , serverSampleRate
+                        = fromIntegral $ c'esd_server_info'rate si
+                    }
+
+extractFrameType ∷ C'esd_format_t → FrameType
+extractFrameType fmt
+    | fmt .&. c'ESD_BITS8  ≢ 0 = Int8
+    | fmt .&. c'ESD_BITS16 ≢ 0 = Int16
+    | otherwise                = error ("Unknown format: " ⧺ show fmt)
+
+extractNumChannels ∷ C'esd_format_t → NumChannels
+extractNumChannels fmt
+    | fmt .&. c'ESD_MONO   ≢ 0 = Mono
+    | fmt .&. c'ESD_STEREO ≢ 0 = Stereo
+    | otherwise                = error ("Unknown format: " ⧺ show fmt)
+
+-- | Retrieve server properties.
+getServerInfo ∷ ( AncestorRegion pr cr
+                 , MonadIO cr
+                 )
+              ⇒ Controller pr
+              → cr ServerInfo
+getServerInfo co
+    = liftIO $
+      bracket retrieve dispose extractServerInfo
+    where
+      retrieve ∷ IO (Ptr C'esd_server_info)
+      retrieve = c'esd_get_server_info (fdToCInt $ coSocket co)
+                 ≫= failOnError "esd_get_server_info(fd) returned an error" (≡ nullPtr)
+
+      dispose ∷ Ptr C'esd_server_info → IO ()
+      dispose = c'esd_free_server_info
+
+-- | A data type to represent a player stream info.
+data PlayerInfo
+    = PlayerInfo {
+        playerID               ∷ !Int
+      , playerName             ∷ !String
+      , playerSampleRate       ∷ !Int
+      , playerFrameType        ∷ !FrameType
+      , playerChannels         ∷ !NumChannels
+      , playerLeftVolumeScale  ∷ !Double -- ^ 0 <= scale <= 1
+      , playerRightVolumeScale ∷ !Double -- ^ 0 <= scale <= 1
+      }
+    deriving (Show, Eq)
+
+extractPlayerInfo ∷ Ptr C'esd_player_info → IO [PlayerInfo]
+extractPlayerInfo piPtr
+    | piPtr ≡ nullPtr = return []
+    | otherwise
+        = do pi ← peek piPtr
+             let next = c'esd_player_info'next pi
+                 pi'  = PlayerInfo {
+                          playerID
+                            = fromIntegral $ c'esd_player_info'source_id pi
+                        , playerName
+                            = map (chr ∘ fromIntegral) $ c'esd_player_info'name pi
+                        , playerSampleRate
+                            = fromIntegral $ c'esd_player_info'rate pi
+                        , playerFrameType
+                            = extractFrameType $ c'esd_player_info'format pi
+                        , playerChannels
+                            = extractNumChannels $ c'esd_player_info'format pi
+                        , playerLeftVolumeScale
+                            = (fromIntegral $ c'esd_player_info'left_vol_scale pi)
+                              ÷
+                              c'ESD_VOLUME_BASE
+                        , playerRightVolumeScale
+                            = (fromIntegral $ c'esd_player_info'right_vol_scale pi)
+                              ÷
+                              c'ESD_VOLUME_BASE
+                        }
+             pi'' ← extractPlayerInfo next
+             return (pi' : pi'')
+
+-- | A data type to represent a cached sample info.
+data SampleInfo
+    = SampleInfo {
+        sampleID               ∷ !Int
+      , sampleName             ∷ !String
+      , sampleSampleRate       ∷ !Int
+      , sampleFrameType        ∷ !FrameType
+      , sampleChannels         ∷ !NumChannels
+      , sampleLength           ∷ !Int
+      , sampleLeftVolumeScale  ∷ !Double -- ^ 0 <= scale <= 1
+      , sampleRightVolumeScale ∷ !Double -- ^ 0 <= scale <= 1
+      }
+    deriving (Show, Eq)
+
+extractSampleLength ∷ FrameType → NumChannels → Int → Int
+extractSampleLength fr ch bufLen
+    = bufLen
+      `div`
+      case fr of
+        Int8  → 1
+        Int16 → 2
+      `div`
+      case ch of
+        Mono   → 1
+        Stereo → 2
+
+extractSampleInfo ∷ Ptr C'esd_sample_info → IO [SampleInfo]
+extractSampleInfo piPtr
+    | piPtr ≡ nullPtr = return []
+    | otherwise
+        = do pi ← peek piPtr
+             let next = c'esd_sample_info'next pi
+                 fr   = extractFrameType $ c'esd_sample_info'format pi
+                 ch   = extractNumChannels $ c'esd_sample_info'format pi
+                 pi'  = SampleInfo {
+                          sampleID
+                            = fromIntegral $ c'esd_sample_info'sample_id pi
+                        , sampleName
+                            = map (chr ∘ fromIntegral) $ c'esd_sample_info'name pi
+                        , sampleSampleRate
+                            = fromIntegral $ c'esd_sample_info'rate pi
+                        , sampleFrameType
+                            = fr
+                        , sampleChannels
+                            = ch
+                        , sampleLength
+                            = extractSampleLength fr ch $
+                              fromIntegral $ c'esd_sample_info'length pi
+                        , sampleLeftVolumeScale
+                            = (fromIntegral $ c'esd_sample_info'left_vol_scale pi)
+                              ÷
+                              c'ESD_VOLUME_BASE
+                        , sampleRightVolumeScale
+                            = (fromIntegral $ c'esd_sample_info'right_vol_scale pi)
+                              ÷
+                              c'ESD_VOLUME_BASE
+                        }
+             pi'' ← extractSampleInfo next
+             return (pi' : pi'')
+
+-- | A data type to represent all info in the ESD server.
+data AllInfo
+    = AllInfo {
+        serverInfo  ∷ !ServerInfo
+      , playersInfo ∷ ![PlayerInfo]
+      , samplesInfo ∷ ![SampleInfo]
+      }
+    deriving (Show, Eq)
+
+extractAllInfo ∷ Ptr C'esd_info → IO AllInfo
+extractAllInfo eiPtr
+    = do ei  ← peek eiPtr
+         srv ← extractServerInfo $ c'esd_info'server      ei
+         pis ← extractPlayerInfo $ c'esd_info'player_list ei
+         sis ← extractSampleInfo $ c'esd_info'sample_list ei
+         return AllInfo {
+                      serverInfo  = srv
+                    , playersInfo = pis
+                    , samplesInfo = sis
+                    }
+
+-- | Retrieve all info in the ESD server.
+getAllInfo ∷ ( AncestorRegion pr cr
+              , MonadIO cr
+              )
+           ⇒ Controller pr
+           → cr AllInfo
+getAllInfo co
+    = liftIO $
+      bracket retrieve dispose extractAllInfo
+    where
+      retrieve ∷ IO (Ptr C'esd_info)
+      retrieve = c'esd_get_all_info (fdToCInt $ coSocket co)
+                 ≫= failOnError "esd_get_all_info(fd) returned an error" (≡ nullPtr)
+
+      dispose ∷ Ptr C'esd_info → IO ()
+      dispose = c'esd_free_all_info
+
+-- | Reset the volume panning for a stream.
+setStreamPan ∷ ( AncestorRegion pr cr
+                , MonadIO cr
+                )
+             ⇒ Controller pr
+             → Int    -- ^ Stream ID
+             → Double -- ^ left volume: 0 <= scale <= 1
+             → Double -- ^ right volume: 0 <= scale <= 1
+             → cr ()
+setStreamPan co sid l r
+    = liftIO $
+      c'esd_set_stream_pan (fdToCInt $ coSocket co)
+                           (fromIntegral sid)
+                           (floor $ l ⋅ c'ESD_VOLUME_BASE)
+                           (floor $ r ⋅ c'ESD_VOLUME_BASE)
+          ≫= failOnError ( printf "esd_set_stream_pan(%s, %s, %s, %s) returned an error"
+                                   (show $ coSocket co)
+                                   (show sid)
+                                   (show l  )
+                                   (show r  )
+                          ) (≤ 0)
+          ≫  return ()
+
+-- | Reset the default volume panning for a sample.
+setDefaultSamplePan ∷ ( AncestorRegion pr cr
+                       , MonadIO cr
+                       )
+                    ⇒ Controller pr
+                    → Int    -- ^ Sample ID
+                    → Double -- ^ left volume: 0 <= scale <= 1
+                    → Double -- ^ right volume: 0 <= scale <= 1
+                    → cr ()
+setDefaultSamplePan co sid l r
+    = liftIO $
+      c'esd_set_default_sample_pan (fdToCInt $ coSocket co)
+                                   (fromIntegral sid)
+                                   (floor $ l ⋅ c'ESD_VOLUME_BASE)
+                                   (floor $ r ⋅ c'ESD_VOLUME_BASE)
+          ≫= failOnError ( printf "esd_set_default_sample_pan(%s, %s, %s, %s) returned an error"
+                                   (show $ coSocket co)
+                                   (show sid)
+                                   (show l  )
+                                   (show r  )
+                          ) (≤ 0)
+          ≫  return ()
+
+-- | A data type to represent server's state.
+data ServerState
+    = Standby
+    | AutoStandby
+    | Running
+    deriving (Eq, Show)
+
+extractServerState ∷ C'esd_standby_mode_t → ServerState
+extractServerState st
+    | st ≡ c'ESM_ON_STANDBY     = Standby
+    | st ≡ c'ESM_ON_AUTOSTANDBY = AutoStandby
+    | st ≡ c'ESM_RUNNING        = Running
+    | otherwise                  = error ("unknown state: " ⧺ show st)
+
+-- | Retrieve the server's state.
+getServerState ∷ ( AncestorRegion pr cr
+                  , MonadIO cr
+                  )
+               ⇒ Controller pr
+               → cr ServerState
+getServerState co
+    = liftIO $
+      fmap extractServerState $
+      c'esd_get_standby_mode (fdToCInt $ coSocket co)
+          ≫= failOnError "esd_get_standby_mode(fd) returned an error" (≡ c'ESM_ERROR)
+
+</pre>

@@ -1,0 +1,218 @@
+<a href="pbconvert.hs1777724115269220094.out.html">prev</a></br><a href="failures.html">home</a></br><a href="Private.hs1137623865997389814.out.html">next</a></br></br><pre>33c33
+< data Player fr ch (r ∷ ★ → ★)
+---
+> data Player fr ch (r ∷ * → *)
+105a106
+> 
+</pre></br><h2>original</h2></br><pre>{-# LANGUAGE
+    FlexibleContexts
+  , FlexibleInstances
+  , KindSignatures
+  , MultiParamTypeClasses
+  , UnicodeSyntax
+  , ScopedTypeVariables
+  #-}
+-- | EsounD player streams.
+module Sound.EsounD.Player
+    ( Player
+    , openPlayer
+    )
+    where
+import Bindings.EsounD
+import Control.Exception.Control
+import Control.Monad.IO.Class
+import Control.Monad.IO.Control
+import Control.Monad.Trans.Region
+import Control.Monad.Trans.Region.OnExit
+import Control.Monad.Unicode
+import Data.Bits
+import Data.StorableVector.Lazy as L
+import Network
+import Prelude.Unicode
+import Sound.EsounD.Streams
+import Sound.EsounD.Internals
+import System.IO
+import System.IO.SaferFileHandles.Unsafe
+import Text.Printf
+
+-- ^ An opaque ESD handle for playing a stream.
+data Player fr ch (r ∷ ★ → ★)
+    = Player {
+        plRate   ∷ !Int
+      -- THINKME: We really want to use RegionalFileHandle but we
+      -- can't, because safer-file-handles currently provides no ways
+      -- to wrap ordinary handles into safer handles.
+      , plHandle ∷ !Handle
+      , plCloseH ∷ !(FinalizerHandle r)
+      }
+
+instance Dup (Player fr ch) where
+    dup pl = do ch' ← dup (plCloseH pl)
+                return pl { plCloseH = ch' }
+
+instance Stream (Player fr ch) where
+    streamSampleRate = plRate
+
+instance Frame fr ⇒ WritableStream (Player fr Mono) (L.Vector fr) where
+    writeFrames pl v
+        = liftIO $
+          sanitizeIOError $
+          do L.hPut (plHandle pl) v
+             hFlush (plHandle pl)
+
+instance Frame fr ⇒ WritableStream (Player fr Stereo) (L.Vector fr, L.Vector fr) where
+    writeFrames pl (l, r)
+        = liftIO $
+          sanitizeIOError $
+          do L.hPut (plHandle pl) (interleave l r)
+             hFlush (plHandle pl)
+
+-- | Open an ESD handle for playing a stream.
+openPlayer ∷ ∀fr ch s pr.
+              ( Frame fr
+              , Channels ch
+              , MonadControlIO pr
+              )
+           ⇒ Int            -- ^ sample rate for the stream.
+           → Maybe HostName -- ^ host to connect to.
+           → Maybe String   -- ^ name used to identify this stream to
+                             --   ESD (if any).
+           → RegionT s pr (Player fr ch (RegionT s pr))
+openPlayer rate host name
+    = mask_ $
+      do h  ← liftIO openSocket
+         ch ← onExit $ sanitizeIOError $ closeSocket h
+         return Player {
+                      plRate   = rate
+                    , plHandle = h
+                    , plCloseH = ch
+                    }
+    where
+      fmt :: C'esd_format_t
+      fmt = frameFmt   ((⊥) ∷ fr) .|.
+            channelFmt ((⊥) ∷ ch) .|.
+            c'ESD_STREAM            .|.
+            c'ESD_PLAY
+
+      openSocket :: IO Handle
+      openSocket = withCStrOrNull host $ \hostPtr →
+                   withCStrOrNull name $ \namePtr →
+                       c'esd_play_stream
+                       fmt
+                       (fromIntegral rate)
+                       hostPtr
+                       namePtr
+                       ≫= wrapSocket
+                               ( printf "esd_play_stream(%s, %s, %s, %s) returned an error"
+                                        (show fmt )
+                                        (show rate)
+                                        (show host)
+                                        (show name)
+                               )
+</pre></br><h2>printed</h2></br><pre>{-# LANGUAGE
+    FlexibleContexts
+  , FlexibleInstances
+  , KindSignatures
+  , MultiParamTypeClasses
+  , UnicodeSyntax
+  , ScopedTypeVariables
+  #-}
+-- | EsounD player streams.
+module Sound.EsounD.Player
+    ( Player
+    , openPlayer
+    )
+    where
+import Bindings.EsounD
+import Control.Exception.Control
+import Control.Monad.IO.Class
+import Control.Monad.IO.Control
+import Control.Monad.Trans.Region
+import Control.Monad.Trans.Region.OnExit
+import Control.Monad.Unicode
+import Data.Bits
+import Data.StorableVector.Lazy as L
+import Network
+import Prelude.Unicode
+import Sound.EsounD.Streams
+import Sound.EsounD.Internals
+import System.IO
+import System.IO.SaferFileHandles.Unsafe
+import Text.Printf
+
+-- ^ An opaque ESD handle for playing a stream.
+data Player fr ch (r ∷ * → *)
+    = Player {
+        plRate   ∷ !Int
+      -- THINKME: We really want to use RegionalFileHandle but we
+      -- can't, because safer-file-handles currently provides no ways
+      -- to wrap ordinary handles into safer handles.
+      , plHandle ∷ !Handle
+      , plCloseH ∷ !(FinalizerHandle r)
+      }
+
+instance Dup (Player fr ch) where
+    dup pl = do ch' ← dup (plCloseH pl)
+                return pl { plCloseH = ch' }
+
+instance Stream (Player fr ch) where
+    streamSampleRate = plRate
+
+instance Frame fr ⇒ WritableStream (Player fr Mono) (L.Vector fr) where
+    writeFrames pl v
+        = liftIO $
+          sanitizeIOError $
+          do L.hPut (plHandle pl) v
+             hFlush (plHandle pl)
+
+instance Frame fr ⇒ WritableStream (Player fr Stereo) (L.Vector fr, L.Vector fr) where
+    writeFrames pl (l, r)
+        = liftIO $
+          sanitizeIOError $
+          do L.hPut (plHandle pl) (interleave l r)
+             hFlush (plHandle pl)
+
+-- | Open an ESD handle for playing a stream.
+openPlayer ∷ ∀fr ch s pr.
+              ( Frame fr
+              , Channels ch
+              , MonadControlIO pr
+              )
+           ⇒ Int            -- ^ sample rate for the stream.
+           → Maybe HostName -- ^ host to connect to.
+           → Maybe String   -- ^ name used to identify this stream to
+                             --   ESD (if any).
+           → RegionT s pr (Player fr ch (RegionT s pr))
+openPlayer rate host name
+    = mask_ $
+      do h  ← liftIO openSocket
+         ch ← onExit $ sanitizeIOError $ closeSocket h
+         return Player {
+                      plRate   = rate
+                    , plHandle = h
+                    , plCloseH = ch
+                    }
+    where
+      fmt :: C'esd_format_t
+      fmt = frameFmt   ((⊥) ∷ fr) .|.
+            channelFmt ((⊥) ∷ ch) .|.
+            c'ESD_STREAM            .|.
+            c'ESD_PLAY
+
+      openSocket :: IO Handle
+      openSocket = withCStrOrNull host $ \hostPtr →
+                   withCStrOrNull name $ \namePtr →
+                       c'esd_play_stream
+                       fmt
+                       (fromIntegral rate)
+                       hostPtr
+                       namePtr
+                       ≫= wrapSocket
+                               ( printf "esd_play_stream(%s, %s, %s, %s) returned an error"
+                                        (show fmt )
+                                        (show rate)
+                                        (show host)
+                                        (show name)
+                               )
+
+</pre>
