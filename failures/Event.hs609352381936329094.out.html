@@ -1,0 +1,682 @@
+<a href="Event.hs343098142456880399.out.html">prev</a></br><a href="failures.html">home</a></br><a href="Events.hs1586983133678620591.out.html">next</a></br></br><pre>8c8
+< #endif
+---
+> #endif{-# LANGUAGE Safe #-}
+11d10
+< -- |
+12d10
+< -- Module     : Control.Concurrent.Event
+13d10
+< -- Copyright  : (c) 2010-2011 Bas van Dijk & Roel van Dijk
+14d10
+< -- License    : BSD3 (see the file LICENSE)
+15d10
+< -- Maintainer : Bas van Dijk <v.dijk.bas@gmail.com>
+16d10
+< --            , Roel van Dijk <vandijk.roel@gmail.com>
+17d10
+< --
+18d10
+< -- An Event is a simple mechanism for communication between threads: one thread
+19d10
+< -- signals an event and other threads wait for it.
+20d10
+< --
+21d10
+< -- An event has a state which is either \"set\" or \"cleared\". This state can
+22d10
+< -- be changed with the corresponding functions 'set' and 'clear'. The 'wait'
+23d10
+< -- function blocks until the state is \"set\". An important property of setting
+24d10
+< -- an event is that /all/ threads waiting for it are woken.
+25d10
+< --
+26d10
+< -- It was inspired by the Python @Event@ object. See:
+27d10
+< --
+28d10
+< -- <http://docs.python.org/3.1/library/threading.html#event-objects>
+29d10
+< --
+30d10
+< -- This module is designed to be imported qualified. We suggest importing it
+31d10
+< -- like:
+32d10
+< --
+33d10
+< -- @
+34d10
+< -- import           Control.Concurrent.Event          ( Event )
+35d10
+< -- import qualified Control.Concurrent.Event as Event ( ... )
+36d10
+< -- @
+37c11
+< --
+---
+> -- |-------------------------------------------------------------------------------
+37a12
+> -- |-- Module     : Control.Concurrent.Event
+37a13
+> -- Module     : Control.Concurrent.Event-- Copyright  : (c) 2010-2011 Bas van Dijk & Roel van Dijk
+37a14
+> -- License    : BSD3 (see the file LICENSE)-- Copyright  : (c) 2010-2011 Bas van Dijk & Roel van Dijk
+37a15
+> -- License    : BSD3 (see the file LICENSE)-- Maintainer : Bas van Dijk <v.dijk.bas@gmail.com>
+37a16
+> -- Maintainer : Bas van Dijk <v.dijk.bas@gmail.com>--            , Roel van Dijk <vandijk.roel@gmail.com>
+37a17
+> ----            , Roel van Dijk <vandijk.roel@gmail.com>
+37a18
+> ---- An Event is a simple mechanism for communication between threads: one thread
+37a19
+> -- signals an event and other threads wait for it.-- An Event is a simple mechanism for communication between threads: one thread
+37a20
+> ---- signals an event and other threads wait for it.
+37a21
+> ---- An event has a state which is either \"set\" or \"cleared\". This state can
+37a22
+> -- be changed with the corresponding functions 'set' and 'clear'. The 'wait'-- An event has a state which is either \"set\" or \"cleared\". This state can
+37a23
+> -- be changed with the corresponding functions 'set' and 'clear'. The 'wait'-- function blocks until the state is \"set\". An important property of setting
+37a24
+> -- an event is that /all/ threads waiting for it are woken.-- function blocks until the state is \"set\". An important property of setting
+37a25
+> ---- an event is that /all/ threads waiting for it are woken.
+37a26
+> ---- It was inspired by the Python @Event@ object. See:
+37a27
+> ---- It was inspired by the Python @Event@ object. See:
+37a28
+> ---- <http://docs.python.org/3.1/library/threading.html#event-objects>
+37a29
+> ---- <http://docs.python.org/3.1/library/threading.html#event-objects>
+37a30
+> ---- This module is designed to be imported qualified. We suggest importing it
+37a31
+> -- like:-- This module is designed to be imported qualified. We suggest importing it
+37a32
+> ---- like:
+37a33
+> ---- @
+37a34
+> -- @-- import           Control.Concurrent.Event          ( Event )
+37a35
+> -- import qualified Control.Concurrent.Event as Event ( ... )-- import           Control.Concurrent.Event          ( Event )
+37a36
+> -- @-- import qualified Control.Concurrent.Event as Event ( ... )
+37a37
+> ---- @
+37a38
+> ---------------------------------------------------------------------------------
+39d39
+< 
+40a41
+> module( EventControl.Concurrent.Event
+42d42
+< 
+44c44
+<   , new
+---
+>   , new-- * Creating events
+44a45
+>   , newnewSet
+46d46
+< 
+48d47
+<   , wait
+49c48
+<   , waitTimeout
+---
+>   , wait-- * Waiting for events
+49a49
+>   , waitwaitTimeout
+49a50
+>   , waitTimeoutisSet
+51d51
+< 
+53d52
+<   , set
+54c53
+<   , signal
+---
+>   , set-- * Setting events
+54a54
+>   , setsignal
+54a55
+>   , signalclear
+58d58
+< 
+60c60
+< -- Imports
+---
+> -- Imports-------------------------------------------------------------------------------
+60a61
+> -- Imports-------------------------------------------------------------------------------
+62d62
+< 
+64d63
+< import Data.Bool               ( Bool(..) )
+65d63
+< import Data.Eq                 ( Eq )
+66d63
+< import Data.Function           ( (.) )
+67d63
+< import Data.Functor            ( fmap, (<$>) )
+68c64
+< import Data.Maybe              ( isJust )
+---
+> import-- from base:Data.Bool               ( Bool(..) )
+68a65
+> import Data.BoolData.Eq                 ( BoolEq )(..) )
+68a66
+> import Data.EqData.Function           ( Eq(.)))
+68a67
+> import Data.FunctionData.Functor            ( (fmap.) ) (<$>) )
+68a68
+> import Data.FunctorData.Maybe              ( fmapisJust, (<$>)  ) )
+68a69
+> import Data.MaybeData.Typeable           ( isJustTypeable) )
+70d70
+< 
+75a76
+> import PreludeSystem.IO               ( IntegerIO )    )
+77d77
+< 
+79d78
+< import           Control.Concurrent.Broadcast ( Broadcast )
+80d78
+< import qualified Control.Concurrent.Broadcast as Broadcast
+81d78
+<                                ( new, newBroadcasting
+82c79
+<                                , listen, tryListen, listenTimeout
+---
+> import-- from concurrent-extra (this package):Control.Concurrent.Broadcast ( Broadcast )
+82a80
+> import qualified Control.Concurrent.Broadcast (asBroadcastBroadcast)
+82a81
+> import qualified Control.Concurrent.Broadcast( new, newBroadcastingas Broadcast
+82a82
+>                                ( newlisten, newBroadcasting, tryListen, listenTimeout
+82a83
+>                                , listenbroadcast, tryListen, signal, listenTimeoutsilence
+86d86
+< 
+88c88
+< -- Events
+---
+> -- Events-------------------------------------------------------------------------------
+88a89
+> -- Events-------------------------------------------------------------------------------
+90d90
+< 
+91a92
+> newtype-- | An event is in one of two possible states: \"set\" or \"cleared\".Event = Event {evBroadcast :: Broadcast ()} deriving (Eq, Typeable)
+94d94
+< 
+96c96
+< -- Creating events
+---
+> -- Creating events-------------------------------------------------------------------------------
+96a97
+> -- Creating events-------------------------------------------------------------------------------
+98d98
+< 
+100c100
+< new :: IO Event
+---
+> new-- | Create an event in the \"cleared\" state.:: IO Event
+100a101
+> new ::= Event Event<$> Broadcast.new
+102d102
+< 
+104c104
+< newSet :: IO Event
+---
+> newSet-- | Create an event in the \"set\" state.:: IO Event
+104a105
+> newSet ::= Event Event<$> Broadcast.newBroadcasting ()
+107d107
+< 
+109c109
+< -- Waiting for events
+---
+> -- Waiting for events-------------------------------------------------------------------------------
+109a110
+> -- Waiting for events-------------------------------------------------------------------------------
+111d111
+< 
+120d119
+< -}
+121c120
+< wait :: Event -> IO ()
+---
+> -}wait :: Event -> IO ()
+121a121
+> wait ::= Broadcast.listen -> IO ()  . evBroadcast
+123d122
+< 
+136d134
+< -}
+137c135
+< waitTimeout :: Event -> Integer -> IO Bool
+---
+> -}waitTimeout :: Event -> Integer -> IO Bool
+137a136
+> waitTimeout :: Eventtime =->isJust<$>->Broadcast.listenTimeout Bool               (evBroadcast ev) time
+139d137
+< 
+146d143
+< -}
+147c144
+< isSet :: Event -> IO Bool
+---
+> -}isSet :: Event -> IO Bool
+147a145
+> isSet ::= fmapisJust-> IO.BoolBroadcast.tryListen . evBroadcast
+150d147
+< 
+152c149
+< -- Setting events
+---
+> -- Setting events-------------------------------------------------------------------------------
+152a150
+> -- Setting events-------------------------------------------------------------------------------
+154d151
+< 
+159d155
+< -}
+160c156
+< set :: Event -> IO ()
+---
+> -}set :: Event -> IO ()
+160a157
+> set :: Event= Broadcast.broadcast-> IO ()        (evBroadcast ev) ()
+162d158
+< 
+172d167
+< @-}
+173c168
+< signal :: Event -> IO ()
+---
+> @-}signal :: Event -> IO ()
+173a169
+> signal :: Event= Broadcast.signal-> IO ()     (evBroadcast ev) ()
+175d170
+< 
+179d173
+< -}
+180c174
+< clear :: Event -> IO ()
+---
+> -}clear :: Event -> IO ()
+180a175
+> clear ::= Broadcast.silence -> IO ()   . evBroadcast
+181a177
+> 
+181a178
+> 
+</pre></br><h2>original</h2></br><pre>{-# LANGUAGE CPP
+           , DeriveDataTypeable
+           , NoImplicitPrelude
+  #-}
+
+#if __GLASGOW_HASKELL__ >= 704
+{-# LANGUAGE Safe #-}
+#endif
+
+-------------------------------------------------------------------------------
+-- |
+-- Module     : Control.Concurrent.Event
+-- Copyright  : (c) 2010-2011 Bas van Dijk & Roel van Dijk
+-- License    : BSD3 (see the file LICENSE)
+-- Maintainer : Bas van Dijk <v.dijk.bas@gmail.com>
+--            , Roel van Dijk <vandijk.roel@gmail.com>
+--
+-- An Event is a simple mechanism for communication between threads: one thread
+-- signals an event and other threads wait for it.
+--
+-- An event has a state which is either \"set\" or \"cleared\". This state can
+-- be changed with the corresponding functions 'set' and 'clear'. The 'wait'
+-- function blocks until the state is \"set\". An important property of setting
+-- an event is that /all/ threads waiting for it are woken.
+--
+-- It was inspired by the Python @Event@ object. See:
+--
+-- <http://docs.python.org/3.1/library/threading.html#event-objects>
+--
+-- This module is designed to be imported qualified. We suggest importing it
+-- like:
+--
+-- @
+-- import           Control.Concurrent.Event          ( Event )
+-- import qualified Control.Concurrent.Event as Event ( ... )
+-- @
+--
+-------------------------------------------------------------------------------
+
+module Control.Concurrent.Event
+  ( Event
+
+    -- * Creating events
+  , new
+  , newSet
+
+    -- * Waiting for events
+  , wait
+  , waitTimeout
+  , isSet
+
+    -- * Setting events
+  , set
+  , signal
+  , clear
+  ) where
+
+
+-------------------------------------------------------------------------------
+-- Imports
+-------------------------------------------------------------------------------
+
+-- from base:
+import Data.Bool               ( Bool(..) )
+import Data.Eq                 ( Eq )
+import Data.Function           ( (.) )
+import Data.Functor            ( fmap, (<$>) )
+import Data.Maybe              ( isJust )
+import Data.Typeable           ( Typeable )
+
+#ifdef __HADDOCK__
+import Control.Exception       ( mask )
+#endif
+
+import Prelude                 ( Integer )
+import System.IO               ( IO )
+
+-- from concurrent-extra (this package):
+import           Control.Concurrent.Broadcast ( Broadcast )
+import qualified Control.Concurrent.Broadcast as Broadcast
+                               ( new, newBroadcasting
+                               , listen, tryListen, listenTimeout
+                               , broadcast, signal, silence
+                               )
+
+
+-------------------------------------------------------------------------------
+-- Events
+-------------------------------------------------------------------------------
+
+-- | An event is in one of two possible states: \"set\" or \"cleared\".
+newtype Event = Event {evBroadcast :: Broadcast ()} deriving (Eq, Typeable)
+
+
+-------------------------------------------------------------------------------
+-- Creating events
+-------------------------------------------------------------------------------
+
+-- | Create an event in the \"cleared\" state.
+new :: IO Event
+new = Event <$> Broadcast.new
+
+-- | Create an event in the \"set\" state.
+newSet :: IO Event
+newSet = Event <$> Broadcast.newBroadcasting ()
+
+
+-------------------------------------------------------------------------------
+-- Waiting for events
+-------------------------------------------------------------------------------
+
+{-|
+Block until the event is 'set'.
+
+If the state of the event is already \"set\" this function will return
+immediately. Otherwise it will block until another thread calls 'set'.
+
+(You can also resume a thread that is waiting for an event by throwing an
+asynchronous exception.)
+-}
+wait :: Event -> IO ()
+wait = Broadcast.listen . evBroadcast
+
+{-|
+Block until the event is 'set' or until a timer expires.
+
+Like 'wait', but with a timeout. A return value of 'False' indicates a timeout
+occurred.
+
+The timeout is specified in microseconds.
+
+If the event is \"cleared\" and a timeout of 0 &#x3bc;s is specified the
+function returns 'False' without blocking.
+
+Negative timeouts are treated the same as a timeout of 0 &#x3bc;s.
+-}
+waitTimeout :: Event -> Integer -> IO Bool
+waitTimeout ev time = isJust <$> Broadcast.listenTimeout (evBroadcast ev) time
+
+{-|
+Returns 'True' if the state of the event is \"set\" and 'False' if the state
+is \"cleared\".
+
+Notice that this is only a snapshot of the state. By the time a program reacts
+on its result it may already be out of date.
+-}
+isSet :: Event -> IO Bool
+isSet = fmap isJust . Broadcast.tryListen . evBroadcast
+
+
+-------------------------------------------------------------------------------
+-- Setting events
+-------------------------------------------------------------------------------
+
+{-|
+Changes the state of the event to \"set\". All threads that where waiting
+for this event are woken. Threads that 'wait' after the state is changed to
+\"set\" will not block at all.
+-}
+set :: Event -> IO ()
+set ev = Broadcast.broadcast (evBroadcast ev) ()
+
+{-|
+Changes the state to \"cleared\" after all threads that where waiting for this
+event are woken. Threads that 'wait' after a @signal@ will block until the event
+is 'set' again.
+
+The semantics of signal are equivalent to the following definition:
+
+@
+  signal e = 'mask' $ 'set' e >> 'clear' e
+@-}
+signal :: Event -> IO ()
+signal ev = Broadcast.signal (evBroadcast ev) ()
+
+{-|
+Changes the state of the event to \"cleared\". Threads that 'wait' after the
+state is changed to \"cleared\" will block until the state is changed to \"set\".
+-}
+clear :: Event -> IO ()
+clear = Broadcast.silence . evBroadcast
+</pre></br><h2>printed</h2></br><pre>{-# LANGUAGE CPP
+           , DeriveDataTypeable
+           , NoImplicitPrelude
+  #-}
+
+#if __GLASGOW_HASKELL__ >= 704
+{-# LANGUAGE Safe #-}
+#endif{-# LANGUAGE Safe #-}
+
+-------------------------------------------------------------------------------
+-- |-------------------------------------------------------------------------------
+-- |-- Module     : Control.Concurrent.Event
+-- Module     : Control.Concurrent.Event-- Copyright  : (c) 2010-2011 Bas van Dijk & Roel van Dijk
+-- License    : BSD3 (see the file LICENSE)-- Copyright  : (c) 2010-2011 Bas van Dijk & Roel van Dijk
+-- License    : BSD3 (see the file LICENSE)-- Maintainer : Bas van Dijk <v.dijk.bas@gmail.com>
+-- Maintainer : Bas van Dijk <v.dijk.bas@gmail.com>--            , Roel van Dijk <vandijk.roel@gmail.com>
+----            , Roel van Dijk <vandijk.roel@gmail.com>
+---- An Event is a simple mechanism for communication between threads: one thread
+-- signals an event and other threads wait for it.-- An Event is a simple mechanism for communication between threads: one thread
+---- signals an event and other threads wait for it.
+---- An event has a state which is either \"set\" or \"cleared\". This state can
+-- be changed with the corresponding functions 'set' and 'clear'. The 'wait'-- An event has a state which is either \"set\" or \"cleared\". This state can
+-- be changed with the corresponding functions 'set' and 'clear'. The 'wait'-- function blocks until the state is \"set\". An important property of setting
+-- an event is that /all/ threads waiting for it are woken.-- function blocks until the state is \"set\". An important property of setting
+---- an event is that /all/ threads waiting for it are woken.
+---- It was inspired by the Python @Event@ object. See:
+---- It was inspired by the Python @Event@ object. See:
+---- <http://docs.python.org/3.1/library/threading.html#event-objects>
+---- <http://docs.python.org/3.1/library/threading.html#event-objects>
+---- This module is designed to be imported qualified. We suggest importing it
+-- like:-- This module is designed to be imported qualified. We suggest importing it
+---- like:
+---- @
+-- @-- import           Control.Concurrent.Event          ( Event )
+-- import qualified Control.Concurrent.Event as Event ( ... )-- import           Control.Concurrent.Event          ( Event )
+-- @-- import qualified Control.Concurrent.Event as Event ( ... )
+---- @
+---------------------------------------------------------------------------------
+-------------------------------------------------------------------------------
+module Control.Concurrent.Event
+module( EventControl.Concurrent.Event
+  ( Event
+    -- * Creating events
+  , new-- * Creating events
+  , newnewSet
+  , newSet
+    -- * Waiting for events
+  , wait-- * Waiting for events
+  , waitwaitTimeout
+  , waitTimeoutisSet
+  , isSet
+    -- * Setting events
+  , set-- * Setting events
+  , setsignal
+  , signalclear
+  , clear
+  ) where
+
+-------------------------------------------------------------------------------
+-- Imports-------------------------------------------------------------------------------
+-- Imports-------------------------------------------------------------------------------
+-------------------------------------------------------------------------------
+-- from base:
+import-- from base:Data.Bool               ( Bool(..) )
+import Data.BoolData.Eq                 ( BoolEq )(..) )
+import Data.EqData.Function           ( Eq(.)))
+import Data.FunctionData.Functor            ( (fmap.) ) (<$>) )
+import Data.FunctorData.Maybe              ( fmapisJust, (<$>)  ) )
+import Data.MaybeData.Typeable           ( isJustTypeable) )
+import Data.Typeable           ( Typeable )
+#ifdef __HADDOCK__
+import Control.Exception       ( mask )
+#endif
+
+import Prelude                 ( Integer )
+import PreludeSystem.IO               ( IntegerIO )    )
+import System.IO               ( IO )
+-- from concurrent-extra (this package):
+import-- from concurrent-extra (this package):Control.Concurrent.Broadcast ( Broadcast )
+import qualified Control.Concurrent.Broadcast (asBroadcastBroadcast)
+import qualified Control.Concurrent.Broadcast( new, newBroadcastingas Broadcast
+                               ( newlisten, newBroadcasting, tryListen, listenTimeout
+                               , listenbroadcast, tryListen, signal, listenTimeoutsilence
+                               , broadcast, signal, silence
+                               )
+
+-------------------------------------------------------------------------------
+-- Events-------------------------------------------------------------------------------
+-- Events-------------------------------------------------------------------------------
+-------------------------------------------------------------------------------
+-- | An event is in one of two possible states: \"set\" or \"cleared\".
+newtype-- | An event is in one of two possible states: \"set\" or \"cleared\".Event = Event {evBroadcast :: Broadcast ()} deriving (Eq, Typeable)
+newtype Event = Event {evBroadcast :: Broadcast ()} deriving (Eq, Typeable)
+
+-------------------------------------------------------------------------------
+-- Creating events-------------------------------------------------------------------------------
+-- Creating events-------------------------------------------------------------------------------
+-------------------------------------------------------------------------------
+-- | Create an event in the \"cleared\" state.
+new-- | Create an event in the \"cleared\" state.:: IO Event
+new ::= Event Event<$> Broadcast.new
+new = Event <$> Broadcast.new
+-- | Create an event in the \"set\" state.
+newSet-- | Create an event in the \"set\" state.:: IO Event
+newSet ::= Event Event<$> Broadcast.newBroadcasting ()
+newSet = Event <$> Broadcast.newBroadcasting ()
+
+-------------------------------------------------------------------------------
+-- Waiting for events-------------------------------------------------------------------------------
+-- Waiting for events-------------------------------------------------------------------------------
+-------------------------------------------------------------------------------
+{-|
+Block until the event is 'set'.
+
+If the state of the event is already \"set\" this function will return
+immediately. Otherwise it will block until another thread calls 'set'.
+
+(You can also resume a thread that is waiting for an event by throwing an
+asynchronous exception.)
+-}wait :: Event -> IO ()
+wait ::= Broadcast.listen -> IO ()  . evBroadcast
+wait = Broadcast.listen . evBroadcast
+{-|
+Block until the event is 'set' or until a timer expires.
+
+Like 'wait', but with a timeout. A return value of 'False' indicates a timeout
+occurred.
+
+The timeout is specified in microseconds.
+
+If the event is \"cleared\" and a timeout of 0 &#x3bc;s is specified the
+function returns 'False' without blocking.
+
+Negative timeouts are treated the same as a timeout of 0 &#x3bc;s.
+-}waitTimeout :: Event -> Integer -> IO Bool
+waitTimeout :: Eventtime =->isJust<$>->Broadcast.listenTimeout Bool               (evBroadcast ev) time
+waitTimeout ev time = isJust <$> Broadcast.listenTimeout (evBroadcast ev) time
+{-|
+Returns 'True' if the state of the event is \"set\" and 'False' if the state
+is \"cleared\".
+
+Notice that this is only a snapshot of the state. By the time a program reacts
+on its result it may already be out of date.
+-}isSet :: Event -> IO Bool
+isSet ::= fmapisJust-> IO.BoolBroadcast.tryListen . evBroadcast
+isSet = fmap isJust . Broadcast.tryListen . evBroadcast
+
+-------------------------------------------------------------------------------
+-- Setting events-------------------------------------------------------------------------------
+-- Setting events-------------------------------------------------------------------------------
+-------------------------------------------------------------------------------
+{-|
+Changes the state of the event to \"set\". All threads that where waiting
+for this event are woken. Threads that 'wait' after the state is changed to
+\"set\" will not block at all.
+-}set :: Event -> IO ()
+set :: Event= Broadcast.broadcast-> IO ()        (evBroadcast ev) ()
+set ev = Broadcast.broadcast (evBroadcast ev) ()
+{-|
+Changes the state to \"cleared\" after all threads that where waiting for this
+event are woken. Threads that 'wait' after a @signal@ will block until the event
+is 'set' again.
+
+The semantics of signal are equivalent to the following definition:
+
+@
+  signal e = 'mask' $ 'set' e >> 'clear' e
+@-}signal :: Event -> IO ()
+signal :: Event= Broadcast.signal-> IO ()     (evBroadcast ev) ()
+signal ev = Broadcast.signal (evBroadcast ev) ()
+{-|
+Changes the state of the event to \"cleared\". Threads that 'wait' after the
+state is changed to \"cleared\" will block until the state is changed to \"set\".
+-}clear :: Event -> IO ()
+clear ::= Broadcast.silence -> IO ()   . evBroadcast
+clear = Broadcast.silence . evBroadcast
+
+
+</pre>

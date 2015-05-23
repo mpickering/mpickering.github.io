@@ -1,0 +1,152 @@
+<a href="Endian.hs21463194511908194298.out.html">prev</a></br><a href="failures.html">home</a></br><a href="Env.hs2721122891398556760.out.html">next</a></br></br><pre>35d34
+< MAKE_ENDIAN_WORD(Word16, LE16, fromLE16, toLE16, id)
+36d34
+< MAKE_ENDIAN_WORD(Word32, LE32, fromLE32, toLE32, id)
+37d34
+< MAKE_ENDIAN_WORD(Word64, LE64, fromLE64, toLE64, id)
+38d34
+< MAKE_ENDIAN_WORD(Word16, BE16, fromBE16, toBE16, invert16)
+39d34
+< MAKE_ENDIAN_WORD(Word32, BE32, fromBE32, toBE32, invert32)
+40c35
+< MAKE_ENDIAN_WORD(Word64, BE64, fromBE64, toBE64, invert64)
+---
+> newtypeMAKE_ENDIAN_WORD = (LE16Word16,fromLE16LE16, fromLE16:: Word16, toLE16} deriving, id) (Show, Eq);  toLE16 :: Word16 ->  LE16;  toLE16 =  LE16; instance Storable  LE16 where { sizeOf _ = sizeOf (undefined :: Word16); {-# INLINE sizeOf #-}; alignment _ = alignment (undefined :: Word16); {-# INLINE alignment #-}; peek ptr = do {x <- peek (castPtr ptr); return ( LE16 ( id x))}; {-# INLINE peek #-}; poke ptr ( LE16 x) = poke (castPtr ptr) ( id x); {-# INLINE poke #-}; }
+40a36
+> newtypeMAKE_ENDIAN_WORD = (LE32Word32,fromLE32LE32, fromLE32:: Word32, toLE32} deriving, id) (Show, Eq);  toLE32 :: Word32 ->  LE32;  toLE32 =  LE32; instance Storable  LE32 where { sizeOf _ = sizeOf (undefined :: Word32); {-# INLINE sizeOf #-}; alignment _ = alignment (undefined :: Word32); {-# INLINE alignment #-}; peek ptr = do {x <- peek (castPtr ptr); return ( LE32 ( id x))}; {-# INLINE peek #-}; poke ptr ( LE32 x) = poke (castPtr ptr) ( id x); {-# INLINE poke #-}; }
+40a37
+> newtypeMAKE_ENDIAN_WORD = (LE64Word64,fromLE64LE64, fromLE64:: Word64, toLE64} deriving, id) (Show, Eq);  toLE64 :: Word64 ->  LE64;  toLE64 =  LE64; instance Storable  LE64 where { sizeOf _ = sizeOf (undefined :: Word64); {-# INLINE sizeOf #-}; alignment _ = alignment (undefined :: Word64); {-# INLINE alignment #-}; peek ptr = do {x <- peek (castPtr ptr); return ( LE64 ( id x))}; {-# INLINE peek #-}; poke ptr ( LE64 x) = poke (castPtr ptr) ( id x); {-# INLINE poke #-}; }
+40a38
+> newtypeMAKE_ENDIAN_WORD = (BE16Word16,fromBE16BE16, fromBE16:: Word16, toBE16} deriving, invert16(Show), Eq);  toBE16 :: Word16 ->  BE16;  toBE16 =  BE16; instance Storable  BE16 where { sizeOf _ = sizeOf (undefined :: Word16); {-# INLINE sizeOf #-}; alignment _ = alignment (undefined :: Word16); {-# INLINE alignment #-}; peek ptr = do {x <- peek (castPtr ptr); return ( BE16 ( invert16 x))}; {-# INLINE peek #-}; poke ptr ( BE16 x) = poke (castPtr ptr) ( invert16 x); {-# INLINE poke #-}; }
+40a39
+> newtypeMAKE_ENDIAN_WORD = (BE32Word32,fromBE32BE32, fromBE32:: Word32, toBE32} deriving, invert32(Show), Eq);  toBE32 :: Word32 ->  BE32;  toBE32 =  BE32; instance Storable  BE32 where { sizeOf _ = sizeOf (undefined :: Word32); {-# INLINE sizeOf #-}; alignment _ = alignment (undefined :: Word32); {-# INLINE alignment #-}; peek ptr = do {x <- peek (castPtr ptr); return ( BE32 ( invert32 x))}; {-# INLINE peek #-}; poke ptr ( BE32 x) = poke (castPtr ptr) ( invert32 x); {-# INLINE poke #-}; }
+40a40
+> newtypeMAKE_ENDIAN_WORD = (BE64Word64,fromBE64BE64, fromBE64:: Word64, toBE64} deriving, invert64(Show), Eq);  toBE64 :: Word64 ->  BE64;  toBE64 =  BE64; instance Storable  BE64 where { sizeOf _ = sizeOf (undefined :: Word64); {-# INLINE sizeOf #-}; alignment _ = alignment (undefined :: Word64); {-# INLINE alignment #-}; peek ptr = do {x <- peek (castPtr ptr); return ( BE64 ( invert64 x))}; {-# INLINE peek #-}; poke ptr ( BE64 x) = poke (castPtr ptr) ( invert64 x); {-# INLINE poke #-}; }
+62a63
+> 
+</pre></br><h2>original</h2></br><pre>{-# LANGUAGE CPP #-}
+
+module Data.Word.Endian where
+
+import Data.Word (Word16, Word32, Word64)
+import Data.Bits (rotateL, unsafeShiftL, unsafeShiftR, (.&.), (.|.))
+import Foreign.Ptr (castPtr)
+import Foreign.Storable (Storable(..))
+
+#define MAKE_ENDIAN_WORD(native_type, endian_type, from, to, convert) \
+newtype endian_type = endian_type {from :: native_type} deriving (Show, Eq); \
+to :: native_type -> endian_type; \
+to = endian_type; \
+instance Storable endian_type where { \
+    sizeOf _ = sizeOf (undefined :: native_type); \
+    {-# INLINE sizeOf #-}; \
+    alignment _ = alignment (undefined :: native_type); \
+    {-# INLINE alignment #-}; \
+    peek ptr = do {x <- peek (castPtr ptr); return (endian_type (convert x))}; \
+    {-# INLINE peek #-}; \
+    poke ptr (endian_type x) = poke (castPtr ptr) (convert x); \
+    {-# INLINE poke #-}; \
+}
+
+#include "MachDeps.h"
+
+#ifdef WORDS_BIGENDIAN
+MAKE_ENDIAN_WORD(Word16, LE16, fromLE16, toLE16, invert16)
+MAKE_ENDIAN_WORD(Word32, LE32, fromLE32, toLE32, invert32)
+MAKE_ENDIAN_WORD(Word64, LE64, fromLE64, toLE64, invert64)
+MAKE_ENDIAN_WORD(Word16, BE16, fromBE16, toBE16, id)
+MAKE_ENDIAN_WORD(Word32, BE32, fromBE32, toBE32, id)
+MAKE_ENDIAN_WORD(Word64, BE64, fromBE64, toBE64, id)
+#else
+MAKE_ENDIAN_WORD(Word16, LE16, fromLE16, toLE16, id)
+MAKE_ENDIAN_WORD(Word32, LE32, fromLE32, toLE32, id)
+MAKE_ENDIAN_WORD(Word64, LE64, fromLE64, toLE64, id)
+MAKE_ENDIAN_WORD(Word16, BE16, fromBE16, toBE16, invert16)
+MAKE_ENDIAN_WORD(Word32, BE32, fromBE32, toBE32, invert32)
+MAKE_ENDIAN_WORD(Word64, BE64, fromBE64, toBE64, invert64)
+#endif
+
+invert16 :: Word16 -> Word16
+invert16 x = x `rotateL` 8
+
+invert32 :: Word32 -> Word32
+invert32 x =
+    ((x               ) `unsafeShiftR` 24) .|.
+    ((x .&. 0x00ff0000) `unsafeShiftR`  8) .|.
+    ((x .&. 0x0000ff00) `unsafeShiftL`  8) .|.
+    ((x               ) `unsafeShiftL` 24)
+
+invert64 :: Word64 -> Word64
+invert64 x =
+    ((x                       ) `unsafeShiftR` 56) .|.
+    ((x .&. 0x00ff000000000000) `unsafeShiftR` 40) .|.
+    ((x .&. 0x0000ff0000000000) `unsafeShiftR` 24) .|.
+    ((x .&. 0x000000ff00000000) `unsafeShiftR`  8) .|.
+    ((x .&. 0x00000000ff000000) `unsafeShiftL`  8) .|.
+    ((x .&. 0x0000000000ff0000) `unsafeShiftL` 24) .|.
+    ((x .&. 0x000000000000ff00) `unsafeShiftL` 40) .|.
+    ((x                       ) `unsafeShiftL` 56)
+</pre></br><h2>printed</h2></br><pre>{-# LANGUAGE CPP #-}
+
+module Data.Word.Endian where
+
+import Data.Word (Word16, Word32, Word64)
+import Data.Bits (rotateL, unsafeShiftL, unsafeShiftR, (.&.), (.|.))
+import Foreign.Ptr (castPtr)
+import Foreign.Storable (Storable(..))
+
+#define MAKE_ENDIAN_WORD(native_type, endian_type, from, to, convert) \
+newtype endian_type = endian_type {from :: native_type} deriving (Show, Eq); \
+to :: native_type -> endian_type; \
+to = endian_type; \
+instance Storable endian_type where { \
+    sizeOf _ = sizeOf (undefined :: native_type); \
+    {-# INLINE sizeOf #-}; \
+    alignment _ = alignment (undefined :: native_type); \
+    {-# INLINE alignment #-}; \
+    peek ptr = do {x <- peek (castPtr ptr); return (endian_type (convert x))}; \
+    {-# INLINE peek #-}; \
+    poke ptr (endian_type x) = poke (castPtr ptr) (convert x); \
+    {-# INLINE poke #-}; \
+}
+
+#include "MachDeps.h"
+
+#ifdef WORDS_BIGENDIAN
+MAKE_ENDIAN_WORD(Word16, LE16, fromLE16, toLE16, invert16)
+MAKE_ENDIAN_WORD(Word32, LE32, fromLE32, toLE32, invert32)
+MAKE_ENDIAN_WORD(Word64, LE64, fromLE64, toLE64, invert64)
+MAKE_ENDIAN_WORD(Word16, BE16, fromBE16, toBE16, id)
+MAKE_ENDIAN_WORD(Word32, BE32, fromBE32, toBE32, id)
+MAKE_ENDIAN_WORD(Word64, BE64, fromBE64, toBE64, id)
+#else
+newtypeMAKE_ENDIAN_WORD = (LE16Word16,fromLE16LE16, fromLE16:: Word16, toLE16} deriving, id) (Show, Eq);  toLE16 :: Word16 ->  LE16;  toLE16 =  LE16; instance Storable  LE16 where { sizeOf _ = sizeOf (undefined :: Word16); {-# INLINE sizeOf #-}; alignment _ = alignment (undefined :: Word16); {-# INLINE alignment #-}; peek ptr = do {x <- peek (castPtr ptr); return ( LE16 ( id x))}; {-# INLINE peek #-}; poke ptr ( LE16 x) = poke (castPtr ptr) ( id x); {-# INLINE poke #-}; }
+newtypeMAKE_ENDIAN_WORD = (LE32Word32,fromLE32LE32, fromLE32:: Word32, toLE32} deriving, id) (Show, Eq);  toLE32 :: Word32 ->  LE32;  toLE32 =  LE32; instance Storable  LE32 where { sizeOf _ = sizeOf (undefined :: Word32); {-# INLINE sizeOf #-}; alignment _ = alignment (undefined :: Word32); {-# INLINE alignment #-}; peek ptr = do {x <- peek (castPtr ptr); return ( LE32 ( id x))}; {-# INLINE peek #-}; poke ptr ( LE32 x) = poke (castPtr ptr) ( id x); {-# INLINE poke #-}; }
+newtypeMAKE_ENDIAN_WORD = (LE64Word64,fromLE64LE64, fromLE64:: Word64, toLE64} deriving, id) (Show, Eq);  toLE64 :: Word64 ->  LE64;  toLE64 =  LE64; instance Storable  LE64 where { sizeOf _ = sizeOf (undefined :: Word64); {-# INLINE sizeOf #-}; alignment _ = alignment (undefined :: Word64); {-# INLINE alignment #-}; peek ptr = do {x <- peek (castPtr ptr); return ( LE64 ( id x))}; {-# INLINE peek #-}; poke ptr ( LE64 x) = poke (castPtr ptr) ( id x); {-# INLINE poke #-}; }
+newtypeMAKE_ENDIAN_WORD = (BE16Word16,fromBE16BE16, fromBE16:: Word16, toBE16} deriving, invert16(Show), Eq);  toBE16 :: Word16 ->  BE16;  toBE16 =  BE16; instance Storable  BE16 where { sizeOf _ = sizeOf (undefined :: Word16); {-# INLINE sizeOf #-}; alignment _ = alignment (undefined :: Word16); {-# INLINE alignment #-}; peek ptr = do {x <- peek (castPtr ptr); return ( BE16 ( invert16 x))}; {-# INLINE peek #-}; poke ptr ( BE16 x) = poke (castPtr ptr) ( invert16 x); {-# INLINE poke #-}; }
+newtypeMAKE_ENDIAN_WORD = (BE32Word32,fromBE32BE32, fromBE32:: Word32, toBE32} deriving, invert32(Show), Eq);  toBE32 :: Word32 ->  BE32;  toBE32 =  BE32; instance Storable  BE32 where { sizeOf _ = sizeOf (undefined :: Word32); {-# INLINE sizeOf #-}; alignment _ = alignment (undefined :: Word32); {-# INLINE alignment #-}; peek ptr = do {x <- peek (castPtr ptr); return ( BE32 ( invert32 x))}; {-# INLINE peek #-}; poke ptr ( BE32 x) = poke (castPtr ptr) ( invert32 x); {-# INLINE poke #-}; }
+newtypeMAKE_ENDIAN_WORD = (BE64Word64,fromBE64BE64, fromBE64:: Word64, toBE64} deriving, invert64(Show), Eq);  toBE64 :: Word64 ->  BE64;  toBE64 =  BE64; instance Storable  BE64 where { sizeOf _ = sizeOf (undefined :: Word64); {-# INLINE sizeOf #-}; alignment _ = alignment (undefined :: Word64); {-# INLINE alignment #-}; peek ptr = do {x <- peek (castPtr ptr); return ( BE64 ( invert64 x))}; {-# INLINE peek #-}; poke ptr ( BE64 x) = poke (castPtr ptr) ( invert64 x); {-# INLINE poke #-}; }
+#endif
+
+invert16 :: Word16 -> Word16
+invert16 x = x `rotateL` 8
+
+invert32 :: Word32 -> Word32
+invert32 x =
+    ((x               ) `unsafeShiftR` 24) .|.
+    ((x .&. 0x00ff0000) `unsafeShiftR`  8) .|.
+    ((x .&. 0x0000ff00) `unsafeShiftL`  8) .|.
+    ((x               ) `unsafeShiftL` 24)
+
+invert64 :: Word64 -> Word64
+invert64 x =
+    ((x                       ) `unsafeShiftR` 56) .|.
+    ((x .&. 0x00ff000000000000) `unsafeShiftR` 40) .|.
+    ((x .&. 0x0000ff0000000000) `unsafeShiftR` 24) .|.
+    ((x .&. 0x000000ff00000000) `unsafeShiftR`  8) .|.
+    ((x .&. 0x00000000ff000000) `unsafeShiftL`  8) .|.
+    ((x .&. 0x0000000000ff0000) `unsafeShiftL` 24) .|.
+    ((x .&. 0x000000000000ff00) `unsafeShiftL` 40) .|.
+    ((x                       ) `unsafeShiftL` 56)
+
+</pre>

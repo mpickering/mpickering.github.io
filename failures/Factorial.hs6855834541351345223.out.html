@@ -1,0 +1,911 @@
+<a href="Factorial.hs15223954191779636775.out.html">prev</a></br><a href="failures.html">home</a></br><a href="FastMutInt.hs843998877959637304.out.html">next</a></br></br><pre>58d57
+< 
+60c59
+< {-
+---
+> ----------------------------------------------------------------{-
+67d65
+< 
+69d66
+< -- @math-functions:Numeric.SpecFunctions.factorial@ instead. The
+70d66
+< -- naive definition of the factorial numbers is:
+71d66
+< --
+72d66
+< -- > factorial n
+73d66
+< -- >     | n < 0     = 0
+74d66
+< -- >     | otherwise = product [1..n]
+75d66
+< --
+76d66
+< -- However, we use a fast algorithm based on the split-recursive form:
+77d66
+< --
+78d66
+< -- > factorial n =
+79d66
+< -- >     2^(n - popCount n) * product [(q k)^k | forall k, k >= 1]
+80d66
+< -- >     where
+81d66
+< -- >     q k = product [j | forall j, n*2^(-k) < j <= n*2^(-k+1), odd j]
+82d66
+< --
+83d66
+< factorial :: (Integral a, Bits a) => Int -> a
+84c67
+< factorial n
+---
+> -- | Exact factorial numbers. For a fast approximation see-- @math-functions:Numeric.SpecFunctions.factorial@ instead. The
+84a68
+> -- naive definition of the factorial numbers is:-- @math-functions:Numeric.SpecFunctions.factorial@ instead. The
+84a69
+> ---- naive definition of the factorial numbers is:
+84a70
+> ---- > factorial n
+84a71
+> -- > factorial n-- >     | n < 0     = 0
+84a72
+> -- >     | n < 0     = 0-- >     | otherwise = product [1..n]
+84a73
+> ---- >     | otherwise = product [1..n]
+84a74
+> ---- However, we use a fast algorithm based on the split-recursive form:
+84a75
+> ---- However, we use a fast algorithm based on the split-recursive form:
+84a76
+> ---- > factorial n =
+84a77
+> -- > factorial n =-- >     2^(n - popCount n) * product [(q k)^k | forall k, k >= 1]
+84a78
+> -- >     where-- >     2^(n - popCount n) * product [(q k)^k | forall k, k >= 1]
+84a79
+> -- >     where-- >     q k = product [j | forall j, n*2^(-k) < j <= n*2^(-k+1), odd j]
+84a80
+> ---- >     q k = product [j | forall j, n*2^(-k) < j <= n*2^(-k+1), odd j]
+84a81
+> --factorial :: (Integral a, Bits a) => Int -> a
+84a82
+> factorial ::n  (Integral a, Bits a) => Int -> a
+84a83
+> factorial| n < n     = 0
+86d84
+<     | n < 2     = 1
+87d84
+<     | otherwise = go (highestBitPosition_Int n - 1) 0 0 1 1 1 1
+88d84
+<     where
+89d84
+<     -- lo  == n/2^(k+1)
+90d84
+<     -- lo' == n/2^k
+91d84
+<     -- qk  == product of odd @j@s for @k@ in [1..K]
+92d84
+<     -- p   == q1 * q2 * ... * qK
+93d84
+<     -- r   == (q1 ^ K) * (q2 ^ (K-1)) * ... * (qK ^ 1)
+94d84
+<     -- s   == 2^{n - popCount n}
+95d84
+<     -- go :: Int -> Int -> Int -> Int -> a -> a -> a -> a
+96d84
+<     go k lo s hi j p r
+97d84
+<         | k `seq` lo `seq` s `seq` hi `seq` j `seq` p `seq` r `seq` False = undefined
+98d84
+<         | k >= 0 =                     -- TODO: why did old version use lo/=n ?
+99d84
+<             let lo' = n `shiftR` k     -- TODO: use shiftRL#
+100d84
+<                 hi' = (lo' - 1) .|. 1  -- if odd lo' then lo' else lo' - 1
+101d84
+<                 len = (hi' - hi) `div` 2 -- TODO: why not (`shiftR`1) or (`quot`2) ?
+102d84
+<             in if len > 0
+103d84
+<                 then let
+104d84
+<                     (q, j') = partialProduct len j
+105d84
+<                     p' = p * q
+106d84
+<                     r' = r * p'
+107d84
+<                     in go (k - 1) lo' (s + lo) hi' j' p' r'
+108d84
+<                 else   go (k - 1) lo' (s + lo) hi' j  p  r
+109d84
+<         --
+110c85
+<         -- fromIntegral s /= fromIntegral n - popCount (fromIntegral n) = error "factorial_splitRecursive: bug in the computation of n - popCount n"
+---
+>     | notherwise 2     = 1go (highestBitPosition_Int n - 1) 0 0 1 1 1 1
+110a86
+>     |where = go (highestBitPosition_Int n - 1) 0 0 1 1 1 1
+110a87
+>     where-- lo  == n/2^(k+1)
+110a88
+>     -- lo' == n/2^k-- lo  == n/2^(k+1)
+110a89
+>     -- lo' == n/2^k-- qk  == product of odd @j@s for @k@ in [1..K]
+110a90
+>     -- p   == q1 * q2 * ... * qK-- qk  == product of odd @j@s for @k@ in [1..K]
+110a91
+>     -- p   == q1 * q2 * ... * qK-- r   == (q1 ^ K) * (q2 ^ (K-1)) * ... * (qK ^ 1)
+110a92
+>     -- s   == 2^{n - popCount n}-- r   == (q1 ^ K) * (q2 ^ (K-1)) * ... * (qK ^ 1)
+110a93
+>     -- s   == 2^{n - popCount n}-- go :: Int -> Int -> Int -> Int -> a -> a -> a -> a
+110a94
+>     go-- go :: Int -> Int -> Int -> Int -> a -> a -> a -> ak lo s hi j p r
+110a95
+>     go k|lok sseq`jlo rseq` s `seq` hi `seq` j `seq` p `seq` r `seq` False = undefined
+110a96
+>         | k `>=seq0`=lo `seq` s `seq` hi `seq-- TODO: why did old version use lo/=n ?` j `seq` p `seq` r `seq` False = undefined
+110a97
+>         | k >=let0lo'=  = n `shiftR` k     -- TODO: use shiftRL#-- TODO: why did old version use lo/=n ?
+110a98
+>             let lo' = nlo'shiftR- 1)`.|.  1  -- TODO: use shiftRL#-- if odd lo' then lo' else lo' - 1
+110a99
+>                 hi' = (lo' - 1hi)).|.`div` 2-- if odd lo' then lo' else lo' - 1-- TODO: why not (`shiftR`1) or (`quot`2) ?
+110a100
+>             in iflen= (hi'0  - hi) `div` 2 -- TODO: why not (`shiftR`1) or (`quot`2) ?
+110a101
+>             in ifthenlet 0
+110a102
+>                 then(letq, j') = partialProduct len j
+110a103
+>                     (p'q,=j'p)*=qpartialProduct len j
+110a104
+>                     p' = p * qp'
+110a105
+>                     r' =gor(* p'- 1) lo' (s + lo) hi' j' p' r'
+110a106
+>                 elsein go (k - 1) lo' (s + lo) hi' j'j  p'p  r'r
+110a107
+>         --      else   go (k - 1) lo' (s + lo) hi' j  p  r
+110a108
+>         ---- fromIntegral s /= fromIntegral n - popCount (fromIntegral n) = error "factorial_splitRecursive: bug in the computation of n - popCount n"
+110a109
+>         |-- fromIntegral s /= fromIntegral n - popCount (fromIntegral n) = error "factorial_splitRecursive: bug in the computation of n - popCount n"otherwise = r `shiftL` s
+112d110
+< 
+114d111
+<     -- is the count of @j@ terms to multiply, where the @j@ state
+115d111
+<     -- argument is the largest previously used term.
+116d111
+<     partialProduct :: (Integral a) => Int -> a -> (a,a)
+117d111
+<     partialProduct len j
+118d111
+<         | half == 0 = (,) <!>  (j+2)        <!> (j+2)
+119d111
+<         | len  == 2 = (,) <!> ((j+2)*(j+4)) <!> (j+4)
+120d111
+<         | otherwise =
+121d111
+<             let (qL, j' ) = partialProduct (len - half) j
+122d111
+<                 (qR, j'') = partialProduct half         j'
+123d111
+<             in (,) <!> (qL*qR) <!> j''
+124c112
+<         where
+---
+>     -- | The product of odd @j@s between n/2^k and 2*n/2^k. @len@
+124a113
+>     -- argument is the largest previously used term.-- is the count of @j@ terms to multiply, where the @j@ state
+124a114
+>     partialProduct-- argument is the largest previously used term.:: (Integral a) => Int -> a -> (a,a)
+124a115
+>     partialProduct ::len(Integralj        a) => Int -> a -> (a,a)
+124a116
+>     partialProduct| half == 0len= (j) <!>  (j+2)        <!> (j+2)
+124a117
+>         | halflen  == 0 = (,) <!> ((j+2)*(j+4)) <!> (j+2)
+124a118
+>         | lenotherwise 2 = (,) <!> ((j+2)*(j+4)) <!> (j+4)
+124a119
+>         | otherwiselet (qL,=j' ) = partialProduct (len - half) j
+124a120
+>             let (qL, j'j'') = partialProduct (halflen - half) jj'
+124a121
+>             in ((qR) ,<!>()qL=qR) <!> j''     half         j'
+124a122
+>         wherein (,) <!> (qL*qR) <!> j''
+124a123
+>         wherehalf = len `quot` 2
+126d124
+< 
+128c126
+< 
+---
+>         (<!>) = ($!) -- fix associativity
+158d155
+< 
+160d156
+< highestBitPosition_Int w =
+161d156
+<     if w < 1 `shiftL` 15
+162d156
+<     then if w < 1 `shiftL` 7
+163d156
+<         then if w < 1 `shiftL` 3
+164d156
+<             then if w < 1 `shiftL` 1
+165d156
+<                 then if w < 1 `shiftL` 0
+166d156
+<                     then if w < 0 then 32 else 0 -- N.B., Int semantics
+167d156
+<                     else 1
+168d156
+<                 else if w < 1 `shiftL` 2  then 2 else 3
+169c157
+<             else if w < 1 `shiftL` 5
+---
+> highestBitPosition_Int ::w =Int -> Int
+169a158
+> highestBitPosition_Intif w < 1 `shiftL` 15 =
+169a159
+>     ifthen <if1w`shiftL< 1 `shiftL` 15 ` 7
+169a160
+>     thenthen wif 1 `shiftL1 `shiftL` 7 ` 3
+169a161
+>         thenthen wif 1 `shiftL1 `shiftL` 3 ` 1
+169a162
+>             thenthen wif 1 `shiftL1 `shiftL` 1 ` 0
+169a163
+>                 thenthen wif 1 `shiftL0 then` 032 else 0 -- N.B., Int semantics
+169a164
+>                     then if1  w < 0 then 32 else 0 -- N.B., Int semantics
+169a165
+>                 elseelseif w1< 1 `shiftL` 2  then 2 else 3
+169a166
+>             elseelseif wif< w <shiftL `shiftL` 5 ` 2  then 2 else 3
+169a167
+>             elsethen wif 1 `shiftL1 `shiftL` 5 ` 4  then 4 else 5
+171d168
+<                 else if w < 1 `shiftL` 6  then 6 else 7
+172d168
+<         else if w < 1 `shiftL` 11
+173d168
+<             then if w < 1 `shiftL` 9
+174d168
+<                 then if w < 1 `shiftL` 8  then 8  else 9
+175d168
+<                 else if w < 1 `shiftL` 10 then 10 else 11
+176c169
+<             else if w < 1 `shiftL` 13
+---
+>         else if elsew < 1if`shiftL < 1``shiftL11    ` 6  then 6 else 7
+176a170
+>         elsethen wif 1 `shiftL1 `shiftL` 11` 9
+176a171
+>             thenthen wif 1 `shiftL1 `shiftL` 9 ` 8  then 8  else 9
+176a172
+>                 then if w < 1 `shiftL` 810 then 810 else 911
+176a173
+>             elseelseif wif< w <shiftL `shiftL` 13` 10 then 10 else 11
+176a174
+>             elsethen wif 1 `shiftL1 `shiftL` 13` 12 then 12 else 13
+178d175
+<                 else if w < 1 `shiftL` 14 then 14 else 15
+179d175
+<     else if w < 1 `shiftL` 23
+180d175
+<         then if w < 1 `shiftL` 19
+181c176
+<             then if w < 1 `shiftL` 17
+---
+>     else if w < else1 `shiftL w`<23 `shiftL` 14 then 14 else 15
+181a177
+>     elsethen wif 1 `shiftL1 `shiftL` 23` 19
+181a178
+>         thenthen wif 1 `shiftL1 `shiftL` 19` 17
+181a179
+>             thenthen wif 1 `shiftL1 `shiftL` 17` 16 then 16 else 17
+183d180
+<                 else if w < 1 `shiftL` 18 then 18 else 19
+184c181
+<             else if w < 1 `shiftL` 21
+---
+>             elseelseif wif< w <shiftL `shiftL` 21` 18 then 18 else 19
+184a182
+>             elsethen wif 1 `shiftL1 `shiftL` 21` 20 then 20 else 21
+186d183
+<                 else if w < 1 `shiftL` 22 then 22 else 23
+187d183
+<         else if w < 1 `shiftL` 27
+188c184
+<             then if w < 1 `shiftL` 25
+---
+>         else if elsew < 1if`shiftL < 1``shiftL27    ` 22 then 22 else 23
+188a185
+>         elsethen wif 1 `shiftL1 `shiftL` 27` 25
+188a186
+>             thenthen wif 1 `shiftL1 `shiftL` 25` 24 then 24 else 25
+190d187
+<                 else if w < 1 `shiftL` 26 then 26 else 27
+191c188
+<             else if w < 1 `shiftL` 29
+---
+>             elseelseif wif< w <shiftL `shiftL` 29` 26 then 26 else 27
+191a189
+>             elsethen wif 1 `shiftL1 `shiftL` 29` 28 then 28 else 29
+195d192
+< 
+197c194
+< {-
+---
+> ----------------------------------------------------------------{-
+275c272
+< -}
+---
+> -}----------------------------------------------------------------
+277a275
+> 
+277a276
+> 
+277a277
+> 
+</pre></br><h2>original</h2></br><pre>{-# OPTIONS_GHC -Wall -fwarn-tabs #-}
+{-# LANGUAGE CPP #-}
+----------------------------------------------------------------
+--                                                    2012.01.28
+-- |
+-- Module      :  Math.Combinatorics.Factorial
+-- Copyright   :  Copyright (c) 2011--2012 wren ng thornton
+-- License     :  BSD
+-- Maintainer  :  wren@community.haskell.org
+-- Stability   :  provisional
+-- Portability :  Haskell98 + CPP
+--
+-- The factorial numbers (<http://oeis.org/A000142>). For negative
+-- inputs, all functions return 0 (rather than throwing an exception
+-- or using 'Maybe').
+--
+-- Notable limits:
+--
+-- * 12! is the largest factorial that can fit into 'Int32'.
+--
+-- * 20! is the largest factorial that can fit into 'Int64'.
+--
+-- * 170! is the largest factorial that can fit into 64-bit 'Double'.
+----------------------------------------------------------------
+module Math.Combinatorics.Factorial (factorial) where
+
+-- N.B., we need a Custom cabal build-type for this to work.
+#ifdef __HADDOCK__
+import Data.Int  (Int32, Int64)
+#endif
+import Data.Bits
+
+{-
+-- from <http://www.polyomino.f2s.com/david/haskell/hs/CombinatoricsCounting.hs.txt>
+
+fallingFactorial n k = product [n - fromInteger i | i <- [0..toInteger k - 1] ]
+-- == factorial n `div` factorial (n-k)
+
+risingFactorial n k = product [n + fromInteger i | i <- [0..toInteger k - 1] ]
+-- == factorial (n+k) `div` factorial n
+
+-- | A common under-approximation of the factorial numbers.
+factorial_stirling :: (Integral a) => a -> a
+{-# SPECIALIZE factorial_stirling ::
+    Integer -> Integer,
+    Int     -> Int,
+    Int32   -> Int32,
+    Int64   -> Int64
+    #-}
+factorial_stirling n
+    | n < 0     = 0
+    | otherwise = ceiling (sqrt (2 * pi * n') * (n' / exp 1) ** n')
+    where
+    n' :: Double
+    n' = fromIntegral n
+-}
+
+
+----------------------------------------------------------------
+{-
+    n!  = 2^{n - popCount n}
+        * \prod_{k \geq 1} \left(
+              \prod_{n/2^k < j \leq 2*n/2^k}
+                  if odd j then j else 1
+          \right)^k
+-}
+
+-- | Exact factorial numbers. For a fast approximation see
+-- @math-functions:Numeric.SpecFunctions.factorial@ instead. The
+-- naive definition of the factorial numbers is:
+--
+-- > factorial n
+-- >     | n < 0     = 0
+-- >     | otherwise = product [1..n]
+--
+-- However, we use a fast algorithm based on the split-recursive form:
+--
+-- > factorial n =
+-- >     2^(n - popCount n) * product [(q k)^k | forall k, k >= 1]
+-- >     where
+-- >     q k = product [j | forall j, n*2^(-k) < j <= n*2^(-k+1), odd j]
+--
+factorial :: (Integral a, Bits a) => Int -> a
+factorial n
+    | n < 0     = 0
+    | n < 2     = 1
+    | otherwise = go (highestBitPosition_Int n - 1) 0 0 1 1 1 1
+    where
+    -- lo  == n/2^(k+1)
+    -- lo' == n/2^k
+    -- qk  == product of odd @j@s for @k@ in [1..K]
+    -- p   == q1 * q2 * ... * qK
+    -- r   == (q1 ^ K) * (q2 ^ (K-1)) * ... * (qK ^ 1)
+    -- s   == 2^{n - popCount n}
+    -- go :: Int -> Int -> Int -> Int -> a -> a -> a -> a
+    go k lo s hi j p r
+        | k `seq` lo `seq` s `seq` hi `seq` j `seq` p `seq` r `seq` False = undefined
+        | k >= 0 =                     -- TODO: why did old version use lo/=n ?
+            let lo' = n `shiftR` k     -- TODO: use shiftRL#
+                hi' = (lo' - 1) .|. 1  -- if odd lo' then lo' else lo' - 1
+                len = (hi' - hi) `div` 2 -- TODO: why not (`shiftR`1) or (`quot`2) ?
+            in if len > 0
+                then let
+                    (q, j') = partialProduct len j
+                    p' = p * q
+                    r' = r * p'
+                    in go (k - 1) lo' (s + lo) hi' j' p' r'
+                else   go (k - 1) lo' (s + lo) hi' j  p  r
+        --
+        -- fromIntegral s /= fromIntegral n - popCount (fromIntegral n) = error "factorial_splitRecursive: bug in the computation of n - popCount n"
+        | otherwise = r `shiftL` s
+
+    -- | The product of odd @j@s between n/2^k and 2*n/2^k. @len@
+    -- is the count of @j@ terms to multiply, where the @j@ state
+    -- argument is the largest previously used term.
+    partialProduct :: (Integral a) => Int -> a -> (a,a)
+    partialProduct len j
+        | half == 0 = (,) <!>  (j+2)        <!> (j+2)
+        | len  == 2 = (,) <!> ((j+2)*(j+4)) <!> (j+4)
+        | otherwise =
+            let (qL, j' ) = partialProduct (len - half) j
+                (qR, j'') = partialProduct half         j'
+            in (,) <!> (qL*qR) <!> j''
+        where
+        half = len `quot` 2
+
+        (<!>) = ($!) -- fix associativity
+
+{-
+floorLog2 :: (Integral a, Bits a) => a -> Int
+floorLog2 n
+    | n <= 0    = error "floorLog2: argument must be positive"
+    | otherwise = highestBitPosition n - 1
+
+highestBitPosition :: (Integral a, Bits a) => a -> Int
+{-# INLINE highestBitPosition #-}
+{-# SPECIALIZE highestBitPosition :: Int -> Int #-}
+highestBitPosition n0
+    | n0 <  0   = error _highestBitPosition_negative
+    | n0 == 0   = 1
+    | otherwise = go 0 n0
+    where
+    go d n
+        | d `seq` n `seq` False = undefined
+        | n > 0     = go (d+1) (n `shiftR` 1)
+        | otherwise = d
+
+_highestBitPosition_negative :: String
+{-# NOINLINE _highestBitPosition_negative #-}
+_highestBitPosition_negative =
+    "highestBitPosition: argument must be non-negative"
+
+floorLog2_Int :: Int -> Int
+floorLog2_Int n
+    | n <= 0    = error "floorLog2_Int: argument must be positive"
+    | otherwise = highestBitPosition_Int n - 1
+-}
+
+highestBitPosition_Int :: Int -> Int
+highestBitPosition_Int w =
+    if w < 1 `shiftL` 15
+    then if w < 1 `shiftL` 7
+        then if w < 1 `shiftL` 3
+            then if w < 1 `shiftL` 1
+                then if w < 1 `shiftL` 0
+                    then if w < 0 then 32 else 0 -- N.B., Int semantics
+                    else 1
+                else if w < 1 `shiftL` 2  then 2 else 3
+            else if w < 1 `shiftL` 5
+                then if w < 1 `shiftL` 4  then 4 else 5
+                else if w < 1 `shiftL` 6  then 6 else 7
+        else if w < 1 `shiftL` 11
+            then if w < 1 `shiftL` 9
+                then if w < 1 `shiftL` 8  then 8  else 9
+                else if w < 1 `shiftL` 10 then 10 else 11
+            else if w < 1 `shiftL` 13
+                then if w < 1 `shiftL` 12 then 12 else 13
+                else if w < 1 `shiftL` 14 then 14 else 15
+    else if w < 1 `shiftL` 23
+        then if w < 1 `shiftL` 19
+            then if w < 1 `shiftL` 17
+                then if w < 1 `shiftL` 16 then 16 else 17
+                else if w < 1 `shiftL` 18 then 18 else 19
+            else if w < 1 `shiftL` 21
+                then if w < 1 `shiftL` 20 then 20 else 21
+                else if w < 1 `shiftL` 22 then 22 else 23
+        else if w < 1 `shiftL` 27
+            then if w < 1 `shiftL` 25
+                then if w < 1 `shiftL` 24 then 24 else 25
+                else if w < 1 `shiftL` 26 then 26 else 27
+            else if w < 1 `shiftL` 29
+                then if w < 1 `shiftL` 28 then 28 else 29
+                else if w < 1 `shiftL` 30 then 30 else 31
+
+
+----------------------------------------------------------------
+{-
+factorial_primeSwing :: Int -> Integer
+factorial_primeSwing n0
+    | n0 < 0    = 0
+    | n0 < 20   = smallFactorials `unsafeAt` n0
+    | otherwise = go n0 `shiftL` (n0 - popCount n0)
+    where
+    go n
+        | n < 2     = 1
+        | otherwise = (go (n `div` 2) ^ 2) * swing n
+
+    swing n
+        | n < 33    = smallOddSwing `unsafeAt` n
+        | otherwise =
+            let count = 0
+                rootN = floorSqrt n
+                xs    = primes 3 rootN
+                ys    = primes (rootN + 1) (n `div` 3)
+            in
+                forM_ xs $ \x -> do
+                    let q = n
+                    let p = 1
+                    q := q `div` x
+                    whileM_ (q > 0) $ do
+                        when (q .&. 1 == 1) (p := p*x)
+                        q := q `div` x
+                    when (p > 1) $ do
+                        primeList !! count := p
+                        count := count+1
+                forM_ ys $ \y -> do
+                    when ((n `div` y) .&. 1 == 1) $ do
+                        primeList !! count := y
+                        count := count+1
+                return
+                    $ primorial (n `div` 2 + 1) n
+                    * xmathProduct primeList 0 count
+
+    -- With hsc2hs we can use #def to define these as static C-style arrays, and then use base:Foreign.Marshall.Array to access them. Instead of using array:Data.Array.Unboxed; Or we could try the Addr# trick used in Warp
+    smallOddSwing :: UArray Int Int32
+    smallOddSwing = listArray (0,32)
+        [ 1, 1, 1, 3, 3, 15, 5, 35, 35, 315, 63, 693, 231, 3003
+        , 429, 6435, 6435, 109395, 12155, 230945, 46189, 969969
+        , 88179, 2028117, 676039, 16900975, 1300075, 35102025
+        , 5014575, 145422675, 9694845, 300540195, 300540195 ]
+
+    smallFactorials :: UArray Int Int64
+    smallFactorials = listArray (0,20)
+        [ 1, 1, 2, 6, 24, 120, 720, 5040, 40320, 362880, 3628800
+        , 39916800, 479001600, 6227020800, 87178291200, 1307674368000
+        , 20922789888000, 355687428096000, 6402373705728000
+        , 121645100408832000, 2432902008176640000 ]
+
+
+-- cf <http://wiki.cs.pdx.edu/forge/popcount.html>
+-- cf <http://en.wikipedia.org/wiki/Hamming_weight>
+-- | The number of set bits.
+popCount :: Int -> Int
+popCount x0 =
+    let x1 = x0 - w2i ((w1 .&. i2w x0) `shiftR` 1)
+        x2 = (x1 .&. m2) + ((x1 `shiftR` 2) .&. m2)
+        x3 = (x2 + (x2 `shiftR` 4)) .&. m4
+        x4 = x3 + (x3 `shiftR` 8)
+        x5 = x4 + (x4 `shiftR` 16)
+        x6 = x5 + (x5 `shiftR` 32) -- for 64-bit platforms
+    in x6 .&. 0x7f
+    where
+    i2w :: Int -> Word
+    i2w = fromIntegral
+
+    w2i :: Word -> Int
+    w2i = fromIntegral
+
+    w1 = 0xaaaaaaaaaaaaaaaa    -- binary: 0101...
+    -- m1 = 0x5555555555555555 -- binary: 1010...
+    m2 = 0x3333333333333333    -- binary: 11001100...
+    m4 = 0x0f0f0f0f0f0f0f0f    -- binary: 11110000...
+
+factorial_parallelPrimeSwing
+-}
+----------------------------------------------------------------
+----------------------------------------------------------- fin.
+</pre></br><h2>printed</h2></br><pre>{-# OPTIONS_GHC -Wall -fwarn-tabs #-}
+{-# LANGUAGE CPP #-}
+----------------------------------------------------------------
+--                                                    2012.01.28
+-- |
+-- Module      :  Math.Combinatorics.Factorial
+-- Copyright   :  Copyright (c) 2011--2012 wren ng thornton
+-- License     :  BSD
+-- Maintainer  :  wren@community.haskell.org
+-- Stability   :  provisional
+-- Portability :  Haskell98 + CPP
+--
+-- The factorial numbers (<http://oeis.org/A000142>). For negative
+-- inputs, all functions return 0 (rather than throwing an exception
+-- or using 'Maybe').
+--
+-- Notable limits:
+--
+-- * 12! is the largest factorial that can fit into 'Int32'.
+--
+-- * 20! is the largest factorial that can fit into 'Int64'.
+--
+-- * 170! is the largest factorial that can fit into 64-bit 'Double'.
+----------------------------------------------------------------
+module Math.Combinatorics.Factorial (factorial) where
+
+-- N.B., we need a Custom cabal build-type for this to work.
+#ifdef __HADDOCK__
+import Data.Int  (Int32, Int64)
+#endif
+import Data.Bits
+
+{-
+-- from <http://www.polyomino.f2s.com/david/haskell/hs/CombinatoricsCounting.hs.txt>
+
+fallingFactorial n k = product [n - fromInteger i | i <- [0..toInteger k - 1] ]
+-- == factorial n `div` factorial (n-k)
+
+risingFactorial n k = product [n + fromInteger i | i <- [0..toInteger k - 1] ]
+-- == factorial (n+k) `div` factorial n
+
+-- | A common under-approximation of the factorial numbers.
+factorial_stirling :: (Integral a) => a -> a
+{-# SPECIALIZE factorial_stirling ::
+    Integer -> Integer,
+    Int     -> Int,
+    Int32   -> Int32,
+    Int64   -> Int64
+    #-}
+factorial_stirling n
+    | n < 0     = 0
+    | otherwise = ceiling (sqrt (2 * pi * n') * (n' / exp 1) ** n')
+    where
+    n' :: Double
+    n' = fromIntegral n
+-}
+
+----------------------------------------------------------------
+----------------------------------------------------------------{-
+    n!  = 2^{n - popCount n}
+        * \prod_{k \geq 1} \left(
+              \prod_{n/2^k < j \leq 2*n/2^k}
+                  if odd j then j else 1
+          \right)^k
+-}
+-- | Exact factorial numbers. For a fast approximation see
+-- | Exact factorial numbers. For a fast approximation see-- @math-functions:Numeric.SpecFunctions.factorial@ instead. The
+-- naive definition of the factorial numbers is:-- @math-functions:Numeric.SpecFunctions.factorial@ instead. The
+---- naive definition of the factorial numbers is:
+---- > factorial n
+-- > factorial n-- >     | n < 0     = 0
+-- >     | n < 0     = 0-- >     | otherwise = product [1..n]
+---- >     | otherwise = product [1..n]
+---- However, we use a fast algorithm based on the split-recursive form:
+---- However, we use a fast algorithm based on the split-recursive form:
+---- > factorial n =
+-- > factorial n =-- >     2^(n - popCount n) * product [(q k)^k | forall k, k >= 1]
+-- >     where-- >     2^(n - popCount n) * product [(q k)^k | forall k, k >= 1]
+-- >     where-- >     q k = product [j | forall j, n*2^(-k) < j <= n*2^(-k+1), odd j]
+---- >     q k = product [j | forall j, n*2^(-k) < j <= n*2^(-k+1), odd j]
+--factorial :: (Integral a, Bits a) => Int -> a
+factorial ::n  (Integral a, Bits a) => Int -> a
+factorial| n < n     = 0
+    | n < 0     = 0
+    | notherwise 2     = 1go (highestBitPosition_Int n - 1) 0 0 1 1 1 1
+    |where = go (highestBitPosition_Int n - 1) 0 0 1 1 1 1
+    where-- lo  == n/2^(k+1)
+    -- lo' == n/2^k-- lo  == n/2^(k+1)
+    -- lo' == n/2^k-- qk  == product of odd @j@s for @k@ in [1..K]
+    -- p   == q1 * q2 * ... * qK-- qk  == product of odd @j@s for @k@ in [1..K]
+    -- p   == q1 * q2 * ... * qK-- r   == (q1 ^ K) * (q2 ^ (K-1)) * ... * (qK ^ 1)
+    -- s   == 2^{n - popCount n}-- r   == (q1 ^ K) * (q2 ^ (K-1)) * ... * (qK ^ 1)
+    -- s   == 2^{n - popCount n}-- go :: Int -> Int -> Int -> Int -> a -> a -> a -> a
+    go-- go :: Int -> Int -> Int -> Int -> a -> a -> a -> ak lo s hi j p r
+    go k|lok sseq`jlo rseq` s `seq` hi `seq` j `seq` p `seq` r `seq` False = undefined
+        | k `>=seq0`=lo `seq` s `seq` hi `seq-- TODO: why did old version use lo/=n ?` j `seq` p `seq` r `seq` False = undefined
+        | k >=let0lo'=  = n `shiftR` k     -- TODO: use shiftRL#-- TODO: why did old version use lo/=n ?
+            let lo' = nlo'shiftR- 1)`.|.  1  -- TODO: use shiftRL#-- if odd lo' then lo' else lo' - 1
+                hi' = (lo' - 1hi)).|.`div` 2-- if odd lo' then lo' else lo' - 1-- TODO: why not (`shiftR`1) or (`quot`2) ?
+            in iflen= (hi'0  - hi) `div` 2 -- TODO: why not (`shiftR`1) or (`quot`2) ?
+            in ifthenlet 0
+                then(letq, j') = partialProduct len j
+                    (p'q,=j'p)*=qpartialProduct len j
+                    p' = p * qp'
+                    r' =gor(* p'- 1) lo' (s + lo) hi' j' p' r'
+                elsein go (k - 1) lo' (s + lo) hi' j'j  p'p  r'r
+        --      else   go (k - 1) lo' (s + lo) hi' j  p  r
+        ---- fromIntegral s /= fromIntegral n - popCount (fromIntegral n) = error "factorial_splitRecursive: bug in the computation of n - popCount n"
+        |-- fromIntegral s /= fromIntegral n - popCount (fromIntegral n) = error "factorial_splitRecursive: bug in the computation of n - popCount n"otherwise = r `shiftL` s
+        | otherwise = r `shiftL` s
+    -- | The product of odd @j@s between n/2^k and 2*n/2^k. @len@
+    -- | The product of odd @j@s between n/2^k and 2*n/2^k. @len@
+    -- argument is the largest previously used term.-- is the count of @j@ terms to multiply, where the @j@ state
+    partialProduct-- argument is the largest previously used term.:: (Integral a) => Int -> a -> (a,a)
+    partialProduct ::len(Integralj        a) => Int -> a -> (a,a)
+    partialProduct| half == 0len= (j) <!>  (j+2)        <!> (j+2)
+        | halflen  == 0 = (,) <!> ((j+2)*(j+4)) <!> (j+2)
+        | lenotherwise 2 = (,) <!> ((j+2)*(j+4)) <!> (j+4)
+        | otherwiselet (qL,=j' ) = partialProduct (len - half) j
+            let (qL, j'j'') = partialProduct (halflen - half) jj'
+            in ((qR) ,<!>()qL=qR) <!> j''     half         j'
+        wherein (,) <!> (qL*qR) <!> j''
+        wherehalf = len `quot` 2
+        half = len `quot` 2
+        (<!>) = ($!) -- fix associativity
+        (<!>) = ($!) -- fix associativity
+{-
+floorLog2 :: (Integral a, Bits a) => a -> Int
+floorLog2 n
+    | n <= 0    = error "floorLog2: argument must be positive"
+    | otherwise = highestBitPosition n - 1
+
+highestBitPosition :: (Integral a, Bits a) => a -> Int
+{-# INLINE highestBitPosition #-}
+{-# SPECIALIZE highestBitPosition :: Int -> Int #-}
+highestBitPosition n0
+    | n0 <  0   = error _highestBitPosition_negative
+    | n0 == 0   = 1
+    | otherwise = go 0 n0
+    where
+    go d n
+        | d `seq` n `seq` False = undefined
+        | n > 0     = go (d+1) (n `shiftR` 1)
+        | otherwise = d
+
+_highestBitPosition_negative :: String
+{-# NOINLINE _highestBitPosition_negative #-}
+_highestBitPosition_negative =
+    "highestBitPosition: argument must be non-negative"
+
+floorLog2_Int :: Int -> Int
+floorLog2_Int n
+    | n <= 0    = error "floorLog2_Int: argument must be positive"
+    | otherwise = highestBitPosition_Int n - 1
+-}
+highestBitPosition_Int :: Int -> Int
+highestBitPosition_Int ::w =Int -> Int
+highestBitPosition_Intif w < 1 `shiftL` 15 =
+    ifthen <if1w`shiftL< 1 `shiftL` 15 ` 7
+    thenthen wif 1 `shiftL1 `shiftL` 7 ` 3
+        thenthen wif 1 `shiftL1 `shiftL` 3 ` 1
+            thenthen wif 1 `shiftL1 `shiftL` 1 ` 0
+                thenthen wif 1 `shiftL0 then` 032 else 0 -- N.B., Int semantics
+                    then if1  w < 0 then 32 else 0 -- N.B., Int semantics
+                elseelseif w1< 1 `shiftL` 2  then 2 else 3
+            elseelseif wif< w <shiftL `shiftL` 5 ` 2  then 2 else 3
+            elsethen wif 1 `shiftL1 `shiftL` 5 ` 4  then 4 else 5
+                then if w < 1 `shiftL` 4  then 4 else 5
+        else if elsew < 1if`shiftL < 1``shiftL11    ` 6  then 6 else 7
+        elsethen wif 1 `shiftL1 `shiftL` 11` 9
+            thenthen wif 1 `shiftL1 `shiftL` 9 ` 8  then 8  else 9
+                then if w < 1 `shiftL` 810 then 810 else 911
+            elseelseif wif< w <shiftL `shiftL` 13` 10 then 10 else 11
+            elsethen wif 1 `shiftL1 `shiftL` 13` 12 then 12 else 13
+                then if w < 1 `shiftL` 12 then 12 else 13
+    else if w < else1 `shiftL w`<23 `shiftL` 14 then 14 else 15
+    elsethen wif 1 `shiftL1 `shiftL` 23` 19
+        thenthen wif 1 `shiftL1 `shiftL` 19` 17
+            thenthen wif 1 `shiftL1 `shiftL` 17` 16 then 16 else 17
+                then if w < 1 `shiftL` 16 then 16 else 17
+            elseelseif wif< w <shiftL `shiftL` 21` 18 then 18 else 19
+            elsethen wif 1 `shiftL1 `shiftL` 21` 20 then 20 else 21
+                then if w < 1 `shiftL` 20 then 20 else 21
+        else if elsew < 1if`shiftL < 1``shiftL27    ` 22 then 22 else 23
+        elsethen wif 1 `shiftL1 `shiftL` 27` 25
+            thenthen wif 1 `shiftL1 `shiftL` 25` 24 then 24 else 25
+                then if w < 1 `shiftL` 24 then 24 else 25
+            elseelseif wif< w <shiftL `shiftL` 29` 26 then 26 else 27
+            elsethen wif 1 `shiftL1 `shiftL` 29` 28 then 28 else 29
+                then if w < 1 `shiftL` 28 then 28 else 29
+                else if w < 1 `shiftL` 30 then 30 else 31
+
+----------------------------------------------------------------
+----------------------------------------------------------------{-
+factorial_primeSwing :: Int -> Integer
+factorial_primeSwing n0
+    | n0 < 0    = 0
+    | n0 < 20   = smallFactorials `unsafeAt` n0
+    | otherwise = go n0 `shiftL` (n0 - popCount n0)
+    where
+    go n
+        | n < 2     = 1
+        | otherwise = (go (n `div` 2) ^ 2) * swing n
+
+    swing n
+        | n < 33    = smallOddSwing `unsafeAt` n
+        | otherwise =
+            let count = 0
+                rootN = floorSqrt n
+                xs    = primes 3 rootN
+                ys    = primes (rootN + 1) (n `div` 3)
+            in
+                forM_ xs $ \x -> do
+                    let q = n
+                    let p = 1
+                    q := q `div` x
+                    whileM_ (q > 0) $ do
+                        when (q .&. 1 == 1) (p := p*x)
+                        q := q `div` x
+                    when (p > 1) $ do
+                        primeList !! count := p
+                        count := count+1
+                forM_ ys $ \y -> do
+                    when ((n `div` y) .&. 1 == 1) $ do
+                        primeList !! count := y
+                        count := count+1
+                return
+                    $ primorial (n `div` 2 + 1) n
+                    * xmathProduct primeList 0 count
+
+    -- With hsc2hs we can use #def to define these as static C-style arrays, and then use base:Foreign.Marshall.Array to access them. Instead of using array:Data.Array.Unboxed; Or we could try the Addr# trick used in Warp
+    smallOddSwing :: UArray Int Int32
+    smallOddSwing = listArray (0,32)
+        [ 1, 1, 1, 3, 3, 15, 5, 35, 35, 315, 63, 693, 231, 3003
+        , 429, 6435, 6435, 109395, 12155, 230945, 46189, 969969
+        , 88179, 2028117, 676039, 16900975, 1300075, 35102025
+        , 5014575, 145422675, 9694845, 300540195, 300540195 ]
+
+    smallFactorials :: UArray Int Int64
+    smallFactorials = listArray (0,20)
+        [ 1, 1, 2, 6, 24, 120, 720, 5040, 40320, 362880, 3628800
+        , 39916800, 479001600, 6227020800, 87178291200, 1307674368000
+        , 20922789888000, 355687428096000, 6402373705728000
+        , 121645100408832000, 2432902008176640000 ]
+
+
+-- cf <http://wiki.cs.pdx.edu/forge/popcount.html>
+-- cf <http://en.wikipedia.org/wiki/Hamming_weight>
+-- | The number of set bits.
+popCount :: Int -> Int
+popCount x0 =
+    let x1 = x0 - w2i ((w1 .&. i2w x0) `shiftR` 1)
+        x2 = (x1 .&. m2) + ((x1 `shiftR` 2) .&. m2)
+        x3 = (x2 + (x2 `shiftR` 4)) .&. m4
+        x4 = x3 + (x3 `shiftR` 8)
+        x5 = x4 + (x4 `shiftR` 16)
+        x6 = x5 + (x5 `shiftR` 32) -- for 64-bit platforms
+    in x6 .&. 0x7f
+    where
+    i2w :: Int -> Word
+    i2w = fromIntegral
+
+    w2i :: Word -> Int
+    w2i = fromIntegral
+
+    w1 = 0xaaaaaaaaaaaaaaaa    -- binary: 0101...
+    -- m1 = 0x5555555555555555 -- binary: 1010...
+    m2 = 0x3333333333333333    -- binary: 11001100...
+    m4 = 0x0f0f0f0f0f0f0f0f    -- binary: 11110000...
+
+factorial_parallelPrimeSwing
+-}----------------------------------------------------------------
+----------------------------------------------------------------
+----------------------------------------------------------- fin.
+
+
+
+</pre>

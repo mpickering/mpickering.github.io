@@ -1,0 +1,86 @@
+<a href="Fixed.hs4119385542111482797.out.html">prev</a></br><a href="failures.html">home</a></br><a href="Float.hs1399125485156091745.out.html">next</a></br></br><pre>22c22
+< fixturePath = takeDirectory __FILE__ </> "fixtures"
+---
+> fixturePath = takeDirectory "../../hackage-packages/twitter-types-0.7.0/tests/Fixtures.hs"__FILE__ </> "fixtures"                                        </> "fixtures"
+39a40
+> 
+</pre></br><h2>original</h2></br><pre>{-# LANGUAGE QuasiQuotes #-}
+{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE CPP #-}
+
+module Fixtures where
+
+import Language.Haskell.TH
+import Data.Aeson
+import Data.Attoparsec.ByteString
+import qualified Data.ByteString as S
+import Data.Maybe
+import System.Directory
+import System.FilePath
+import System.IO.Unsafe (unsafePerformIO)
+import Control.Applicative
+
+parseJSONValue :: S.ByteString -> Value
+parseJSONValue = fromJust . maybeResult . parse json
+
+fixturePath :: String
+fixturePath = takeDirectory __FILE__ </> "fixtures"
+
+loadFixture :: (S.ByteString -> a) -> String -> IO a
+loadFixture conv filename = conv <$> S.readFile (fixturePath </> filename)
+
+fixture :: (S.ByteString -> a) -> String -> a
+fixture conv = unsafePerformIO . loadFixture conv
+
+loadFixturesTH :: Name -> Q [Dec]
+loadFixturesTH convFn = do
+    files <- runIO $ filter (\fn -> takeExtension fn == ".json") <$> getDirectoryContents fixturePath
+    concat <$> mapM genEachDefs files
+  where
+    genEachDefs filename = do
+        let funN = mkName $ "fixture_" ++ dropExtension filename
+        sigdef <- sigD funN (conT ''Value)
+        bind <- valD (varP funN) (normalB [|fixture $(varE convFn) $(litE (stringL filename))|]) []
+        return [ sigdef, bind ]
+</pre></br><h2>printed</h2></br><pre>{-# LANGUAGE QuasiQuotes #-}
+{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE CPP #-}
+
+module Fixtures where
+
+import Language.Haskell.TH
+import Data.Aeson
+import Data.Attoparsec.ByteString
+import qualified Data.ByteString as S
+import Data.Maybe
+import System.Directory
+import System.FilePath
+import System.IO.Unsafe (unsafePerformIO)
+import Control.Applicative
+
+parseJSONValue :: S.ByteString -> Value
+parseJSONValue = fromJust . maybeResult . parse json
+
+fixturePath :: String
+fixturePath = takeDirectory "../../hackage-packages/twitter-types-0.7.0/tests/Fixtures.hs"__FILE__ </> "fixtures"                                        </> "fixtures"
+
+loadFixture :: (S.ByteString -> a) -> String -> IO a
+loadFixture conv filename = conv <$> S.readFile (fixturePath </> filename)
+
+fixture :: (S.ByteString -> a) -> String -> a
+fixture conv = unsafePerformIO . loadFixture conv
+
+loadFixturesTH :: Name -> Q [Dec]
+loadFixturesTH convFn = do
+    files <- runIO $ filter (\fn -> takeExtension fn == ".json") <$> getDirectoryContents fixturePath
+    concat <$> mapM genEachDefs files
+  where
+    genEachDefs filename = do
+        let funN = mkName $ "fixture_" ++ dropExtension filename
+        sigdef <- sigD funN (conT ''Value)
+        bind <- valD (varP funN) (normalB [|fixture $(varE convFn) $(litE (stringL filename))|]) []
+        return [ sigdef, bind ]
+
+</pre>

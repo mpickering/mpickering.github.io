@@ -1,0 +1,3596 @@
+<a href="CompactMap.hs13349489051724586126.out.html">prev</a></br><a href="failures.html">home</a></br><a href="Concurrent.hs13585809791624379149.out.html">next</a></br></br><pre>6a7
+> -- For ghc 6.6 compatibility-- {-# OPTIONS -fglasgow-exts -fallow-undecidable-instances #-}
+8d8
+< 
+10c10
+< 
+---
+> {-# OPTIONS_GHC -Wall -fno-warn-orphans #-}
+12d11
+< -- |
+13d11
+< -- Module      :  Control.Compose
+14d11
+< -- Copyright   :  (c) Conal Elliott 2007-2013
+15d11
+< -- License     :  BSD3
+16d11
+< --
+17d11
+< -- Maintainer  :  conal@conal.net
+18d11
+< -- Stability   :  experimental
+19d11
+< -- Portability :  see LANGUAGE pragma
+20d11
+< --
+21d11
+< -- Various type constructor compositions and instances for them.
+22d11
+< -- Some come from
+23d11
+< -- \"Applicative Programming with Effects\"
+24c12
+< -- <http://www.soi.city.ac.uk/~ross/papers/Applicative.html>
+---
+> -- |----------------------------------------------------------------------
+24a13
+> -- |-- Module      :  Control.Compose
+24a14
+> -- Module      :  Control.Compose-- Copyright   :  (c) Conal Elliott 2007-2013
+24a15
+> -- License     :  BSD3-- Copyright   :  (c) Conal Elliott 2007-2013
+24a16
+> ---- License     :  BSD3
+24a17
+> ---- Maintainer  :  conal@conal.net
+24a18
+> -- Stability   :  experimental-- Maintainer  :  conal@conal.net
+24a19
+> -- Stability   :  experimental-- Portability :  see LANGUAGE pragma
+24a20
+> ---- Portability :  see LANGUAGE pragma
+24a21
+> ---- Various type constructor compositions and instances for them.
+24a22
+> -- Some come from-- Various type constructor compositions and instances for them.
+24a23
+> -- Some come from-- \"Applicative Programming with Effects\"
+24a24
+> -- \"Applicative Programming with Effects\"-- <http://www.soi.city.ac.uk/~ross/papers/Applicative.html>
+24a25
+> -- <http://www.soi.city.ac.uk/~ross/papers/Applicative.html>----------------------------------------------------------------------
+26d26
+< 
+28d27
+<   (
+29d27
+<   -- * Value transformers
+30d27
+<     Unop, Binop
+31d27
+<   -- * Specialized semantic editor combinators
+32d27
+<   , result, argument, (~>), (~>*), (<~), (*<~)
+33d27
+<   -- * Contravariant functors
+34d27
+<   , ContraFunctor(..), bicomap
+35d27
+<   -- * Unary\/unary composition
+36d27
+<   , (:.)(..), O, unO, biO, convO, coconvO, inO, inO2, inO3
+37d27
+<   , oPure, oFmap, oLiftA2, oLiftA3
+38d27
+<   , fmapFF, fmapCC, contraFmapFC, contraFmapCF
+39d27
+<   , DistribM(..), joinDistribM, bindDistribM, returnDistribM
+40d27
+<   , joinMMT, joinComposeT
+41d27
+<   -- * Type composition
+42d27
+<   -- ** Unary\/binary
+43d27
+<   , OO(..)
+44d27
+< --   -- * Binary\/unary
+45d27
+< --   , ArrowAp(..),
+46d27
+<   -- ** (->)\/unary
+47d27
+<   , FunA(..), inFunA, inFunA2, FunAble(..)
+48d27
+<   -- * Monoid constructors
+49d27
+<   , Monoid_f(..)
+50d27
+<   -- * Flip a binary constructor's type arguments
+51d27
+<   , Flip(..), biFlip, inFlip, inFlip2, inFlip3, OI, ToOI(..)
+52d27
+<   -- * Type application
+53d27
+<   , (:$)(..), App, biApp, inApp, inApp2
+54d27
+<   -- * Identity
+55d27
+<   , Id(..),unId, biId, inId, inId2
+56d27
+<   -- * Constructor pairing
+57d27
+<   -- ** Unary
+58d27
+<   , (:*:)(..),(*:*), biProd, convProd, (***#), ($*), inProd, inProd2, inProd3
+59d27
+<   -- * Binary
+60d27
+<   , (::*::)(..), (*::*), inProdd, inProdd2
+61d27
+<   -- * Arrow between /two/ constructor applications
+62d27
+<   , Arrw(..), (:->:)
+63d27
+<   , biFun, convFun, inArrw, inArrw2, inArrw3
+64d27
+<   -- * Augment other modules
+65d27
+<   , biConst, inConst, inConst2, inConst3
+66c28
+<   , biEndo, inEndo
+---
+> module(    Control.Compose
+66a29
+>   (-- * Value transformers
+66a30
+>   -- * Value transformersUnop, Binop
+66a31
+>   -- * Specialized semantic editor combinators, Binop
+66a32
+>   ,-- * Specialized semantic editor combinatorsresult, argument, (~>), (~>*), (<~), (*<~)
+66a33
+>   ,-- * Contravariant functors, argument, (~>), (~>*), (<~), (*<~)
+66a34
+>   ,-- * Contravariant functorsContraFunctor(..), bicomap
+66a35
+>   ,-- * Unary\/unary composition(..), bicomap
+66a36
+>   ,-- * Unary\/unary composition(:.)(..), O, unO, biO, convO, coconvO, inO, inO2, inO3
+66a37
+>   , (oPure:.)(.., )oFmap, O,,unOoLiftA2, biO, convOoLiftA3, coconvO, inO, inO2, inO3
+66a38
+>   , oPurefmapFF,,oFmapfmapCC, oLiftA2, contraFmapFC, oLiftA3, contraFmapCF
+66a39
+>   , fmapFFDistribM, fmapCC(..), ,joinDistribM, ,bindDistribM, returnDistribM
+66a40
+>   , DistribMjoinMMT,(..joinComposeT), joinDistribM, bindDistribM, returnDistribM
+66a41
+>   ,-- * Type composition, joinComposeT
+66a42
+>   -- ** Unary\/binary-- * Type composition
+66a43
+>   ,-- ** Unary\/binaryOO(..)
+66a44
+> --   -- * Binary\/unary, OO(..)
+66a45
+> --   , ArrowAp(..),--   -- * Binary\/unary
+66a46
+> --   , ArrowAp(..),-- ** (->)\/unary
+66a47
+>   ,-- ** (->)\/unaryFunA(..), inFunA, inFunA2, FunAble(..)
+66a48
+>   ,-- * Monoid constructors(..), inFunA, inFunA2, FunAble(..)
+66a49
+>   ,-- * Monoid constructorsMonoid_f(..)
+66a50
+>   ,-- * Flip a binary constructor's type arguments(..)
+66a51
+>   ,-- * Flip a binary constructor's type argumentsFlip(..), biFlip, inFlip, inFlip2, inFlip3, OI, ToOI(..)
+66a52
+>   ,-- * Type application(..), biFlip, inFlip, inFlip2, inFlip3, OI, ToOI(..)
+66a53
+>   ,-- * Type application(:$)(..), App, biApp, inApp, inApp2
+66a54
+>   ,-- * Identity:$)(..), App, biApp, inApp, inApp2
+66a55
+>   ,-- * IdentityId(..),unId, biId, inId, inId2
+66a56
+>   ,-- * Constructor pairing(..),unId, biId, inId, inId2
+66a57
+>   -- ** Unary-- * Constructor pairing
+66a58
+>   ,-- ** Unary(:*:)(..),(*:*), biProd, convProd, (***#), ($*), inProd, inProd2, inProd3
+66a59
+>   ,-- * Binary:*:)(..),(*:*), biProd, convProd, (***#), ($*), inProd, inProd2, inProd3
+66a60
+>   ,-- * Binary(::*::)(..), (*::*), inProdd, inProdd2
+66a61
+>   ,-- * Arrow between /two/ constructor applications::*::)(..), (*::*), inProdd, inProdd2
+66a62
+>   ,-- * Arrow between /two/ constructor applicationsArrw(..), (:->:)
+66a63
+>   , ArrwbiFun(.., )convFun, (:->:,)inArrw, inArrw2, inArrw3
+66a64
+>   ,-- * Augment other modules, convFun, inArrw, inArrw2, inArrw3
+66a65
+>   ,-- * Augment other modulesbiConst, inConst, inConst2, inConst3
+66a66
+>   , biConstbiEndo,,inEndo, inConst2, inConst3
+66a67
+>   , biEndowhere , inEndo
+68d68
+< 
+71d70
+< import Prelude hiding ((.), id)
+72c71
+< #endif
+---
+> import Control.CategoryPrelude hiding ((.), id)
+72a72
+> import#endif  Prelude hiding ((.), id)
+75c75
+< #if __GLASGOW_HASKELL__ < 610
+---
+> import#if __GLASGOW_HASKELL__ < 610Control.Arrow
+80d79
+< import Data.Foldable
+81d79
+< import Data.Traversable
+82c80
+< import Control.Applicative
+---
+> import Data.MonoidData.Foldable
+82a81
+> import Data.FoldableData.Traversable
+82a82
+> import Data.TraversableControl.Applicative
+82a83
+> import Control.ApplicativeControl.Monad (join,liftM)
+84d84
+< 
+86c86
+< 
+---
+> -- import Test.QuickCheck -- for Endo
+88c88
+< 
+---
+> import Data.Bijection
+90d89
+< infixl 7 :*:
+91c90
+< infixr 1 :->:
+---
+> infixl 9 :.:*:-- , `O`
+91a91
+> infixl 7 :*::->:
+91a92
+> infixr 1 :->::$
+93d93
+< 
+94a95
+> infixl 0 $****#
+97d97
+< 
+101d100
+< 
+103d101
+< type Unop  a = a -> a
+104c102
+< -- | Binary functions
+---
+> type-- | Unary functionsUnop  a = a -> a
+104a103
+> type-- | Binary functions  a = a -> a
+104a104
+> type-- | Binary functionsBinop a = a -> a -> a
+107d106
+< 
+113d111
+< 
+115d112
+< -- argument :: (a' -> a) -> ((a -> b) -> (a' -> b))
+116c113
+< argument :: Category cat => (a' `cat` a) -> ((a `cat` b) -> (a' `cat` b))
+---
+> -- | Add pre-processing-- argument :: (a' -> a) -> ((a -> b) -> (a' -> b))
+116a114
+> argument-- argument :: (a' -> a) -> ((a -> b) -> (a' -> b)):: Category cat => (a' `cat` a) -> ((a `cat` b) -> (a' `cat` b))
+116a115
+> argument ::= flip(.)  cat => (a' `cat` a) -> ((a `cat` b) -> (a' `cat` b))
+118d116
+< 
+120c118
+< result :: Category cat => (b `cat` b') -> ((a `cat` b) -> (a `cat` b'))
+---
+> result-- | Add post-processing:: Category cat => (b `cat` b') -> ((a `cat` b) -> (a `cat` b'))
+120a119
+> result ::= (Category.)       cat => (b `cat` b') -> ((a `cat` b) -> (a `cat` b'))
+122d120
+< 
+123a122
+> infixr 1 ~>, ~>*
+125d123
+< 
+127d124
+< (~>) :: Category cat =>
+128d124
+<         (a' `cat` a) -> (b `cat` b') -> ((a `cat` b) -> (a' `cat` b'))
+129c125
+< -- (f ~> h) g = h . g . f
+---
+> (-- | Add pre- and post processing~>) :: Category cat =>
+129a126
+> (~>) :: Category(a' `cat`cata) => (b `cat` b') -> ((a `cat` b) -> (a' `cat` b'))
+129a127
+> -- (f ~> h) g = h . g . fa' `cat` a) -> (b `cat` b') -> ((a `cat` b) -> (a' `cat` b'))
+129a128
+> f-- (f ~> h) g = h . g . f~> h = result h . argument f
+131d129
+< 
+133c131
+<         (b `cat` b') -> (a' `cat` a) -> ((a `cat` b) -> (a' `cat` b'))
+---
+> (<~) :: Category(b `cat` catb') => (a' `cat` a) -> ((a `cat` b) -> (a' `cat` b'))
+133a132
+> (<~) = flipb `cat(~>` b') -> (a' `cat` a) -> ((a `cat` b) -> (a' `cat` b'))
+135d133
+< 
+137c135
+< --
+---
+> ---- If I add argument back to DeepArrow, we can get a different generalization:
+137a136
+> ---- (~>) :: DeepArrow cat => (a' `cat` a) -> (b `cat` b') -> ((a -> b) `cat` (a' -> b'))
+139d137
+< 
+141d138
+< (~>*) :: (Functor p, Functor q) =>
+142c139
+<          (a' -> a) -> (b -> b') -> (p a -> q b) -> (p a' -> q b')
+---
+> (-- | Like '(~>)' but specialized to functors and functions.~>*) :: (Functor p, Functor q) =>
+142a140
+> (~>*) :: (Functora' -> a)p,->Functor(b -> b') => (p a -> q b) -> (p a' -> q b')
+142a141
+> f ~>* g =(a'fmap->fa)~>->fmapb ->g  b') -> (p a -> q b) -> (p a' -> q b')
+144d142
+< 
+146c144
+<          (b -> b') -> (a' -> a) -> (p a -> q b) -> (p a' -> q b')
+---
+> (*<~) :: (Functorb -> b')p,->Functor(a' -> q) => (p a -> q b) -> (p a' -> q b')
+146a145
+> (*<~) = flipb ->(~>*) -> (a' -> a) -> (p a -> q b) -> (p a' -> q b')
+148d146
+< 
+149a148
+> -- if we use a more general Functor, as in the "categories" package.-- (~>*) and (*<~) could be generalized to other categories (beside functions)
+151d149
+< 
+155d152
+< 
+157d153
+< -- sinks) of values.
+158c154
+< class ContraFunctor h where
+---
+> -- sinks) of values.-- | Contravariant functors.  often useful for /acceptors/ (consumers,
+158a155
+> class-- sinks) of values.ContraFunctor h where
+158a156
+> classcontraFmap:: (a -> whereb) -> (h b -> h a)
+160d157
+< 
+162c159
+< bicomap :: ContraFunctor f => (a :<->: b) -> (f a :<->: f b)
+---
+> bicomap-- | Bijections on contravariant functors:: ContraFunctor f => (a :<->: b) -> (f a :<->: f b)
+162a160
+> bicomap ::(BiContraFunctorab ba) = Bi (fcontraFmap=> (a :<->:ba)b)contraFmap-> (f a :<->:ab) f b)
+165d162
+< 
+169d165
+< 
+206c202
+< -}
+---
+> -}newtype (g :. f) a = O (g (f a)) deriving (Eq,Show)
+208d203
+< 
+210c205
+< 
+---
+> -- newtype (g :. f) a = O { unO :: g (f a) } deriving Show
+212c207
+< unO :: (g :. f) a -> g (f a)
+---
+> unO-- | Unwrap a '(:.)'.:: (g :. f) a -> g (f a)
+212a208
+> unO ::(O (gfag :.) =f)gfa -> g (f a)
+214d209
+< 
+215a211
+> type-- | Compatibility synonymO = (:.)
+217d212
+< 
+219c214
+< 
+---
+> -- Here it is, as promised.
+221c216
+< 
+---
+> instance (Functor g, Functor f) => Functor (g :. f) where fmap = fmapFF
+223c218
+< --
+---
+> ---- or
+223a219
+> ----   deriving instance (Functor g, Functor f) => Functor (g :. f)
+225d220
+< 
+227c222
+< 
+---
+> -- These next two instances are based on suggestions from Creighton Hogg:
+229d223
+<   -- foldMap f = fold . fmap (foldMap f) . unO
+230d223
+<   foldMap f = foldMap (foldMap f) . unO
+231d223
+<   -- fold (O gfa) = fold (fold <$> gfa)
+232d223
+<   -- fold = fold . fmap fold . unO
+233c224
+<   fold = foldMap fold . unO
+---
+> instance-- foldMap f = fold . fmap (foldMap f) . unOFoldable g, Foldable f, Functor g) => Foldable (g :. f) where
+233a225
+>   foldMap-- foldMap f = fold . fmap (foldMap f) . unOf = foldMap (foldMap f) . unO
+233a226
+>   foldMap-- fold (O gfa) = fold (fold <$> gfa) = foldMap (foldMap f) . unO
+233a227
+>   -- fold = fold . fmap fold . unO-- fold (O gfa) = fold (fold <$> gfa)
+233a228
+>   fold-- fold = fold . fmap fold . unO= foldMap fold . unO
+233a229
+>   fold-- I could let fold default= foldMap fold . unO
+235d230
+< 
+237d231
+<   -- sequenceA = fmap O . sequenceA . fmap sequenceA . unO
+238d231
+<   -- sequenceA = fmap O . traverse sequenceA . unO
+239d231
+<   -- sequenceA = (unO ~> fmap O) (traverse sequenceA)
+240c232
+<   -- traverse f = fmap O . traverse (traverse f) . unO
+---
+> instance-- sequenceA = fmap O . sequenceA . fmap sequenceA . unOTraversable g, Traversable f) => Traversable (g :. f) where
+240a233
+>   -- sequenceA = fmap O . traverse sequenceA . unO-- sequenceA = fmap O . sequenceA . fmap sequenceA . unO
+240a234
+>   -- sequenceA = fmap O . traverse sequenceA . unO-- sequenceA = (unO ~> fmap O) (traverse sequenceA)
+240a235
+>   -- sequenceA = (unO ~> fmap O) (traverse sequenceA)-- traverse f = fmap O . traverse (traverse f) . unO
+240a236
+>   traverse-- traverse f = fmap O . traverse (traverse f) . unO= (unO ~> fmap O) . traverse . traverse
+242d237
+< 
+244d238
+< -- sequenceA . fmap f
+245d238
+< -- sequenceA . (inO.fmap.fmap) f
+246d238
+< -- sequenceA . inO (fmap (fmap f))
+247d238
+< -- sequenceA . O . fmap (fmap f) . unO
+248d238
+< -- fmap O . traverse sequenceA . unO . O . fmap (fmap f) . unO
+249d238
+< -- fmap O . traverse sequenceA . fmap (fmap f) . unO
+250c239
+< -- fmap O . traverse (sequenceA .  fmap f) . unO
+---
+> -- traverse f-- sequenceA . fmap f
+250a240
+> -- sequenceA . fmap f-- sequenceA . (inO.fmap.fmap) f
+250a241
+> -- sequenceA . (inO.fmap.fmap) f-- sequenceA . inO (fmap (fmap f))
+250a242
+> -- sequenceA . inO (fmap (fmap f))-- sequenceA . O . fmap (fmap f) . unO
+250a243
+> -- sequenceA . O . fmap (fmap f) . unO-- fmap O . traverse sequenceA . unO . O . fmap (fmap f) . unO
+250a244
+> -- fmap O . traverse sequenceA . fmap (fmap f) . unO-- fmap O . traverse sequenceA . unO . O . fmap (fmap f) . unO
+250a245
+> -- fmap O . traverse (sequenceA .  fmap f) . unO-- fmap O . traverse sequenceA . fmap (fmap f) . unO
+250a246
+> -- fmap O . traverse (traverse f) . unO-- fmap O . traverse (sequenceA .  fmap f) . unO
+252d247
+< 
+253a249
+> --   fmap = inO.fmap.fmap-- instance (Functor g, Functor f) => Functor (g :. f) where
+255d250
+< 
+257c252
+< biO :: g (f a) :<->: (g :. f) a
+---
+> biO-- | @newtype@ bijection:: g (f a) :<->: (g :. f) a
+257a253
+> biO ::= Bi (funO) :<->: (g :. f) a
+259d254
+< 
+261c256
+< convO :: Functor g => (b :<->: g c) -> (c :<->: f a) -> (b :<->: (g :. f) a)
+---
+> convO-- | Compose a bijection, Functor style:: Functor g => (b :<->: g c) -> (c :<->: f a) -> (b :<->: (g :. f) a)
+261a257
+> convO ::biGFunctorbiF = biG =>>>>bbimapbiF c)>>>->BicO:<->:unO  f a) -> (b :<->: (g :. f) a)
+263d258
+< 
+265c260
+< coconvO :: ContraFunctor g => (b :<->: g c) -> (c :<->: f a) -> (b :<->: (g :. f) a)
+---
+> coconvO-- | Compose a bijection, ContraFunctor style:: ContraFunctor g => (b :<->: g c) -> (c :<->: f a) -> (b :<->: (g :. f) a)
+265a261
+> coconvO ::biGContraFunctorbiF = biG >>>gbicomap=> (b :<->:biF >>> c)Bi->O (unOc :<->: f a) -> (b :<->: (g :. f) a)
+268d263
+< 
+270c265
+< inO :: (g (f a) -> g' (f' a')) -> ((g :. f) a -> (g' :. f') a')
+---
+> inO-- | Apply a unary function within the 'O' constructor.:: (g (f a) -> g' (f' a')) -> ((g :. f) a -> (g' :. f') a')
+270a266
+> inO ::= unOg (~>f a) -> g' (f' a')) -> ((g :. f) a -> (g' :. f') a')
+272d267
+< 
+274d268
+< inO2 :: (g (f a)   -> g' (f' a')   -> g'' (f'' a''))
+275c269
+<      -> ((g :. f) a -> (g' :. f') a' -> (g'' :. f'') a'')
+---
+> inO2-- | Apply a binary function within the 'O' constructor.:: (g (f a)   -> g' (f' a')   -> g'' (f'' a''))
+275a270
+> inO2 :: (gg(f:.a)) a->->g'(g'f':.a'f')) a'->->(g''f'':.a''f'')) a'')
+275a271
+> inO2 ->= unO(g~>inO) a -> (g' :. f') a' -> (g'' :. f'') a'')
+277d272
+< 
+279d273
+< inO3 :: (g (f a)   -> g' (f' a')   -> g'' (f'' a'')   -> g''' (f''' a'''))
+280c274
+<      -> ((g :. f) a -> (g' :. f') a' -> (g'' :. f'') a'' -> (g''' :. f''') a''')
+---
+> inO3-- | Apply a ternary function within the 'O' constructor.:: (g (f a)   -> g' (f' a')   -> g'' (f'' a'')   -> g''' (f''' a'''))
+280a275
+> inO3 :: (gg(f:.a)) a->->g'(g'f':.a'f')) a'->->(g''f'':.a''f'')) a''-> g'''-> (g'''f''':.a'''f''')) a''')
+280a276
+> inO3 ->= unO(g~>inO2) a -> (g' :. f') a' -> (g'' :. f'') a'' -> (g''' :. f''') a''')
+283d278
+< 
+284a280
+> oPure-- | Handy combination of 'O' and 'pure'.:: (Applicative g) => f a -> (g :. f) a
+286d281
+< 
+288c283
+< oFmap   :: (Functor g') =>
+---
+> oFmap-- | Handy combination of 'inO' and 'fmap'.:: (Functor g') =>
+288a284
+> oFmap   :: (Functorf a -> f')a'=>) -> (g' :. f) a -> (g' :. f') a'
+290d285
+< 
+292d286
+< oLiftA2 :: (Applicative g'') =>
+293c287
+<            (f a -> f' a' -> f'' a'')
+---
+> oLiftA2-- | Handy combination of 'inO2' and 'liftA2'.:: (Applicative g'') =>
+293a288
+> oLiftA2 :: (Applicativef a -> f' a'g''->)f''=> a'')
+293a289
+>         -> (fg'' -> f'f) a'a ->->(f'' a'':. )f') a' -> (g'' :. f'') a''
+295d290
+< 
+297d291
+< oLiftA3 :: (Applicative g''') =>
+298d291
+<            (f a -> f' a' -> f'' a'' -> f''' a''')
+299d291
+<         -> (g''' :. f) a
+300d291
+<         -> (g''' :. f') a'
+301c292
+<         -> (g''' :. f'') a''
+---
+> oLiftA3-- | Handy combination of 'inO3' and 'liftA3'.:: (Applicative g''') =>
+301a293
+> oLiftA3 :: (Applicativef a -> f' a'g'''-> )f''=>a'' -> f''' a''')
+301a294
+>         -> (fg''' ->:.f'f)a'a -> f'' a'' -> f''' a''')
+301a295
+>         -> (g''' :. ff'))aa'
+301a296
+>         -> (g''' :. f'f''))a'a''
+301a297
+>         -> (g''' :. f''f'''))a''a'''
+303d298
+< 
+305c300
+< oFmap   = inO  . fmap
+---
+> oPure   = OinO  . pure
+305a301
+> oFmapoLiftA2 = inOinO2 . fmapliftA2
+309d304
+< 
+311c306
+< fmapFF :: (  Functor g,   Functor f) => (a -> b) -> (g :. f) a -> (g :. f) b
+---
+> fmapFF-- | Used for the @Functor :. Functor@ instance of 'Functor':: (  Functor g,   Functor f) => (a -> b) -> (g :. f) a -> (g :. f) b
+311a307
+> fmapFF ::= inO .Functorfmap.fmap,   Functor f) => (a -> b) -> (g :. f) a -> (g :. f) b
+313d308
+< 
+315c310
+< fmapCC :: (ContraFunctor g, ContraFunctor f) => (a -> b) -> (g :. f) a -> (g :. f) b
+---
+> fmapCC-- | Used for the @ContraFunctor :. ContraFunctor@ instance of 'Functor':: (ContraFunctor g, ContraFunctor f) => (a -> b) -> (g :. f) a -> (g :. f) b
+315a311
+> fmapCC ::= inOContraFunctor.contraFmap.contraFmap, ContraFunctor f) => (a -> b) -> (g :. f) a -> (g :. f) b
+317d312
+< 
+319c314
+< contraFmapFC :: (Functor g, ContraFunctor f) => (b -> a) -> (g :. f) a -> (g :. f) b
+---
+> contraFmapFC-- | Used for the @Functor :. ContraFunctor@ instance of 'Functor':: (Functor g, ContraFunctor f) => (b -> a) -> (g :. f) a -> (g :. f) b
+319a315
+> contraFmapFC ::= inOFunctor.fmap.contraFmap, ContraFunctor f) => (b -> a) -> (g :. f) a -> (g :. f) b
+321d316
+< 
+323c318
+< 
+---
+> -- contraFmapFC h (O gf) = O (fmap (contraFmap h) gf)
+325c320
+< contraFmapCF :: (ContraFunctor g, Functor f) => (b -> a) -> (g :. f) a -> (g :. f) b
+---
+> contraFmapCF-- | Used for the @ContraFunctor :. Functor@ instance of 'Functor':: (ContraFunctor g, Functor f) => (b -> a) -> (g :. f) a -> (g :. f) b
+325a321
+> contraFmapCF ::= inOContraFunctor.contraFmap.fmap, Functor f) => (b -> a) -> (g :. f) a -> (g :. f) b
+327d322
+< 
+329c324
+< 
+---
+> -- contraFmapCF h (O gf) = O (contraFmap (fmap h) gf)
+331c326
+<   pure  = O . pure . pure
+---
+> instancepure  =(ApplicativeO . pure . pure, Applicative f) => Applicative (g :. f) where
+331a327
+>   pure(<*>) = OinO2 pure.liftA2 pure) (<*>)
+333d328
+< 
+335c330
+< 
+---
+> -- Possible Alternative instances:
+337c332
+< --   empty = O (pure empty)
+---
+> --   empty = O (pure empty)-- instance (Applicative g, Alternative f) => Alternative (g :. f) where
+337a333
+> --   empty = O (pure empty)--   (<|>) = inO2 (liftA2 (<|>))
+339d334
+< 
+341c336
+< --   empty = O empty
+---
+> --   empty = O empty-- instance (Alternative g, Applicative f) => Alternative (g :. f) where
+341a337
+> --   empty = O empty--   (<|>) = inO2 (<|>)
+344d339
+< 
+346c341
+< 
+---
+> -- Possible Monoid instances:
+348c343
+< --   mempty  = pure mempty
+---
+> --   mempty  = pure mempty-- instance (Applicative g, Applicative f, Monoid a) => Monoid ((g :. f) a) where
+348a344
+> --   mempty  = pure mempty--   mappend = liftA2 mappend
+350d345
+< 
+352c347
+< --   mempty  = O mempty
+---
+> --   mempty  = O mempty-- instance Monoid (g (f a)) => Monoid ((g :. f) a) where
+352a348
+> --   mempty  = O mempty--   mappend = inO2 mappend
+356d351
+< 
+358c353
+< -- Monads", and I know there's more to it.  At least four different ways,
+---
+> -- A first pass at monad composition.  But now I've read "Composing-- Monads", and I know there's more to it.  At least four different ways,
+358a354
+> -- all with conflicting Monad instances.-- Monads", and I know there's more to it.  At least four different ways,
+360d355
+< 
+362d356
+< --
+363d356
+< -- TODO: what conditions are required so that @(m :. n)@ satisfies the monad laws?
+364c357
+< class DistribM m n where
+---
+> ---- | Monad distributivity.
+364a358
+> ---- TODO: what conditions are required so that @(m :. n)@ satisfies the monad laws?
+364a359
+> class-- TODO: what conditions are required so that @(m :. n)@ satisfies the monad laws?DistribM m n where
+364a360
+> classdistribM:: nm(n wherea) -> m (n a)
+366d361
+< 
+368d362
+< joinDistribM :: (Monad m, Monad n, DistribM m n) =>
+369c363
+<                 (m :. n) ((m :. n) a) -> (m :. n) a
+---
+> joinDistribM-- | A candidate 'join' for @(m :. n)@:: (Monad m, Monad n, DistribM m n) =>
+369a364
+> joinDistribM :: (Monadm :. nm,(Monad(m :. n, DistribMa) -> (m m:.n))=>a
+369a365
+> joinDistribM = O(m :.liftM) (join(m :.. njoin) a).->liftMm :.distribM) a   . (liftM.liftM) unO . unO
+371d366
+< 
+373d367
+< --
+374d367
+< --       (m :. n) ((m :. n) a)
+375d367
+< --   --> m (n ((m :. n) a))   -- unO
+376d367
+< --   --> m (n (m (n a)))      -- (liftM.liftM) unO
+377d367
+< --   --> m (m (n (n a)))      -- liftM distribM
+378d367
+< --   --> m (n (n a))          -- join
+379c368
+< --   --> m (n a)              -- liftM join
+---
+> ---- Derivation:
+379a369
+> ----       (m :. n) ((m :. n) a)
+379a370
+> --       (m :. n) ((m :. n) a)--   --> m (n ((m :. n) a))   -- unO
+379a371
+> --   --> m (n ((m :. n) a))   -- unO--   --> m (n (m (n a)))      -- (liftM.liftM) unO
+379a372
+> --   --> m (m (n (n a)))      -- liftM distribM--   --> m (n (m (n a)))      -- (liftM.liftM) unO
+379a373
+> --   --> m (n (n a))          -- join--   --> m (m (n (n a)))      -- liftM distribM
+379a374
+> --   --> m (n (n a))          -- join--   --> m (n a)              -- liftM join
+379a375
+> --   --> (m :. n) a           -- O--   --> m (n a)              -- liftM join
+381d376
+< 
+383d377
+< bindDistribM :: (Functor m, Functor n, Monad m, Monad n, DistribM m n) =>
+384c378
+<                 (m :. n) a -> (a -> (m :. n) b) -> (m :. n) b
+---
+> bindDistribM-- | A candidate '(>>=)' for @(m :. n)@:: (Functor m, Functor n, Monad m, Monad n, DistribM m n) =>
+384a379
+> bindDistribM :: (Functorm :. n) m,->(a -> n, Monad:. n) m, Monad-> (m n:., DistribMn) b     m n) =>
+384a380
+> mn `bindDistribM(mf:.= njoinDistribM) a -> (a ->((fmapm :.fn)mnb) -> (m :. n) b
+386d381
+< 
+387a383
+> returnDistribM ::= O(Monad. return, Monad. return) => a -> (m :. n) a
+389d384
+< 
+391d385
+< --
+392d385
+< -- instance (Functor m, Functor n, Monad m, Monad n, DistribM m n)
+393d385
+< --       => Monad (m :. n) where
+394c386
+< --   return = returnDistribM
+---
+> ---- Template for specialization:
+394a387
+> ---- instance (Functor m, Functor n, Monad m, Monad n, DistribM m n)
+394a388
+> --       => Monad (m :. n) where-- instance (Functor m, Functor n, Monad m, Monad n, DistribM m n)
+394a389
+> --   return = returnDistribM--       => Monad (m :. n) where
+394a390
+> --   (>>=)  = bindDistribM--   return = returnDistribM
+396d391
+< 
+398d392
+< joinMMT :: (Monad m, Monad n, Traversable n, Applicative m) =>
+399c393
+<            m (n (m (n a))) -> m (n a)
+---
+> joinMMT-- | 'join'-like function for implicitly composed monads:: (Monad m, Monad n, Traversable n, Applicative m) =>
+399a394
+> joinMMT :: (Monad(n (mm,nMonada))) n->, Traversablem (n a)     n, Applicative m) =>
+399a395
+> joinMMT = fmap (njoinm (n ajoin))) ->. fmap (nsequenceA)
+401d396
+< 
+403d397
+< joinComposeT :: (Monad m, Monad n, Traversable n, Applicative m) =>
+404c398
+<                 (m :. n) ((m :. n) a) -> (m :. n) a
+---
+> joinComposeT-- | 'join'-like function for explicitly composed monads:: (Monad m, Monad n, Traversable n, Applicative m) =>
+404a399
+> joinComposeT :: (Monadm :. nm,(Monad(m :. n, Traversablea) -> (m :. n, Applicativea           m) =>
+404a400
+> joinComposeT = O(m :.joinMMT) ((m :.unOn) afmap) ->unOm :. n) a
+407d402
+< 
+411d405
+< 
+413c407
+< -- "StaticArrow" in [1].
+---
+> -- "StaticArrow" in [1].-- | Composition of type constructors: unary with binary.  Called
+413a408
+> newtype-- "StaticArrow" in [1].OO f j a b = OO { unOO :: f (a `j` b) }
+416d410
+< 
+419d412
+<   id          = OO (pure id)
+420d412
+<   OO g . OO h = OO (liftA2 (.) g h)
+421c413
+< #endif
+---
+> instanceid     (Applicative= OO (pure, Categoryid)      cat) => Category (OO f cat) where
+421a414
+>   id g . OO h = OO (pureliftA2).) g h)
+421a415
+> #endif g . OO h = OO (liftA2 (.) g h)
+424c418
+< #if __GLASGOW_HASKELL__ < 609
+---
+> instance#if __GLASGOW_HASKELL__ < 609Applicative f, Arrow arr) => Arrow (OO f arr) where
+427a422
+>   arrfirst (OO g)  = OO .liftA .first g)
+429d423
+< 
+431c425
+< 
+---
+> -- For instance, /\ a b. f (a -> m b) =~ OO f Kleisli m
+478d471
+< 
+482d474
+< 
+484c476
+< 
+---
+> -- Hm.  See warning above for 'ArrowAp'
+485a478
+> newtype-- | Common pattern for 'Arrow's.FunA h a b = FunA { unFunA :: h a -> h b }
+487d479
+< 
+489d480
+< inFunA :: ((h a -> h b) -> (h' a' -> h' b'))
+490c481
+<        -> (FunA h a b -> FunA h' a' b')
+---
+> inFunA-- | Apply unary function in side a 'FunA' representation.:: ((h a -> h b) -> (h' a' -> h' b'))
+490a482
+> inFunA :: ((FunAh a ->h ahbb)->->FunAh'h'a'->b') b'))
+490a483
+> inFunA ->= unFunAFunA h~>aFunA -> FunA h' a' b')
+492d484
+< 
+494d485
+< inFunA2 :: ((h a -> h b) -> (h' a' -> h' b') -> (h'' a'' -> h'' b''))
+495c486
+<        -> (FunA h a b -> FunA h' a' b' -> FunA h'' a'' b'')
+---
+> inFunA2-- | Apply binary function in side a 'FunA' representation.:: ((h a -> h b) -> (h' a' -> h' b') -> (h'' a'' -> h'' b''))
+495a487
+> inFunA2->::((FunA(h ah->a h b->) ->FunAh'h'a'a'->b'h'->b'FunA) ->h''h''a''b''->) h'' b''))
+495a488
+> inFunA2->q (FunA h)a=binFunA-> FunA(qh'f)a' b' -> FunA h'' a'' b'')
+497d489
+< 
+499d490
+< class FunAble h where
+500d490
+<   arrFun    :: (a -> b) -> (h a -> h b) -- ^ for 'arr'
+501d490
+<   firstFun  :: (h a -> h a') -> (h (a,b) -> h (a',b)) -- for 'first'
+502d490
+<   secondFun :: (h b -> h b') -> (h (a,b) -> h (a,b')) -- for 'second'
+503c491
+<   (***%)    :: (h a -> h b) -> (h a' -> h b') -> (h (a,a') -> h (b,b')) -- for '(***)'
+---
+> class-- | Support needed for a 'FunA' to be an 'Arrow'.FunAble h where
+503a492
+> classarrFun::h(wherea -> b) -> (h a -> h b) -- ^ for 'arr'
+503a493
+>   arrFunfirstFun  :: (a ->a ->)h->a'(h-> ->(h hab))-- ^ for 'arr'-> h (a',b)) -- for 'first'
+503a494
+>   firstFunsecondFun :: (h a -> h a') -> (h (a,b) -> h (a'a,,b'b)) -- for 'first'-- for 'second'
+503a495
+>   secondFun(***%)    :: (h b -> h b'b))->->((ha'a,->b)h->b'h (->a,b'(h))a,-- for 'second'a') -> h (b,b')) -- for '(***)'
+503a496
+>   (***%)    :: (h a -> h b) -> (h a'a  -> h b') -> (h (a,->a') ->(b,hb'(b,b'-- for '(&&&)')) -- for '(***)'
+505d497
+< 
+507c499
+<   f ***% g = firstFun f >>> secondFun g
+---
+>   f-- In direct imitation of Arrow defaults:***% g = firstFun f >>> secondFun g
+507a500
+>   f ***% g = firstFunarrFun (\f >>>-> (secondFunb,b)) >>> g ***% g
+510d502
+< 
+513d504
+<   id  = FunA (arrFun id)
+514d504
+<   (.) = inFunA2 (.)
+515c505
+< #endif
+---
+> instanceid  = FunA(arrFun =>id)       (FunA h) where
+515a506
+>   id(.) = FunAinFunA2arrFun(.)  id)
+515a507
+> #endif.) = inFunA2 (.)
+519d510
+<   arr p  = FunA    (arrFun p)
+520c511
+< #if __GLASGOW_HASKELL__ < 609
+---
+> instancearr p  FunAble= FunA  h =>(arrFunp(FunA h) where
+520a512
+> #if __GLASGOW_HASKELL__ < 609 p  = FunA    (arrFun p)
+524c516
+<   second = inFunA  secondFun
+---
+>   firstsecond = inFunA  firstFunsecondFun
+524a517
+>   second(***)  = inFunAinFunA2 secondFun(***%)
+529d521
+< 
+533d524
+< 
+535d525
+< --
+536d525
+< -- See Simulating Quantified Class Constraints
+537d525
+< -- (<http://flint.cs.yale.edu/trifonov/papers/sqcc.pdf>)
+538d525
+< --  Instantiate this schema wherever necessary:
+539d525
+< --
+540d525
+< -- >    instance Monoid_f f where { mempty_f = mempty ; mappend_f = mappend }
+541d525
+< class Monoid_f m where
+542c526
+<   mempty_f  :: forall a. m a
+---
+> ---- | Simulates universal constraint @forall a. Monoid (f a)@.
+542a527
+> ---- See Simulating Quantified Class Constraints
+542a528
+> -- See Simulating Quantified Class Constraints-- (<http://flint.cs.yale.edu/trifonov/papers/sqcc.pdf>)
+542a529
+> --  Instantiate this schema wherever necessary:-- (<http://flint.cs.yale.edu/trifonov/papers/sqcc.pdf>)
+542a530
+> ----  Instantiate this schema wherever necessary:
+542a531
+> ---- >    instance Monoid_f f where { mempty_f = mempty ; mappend_f = mappend }
+542a532
+> class-- >    instance Monoid_f f where { mempty_f = mempty ; mappend_f = mappend }Monoid_f m where
+542a533
+> classmempty_f:: mforallwherea. m a
+542a534
+>   mempty_fmappend_f :: forall a. m a -> m a -> m a
+544d535
+< 
+545a537
+> instance--  e.g.,Monoid_f [] where { mempty_f = mempty ; mappend_f = mappend }
+549d540
+< 
+553d543
+< 
+554a545
+> newtype-- | Flip type argumentsFlip j b a = Flip { unFlip :: a `j` b }
+556d546
+< 
+558c548
+< biFlip :: (a `j` b) :<->: Flip j b a
+---
+> biFlip-- | @newtype@ bijection:: (a `j` b) :<->: Flip j b a
+558a549
+> biFlip ::= BiaFlipj` bunFlip) :<->: Flip j b a
+560d550
+< 
+562c552
+< inFlip :: ((a `j` b) -> (a' `k` b')) -> (Flip j b a -> Flip k b' a')
+---
+> inFlip-- Apply unary function inside of a 'Flip' representation.:: ((a `j` b) -> (a' `k` b')) -> (Flip j b a -> Flip k b' a')
+562a553
+> inFlip ::= unFlip(a `j`~>b)Flip-> (a' `k` b')) -> (Flip j b a -> Flip k b' a')
+564d554
+< 
+566d555
+< inFlip2 :: ((a `j` b) -> (a' `k` b') -> (a'' `l` b''))
+567c556
+<         -> (Flip j b a -> Flip k b' a' -> Flip l b'' a'')
+---
+> inFlip2-- Apply binary function inside of a 'Flip' representation.:: ((a `j` b) -> (a' `k` b') -> (a'' `l` b''))
+567a557
+> inFlip2 :: ((Flipa `j` b)a->->(a'Flipk` b')a'->->a''Flipl` b''))a'')
+567a558
+> inFlip2 ->f ((FlipFlipar)b=ainFlip-> Flip(fkar) a' -> Flip l b'' a'')
+569d559
+< 
+571d560
+< inFlip3 :: ((a `j` b) -> (a' `k` b') -> (a'' `l` b'') -> (a''' `m` b'''))
+572c561
+<         -> (Flip j b a -> Flip k b' a' -> Flip l b'' a'' -> Flip m b''' a''')
+---
+> inFlip3-- Apply ternary function inside of a 'Flip' representation.:: ((a `j` b) -> (a' `k` b') -> (a'' `l` b'') -> (a''' `m` b'''))
+572a562
+> inFlip3 :: ((Flipa `j` b)a->->(a'Flipk` b')a'->->a''Flipl` b'')a''-> (->a'''Flipm` b'''))a''')
+572a563
+> inFlip3 ->f ((FlipFlipar)b=ainFlip2-> Flip(k b')a' -> Flip l b'' a'' -> Flip m b''' a''')
+574d564
+< 
+575a566
+> instancecontraFmaph arr(Flip=>fContraFunctor) = Flip (arr (Flip>>> arrf)  b) where
+577d567
+< 
+579d568
+< instance (Applicative (j a), Monoid o) => Monoid (Flip j o a) where
+580c569
+<   mempty  = Flip (pure mempty)
+---
+> instance-- Useful for (~>) = (->).  Maybe others.(Applicative (j a), Monoid o) => Monoid (Flip j o a) where
+580a570
+> instancemempty (Applicative= Flip (pure(jmempty), Monoid)      o) => Monoid (Flip j o a) where
+580a571
+>   memptymappend = FlipinFlip2pure(liftA2mappend)     )
+582d572
+< 
+584c574
+< instance Monoid o => Monoid_f (Flip (->) o) where
+---
+> instance-- TODO: generalize (->) to (~>) with Applicative_f (~>)Monoid o => Monoid_f (Flip (->) o) where
+584a575
+> instance{ mempty_f= mempty => Monoid_f; mappend_fFlip= (mappend->) o) where}
+586d576
+< 
+587a578
+> type-- | (-> IO ()) as a 'Flip'.  A ContraFunctor.OI = Flip (->) (IO ())
+589d579
+< 
+590a581
+> class-- | Convert to an 'OI'.ToOI sink where toOI :: sink b -> OI b
+592d582
+< 
+594c584
+< 
+---
+> instance ToOI OI where toOI = id
+598d587
+< 
+600d588
+< -- We can also drop the @App@ constructor, but then we overlap with many
+601d588
+< -- other instances, like @[a]@.  Here's a template for @App@-free
+602d588
+< -- instances.
+603d588
+< --
+604d588
+< -- >    instance (Applicative f, Monoid a) => Monoid (f a) where
+605d588
+< -- >      mempty  = pure mempty
+606c589
+< -- >      mappend = liftA2 mappend
+---
+> -- | Type application-- We can also drop the @App@ constructor, but then we overlap with many
+606a590
+> -- other instances, like @[a]@.  Here's a template for @App@-free-- We can also drop the @App@ constructor, but then we overlap with many
+606a591
+> -- instances.-- other instances, like @[a]@.  Here's a template for @App@-free
+606a592
+> ---- instances.
+606a593
+> ---- >    instance (Applicative f, Monoid a) => Monoid (f a) where
+606a594
+> -- >      mempty  = pure mempty-- >    instance (Applicative f, Monoid a) => Monoid (f a) where
+606a595
+> -- >      mempty  = pure mempty-- >      mappend = liftA2 mappend
+606a596
+> newtype-- >      mappend = liftA2 mappendf :$ a = App { unApp :: f a }
+608d597
+< 
+609a599
+> type-- | Compatibility synonym for (:$).App = (:$)
+611d600
+< 
+612a602
+> -- How about?-- data f :$ a = App { unApp :: f a }
+614d603
+< 
+616c605
+< biApp :: f a :<->: App f a
+---
+> biApp-- | @newtype@ bijection:: f a :<->: App f a
+616a606
+> biApp ::= Bi aAppunApp f a
+618d607
+< 
+620c609
+< inApp :: (f a -> f' a') -> (App f a -> App f' a')
+---
+> inApp-- Apply unary function inside of an 'App representation.:: (f a -> f' a') -> (App f a -> App f' a')
+620a610
+> inApp ::= unAppf a -> f'Appa') -> (App f a -> App f' a')
+622d611
+< 
+624c613
+< inApp2 :: (f a -> f' a' -> f'' a'') -> (App f a -> App f' a' -> App f'' a'')
+---
+> inApp2-- Apply binary function inside of a 'App' representation.:: (f a -> f' a' -> f'' a'') -> (App f a -> App f' a' -> App f'' a'')
+624a614
+> inApp2 ::h ((Appf afa->) f'= inApp ->(f''h faa'')  ) -> (App f a -> App f' a' -> App f'' a'')
+626d615
+< 
+628d616
+< instance (Applicative f, Monoid m) => Monoid (App f m) where
+629c617
+<   mempty  =   App  (pure   mempty )
+---
+> instance-- Example: App IO ()(Applicative f, Monoid m) => Monoid (App f m) where
+629a618
+> instancemempty (Applicative=   App  (pure, Monoidmempty))=> Monoid (App f m) where
+629a619
+>   memptymappend = inApp2  (pureliftA2 memptymappend)
+631d620
+< 
+633c622
+< 
+---
+> --  App a `mappend` App b = App (liftA2 mappend a b)
+638d626
+< 
+640d627
+< -- I'd use "Control.Monad.Identity", but I don't want to introduce a
+641c628
+< -- dependency on mtl just for Id.
+---
+> -- I'd use "Control.Monad.Identity", but I don't want to introduce a-- | Identity type constructor.  Until there's a better place to find it.
+641a629
+> -- dependency on mtl just for Id.-- I'd use "Control.Monad.Identity", but I don't want to introduce a
+641a630
+> newtype-- dependency on mtl just for Id.Id a = Id a deriving Show
+643d631
+< 
+645d632
+< --
+646d632
+< --   newtype Id a = Id { unId :: a } deriving Show
+647c633
+< --
+---
+> ---- Could define record field:
+647a634
+> ----   newtype Id a = Id { unId :: a } deriving Show
+647a635
+> ----   newtype Id a = Id { unId :: a } deriving Show
+647a636
+> ---- but then Show is uglier.
+649d637
+< 
+651c639
+< unId :: Id a -> a
+---
+> unId-- Extract value from an 'Id':: Id a -> a
+651a640
+> unId ::(IdIda)a=->a a
+653d641
+< 
+654a643
+> inId ::= unIda ->~>b)Id-> (Id a -> Id b)
+656d644
+< 
+657a646
+> inId2 ::f ((Ida ->a) b ->inId)(->f a(Id a -> Id b -> Id c)
+659d647
+< 
+661c649
+< biId :: a :<->: Id a
+---
+> biId-- | @newtype@ bijection:: a :<->: Id a
+661a650
+> biId ::= Bi :<->:Id unId a
+663d651
+< 
+664a653
+> instancefmap f Functor= inId fId where
+666d654
+< 
+668c656
+<   pure  = Id
+---
+> instancepure  =ApplicativeId         Id where
+668a657
+>   pure(<*>) = IdinId2 ($)
+670d658
+< 
+672c660
+<   return = pure
+---
+> instancereturn Monad= pureId where
+672a661
+>   returnId x >>== puref = f x
+674d662
+< 
+676d663
+<   foldMap f (Id a) = f a
+677c664
+<   -- foldMap f = f . unId
+---
+> instancefoldMapFoldablef (Id a)Id= wheref a
+677a665
+>   foldMap-- foldMap f = f . unId (Id a) = f a
+677a666
+>   -- foldMap = (. unId)-- foldMap f = f . unId
+679d667
+< 
+680a669
+> instancesequenceA(Id fa) =IdfmapwhereId fa
+682d670
+< 
+684c672
+< -- fa :: f a
+---
+> -- fa :: f a-- Id fa :: Id (f a)
+684a673
+> -- fa :: f a-- fmap Id fa = f (Id a)
+686d674
+< 
+690d677
+< 
+692c679
+< newtype (f :*: g) a = Prod { unProd :: (f a, g a) }
+---
+> newtype-- | Pairing of unary type constructors(f :*: g) a = Prod { unProd :: (f a, g a) }
+692a680
+> newtype-- deriving (Show, Eq, Ord)(f :*: g) a = Prod { unProd :: (f a, g a) }
+694d681
+< 
+696c683
+< (*:*) :: f a -> g a -> (f :*: g) a
+---
+> (-- | Handy infix & curried 'Prod'*:*) :: f a -> g a -> (f :*: g) a
+696a684
+> (*:*) ::= curry a ->Prod a -> (f :*: g) a
+698d685
+< 
+700c687
+< biProd :: (f a, g a) :<->: (f :*: g) a
+---
+> biProd-- | @newtype@ bijection:: (f a, g a) :<->: (f :*: g) a
+700a688
+> biProd ::= BifProd, gunProd) :<->: (f :*: g) a
+702d689
+< 
+704c691
+< convProd :: (b :<->: f a) -> (c :<->: g a) -> (b,c) :<->: (f :*: g) a
+---
+> convProd-- | Compose a bijection:: (b :<->: f a) -> (c :<->: g a) -> (b,c) :<->: (f :*: g) a
+704a692
+> convProd ::biF(bbiG= biF a***) ->biGc>>>Bi gProd) ->unProdb,c) :<->: (f :*: g) a
+706d693
+< 
+707a695
+> -- following three instances when deriving works again, in GHC 6.8.-- In GHC 6.7, deriving no longer works on types like :*:.  Take out the
+709d696
+< 
+710a698
+> instanceshow (ProdShowp)(f a"Prod ", g a))++=>showp((f :*: g) a) where
+712d699
+< 
+713a701
+> instanceProd p (==EqProdf a, g a))===>q Eq ((f :*: g) a) where
+715d702
+< 
+717c704
+<   Prod p <= Prod q = p <= q
+---
+> instanceProd p (<=OrdProdf a,=gpa)<=) =>q  Ord ((f :*: g) a) where
+717a705
+>   Prod p <=`compare q =Prod <=q q p `compare` q
+719d706
+< 
+721d707
+< inProd :: ((f a, g a) -> (f' a', g' a'))
+722c708
+<        -> ((f :*: g) a -> (f' :*: g') a')
+---
+> inProd-- | Apply unary function inside of @f :*: g@ representation.:: ((f a, g a) -> (f' a', g' a'))
+722a709
+> inProd :: ((f a:*:, gga)a->->(f'(f'a':*:, g'g'a') )a'))
+722a710
+> inProd ->= unProd(f :*:~>g)Prod -> (f' :*: g') a')
+724d711
+< 
+726d712
+< inProd2 :: ((f a, g a) -> (f' a', g' a') -> (f'' a'', g'' a''))
+727c713
+<         -> ((f :*: g) a -> (f' :*: g') a' -> (f'' :*: g'') a'')
+---
+> inProd2-- | Apply binary function inside of @f :*: g@ representation.:: ((f a, g a) -> (f' a', g' a') -> (f'' a'', g'' a''))
+727a714
+> inProd2 :: ((f a:*:, gga)a->->(f'(f'a':*:, g'g'a') )a'->->(f''(f''a'':*:, g'')a''a''))
+727a715
+> inProd2 ->h ((Prod(f :*:p) g)inProd -> (f'(h :*:p)  g') a' -> (f'' :*: g'') a'')
+729d716
+< 
+731d717
+< inProd3 :: ((f a, g a) -> (f' a', g' a') -> (f'' a'', g'' a'')
+732d717
+<                        -> (f''' a''', g''' a'''))
+733d717
+<         -> ((f :*: g) a -> (f' :*: g') a' -> (f'' :*: g'') a''
+734c718
+<                         -> (f''' :*: g''') a''')
+---
+> inProd3-- | Apply ternary function inside of @f :*: g@ representation.:: ((f a, g a) -> (f' a', g' a') -> (f'' a'', g'' a'')
+734a719
+> inProd3 :: ((f a, g a) -> (f'f''',a''',a'g''') ->a'''f''))a'', g'' a'')
+734a720
+>         -> ((f :*: g) a->->(f'''(f' :*:g',)g'''a' ->(f'')) :*: g'') a''
+734a721
+>         -> ((f :*: g) a -> (f'f''':*:)g''')->a'''f'')  :*: g'') a''
+734a722
+> inProd3 h (Prod p) = inProd2-> (f'''(h p:*:)   g''') a''')
+736d723
+< 
+738c725
+< ($*) :: (a -> b, a' -> b') -> (a,a') -> (b,b')
+---
+> (-- | A handy combining form.  See '(***#)' for an sample use.$*) :: (a -> b, a' -> b') -> (a,a') -> (b,b')
+738a726
+> ($*) ::= uncurrya -> b,***)-> b') -> (a,a') -> (b,b')
+740d727
+< 
+742d728
+< (***#) :: (a -> b -> c) -> (a' -> b' -> c')
+743d728
+<        -> (a, a') -> (b, b') -> (c, c')
+744d728
+< h ***# h' = \ as bs -> (h,h') $* as $* bs
+745d728
+<             -- (uncurry (***)) . (h *** h')
+746d728
+<             -- \ as bs -> uncurry (***) ((h *** h') as) bs
+747c729
+<             -- \ as bs -> (h *** h') as $* bs
+---
+> (-- | Combine two binary functions into a binary function on pairs***#) :: (a -> b -> c) -> (a' -> b' -> c')
+747a730
+> (***#) :: (a,->a'b -> c),->b'(a'->->(cb', c'->) c')
+747a731
+> h ***# -> (a, a')bs->->b,hb',h'))->$*(cas, c')bs
+747a732
+> h ***# h' = \-- (uncurry (***)) . (h *** h') bs -> (h,h') $* as $* bs
+747a733
+>             -- (uncurry (***)) . (h *** h')-- \ as bs -> uncurry (***) ((h *** h') as) bs
+747a734
+>             -- \ as bs -> (h *** h') as $* bs-- \ as bs -> uncurry (***) ((h *** h') as) bs
+747a735
+>             -- \ as bs -> (h *** h') as $* bs-- \ (a,a') (b,b') -> (h a b, h' a' b')
+749d736
+< 
+751c738
+< --  mempty = (mempty, mempty)
+---
+> --  mempty = (mempty, mempty)-- instance (Monoid a, Monoid b) => Monoid (a,b) where
+751a739
+> --  mempty = (mempty, mempty)--  mappend = mappend ***# mappend
+753d740
+< 
+755c742
+<   mempty_f  = Prod (mempty_f,mempty_f)
+---
+> instancemempty_fMonoid_f= Prod f,mempty_f,mempty_f) => Monoid_f)        (f :*: g) where
+755a743
+>   mempty_fmappend_f = ProdinProd2mempty_f(mappend_f,mempty_f***#)mappend_f)
+757d744
+< 
+758a746
+> instancefmap h (FunctorinProd f,fmaph ***g)fmap=> Functorh)      (f :*: g) where
+760d747
+< 
+762c749
+<   pure a = Prod (pure a, pure a)
+---
+> instancepure a (ApplicativeProd (pure f, Applicativepure a)     g) => Applicative (f :*: g) where
+762a750
+>   pure(<*>)a==inProd2 (pure(\ (a,gpure) (a,a) -> (f <*> a, g <*> b))
+764d751
+< 
+768d754
+< 
+770c756
+< newtype (f ::*:: g) a b = Prodd { unProdd :: (f a b, g a b) }
+---
+> newtype-- | Pairing of binary type constructors(f ::*:: g) a b = Prodd { unProdd :: (f a b, g a b) }
+770a757
+> newtypederiving(f ::*::(Show,g)Eqa bOrd=)Prodd { unProdd :: (f a b, g a b) }
+772d758
+< 
+774c760
+< (*::*) :: f a b -> g a b -> (f ::*:: g) a b
+---
+> (-- | Handy infix & curried 'Prodd'*::*) :: f a b -> g a b -> (f ::*:: g) a b
+774a761
+> (*::*) ::= curry a bProdd-> g a b -> (f ::*:: g) a b
+776d762
+< 
+778c764
+< 
+---
+> -- -- Remove the next three when GHC can derive them (6.8).
+779a766
+> --   show (Prodd p) = "Prod " ++ show p-- instance (Show (f a b, g a b)) => Show ((f ::*:: g) a b) where
+781d767
+< 
+782a769
+> --   Prodd p == Prodd q = p == q-- instance (Eq (f a b, g a b)) => Eq ((f ::*:: g) a b) where
+784d770
+< 
+785a772
+> --   Prodd p < Prodd q = p < q-- instance (Ord (f a b, g a b)) => Ord ((f ::*:: g) a b) where
+787d773
+< 
+789d774
+< inProdd :: ((f a b, g a b) -> (f' a' b', g' a' b'))
+790c775
+<         -> ((f ::*:: g) a b -> (f' ::*:: g') a' b')
+---
+> inProdd-- | Apply binary function inside of @f :*: g@ representation.:: ((f a b, g a b) -> (f' a' b', g' a' b'))
+790a776
+> inProdd :: ((f a::*::, gga b)b->->(f'(f'a'::*::, g')a'a'b'b'))
+790a777
+> inProdd ->= unProdd(f ::*::~> gProdd) a b -> (f' ::*:: g') a' b')
+792d778
+< 
+794d779
+< inProdd2 :: ((f a b, g a b) -> (f' a' b', g' a' b') -> (f'' a'' b'', g'' a'' b''))
+795c780
+<          -> ((f ::*:: g) a b -> (f' ::*:: g') a' b' -> (f'' ::*:: g'') a'' b'')
+---
+> inProdd2-- | Apply binary function inside of @f :*: g@ representation.:: ((f a b, g a b) -> (f' a' b', g' a' b') -> (f'' a'' b'', g'' a'' b''))
+795a781
+> inProdd2 :: ((f a::*::, gga b)b->->(f'(f'a'::*::, g')a'a'b'b') -> (f'' a''::*::g'', g'') a''b'') ))
+795a782
+> inProdd2 ->h ((Prodd(f ::*::p) =g)inProdd b ->((f'p)::*:: g') a' b' -> (f'' ::*:: g'') a'' b'')
+798d784
+< 
+801d786
+<   id  = Prodd (id,id)
+802d786
+<   (.) = inProdd2 ((.) ***# (.))
+803c787
+< #endif
+---
+> instanceid  = ProddCategory(id,id, Category f') => Category (f ::*:: f') where
+803a788
+>   id(.) = ProddinProdd2id,id(.) ***# (.))
+803a789
+> #endif.) = inProdd2 ((.) ***# (.))
+807d792
+<   arr    = Prodd . (arr &&&  arr)
+808c793
+< #if __GLASGOW_HASKELL__ < 609
+---
+> instancearr    (ArrowProddf, Arrow(arr &&&) =>arrArrow)     (f ::*:: f') where
+808a794
+> #if __GLASGOW_HASKELL__ < 609    = Prodd . (arr &&&  arr)
+812c798
+<   second = inProdd  (second ***  second)
+---
+>   firstsecond = inProdd  (firstsecond ***  firstsecond)
+812a799
+>   second(***)  = inProddinProdd2 (second(***)  ******# second(***) )
+816d802
+< 
+820d805
+< 
+822c807
+< -- (~>)@ here).
+---
+> -- (~>)@ here).-- | Arrow-like type between type constructors (doesn't enforce @Arrow
+822a808
+> newtype-- (~>)@ here).Arrw j f g a = Arrw { unArrw :: f a `j` g a } -- deriving Monoid
+824d809
+< 
+826c811
+< 
+---
+> -- For ghc-6.6, use the "deriving" above, but for 6.8 use the "deriving" below.
+828c813
+< 
+---
+> deriving instance Monoid (f a `j` g a) => Monoid (Arrw j f g a)
+830c815
+< 
+---
+> -- Replace with generalized bijection?
+831a817
+> -- toArrw fromF toG h = Arrw (fromF >>> h >>> toG)-- toArrw :: Arrow j => (f a ~> b) -> (c ~> g a) -> ((b ~> c) -> Arrw j f g a)
+833d818
+< 
+834a820
+> -- fromArrw toF fromG (Arrw h') = toF >>> h' >>> fromG-- fromArrw :: Arrow j => (b ~> f a) -> (g a ~> c) -> (Arrw j f g a -> (b ~> c))
+836d821
+< 
+838d822
+< inArrw :: ((f a `j` g a) -> (f' a' `j` g' a'))
+839c823
+<        -> ((Arrw j f g) a -> (Arrw j f' g') a')
+---
+> inArrw-- | Apply unary function inside of @Arrw@ representation.:: ((f a `j` g a) -> (f' a' `j` g' a'))
+839a824
+> inArrw :: ((fArrw `j`fgga)a->->(f'(Arrw `j`f'g'g'a') )a'))
+839a825
+> inArrw ->= unArrw(Arrw~> fArrw) a -> (Arrw j f' g') a')
+841d826
+< 
+843d827
+< inArrw2 :: ((f a `j` g a) -> (f' a' `j` g' a') -> (f'' a'' `j` g'' a''))
+844c828
+<         -> (Arrw j f g a -> Arrw j f' g' a' -> Arrw j f'' g'' a'')
+---
+> inArrw2-- | Apply binary function inside of @Arrw j f g@ representation.:: ((f a `j` g a) -> (f' a' `j` g' a') -> (f'' a'' `j` g'' a''))
+844a829
+> inArrw2 :: ((Arrwf a `j` g a)->->Arrwf' a'j f'j`g'g'a'a'->) ->Arrwf''j f''g''j`a'') a''))
+844a830
+> inArrw2 ->h ((ArrwArrwpj f ginArrw -> Arrw(h p)j f' g' a' -> Arrw j f'' g'' a'')
+846d831
+< 
+848d832
+< inArrw3 ::
+849d832
+<   ((f a `j` g a) -> (f' a' `j` g' a') ->
+850d832
+<    (f'' a'' `j` g'' a'') -> (f''' a''' `j` g''' a'''))
+851c833
+<   -> ((Arrw j f g) a -> (Arrw j f' g') a' -> (Arrw j f'' g'') a'' -> (Arrw j f''' g''') a''')
+---
+> inArrw3-- | Apply ternary function inside of @Arrw j f g@ representation.::
+851a834
+> inArrw3((f a ::`j` g a) -> (f' a' `j` g' a') ->
+851a835
+>   ((ff'' `a''j` gja)g''-> (a''f')a'->`j`f''' a'a''') ->`j` g''' a'''))
+851a836
+>   ->f''((Arrw `j` g''g) aa''->)(->Arrwf'''j f'a'''g') `a'j`->(Arrwj))f'' g'') a'' -> (Arrw j f''' g''') a''')
+851a837
+> inArrw3-> ((Arrwh (Arrw f g) a ->inArrw2Arrw(j f'p) g') a' -> (Arrw j f'' g'') a'' -> (Arrw j f''' g''') a''')
+853d838
+< 
+854a840
+> -- available for some of my favorite arrows.-- Functor & ContraFunctor instances.  Beware use of 'arr', which is not
+856d841
+< 
+857a843
+> instancefmap h (ArrowinArrw,$ContraFunctor\ fga -> arr f,contraFmap g))=>>>>fga >>>Arrwarr jfmap g)hwhere)
+859d844
+< 
+860a846
+> instancecontraFmapArrowh =j,inArrw$ \f,fga-> arr (fmapg))=>>>>fga >>> arr (ArrwcontraFmap f g)hwhere)
+862d847
+< 
+864c849
+< --
+---
+> ---- Restated,
+864a850
+> ----   contraFmap h = inArrw $ (arr (fmap h) >>>) . (>>> arr (contraFmap h))
+866d851
+< 
+867a853
+> type-- 'Arrw' specialized to functions.(:->:) = Arrw (->)
+869d854
+< 
+871c856
+< biFun :: (f a -> g a) :<->: (f :->: g) a
+---
+> biFun-- | @newtype@ bijection:: (f a -> g a) :<->: (f :->: g) a
+871a857
+> biFun ::= BifArrw ->unArrw a) :<->: (f :->: g) a
+873d858
+< 
+875c860
+< convFun :: (b :<->: f a) -> (c :<->: g a) -> ((b -> c) :<->: (f :->: g) a)
+---
+> convFun-- | Compose a bijection:: (b :<->: f a) -> (c :<->: g a) -> ((b -> c) :<->: (f :->: g) a)
+875a861
+> convFun ::bfa(bcga= (bfa a)--->-> (cgac :<->:) >>> gbiFun) -> ((b -> c) :<->: (f :->: g) a)
+877d862
+< 
+878a864
+> -- biA = Bi Arrw unArrw-- biA :: ((f a -> g a) :<->: (f :->: g) a)
+881d866
+< 
+885d869
+< 
+887c871
+< 
+---
+> ---- For Control.Applicative Const
+889c873
+< 
+---
+> -- newtype Const a b = Const { getConst :: a }
+891c875
+< biConst :: a :<->: Const a b
+---
+> biConst-- | @newtype@ bijection:: a :<->: Const a b
+891a876
+> biConst ::= Bi :<->: ConstgetConst b
+893d877
+< 
+894a879
+> inConst ::= getConsta -> b)~>->ConstConst a u -> Const b v)
+896d880
+< 
+897a882
+> inConst2 ::f ((Consta -> b)->= cinConst) -> Const(f aa u -> Const b v -> Const c w
+899d883
+< 
+901c885
+<          -> Const a u -> Const b v -> Const c w -> Const  d x
+---
+> inConst3 :: (Consta -> b ->u -> ->Const) b v -> Const c w -> Const  d x
+901a886
+> inConst3 ->f (Const a)u=->inConst2 b(v ->a) Const c w -> Const  d x
+904d888
+< 
+906c890
+< 
+---
+> ---- For Control.Applicative.Endo
+915c899
+< 
+---
+> -- newtype Endo a = Endo { appEndo :: a -> a }
+917c901
+< biEndo :: (a -> a) :<->: Endo a
+---
+> biEndo-- | @newtype@ bijection:: (a -> a) :<->: Endo a
+917a902
+> biEndo ::= BiaEndo-> a)appEndo Endo a
+919d903
+< 
+921c905
+< 
+---
+> instance Monoid_f Endo where { mempty_f = mempty; mappend_f = mappend }
+923c907
+< inEndo :: (Unop a -> Unop a') -> (Endo a -> Endo a')
+---
+> inEndo-- | Convenience for partial-manipulating functions:: (Unop a -> Unop a') -> (Endo a -> Endo a')
+923a908
+> inEndo ::f =(Unop a ->f .UnopappEndo) -> (Endo a -> Endo a')
+925d909
+< 
+927c911
+< -- outEndo :: (Endo a -> Endo a') -> ((a->a) -> (a'->a'))
+---
+> -- -- | Dual for 'inEndo'-- outEndo :: (Endo a -> Endo a') -> ((a->a) -> (a'->a'))
+927a912
+> -- outEndo g = appEndo . g . Endo-- outEndo :: (Endo a -> Endo a') -> ((a->a) -> (a'->a'))
+929d913
+< 
+931d914
+< -- instance Arbitrary a => Arbitrary (Endo a) where
+932c915
+< --   arbitrary   = fmap Endo arbitrary
+---
+> -- -- Missing from Control.Applicative-- instance Arbitrary a => Arbitrary (Endo a) where
+932a916
+> --   arbitrary   = fmap Endo arbitrary-- instance Arbitrary a => Arbitrary (Endo a) where
+932a917
+> --   arbitrary   = fmap Endo arbitrary--   coarbitrary = coarbitrary . appEndo
+934d918
+< 
+935a920
+> -- instance Show (Endo a) where show _ = "Endo <function>"-- -- Simple show instance.  Better: show an arbitrary sampling of the function.
+937a923
+> 
+937a924
+> 
+</pre></br><h2>original</h2></br><pre>{-# LANGUAGE Rank2Types, FlexibleInstances, MultiParamTypeClasses
+           , FlexibleContexts, UndecidableInstances, TypeSynonymInstances
+           , TypeOperators, GeneralizedNewtypeDeriving, StandaloneDeriving
+           , CPP
+  #-}
+-- For ghc 6.6 compatibility
+-- {-# OPTIONS -fglasgow-exts -fallow-undecidable-instances #-}
+
+{-# OPTIONS_GHC -Wall -fno-warn-orphans #-}
+
+----------------------------------------------------------------------
+-- |
+-- Module      :  Control.Compose
+-- Copyright   :  (c) Conal Elliott 2007-2013
+-- License     :  BSD3
+--
+-- Maintainer  :  conal@conal.net
+-- Stability   :  experimental
+-- Portability :  see LANGUAGE pragma
+--
+-- Various type constructor compositions and instances for them.
+-- Some come from
+-- \"Applicative Programming with Effects\"
+-- <http://www.soi.city.ac.uk/~ross/papers/Applicative.html>
+----------------------------------------------------------------------
+
+module Control.Compose
+  (
+  -- * Value transformers
+    Unop, Binop
+  -- * Specialized semantic editor combinators
+  , result, argument, (~>), (~>*), (<~), (*<~)
+  -- * Contravariant functors
+  , ContraFunctor(..), bicomap
+  -- * Unary\/unary composition
+  , (:.)(..), O, unO, biO, convO, coconvO, inO, inO2, inO3
+  , oPure, oFmap, oLiftA2, oLiftA3
+  , fmapFF, fmapCC, contraFmapFC, contraFmapCF
+  , DistribM(..), joinDistribM, bindDistribM, returnDistribM
+  , joinMMT, joinComposeT
+  -- * Type composition
+  -- ** Unary\/binary
+  , OO(..)
+--   -- * Binary\/unary
+--   , ArrowAp(..),
+  -- ** (->)\/unary
+  , FunA(..), inFunA, inFunA2, FunAble(..)
+  -- * Monoid constructors
+  , Monoid_f(..)
+  -- * Flip a binary constructor's type arguments
+  , Flip(..), biFlip, inFlip, inFlip2, inFlip3, OI, ToOI(..)
+  -- * Type application
+  , (:$)(..), App, biApp, inApp, inApp2
+  -- * Identity
+  , Id(..),unId, biId, inId, inId2
+  -- * Constructor pairing
+  -- ** Unary
+  , (:*:)(..),(*:*), biProd, convProd, (***#), ($*), inProd, inProd2, inProd3
+  -- * Binary
+  , (::*::)(..), (*::*), inProdd, inProdd2
+  -- * Arrow between /two/ constructor applications
+  , Arrw(..), (:->:)
+  , biFun, convFun, inArrw, inArrw2, inArrw3
+  -- * Augment other modules
+  , biConst, inConst, inConst2, inConst3
+  , biEndo, inEndo
+  ) where
+
+#if __GLASGOW_HASKELL__ >= 609
+import Control.Category
+import Prelude hiding ((.), id)
+#endif
+
+import Control.Arrow
+#if __GLASGOW_HASKELL__ < 610
+                      hiding (pure)
+#endif
+
+import Data.Monoid
+import Data.Foldable
+import Data.Traversable
+import Control.Applicative
+import Control.Monad (join,liftM)
+
+-- import Test.QuickCheck -- for Endo
+
+import Data.Bijection
+
+infixl 9 :. -- , `O`
+infixl 7 :*:
+infixr 1 :->:
+infixr 0 :$
+
+infixl 0 $*
+infixr 3 ***#
+
+
+{----------------------------------------------------------
+    Value transformers
+----------------------------------------------------------}
+
+-- | Unary functions
+type Unop  a = a -> a
+-- | Binary functions
+type Binop a = a -> a -> a
+
+
+{--------------------------------------------------------------------
+    Semantic editor combinators, specialized to functions.
+    See http://conal.net/blog/posts/semantic-editor-combinators/.
+    Also the DeepArrow package.
+--------------------------------------------------------------------}
+
+-- | Add pre-processing
+-- argument :: (a' -> a) -> ((a -> b) -> (a' -> b))
+argument :: Category cat => (a' `cat` a) -> ((a `cat` b) -> (a' `cat` b))
+argument = flip (.)
+
+-- | Add post-processing
+result :: Category cat => (b `cat` b') -> ((a `cat` b) -> (a `cat` b'))
+result = (.)
+
+infixr 1 ~>, ~>*
+infixl 1 <~, *<~
+
+-- | Add pre- and post processing
+(~>) :: Category cat =>
+        (a' `cat` a) -> (b `cat` b') -> ((a `cat` b) -> (a' `cat` b'))
+-- (f ~> h) g = h . g . f
+f ~> h = result h . argument f
+
+(<~) :: Category cat =>
+        (b `cat` b') -> (a' `cat` a) -> ((a `cat` b) -> (a' `cat` b'))
+(<~) = flip (~>)
+
+-- If I add argument back to DeepArrow, we can get a different generalization:
+--
+-- (~>) :: DeepArrow cat => (a' `cat` a) -> (b `cat` b') -> ((a -> b) `cat` (a' -> b'))
+
+-- | Like '(~>)' but specialized to functors and functions.
+(~>*) :: (Functor p, Functor q) =>
+         (a' -> a) -> (b -> b') -> (p a -> q b) -> (p a' -> q b')
+f ~>* g = fmap f ~> fmap g
+
+(*<~) :: (Functor p, Functor q) =>
+         (b -> b') -> (a' -> a) -> (p a -> q b) -> (p a' -> q b')
+(*<~) = flip (~>*)
+
+-- (~>*) and (*<~) could be generalized to other categories (beside functions)
+-- if we use a more general Functor, as in the "categories" package.
+
+{----------------------------------------------------------
+    Contravariant functors
+----------------------------------------------------------}
+
+-- | Contravariant functors.  often useful for /acceptors/ (consumers,
+-- sinks) of values.
+class ContraFunctor h where
+  contraFmap :: (a -> b) -> (h b -> h a)
+
+-- | Bijections on contravariant functors
+bicomap :: ContraFunctor f => (a :<->: b) -> (f a :<->: f b)
+bicomap (Bi ab ba) = Bi (contraFmap ba) (contraFmap ab)
+
+
+{----------------------------------------------------------
+    Type composition
+----------------------------------------------------------}
+
+{- |
+
+Composition of unary type constructors
+
+There are (at least) two useful 'Monoid' instances, so you'll have to
+pick one and type-specialize it (filling in all or parts of @g@ and\/or @f@).
+
+>     -- standard Monoid instance for Applicative applied to Monoid
+>     instance (Applicative (g :. f), Monoid a) => Monoid ((g :. f) a) where
+>       { mempty = pure mempty; mappend = liftA2 mappend }
+>     -- Especially handy when g is a Monoid_f.
+>     instance Monoid (g (f a)) => Monoid ((g :. f) a) where
+>       { mempty = O mempty; mappend = inO2 mappend }
+
+Corresponding to the first and second definitions above,
+
+>     instance (Applicative g, Monoid_f f) => Monoid_f (g :. f) where
+>       { mempty_f = O (pure mempty_f); mappend_f = inO2 (liftA2 mappend_f) }
+>     instance Monoid_f g => Monoid_f (g :. f) where
+>       { mempty_f = O mempty_f; mappend_f = inO2 mappend_f }
+
+Similarly, there are two useful 'Functor' instances and two useful
+'ContraFunctor' instances.
+
+>     instance (      Functor g,       Functor f) => Functor (g :. f) where fmap = fmapFF
+>     instance (ContraFunctor g, ContraFunctor f) => Functor (g :. f) where fmap = fmapCC
+>
+>     instance (      Functor g, ContraFunctor f) => ContraFunctor (g :. f) where contraFmap = contraFmapFC
+>     instance (ContraFunctor g,       Functor f) => ContraFunctor (g :. f) where contraFmap = contraFmapCF
+
+However, it's such a bother to define the Functor instances per
+composition type, I've left the fmapFF case in.  If you want the fmapCC
+one, you're out of luck for now.  I'd love to hear a good solution.  Maybe
+someday Haskell will do Prolog-style search for instances, subgoaling the
+constraints, rather than just matching instance heads.
+
+-}
+newtype (g :. f) a = O (g (f a)) deriving (Eq,Show)
+
+-- newtype (g :. f) a = O { unO :: g (f a) } deriving Show
+
+-- | Unwrap a '(:.)'.
+unO :: (g :. f) a -> g (f a)
+unO (O gfa) = gfa
+
+-- | Compatibility synonym
+type O = (:.)
+
+-- Here it is, as promised.
+
+instance (Functor g, Functor f) => Functor (g :. f) where fmap = fmapFF
+
+-- or
+--
+--   deriving instance (Functor g, Functor f) => Functor (g :. f)
+
+-- These next two instances are based on suggestions from Creighton Hogg:
+
+instance (Foldable g, Foldable f, Functor g) => Foldable (g :. f) where
+  -- foldMap f = fold . fmap (foldMap f) . unO
+  foldMap f = foldMap (foldMap f) . unO
+  -- fold (O gfa) = fold (fold <$> gfa)
+  -- fold = fold . fmap fold . unO
+  fold = foldMap fold . unO
+  -- I could let fold default
+
+instance (Traversable g, Traversable f) => Traversable (g :. f) where
+  -- sequenceA = fmap O . sequenceA . fmap sequenceA . unO
+  -- sequenceA = fmap O . traverse sequenceA . unO
+  -- sequenceA = (unO ~> fmap O) (traverse sequenceA)
+  -- traverse f = fmap O . traverse (traverse f) . unO
+  traverse = (unO ~> fmap O) . traverse . traverse
+
+-- traverse f
+-- sequenceA . fmap f
+-- sequenceA . (inO.fmap.fmap) f
+-- sequenceA . inO (fmap (fmap f))
+-- sequenceA . O . fmap (fmap f) . unO
+-- fmap O . traverse sequenceA . unO . O . fmap (fmap f) . unO
+-- fmap O . traverse sequenceA . fmap (fmap f) . unO
+-- fmap O . traverse (sequenceA .  fmap f) . unO
+-- fmap O . traverse (traverse f) . unO
+
+-- instance (Functor g, Functor f) => Functor (g :. f) where
+--   fmap = inO.fmap.fmap
+
+-- | @newtype@ bijection
+biO :: g (f a) :<->: (g :. f) a
+biO = Bi O unO
+
+-- | Compose a bijection, Functor style
+convO :: Functor g => (b :<->: g c) -> (c :<->: f a) -> (b :<->: (g :. f) a)
+convO biG biF = biG >>> bimap biF >>> Bi O unO
+
+-- | Compose a bijection, ContraFunctor style
+coconvO :: ContraFunctor g => (b :<->: g c) -> (c :<->: f a) -> (b :<->: (g :. f) a)
+coconvO biG biF = biG >>> bicomap biF >>> Bi O unO
+
+
+-- | Apply a unary function within the 'O' constructor.
+inO :: (g (f a) -> g' (f' a')) -> ((g :. f) a -> (g' :. f') a')
+inO = unO ~> O
+
+-- | Apply a binary function within the 'O' constructor.
+inO2 :: (g (f a)   -> g' (f' a')   -> g'' (f'' a''))
+     -> ((g :. f) a -> (g' :. f') a' -> (g'' :. f'') a'')
+inO2 = unO ~> inO
+
+-- | Apply a ternary function within the 'O' constructor.
+inO3 :: (g (f a)   -> g' (f' a')   -> g'' (f'' a'')   -> g''' (f''' a'''))
+     -> ((g :. f) a -> (g' :. f') a' -> (g'' :. f'') a'' -> (g''' :. f''') a''')
+inO3 = unO ~> inO2
+
+
+-- | Handy combination of 'O' and 'pure'.
+oPure   :: (Applicative g) => f a -> (g :. f) a
+
+-- | Handy combination of 'inO' and 'fmap'.
+oFmap   :: (Functor g') =>
+           (f a -> f' a') -> (g' :. f) a -> (g' :. f') a'
+
+-- | Handy combination of 'inO2' and 'liftA2'.
+oLiftA2 :: (Applicative g'') =>
+           (f a -> f' a' -> f'' a'')
+        -> (g'' :. f) a -> (g'' :. f') a' -> (g'' :. f'') a''
+
+-- | Handy combination of 'inO3' and 'liftA3'.
+oLiftA3 :: (Applicative g''') =>
+           (f a -> f' a' -> f'' a'' -> f''' a''')
+        -> (g''' :. f) a
+        -> (g''' :. f') a'
+        -> (g''' :. f'') a''
+        -> (g''' :. f''') a'''
+
+oPure   = O    . pure
+oFmap   = inO  . fmap
+oLiftA2 = inO2 . liftA2
+oLiftA3 = inO3 . liftA3
+
+
+-- | Used for the @Functor :. Functor@ instance of 'Functor'
+fmapFF :: (  Functor g,   Functor f) => (a -> b) -> (g :. f) a -> (g :. f) b
+fmapFF = inO.fmap.fmap
+
+-- | Used for the @ContraFunctor :. ContraFunctor@ instance of 'Functor'
+fmapCC :: (ContraFunctor g, ContraFunctor f) => (a -> b) -> (g :. f) a -> (g :. f) b
+fmapCC = inO.contraFmap.contraFmap
+
+-- | Used for the @Functor :. ContraFunctor@ instance of 'Functor'
+contraFmapFC :: (Functor g, ContraFunctor f) => (b -> a) -> (g :. f) a -> (g :. f) b
+contraFmapFC = inO.fmap.contraFmap
+
+-- contraFmapFC h (O gf) = O (fmap (contraFmap h) gf)
+
+-- | Used for the @ContraFunctor :. Functor@ instance of 'Functor'
+contraFmapCF :: (ContraFunctor g, Functor f) => (b -> a) -> (g :. f) a -> (g :. f) b
+contraFmapCF = inO.contraFmap.fmap
+
+-- contraFmapCF h (O gf) = O (contraFmap (fmap h) gf)
+
+instance (Applicative g, Applicative f) => Applicative (g :. f) where
+  pure  = O . pure . pure
+  (<*>) = (inO2.liftA2) (<*>)
+
+-- Possible Alternative instances:
+
+-- instance (Applicative g, Alternative f) => Alternative (g :. f) where
+--   empty = O (pure empty)
+--   (<|>) = inO2 (liftA2 (<|>))
+
+-- instance (Alternative g, Applicative f) => Alternative (g :. f) where
+--   empty = O empty
+--   (<|>) = inO2 (<|>)
+
+
+-- Possible Monoid instances:
+
+-- instance (Applicative g, Applicative f, Monoid a) => Monoid ((g :. f) a) where
+--   mempty  = pure mempty
+--   mappend = liftA2 mappend
+
+-- instance Monoid (g (f a)) => Monoid ((g :. f) a) where
+--   mempty  = O mempty
+--   mappend = inO2 mappend
+
+
+
+-- A first pass at monad composition.  But now I've read "Composing
+-- Monads", and I know there's more to it.  At least four different ways,
+-- all with conflicting Monad instances.
+
+-- | Monad distributivity.
+--
+-- TODO: what conditions are required so that @(m :. n)@ satisfies the monad laws?
+class DistribM m n where
+  distribM :: n (m a) -> m (n a)
+
+-- | A candidate 'join' for @(m :. n)@
+joinDistribM :: (Monad m, Monad n, DistribM m n) =>
+                (m :. n) ((m :. n) a) -> (m :. n) a
+joinDistribM = O . liftM join . join . liftM distribM . (liftM.liftM) unO . unO
+
+-- Derivation:
+--
+--       (m :. n) ((m :. n) a)
+--   --> m (n ((m :. n) a))   -- unO
+--   --> m (n (m (n a)))      -- (liftM.liftM) unO
+--   --> m (m (n (n a)))      -- liftM distribM
+--   --> m (n (n a))          -- join
+--   --> m (n a)              -- liftM join
+--   --> (m :. n) a           -- O
+
+-- | A candidate '(>>=)' for @(m :. n)@
+bindDistribM :: (Functor m, Functor n, Monad m, Monad n, DistribM m n) =>
+                (m :. n) a -> (a -> (m :. n) b) -> (m :. n) b
+mn `bindDistribM` f = joinDistribM (fmap f mn)
+
+returnDistribM :: (Monad m, Monad n) => a -> (m :. n) a
+returnDistribM = O . return . return
+
+-- Template for specialization:
+--
+-- instance (Functor m, Functor n, Monad m, Monad n, DistribM m n)
+--       => Monad (m :. n) where
+--   return = returnDistribM
+--   (>>=)  = bindDistribM
+
+-- | 'join'-like function for implicitly composed monads
+joinMMT :: (Monad m, Monad n, Traversable n, Applicative m) =>
+           m (n (m (n a))) -> m (n a)
+joinMMT = fmap join . join . fmap sequenceA
+
+-- | 'join'-like function for explicitly composed monads
+joinComposeT :: (Monad m, Monad n, Traversable n, Applicative m) =>
+                (m :. n) ((m :. n) a) -> (m :. n) a
+joinComposeT = O . joinMMT . unO . fmap unO
+
+
+{----------------------------------------------------------
+    Unary\/binary composition
+----------------------------------------------------------}
+
+-- | Composition of type constructors: unary with binary.  Called
+-- "StaticArrow" in [1].
+newtype OO f j a b = OO { unOO :: f (a `j` b) }
+
+
+#if __GLASGOW_HASKELL__ >= 609
+instance (Applicative f, Category cat) => Category (OO f cat) where
+  id          = OO (pure id)
+  OO g . OO h = OO (liftA2 (.) g h)
+#endif
+
+instance (Applicative f, Arrow arr) => Arrow (OO f arr) where
+#if __GLASGOW_HASKELL__ < 609
+  OO g >>> OO h = OO (liftA2 (>>>) g h)
+#endif
+  arr           = OO . pure . arr
+  first (OO g)  = OO (liftA first g)
+
+-- For instance, /\ a b. f (a -> m b) =~ OO f Kleisli m
+
+
+{-
+
+{----------------------------------------------------------
+    Binary\/unary composition.  * Not currently exported *
+----------------------------------------------------------}
+
+-- | Composition of type constructors: binary with unary.  See also
+-- 'FunA', which specializes from arrows to functions.
+--
+-- Warning: Wolfgang Jeltsch pointed out a problem with these definitions:
+-- 'splitA' and 'mergeA' are not inverses.  The definition of 'first',
+-- e.g., violates the \"extension\" law and causes repeated execution.
+-- Look for a reformulation or a clarification of required properties of
+-- the applicative functor @f@.
+--
+-- See also "Arrows and Computation", which notes that the following type
+-- is "almost an arrow" (<http://www.soi.city.ac.uk/~ross/papers/fop.html>).
+--
+-- >   newtype ListMap i o = LM ([i] -> [o])
+--
+-- http://www.cse.unsw.edu.au/~dons/haskell-1990-2006/msg16550.html
+
+-- |
+
+newtype ArrowAp (~>) f a b = ArrowAp {unArrowAp :: f a ~> f b}
+
+instance (Arrow (~>), Applicative f) => Arrow (ArrowAp (~>) f) where
+  arr                     = ArrowAp . arr . liftA
+  ArrowAp g >>> ArrowAp h = ArrowAp (g >>> h)
+  first (ArrowAp a)       =
+    ArrowAp (arr splitA >>> first a >>> arr mergeA)
+
+instance (ArrowLoop (~>), Applicative f) => ArrowLoop (ArrowAp (~>) f) where
+  -- loop :: UI (b,d) (c,d) -> UI b c
+  loop (ArrowAp k) =
+    ArrowAp (loop (arr mergeA >>> k >>> arr splitA))
+
+mergeA :: Applicative f => (f a, f b) -> f (a,b)
+mergeA ~(fa,fb) = liftA2 (,) fa fb
+
+splitA :: Applicative f => f (a,b) -> (f a, f b)
+splitA fab = (liftA fst fab, liftA snd fab)
+
+-}
+
+
+{----------------------------------------------------------
+    (->)\/unary composition
+----------------------------------------------------------}
+
+-- Hm.  See warning above for 'ArrowAp'
+
+-- | Common pattern for 'Arrow's.
+newtype FunA h a b = FunA { unFunA :: h a -> h b }
+
+-- | Apply unary function in side a 'FunA' representation.
+inFunA :: ((h a -> h b) -> (h' a' -> h' b'))
+       -> (FunA h a b -> FunA h' a' b')
+inFunA = unFunA ~> FunA
+
+-- | Apply binary function in side a 'FunA' representation.
+inFunA2 :: ((h a -> h b) -> (h' a' -> h' b') -> (h'' a'' -> h'' b''))
+       -> (FunA h a b -> FunA h' a' b' -> FunA h'' a'' b'')
+inFunA2 q (FunA f) = inFunA (q f)
+
+-- | Support needed for a 'FunA' to be an 'Arrow'.
+class FunAble h where
+  arrFun    :: (a -> b) -> (h a -> h b) -- ^ for 'arr'
+  firstFun  :: (h a -> h a') -> (h (a,b) -> h (a',b)) -- for 'first'
+  secondFun :: (h b -> h b') -> (h (a,b) -> h (a,b')) -- for 'second'
+  (***%)    :: (h a -> h b) -> (h a' -> h b') -> (h (a,a') -> h (b,b')) -- for '(***)'
+  (&&&%)    :: (h a -> h b) -> (h a  -> h b') -> (h a -> h (b,b')) -- for '(&&&)'
+
+  -- In direct imitation of Arrow defaults:
+  f ***% g = firstFun f >>> secondFun g
+  f &&&% g = arrFun (\b -> (b,b)) >>> f ***% g
+
+
+#if __GLASGOW_HASKELL__ >= 609
+instance FunAble h => Category (FunA h) where
+  id  = FunA (arrFun id)
+  (.) = inFunA2 (.)
+#endif
+
+
+instance FunAble h => Arrow (FunA h) where
+  arr p  = FunA    (arrFun p)
+#if __GLASGOW_HASKELL__ < 609
+  (>>>)  = inFunA2 (>>>)
+#endif
+  first  = inFunA  firstFun
+  second = inFunA  secondFun
+  (***)  = inFunA2 (***%)
+  (&&&)  = inFunA2 (&&&%)
+
+
+
+{----------------------------------------------------------
+    Monoid constructors
+----------------------------------------------------------}
+
+-- | Simulates universal constraint @forall a. Monoid (f a)@.
+--
+-- See Simulating Quantified Class Constraints
+-- (<http://flint.cs.yale.edu/trifonov/papers/sqcc.pdf>)
+--  Instantiate this schema wherever necessary:
+--
+-- >    instance Monoid_f f where { mempty_f = mempty ; mappend_f = mappend }
+class Monoid_f m where
+  mempty_f  :: forall a. m a
+  mappend_f :: forall a. m a -> m a -> m a
+
+--  e.g.,
+instance Monoid_f [] where { mempty_f = mempty ; mappend_f = mappend }
+
+
+
+{----------------------------------------------------------
+    Flip a binary constructor's type arguments
+----------------------------------------------------------}
+
+-- | Flip type arguments
+newtype Flip j b a = Flip { unFlip :: a `j` b }
+
+-- | @newtype@ bijection
+biFlip :: (a `j` b) :<->: Flip j b a
+biFlip = Bi Flip unFlip
+
+-- Apply unary function inside of a 'Flip' representation.
+inFlip :: ((a `j` b) -> (a' `k` b')) -> (Flip j b a -> Flip k b' a')
+inFlip = unFlip ~> Flip
+
+-- Apply binary function inside of a 'Flip' representation.
+inFlip2 :: ((a `j` b) -> (a' `k` b') -> (a'' `l` b''))
+        -> (Flip j b a -> Flip k b' a' -> Flip l b'' a'')
+inFlip2 f (Flip ar) = inFlip (f ar)
+
+-- Apply ternary function inside of a 'Flip' representation.
+inFlip3 :: ((a `j` b) -> (a' `k` b') -> (a'' `l` b'') -> (a''' `m` b'''))
+        -> (Flip j b a -> Flip k b' a' -> Flip l b'' a'' -> Flip m b''' a''')
+inFlip3 f (Flip ar) = inFlip2 (f ar)
+
+instance Arrow arr => ContraFunctor (Flip arr b) where
+  contraFmap h (Flip f) = Flip (arr h >>> f)
+
+-- Useful for (~>) = (->).  Maybe others.
+instance (Applicative (j a), Monoid o) => Monoid (Flip j o a) where
+  mempty  = Flip (pure mempty)
+  mappend = inFlip2 (liftA2 mappend)
+
+-- TODO: generalize (->) to (~>) with Applicative_f (~>)
+instance Monoid o => Monoid_f (Flip (->) o) where
+  { mempty_f = mempty ; mappend_f = mappend }
+
+-- | (-> IO ()) as a 'Flip'.  A ContraFunctor.
+type OI = Flip (->) (IO ())
+
+-- | Convert to an 'OI'.
+class ToOI sink where toOI :: sink b -> OI b
+
+instance ToOI OI where toOI = id
+
+{----------------------------------------------------------
+    Type application
+----------------------------------------------------------}
+
+-- | Type application
+-- We can also drop the @App@ constructor, but then we overlap with many
+-- other instances, like @[a]@.  Here's a template for @App@-free
+-- instances.
+--
+-- >    instance (Applicative f, Monoid a) => Monoid (f a) where
+-- >      mempty  = pure mempty
+-- >      mappend = liftA2 mappend
+newtype f :$ a = App { unApp :: f a }
+
+-- | Compatibility synonym for (:$).
+type App = (:$)
+
+-- How about?
+-- data f :$ a = App { unApp :: f a }
+
+-- | @newtype@ bijection
+biApp :: f a :<->: App f a
+biApp = Bi App unApp
+
+-- Apply unary function inside of an 'App representation.
+inApp :: (f a -> f' a') -> (App f a -> App f' a')
+inApp = unApp ~> App
+
+-- Apply binary function inside of a 'App' representation.
+inApp2 :: (f a -> f' a' -> f'' a'') -> (App f a -> App f' a' -> App f'' a'')
+inApp2 h (App fa) = inApp (h fa)
+
+-- Example: App IO ()
+instance (Applicative f, Monoid m) => Monoid (App f m) where
+  mempty  =   App  (pure   mempty )
+  mappend = inApp2 (liftA2 mappend)
+
+--  App a `mappend` App b = App (liftA2 mappend a b)
+
+
+{----------------------------------------------------------
+    Identity
+----------------------------------------------------------}
+
+-- | Identity type constructor.  Until there's a better place to find it.
+-- I'd use "Control.Monad.Identity", but I don't want to introduce a
+-- dependency on mtl just for Id.
+newtype Id a = Id a deriving Show
+
+-- Could define record field:
+--
+--   newtype Id a = Id { unId :: a } deriving Show
+--
+-- but then Show is uglier.
+
+-- Extract value from an 'Id'
+unId :: Id a -> a
+unId (Id a) = a
+
+inId :: (a -> b) -> (Id a -> Id b)
+inId = unId ~> Id
+
+inId2 :: (a -> b -> c) -> (Id a -> Id b -> Id c)
+inId2 f (Id a) = inId (f a)
+
+-- | @newtype@ bijection
+biId :: a :<->: Id a
+biId = Bi Id unId
+
+instance Functor Id where
+  fmap f = inId f
+
+instance Applicative Id where
+  pure  = Id
+  (<*>) = inId2 ($)
+
+instance Monad Id where
+  return = pure
+  Id x >>= f = f x
+
+instance Foldable Id where
+  foldMap f (Id a) = f a
+  -- foldMap f = f . unId
+  -- foldMap = (. unId)
+
+instance Traversable Id where
+  sequenceA (Id fa) = fmap Id fa
+
+-- Id fa :: Id (f a)
+-- fa :: f a
+-- fmap Id fa = f (Id a)
+
+{----------------------------------------------------------
+    Unary constructor pairing
+----------------------------------------------------------}
+
+-- | Pairing of unary type constructors
+newtype (f :*: g) a = Prod { unProd :: (f a, g a) }
+  -- deriving (Show, Eq, Ord)
+
+-- | Handy infix & curried 'Prod'
+(*:*) :: f a -> g a -> (f :*: g) a
+(*:*) = curry Prod
+
+-- | @newtype@ bijection
+biProd :: (f a, g a) :<->: (f :*: g) a
+biProd = Bi Prod unProd
+
+-- | Compose a bijection
+convProd :: (b :<->: f a) -> (c :<->: g a) -> (b,c) :<->: (f :*: g) a
+convProd biF biG = biF *** biG >>> Bi Prod unProd
+
+-- In GHC 6.7, deriving no longer works on types like :*:.  Take out the
+-- following three instances when deriving works again, in GHC 6.8.
+
+instance (Show (f a, g a)) => Show ((f :*: g) a) where
+  show (Prod p) = "Prod " ++ show p
+
+instance (Eq (f a, g a)) => Eq ((f :*: g) a) where
+  Prod p == Prod q = p == q
+
+instance (Ord (f a, g a)) => Ord ((f :*: g) a) where
+  Prod p <= Prod q = p <= q
+  Prod p `compare` Prod q = p `compare` q
+
+-- | Apply unary function inside of @f :*: g@ representation.
+inProd :: ((f a, g a) -> (f' a', g' a'))
+       -> ((f :*: g) a -> (f' :*: g') a')
+inProd = unProd ~> Prod
+
+-- | Apply binary function inside of @f :*: g@ representation.
+inProd2 :: ((f a, g a) -> (f' a', g' a') -> (f'' a'', g'' a''))
+        -> ((f :*: g) a -> (f' :*: g') a' -> (f'' :*: g'') a'')
+inProd2 h (Prod p) = inProd (h p)
+
+-- | Apply ternary function inside of @f :*: g@ representation.
+inProd3 :: ((f a, g a) -> (f' a', g' a') -> (f'' a'', g'' a'')
+                       -> (f''' a''', g''' a'''))
+        -> ((f :*: g) a -> (f' :*: g') a' -> (f'' :*: g'') a''
+                        -> (f''' :*: g''') a''')
+inProd3 h (Prod p) = inProd2 (h p)
+
+-- | A handy combining form.  See '(***#)' for an sample use.
+($*) :: (a -> b, a' -> b') -> (a,a') -> (b,b')
+($*) = uncurry (***)
+
+-- | Combine two binary functions into a binary function on pairs
+(***#) :: (a -> b -> c) -> (a' -> b' -> c')
+       -> (a, a') -> (b, b') -> (c, c')
+h ***# h' = \ as bs -> (h,h') $* as $* bs
+            -- (uncurry (***)) . (h *** h')
+            -- \ as bs -> uncurry (***) ((h *** h') as) bs
+            -- \ as bs -> (h *** h') as $* bs
+            -- \ (a,a') (b,b') -> (h a b, h' a' b')
+
+-- instance (Monoid a, Monoid b) => Monoid (a,b) where
+--  mempty = (mempty, mempty)
+--  mappend = mappend ***# mappend
+
+instance (Monoid_f f, Monoid_f g) => Monoid_f (f :*: g) where
+  mempty_f  = Prod (mempty_f,mempty_f)
+  mappend_f = inProd2 (mappend_f ***# mappend_f)
+
+instance (Functor f, Functor g) => Functor (f :*: g) where
+  fmap h = inProd (fmap h *** fmap h)
+
+instance (Applicative f, Applicative g) => Applicative (f :*: g) where
+  pure a = Prod (pure a, pure a)
+  (<*>) = inProd2 (\ (f,g) (a,b) -> (f <*> a, g <*> b))
+
+{----------------------------------------------------------
+    Binary constructor pairing
+----------------------------------------------------------}
+
+-- | Pairing of binary type constructors
+newtype (f ::*:: g) a b = Prodd { unProdd :: (f a b, g a b) }
+  deriving (Show, Eq, Ord)
+
+-- | Handy infix & curried 'Prodd'
+(*::*) :: f a b -> g a b -> (f ::*:: g) a b
+(*::*) = curry Prodd
+
+-- -- Remove the next three when GHC can derive them (6.8).
+
+-- instance (Show (f a b, g a b)) => Show ((f ::*:: g) a b) where
+--   show (Prodd p) = "Prod " ++ show p
+
+-- instance (Eq (f a b, g a b)) => Eq ((f ::*:: g) a b) where
+--   Prodd p == Prodd q = p == q
+
+-- instance (Ord (f a b, g a b)) => Ord ((f ::*:: g) a b) where
+--   Prodd p < Prodd q = p < q
+
+-- | Apply binary function inside of @f :*: g@ representation.
+inProdd :: ((f a b, g a b) -> (f' a' b', g' a' b'))
+        -> ((f ::*:: g) a b -> (f' ::*:: g') a' b')
+inProdd = unProdd ~> Prodd
+
+-- | Apply binary function inside of @f :*: g@ representation.
+inProdd2 :: ((f a b, g a b) -> (f' a' b', g' a' b') -> (f'' a'' b'', g'' a'' b''))
+         -> ((f ::*:: g) a b -> (f' ::*:: g') a' b' -> (f'' ::*:: g'') a'' b'')
+inProdd2 h (Prodd p) = inProdd (h p)
+
+
+#if __GLASGOW_HASKELL__ >= 609
+instance (Category f, Category f') => Category (f ::*:: f') where
+  id  = Prodd (id,id)
+  (.) = inProdd2 ((.) ***# (.))
+#endif
+
+
+instance (Arrow f, Arrow f') => Arrow (f ::*:: f') where
+  arr    = Prodd . (arr &&&  arr)
+#if __GLASGOW_HASKELL__ < 609
+  (>>>)  = inProdd2 ((>>>) ***# (>>>))
+#endif
+  first  = inProdd  (first  ***  first )
+  second = inProdd  (second ***  second)
+  (***)  = inProdd2 ((***)  ***# (***) )
+  (&&&)  = inProdd2 ((&&&)  ***# (&&&) )
+
+
+{----------------------------------------------------------
+    Arrow between /two/ constructor applications
+----------------------------------------------------------}
+
+-- | Arrow-like type between type constructors (doesn't enforce @Arrow
+-- (~>)@ here).
+newtype Arrw j f g a = Arrw { unArrw :: f a `j` g a } -- deriving Monoid
+
+-- For ghc-6.6, use the "deriving" above, but for 6.8 use the "deriving" below.
+
+deriving instance Monoid (f a `j` g a) => Monoid (Arrw j f g a)
+
+-- Replace with generalized bijection?
+
+-- toArrw :: Arrow j => (f a ~> b) -> (c ~> g a) -> ((b ~> c) -> Arrw j f g a)
+-- toArrw fromF toG h = Arrw (fromF >>> h >>> toG)
+
+-- fromArrw :: Arrow j => (b ~> f a) -> (g a ~> c) -> (Arrw j f g a -> (b ~> c))
+-- fromArrw toF fromG (Arrw h') = toF >>> h' >>> fromG
+
+-- | Apply unary function inside of @Arrw@ representation.
+inArrw :: ((f a `j` g a) -> (f' a' `j` g' a'))
+       -> ((Arrw j f g) a -> (Arrw j f' g') a')
+inArrw = unArrw ~> Arrw
+
+-- | Apply binary function inside of @Arrw j f g@ representation.
+inArrw2 :: ((f a `j` g a) -> (f' a' `j` g' a') -> (f'' a'' `j` g'' a''))
+        -> (Arrw j f g a -> Arrw j f' g' a' -> Arrw j f'' g'' a'')
+inArrw2 h (Arrw p) = inArrw (h p)
+
+-- | Apply ternary function inside of @Arrw j f g@ representation.
+inArrw3 ::
+  ((f a `j` g a) -> (f' a' `j` g' a') ->
+   (f'' a'' `j` g'' a'') -> (f''' a''' `j` g''' a'''))
+  -> ((Arrw j f g) a -> (Arrw j f' g') a' -> (Arrw j f'' g'') a'' -> (Arrw j f''' g''') a''')
+inArrw3 h (Arrw p) = inArrw2 (h p)
+
+-- Functor & ContraFunctor instances.  Beware use of 'arr', which is not
+-- available for some of my favorite arrows.
+
+instance (Arrow j, ContraFunctor f, Functor g) => Functor (Arrw j f g) where
+  fmap h = inArrw $ \ fga -> arr (contraFmap h) >>> fga >>> arr (fmap h)
+
+instance (Arrow j, Functor f, ContraFunctor g) => ContraFunctor (Arrw j f g) where
+  contraFmap h = inArrw $ \ fga -> arr (fmap h) >>> fga >>> arr (contraFmap h)
+
+-- Restated,
+--
+--   contraFmap h = inArrw $ (arr (fmap h) >>>) . (>>> arr (contraFmap h))
+
+-- 'Arrw' specialized to functions.
+type (:->:) = Arrw (->)
+
+-- | @newtype@ bijection
+biFun :: (f a -> g a) :<->: (f :->: g) a
+biFun = Bi Arrw unArrw
+
+-- | Compose a bijection
+convFun :: (b :<->: f a) -> (c :<->: g a) -> ((b -> c) :<->: (f :->: g) a)
+convFun bfa cga = (bfa ---> cga) >>> biFun
+
+-- biA :: ((f a -> g a) :<->: (f :->: g) a)
+-- biA = Bi Arrw unArrw
+
+
+{----------------------------------------------------------
+    Augment other modules
+----------------------------------------------------------}
+
+---- For Control.Applicative Const
+
+-- newtype Const a b = Const { getConst :: a }
+
+-- | @newtype@ bijection
+biConst :: a :<->: Const a b
+biConst = Bi Const getConst
+
+inConst :: (a -> b) -> (Const a u -> Const b v)
+inConst = getConst ~> Const
+
+inConst2 :: (a -> b -> c) -> Const a u -> Const b v -> Const c w
+inConst2 f (Const a) = inConst (f a)
+
+inConst3 :: (a -> b -> c -> d)
+         -> Const a u -> Const b v -> Const c w -> Const  d x
+inConst3 f (Const a) = inConst2 (f a)
+
+
+---- For Control.Applicative.Endo
+
+#if defined(__GLASGOW_HASKELL__) && __GLASGOW_HASKELL__ < 707
+-- deriving instance Monoid o => Monoid (Const o a)
+instance Monoid o => Monoid (Const o a) where
+  mempty  = Const mempty
+  mappend = inConst2 mappend
+#endif
+
+-- newtype Endo a = Endo { appEndo :: a -> a }
+
+-- | @newtype@ bijection
+biEndo :: (a -> a) :<->: Endo a
+biEndo = Bi Endo appEndo
+
+instance Monoid_f Endo where { mempty_f = mempty; mappend_f = mappend }
+
+-- | Convenience for partial-manipulating functions
+inEndo :: (Unop a -> Unop a') -> (Endo a -> Endo a')
+inEndo f = Endo . f . appEndo
+
+-- -- | Dual for 'inEndo'
+-- outEndo :: (Endo a -> Endo a') -> ((a->a) -> (a'->a'))
+-- outEndo g = appEndo . g . Endo
+
+-- -- Missing from Control.Applicative
+-- instance Arbitrary a => Arbitrary (Endo a) where
+--   arbitrary   = fmap Endo arbitrary
+--   coarbitrary = coarbitrary . appEndo
+
+-- -- Simple show instance.  Better: show an arbitrary sampling of the function.
+-- instance Show (Endo a) where show _ = "Endo <function>"
+
+</pre></br><h2>printed</h2></br><pre>{-# LANGUAGE Rank2Types, FlexibleInstances, MultiParamTypeClasses
+           , FlexibleContexts, UndecidableInstances, TypeSynonymInstances
+           , TypeOperators, GeneralizedNewtypeDeriving, StandaloneDeriving
+           , CPP
+  #-}
+-- For ghc 6.6 compatibility
+-- For ghc 6.6 compatibility-- {-# OPTIONS -fglasgow-exts -fallow-undecidable-instances #-}
+-- {-# OPTIONS -fglasgow-exts -fallow-undecidable-instances #-}
+{-# OPTIONS_GHC -Wall -fno-warn-orphans #-}
+{-# OPTIONS_GHC -Wall -fno-warn-orphans #-}
+----------------------------------------------------------------------
+-- |----------------------------------------------------------------------
+-- |-- Module      :  Control.Compose
+-- Module      :  Control.Compose-- Copyright   :  (c) Conal Elliott 2007-2013
+-- License     :  BSD3-- Copyright   :  (c) Conal Elliott 2007-2013
+---- License     :  BSD3
+---- Maintainer  :  conal@conal.net
+-- Stability   :  experimental-- Maintainer  :  conal@conal.net
+-- Stability   :  experimental-- Portability :  see LANGUAGE pragma
+---- Portability :  see LANGUAGE pragma
+---- Various type constructor compositions and instances for them.
+-- Some come from-- Various type constructor compositions and instances for them.
+-- Some come from-- \"Applicative Programming with Effects\"
+-- \"Applicative Programming with Effects\"-- <http://www.soi.city.ac.uk/~ross/papers/Applicative.html>
+-- <http://www.soi.city.ac.uk/~ross/papers/Applicative.html>----------------------------------------------------------------------
+----------------------------------------------------------------------
+module Control.Compose
+module(    Control.Compose
+  (-- * Value transformers
+  -- * Value transformersUnop, Binop
+  -- * Specialized semantic editor combinators, Binop
+  ,-- * Specialized semantic editor combinatorsresult, argument, (~>), (~>*), (<~), (*<~)
+  ,-- * Contravariant functors, argument, (~>), (~>*), (<~), (*<~)
+  ,-- * Contravariant functorsContraFunctor(..), bicomap
+  ,-- * Unary\/unary composition(..), bicomap
+  ,-- * Unary\/unary composition(:.)(..), O, unO, biO, convO, coconvO, inO, inO2, inO3
+  , (oPure:.)(.., )oFmap, O,,unOoLiftA2, biO, convOoLiftA3, coconvO, inO, inO2, inO3
+  , oPurefmapFF,,oFmapfmapCC, oLiftA2, contraFmapFC, oLiftA3, contraFmapCF
+  , fmapFFDistribM, fmapCC(..), ,joinDistribM, ,bindDistribM, returnDistribM
+  , DistribMjoinMMT,(..joinComposeT), joinDistribM, bindDistribM, returnDistribM
+  ,-- * Type composition, joinComposeT
+  -- ** Unary\/binary-- * Type composition
+  ,-- ** Unary\/binaryOO(..)
+--   -- * Binary\/unary, OO(..)
+--   , ArrowAp(..),--   -- * Binary\/unary
+--   , ArrowAp(..),-- ** (->)\/unary
+  ,-- ** (->)\/unaryFunA(..), inFunA, inFunA2, FunAble(..)
+  ,-- * Monoid constructors(..), inFunA, inFunA2, FunAble(..)
+  ,-- * Monoid constructorsMonoid_f(..)
+  ,-- * Flip a binary constructor's type arguments(..)
+  ,-- * Flip a binary constructor's type argumentsFlip(..), biFlip, inFlip, inFlip2, inFlip3, OI, ToOI(..)
+  ,-- * Type application(..), biFlip, inFlip, inFlip2, inFlip3, OI, ToOI(..)
+  ,-- * Type application(:$)(..), App, biApp, inApp, inApp2
+  ,-- * Identity:$)(..), App, biApp, inApp, inApp2
+  ,-- * IdentityId(..),unId, biId, inId, inId2
+  ,-- * Constructor pairing(..),unId, biId, inId, inId2
+  -- ** Unary-- * Constructor pairing
+  ,-- ** Unary(:*:)(..),(*:*), biProd, convProd, (***#), ($*), inProd, inProd2, inProd3
+  ,-- * Binary:*:)(..),(*:*), biProd, convProd, (***#), ($*), inProd, inProd2, inProd3
+  ,-- * Binary(::*::)(..), (*::*), inProdd, inProdd2
+  ,-- * Arrow between /two/ constructor applications::*::)(..), (*::*), inProdd, inProdd2
+  ,-- * Arrow between /two/ constructor applicationsArrw(..), (:->:)
+  , ArrwbiFun(.., )convFun, (:->:,)inArrw, inArrw2, inArrw3
+  ,-- * Augment other modules, convFun, inArrw, inArrw2, inArrw3
+  ,-- * Augment other modulesbiConst, inConst, inConst2, inConst3
+  , biConstbiEndo,,inEndo, inConst2, inConst3
+  , biEndowhere , inEndo
+  ) where
+#if __GLASGOW_HASKELL__ >= 609
+import Control.Category
+import Control.CategoryPrelude hiding ((.), id)
+import#endif  Prelude hiding ((.), id)
+
+import Control.Arrow
+import#if __GLASGOW_HASKELL__ < 610Control.Arrow
+                      hiding (pure)
+#endif
+
+import Data.Monoid
+import Data.MonoidData.Foldable
+import Data.FoldableData.Traversable
+import Data.TraversableControl.Applicative
+import Control.ApplicativeControl.Monad (join,liftM)
+import Control.Monad (join,liftM)
+-- import Test.QuickCheck -- for Endo
+-- import Test.QuickCheck -- for Endo
+import Data.Bijection
+import Data.Bijection
+infixl 9 :. -- , `O`
+infixl 9 :.:*:-- , `O`
+infixl 7 :*::->:
+infixr 1 :->::$
+infixr 0 :$
+infixl 0 $*
+infixl 0 $****#
+infixr 3 ***#
+
+{----------------------------------------------------------
+    Value transformers
+----------------------------------------------------------}
+-- | Unary functions
+type-- | Unary functionsUnop  a = a -> a
+type-- | Binary functions  a = a -> a
+type-- | Binary functionsBinop a = a -> a -> a
+type Binop a = a -> a -> a
+
+{--------------------------------------------------------------------
+    Semantic editor combinators, specialized to functions.
+    See http://conal.net/blog/posts/semantic-editor-combinators/.
+    Also the DeepArrow package.
+--------------------------------------------------------------------}
+-- | Add pre-processing
+-- | Add pre-processing-- argument :: (a' -> a) -> ((a -> b) -> (a' -> b))
+argument-- argument :: (a' -> a) -> ((a -> b) -> (a' -> b)):: Category cat => (a' `cat` a) -> ((a `cat` b) -> (a' `cat` b))
+argument ::= flip(.)  cat => (a' `cat` a) -> ((a `cat` b) -> (a' `cat` b))
+argument = flip (.)
+-- | Add post-processing
+result-- | Add post-processing:: Category cat => (b `cat` b') -> ((a `cat` b) -> (a `cat` b'))
+result ::= (Category.)       cat => (b `cat` b') -> ((a `cat` b) -> (a `cat` b'))
+result = (.)
+infixr 1 ~>, ~>*
+infixr 1 ~>, ~>*
+infixl 1 <~, *<~
+-- | Add pre- and post processing
+(-- | Add pre- and post processing~>) :: Category cat =>
+(~>) :: Category(a' `cat`cata) => (b `cat` b') -> ((a `cat` b) -> (a' `cat` b'))
+-- (f ~> h) g = h . g . fa' `cat` a) -> (b `cat` b') -> ((a `cat` b) -> (a' `cat` b'))
+f-- (f ~> h) g = h . g . f~> h = result h . argument f
+f ~> h = result h . argument f
+(<~) :: Category cat =>
+(<~) :: Category(b `cat` catb') => (a' `cat` a) -> ((a `cat` b) -> (a' `cat` b'))
+(<~) = flipb `cat(~>` b') -> (a' `cat` a) -> ((a `cat` b) -> (a' `cat` b'))
+(<~) = flip (~>)
+-- If I add argument back to DeepArrow, we can get a different generalization:
+---- If I add argument back to DeepArrow, we can get a different generalization:
+---- (~>) :: DeepArrow cat => (a' `cat` a) -> (b `cat` b') -> ((a -> b) `cat` (a' -> b'))
+-- (~>) :: DeepArrow cat => (a' `cat` a) -> (b `cat` b') -> ((a -> b) `cat` (a' -> b'))
+-- | Like '(~>)' but specialized to functors and functions.
+(-- | Like '(~>)' but specialized to functors and functions.~>*) :: (Functor p, Functor q) =>
+(~>*) :: (Functora' -> a)p,->Functor(b -> b') => (p a -> q b) -> (p a' -> q b')
+f ~>* g =(a'fmap->fa)~>->fmapb ->g  b') -> (p a -> q b) -> (p a' -> q b')
+f ~>* g = fmap f ~> fmap g
+(*<~) :: (Functor p, Functor q) =>
+(*<~) :: (Functorb -> b')p,->Functor(a' -> q) => (p a -> q b) -> (p a' -> q b')
+(*<~) = flipb ->(~>*) -> (a' -> a) -> (p a -> q b) -> (p a' -> q b')
+(*<~) = flip (~>*)
+-- (~>*) and (*<~) could be generalized to other categories (beside functions)
+-- if we use a more general Functor, as in the "categories" package.-- (~>*) and (*<~) could be generalized to other categories (beside functions)
+-- if we use a more general Functor, as in the "categories" package.
+{----------------------------------------------------------
+    Contravariant functors
+----------------------------------------------------------}
+-- | Contravariant functors.  often useful for /acceptors/ (consumers,
+-- sinks) of values.-- | Contravariant functors.  often useful for /acceptors/ (consumers,
+class-- sinks) of values.ContraFunctor h where
+classcontraFmap:: (a -> whereb) -> (h b -> h a)
+  contraFmap :: (a -> b) -> (h b -> h a)
+-- | Bijections on contravariant functors
+bicomap-- | Bijections on contravariant functors:: ContraFunctor f => (a :<->: b) -> (f a :<->: f b)
+bicomap ::(BiContraFunctorab ba) = Bi (fcontraFmap=> (a :<->:ba)b)contraFmap-> (f a :<->:ab) f b)
+bicomap (Bi ab ba) = Bi (contraFmap ba) (contraFmap ab)
+
+{----------------------------------------------------------
+    Type composition
+----------------------------------------------------------}
+{- |
+
+Composition of unary type constructors
+
+There are (at least) two useful 'Monoid' instances, so you'll have to
+pick one and type-specialize it (filling in all or parts of @g@ and\/or @f@).
+
+>     -- standard Monoid instance for Applicative applied to Monoid
+>     instance (Applicative (g :. f), Monoid a) => Monoid ((g :. f) a) where
+>       { mempty = pure mempty; mappend = liftA2 mappend }
+>     -- Especially handy when g is a Monoid_f.
+>     instance Monoid (g (f a)) => Monoid ((g :. f) a) where
+>       { mempty = O mempty; mappend = inO2 mappend }
+
+Corresponding to the first and second definitions above,
+
+>     instance (Applicative g, Monoid_f f) => Monoid_f (g :. f) where
+>       { mempty_f = O (pure mempty_f); mappend_f = inO2 (liftA2 mappend_f) }
+>     instance Monoid_f g => Monoid_f (g :. f) where
+>       { mempty_f = O mempty_f; mappend_f = inO2 mappend_f }
+
+Similarly, there are two useful 'Functor' instances and two useful
+'ContraFunctor' instances.
+
+>     instance (      Functor g,       Functor f) => Functor (g :. f) where fmap = fmapFF
+>     instance (ContraFunctor g, ContraFunctor f) => Functor (g :. f) where fmap = fmapCC
+>
+>     instance (      Functor g, ContraFunctor f) => ContraFunctor (g :. f) where contraFmap = contraFmapFC
+>     instance (ContraFunctor g,       Functor f) => ContraFunctor (g :. f) where contraFmap = contraFmapCF
+
+However, it's such a bother to define the Functor instances per
+composition type, I've left the fmapFF case in.  If you want the fmapCC
+one, you're out of luck for now.  I'd love to hear a good solution.  Maybe
+someday Haskell will do Prolog-style search for instances, subgoaling the
+constraints, rather than just matching instance heads.
+
+-}newtype (g :. f) a = O (g (f a)) deriving (Eq,Show)
+newtype (g :. f) a = O (g (f a)) deriving (Eq,Show)
+-- newtype (g :. f) a = O { unO :: g (f a) } deriving Show
+-- newtype (g :. f) a = O { unO :: g (f a) } deriving Show
+-- | Unwrap a '(:.)'.
+unO-- | Unwrap a '(:.)'.:: (g :. f) a -> g (f a)
+unO ::(O (gfag :.) =f)gfa -> g (f a)
+unO (O gfa) = gfa
+-- | Compatibility synonym
+type-- | Compatibility synonymO = (:.)
+type O = (:.)
+-- Here it is, as promised.
+-- Here it is, as promised.
+instance (Functor g, Functor f) => Functor (g :. f) where fmap = fmapFF
+instance (Functor g, Functor f) => Functor (g :. f) where fmap = fmapFF
+-- or
+---- or
+----   deriving instance (Functor g, Functor f) => Functor (g :. f)
+--   deriving instance (Functor g, Functor f) => Functor (g :. f)
+-- These next two instances are based on suggestions from Creighton Hogg:
+-- These next two instances are based on suggestions from Creighton Hogg:
+instance (Foldable g, Foldable f, Functor g) => Foldable (g :. f) where
+instance-- foldMap f = fold . fmap (foldMap f) . unOFoldable g, Foldable f, Functor g) => Foldable (g :. f) where
+  foldMap-- foldMap f = fold . fmap (foldMap f) . unOf = foldMap (foldMap f) . unO
+  foldMap-- fold (O gfa) = fold (fold <$> gfa) = foldMap (foldMap f) . unO
+  -- fold = fold . fmap fold . unO-- fold (O gfa) = fold (fold <$> gfa)
+  fold-- fold = fold . fmap fold . unO= foldMap fold . unO
+  fold-- I could let fold default= foldMap fold . unO
+  -- I could let fold default
+instance (Traversable g, Traversable f) => Traversable (g :. f) where
+instance-- sequenceA = fmap O . sequenceA . fmap sequenceA . unOTraversable g, Traversable f) => Traversable (g :. f) where
+  -- sequenceA = fmap O . traverse sequenceA . unO-- sequenceA = fmap O . sequenceA . fmap sequenceA . unO
+  -- sequenceA = fmap O . traverse sequenceA . unO-- sequenceA = (unO ~> fmap O) (traverse sequenceA)
+  -- sequenceA = (unO ~> fmap O) (traverse sequenceA)-- traverse f = fmap O . traverse (traverse f) . unO
+  traverse-- traverse f = fmap O . traverse (traverse f) . unO= (unO ~> fmap O) . traverse . traverse
+  traverse = (unO ~> fmap O) . traverse . traverse
+-- traverse f
+-- traverse f-- sequenceA . fmap f
+-- sequenceA . fmap f-- sequenceA . (inO.fmap.fmap) f
+-- sequenceA . (inO.fmap.fmap) f-- sequenceA . inO (fmap (fmap f))
+-- sequenceA . inO (fmap (fmap f))-- sequenceA . O . fmap (fmap f) . unO
+-- sequenceA . O . fmap (fmap f) . unO-- fmap O . traverse sequenceA . unO . O . fmap (fmap f) . unO
+-- fmap O . traverse sequenceA . fmap (fmap f) . unO-- fmap O . traverse sequenceA . unO . O . fmap (fmap f) . unO
+-- fmap O . traverse (sequenceA .  fmap f) . unO-- fmap O . traverse sequenceA . fmap (fmap f) . unO
+-- fmap O . traverse (traverse f) . unO-- fmap O . traverse (sequenceA .  fmap f) . unO
+-- fmap O . traverse (traverse f) . unO
+-- instance (Functor g, Functor f) => Functor (g :. f) where
+--   fmap = inO.fmap.fmap-- instance (Functor g, Functor f) => Functor (g :. f) where
+--   fmap = inO.fmap.fmap
+-- | @newtype@ bijection
+biO-- | @newtype@ bijection:: g (f a) :<->: (g :. f) a
+biO ::= Bi (funO) :<->: (g :. f) a
+biO = Bi O unO
+-- | Compose a bijection, Functor style
+convO-- | Compose a bijection, Functor style:: Functor g => (b :<->: g c) -> (c :<->: f a) -> (b :<->: (g :. f) a)
+convO ::biGFunctorbiF = biG =>>>>bbimapbiF c)>>>->BicO:<->:unO  f a) -> (b :<->: (g :. f) a)
+convO biG biF = biG >>> bimap biF >>> Bi O unO
+-- | Compose a bijection, ContraFunctor style
+coconvO-- | Compose a bijection, ContraFunctor style:: ContraFunctor g => (b :<->: g c) -> (c :<->: f a) -> (b :<->: (g :. f) a)
+coconvO ::biGContraFunctorbiF = biG >>>gbicomap=> (b :<->:biF >>> c)Bi->O (unOc :<->: f a) -> (b :<->: (g :. f) a)
+coconvO biG biF = biG >>> bicomap biF >>> Bi O unO
+
+-- | Apply a unary function within the 'O' constructor.
+inO-- | Apply a unary function within the 'O' constructor.:: (g (f a) -> g' (f' a')) -> ((g :. f) a -> (g' :. f') a')
+inO ::= unOg (~>f a) -> g' (f' a')) -> ((g :. f) a -> (g' :. f') a')
+inO = unO ~> O
+-- | Apply a binary function within the 'O' constructor.
+inO2-- | Apply a binary function within the 'O' constructor.:: (g (f a)   -> g' (f' a')   -> g'' (f'' a''))
+inO2 :: (gg(f:.a)) a->->g'(g'f':.a'f')) a'->->(g''f'':.a''f'')) a'')
+inO2 ->= unO(g~>inO) a -> (g' :. f') a' -> (g'' :. f'') a'')
+inO2 = unO ~> inO
+-- | Apply a ternary function within the 'O' constructor.
+inO3-- | Apply a ternary function within the 'O' constructor.:: (g (f a)   -> g' (f' a')   -> g'' (f'' a'')   -> g''' (f''' a'''))
+inO3 :: (gg(f:.a)) a->->g'(g'f':.a'f')) a'->->(g''f'':.a''f'')) a''-> g'''-> (g'''f''':.a'''f''')) a''')
+inO3 ->= unO(g~>inO2) a -> (g' :. f') a' -> (g'' :. f'') a'' -> (g''' :. f''') a''')
+inO3 = unO ~> inO2
+
+-- | Handy combination of 'O' and 'pure'.
+oPure-- | Handy combination of 'O' and 'pure'.:: (Applicative g) => f a -> (g :. f) a
+oPure   :: (Applicative g) => f a -> (g :. f) a
+-- | Handy combination of 'inO' and 'fmap'.
+oFmap-- | Handy combination of 'inO' and 'fmap'.:: (Functor g') =>
+oFmap   :: (Functorf a -> f')a'=>) -> (g' :. f) a -> (g' :. f') a'
+           (f a -> f' a') -> (g' :. f) a -> (g' :. f') a'
+-- | Handy combination of 'inO2' and 'liftA2'.
+oLiftA2-- | Handy combination of 'inO2' and 'liftA2'.:: (Applicative g'') =>
+oLiftA2 :: (Applicativef a -> f' a'g''->)f''=> a'')
+        -> (fg'' -> f'f) a'a ->->(f'' a'':. )f') a' -> (g'' :. f'') a''
+        -> (g'' :. f) a -> (g'' :. f') a' -> (g'' :. f'') a''
+-- | Handy combination of 'inO3' and 'liftA3'.
+oLiftA3-- | Handy combination of 'inO3' and 'liftA3'.:: (Applicative g''') =>
+oLiftA3 :: (Applicativef a -> f' a'g'''-> )f''=>a'' -> f''' a''')
+        -> (fg''' ->:.f'f)a'a -> f'' a'' -> f''' a''')
+        -> (g''' :. ff'))aa'
+        -> (g''' :. f'f''))a'a''
+        -> (g''' :. f''f'''))a''a'''
+        -> (g''' :. f''') a'''
+oPure   = O    . pure
+oPure   = OinO  . pure
+oFmapoLiftA2 = inOinO2 . fmapliftA2
+oLiftA2 = inO2 . liftA2
+oLiftA3 = inO3 . liftA3
+
+-- | Used for the @Functor :. Functor@ instance of 'Functor'
+fmapFF-- | Used for the @Functor :. Functor@ instance of 'Functor':: (  Functor g,   Functor f) => (a -> b) -> (g :. f) a -> (g :. f) b
+fmapFF ::= inO .Functorfmap.fmap,   Functor f) => (a -> b) -> (g :. f) a -> (g :. f) b
+fmapFF = inO.fmap.fmap
+-- | Used for the @ContraFunctor :. ContraFunctor@ instance of 'Functor'
+fmapCC-- | Used for the @ContraFunctor :. ContraFunctor@ instance of 'Functor':: (ContraFunctor g, ContraFunctor f) => (a -> b) -> (g :. f) a -> (g :. f) b
+fmapCC ::= inOContraFunctor.contraFmap.contraFmap, ContraFunctor f) => (a -> b) -> (g :. f) a -> (g :. f) b
+fmapCC = inO.contraFmap.contraFmap
+-- | Used for the @Functor :. ContraFunctor@ instance of 'Functor'
+contraFmapFC-- | Used for the @Functor :. ContraFunctor@ instance of 'Functor':: (Functor g, ContraFunctor f) => (b -> a) -> (g :. f) a -> (g :. f) b
+contraFmapFC ::= inOFunctor.fmap.contraFmap, ContraFunctor f) => (b -> a) -> (g :. f) a -> (g :. f) b
+contraFmapFC = inO.fmap.contraFmap
+-- contraFmapFC h (O gf) = O (fmap (contraFmap h) gf)
+-- contraFmapFC h (O gf) = O (fmap (contraFmap h) gf)
+-- | Used for the @ContraFunctor :. Functor@ instance of 'Functor'
+contraFmapCF-- | Used for the @ContraFunctor :. Functor@ instance of 'Functor':: (ContraFunctor g, Functor f) => (b -> a) -> (g :. f) a -> (g :. f) b
+contraFmapCF ::= inOContraFunctor.contraFmap.fmap, Functor f) => (b -> a) -> (g :. f) a -> (g :. f) b
+contraFmapCF = inO.contraFmap.fmap
+-- contraFmapCF h (O gf) = O (contraFmap (fmap h) gf)
+-- contraFmapCF h (O gf) = O (contraFmap (fmap h) gf)
+instance (Applicative g, Applicative f) => Applicative (g :. f) where
+instancepure  =(ApplicativeO . pure . pure, Applicative f) => Applicative (g :. f) where
+  pure(<*>) = OinO2 pure.liftA2 pure) (<*>)
+  (<*>) = (inO2.liftA2) (<*>)
+-- Possible Alternative instances:
+-- Possible Alternative instances:
+-- instance (Applicative g, Alternative f) => Alternative (g :. f) where
+--   empty = O (pure empty)-- instance (Applicative g, Alternative f) => Alternative (g :. f) where
+--   empty = O (pure empty)--   (<|>) = inO2 (liftA2 (<|>))
+--   (<|>) = inO2 (liftA2 (<|>))
+-- instance (Alternative g, Applicative f) => Alternative (g :. f) where
+--   empty = O empty-- instance (Alternative g, Applicative f) => Alternative (g :. f) where
+--   empty = O empty--   (<|>) = inO2 (<|>)
+--   (<|>) = inO2 (<|>)
+
+-- Possible Monoid instances:
+-- Possible Monoid instances:
+-- instance (Applicative g, Applicative f, Monoid a) => Monoid ((g :. f) a) where
+--   mempty  = pure mempty-- instance (Applicative g, Applicative f, Monoid a) => Monoid ((g :. f) a) where
+--   mempty  = pure mempty--   mappend = liftA2 mappend
+--   mappend = liftA2 mappend
+-- instance Monoid (g (f a)) => Monoid ((g :. f) a) where
+--   mempty  = O mempty-- instance Monoid (g (f a)) => Monoid ((g :. f) a) where
+--   mempty  = O mempty--   mappend = inO2 mappend
+--   mappend = inO2 mappend
+
+
+-- A first pass at monad composition.  But now I've read "Composing
+-- A first pass at monad composition.  But now I've read "Composing-- Monads", and I know there's more to it.  At least four different ways,
+-- all with conflicting Monad instances.-- Monads", and I know there's more to it.  At least four different ways,
+-- all with conflicting Monad instances.
+-- | Monad distributivity.
+---- | Monad distributivity.
+---- TODO: what conditions are required so that @(m :. n)@ satisfies the monad laws?
+class-- TODO: what conditions are required so that @(m :. n)@ satisfies the monad laws?DistribM m n where
+classdistribM:: nm(n wherea) -> m (n a)
+  distribM :: n (m a) -> m (n a)
+-- | A candidate 'join' for @(m :. n)@
+joinDistribM-- | A candidate 'join' for @(m :. n)@:: (Monad m, Monad n, DistribM m n) =>
+joinDistribM :: (Monadm :. nm,(Monad(m :. n, DistribMa) -> (m m:.n))=>a
+joinDistribM = O(m :.liftM) (join(m :.. njoin) a).->liftMm :.distribM) a   . (liftM.liftM) unO . unO
+joinDistribM = O . liftM join . join . liftM distribM . (liftM.liftM) unO . unO
+-- Derivation:
+---- Derivation:
+----       (m :. n) ((m :. n) a)
+--       (m :. n) ((m :. n) a)--   --> m (n ((m :. n) a))   -- unO
+--   --> m (n ((m :. n) a))   -- unO--   --> m (n (m (n a)))      -- (liftM.liftM) unO
+--   --> m (m (n (n a)))      -- liftM distribM--   --> m (n (m (n a)))      -- (liftM.liftM) unO
+--   --> m (n (n a))          -- join--   --> m (m (n (n a)))      -- liftM distribM
+--   --> m (n (n a))          -- join--   --> m (n a)              -- liftM join
+--   --> (m :. n) a           -- O--   --> m (n a)              -- liftM join
+--   --> (m :. n) a           -- O
+-- | A candidate '(>>=)' for @(m :. n)@
+bindDistribM-- | A candidate '(>>=)' for @(m :. n)@:: (Functor m, Functor n, Monad m, Monad n, DistribM m n) =>
+bindDistribM :: (Functorm :. n) m,->(a -> n, Monad:. n) m, Monad-> (m n:., DistribMn) b     m n) =>
+mn `bindDistribM(mf:.= njoinDistribM) a -> (a ->((fmapm :.fn)mnb) -> (m :. n) b
+mn `bindDistribM` f = joinDistribM (fmap f mn)
+returnDistribM :: (Monad m, Monad n) => a -> (m :. n) a
+returnDistribM ::= O(Monad. return, Monad. return) => a -> (m :. n) a
+returnDistribM = O . return . return
+-- Template for specialization:
+---- Template for specialization:
+---- instance (Functor m, Functor n, Monad m, Monad n, DistribM m n)
+--       => Monad (m :. n) where-- instance (Functor m, Functor n, Monad m, Monad n, DistribM m n)
+--   return = returnDistribM--       => Monad (m :. n) where
+--   (>>=)  = bindDistribM--   return = returnDistribM
+--   (>>=)  = bindDistribM
+-- | 'join'-like function for implicitly composed monads
+joinMMT-- | 'join'-like function for implicitly composed monads:: (Monad m, Monad n, Traversable n, Applicative m) =>
+joinMMT :: (Monad(n (mm,nMonada))) n->, Traversablem (n a)     n, Applicative m) =>
+joinMMT = fmap (njoinm (n ajoin))) ->. fmap (nsequenceA)
+joinMMT = fmap join . join . fmap sequenceA
+-- | 'join'-like function for explicitly composed monads
+joinComposeT-- | 'join'-like function for explicitly composed monads:: (Monad m, Monad n, Traversable n, Applicative m) =>
+joinComposeT :: (Monadm :. nm,(Monad(m :. n, Traversablea) -> (m :. n, Applicativea           m) =>
+joinComposeT = O(m :.joinMMT) ((m :.unOn) afmap) ->unOm :. n) a
+joinComposeT = O . joinMMT . unO . fmap unO
+
+{----------------------------------------------------------
+    Unary\/binary composition
+----------------------------------------------------------}
+-- | Composition of type constructors: unary with binary.  Called
+-- "StaticArrow" in [1].-- | Composition of type constructors: unary with binary.  Called
+newtype-- "StaticArrow" in [1].OO f j a b = OO { unOO :: f (a `j` b) }
+newtype OO f j a b = OO { unOO :: f (a `j` b) }
+
+#if __GLASGOW_HASKELL__ >= 609
+instance (Applicative f, Category cat) => Category (OO f cat) where
+instanceid     (Applicative= OO (pure, Categoryid)      cat) => Category (OO f cat) where
+  id g . OO h = OO (pureliftA2).) g h)
+#endif g . OO h = OO (liftA2 (.) g h)
+
+instance (Applicative f, Arrow arr) => Arrow (OO f arr) where
+instance#if __GLASGOW_HASKELL__ < 609Applicative f, Arrow arr) => Arrow (OO f arr) where
+  OO g >>> OO h = OO (liftA2 (>>>) g h)
+#endif
+  arr           = OO . pure . arr
+  arrfirst (OO g)  = OO .liftA .first g)
+  first (OO g)  = OO (liftA first g)
+-- For instance, /\ a b. f (a -> m b) =~ OO f Kleisli m
+-- For instance, /\ a b. f (a -> m b) =~ OO f Kleisli m
+
+{-
+
+{----------------------------------------------------------
+    Binary\/unary composition.  * Not currently exported *
+----------------------------------------------------------}
+
+-- | Composition of type constructors: binary with unary.  See also
+-- 'FunA', which specializes from arrows to functions.
+--
+-- Warning: Wolfgang Jeltsch pointed out a problem with these definitions:
+-- 'splitA' and 'mergeA' are not inverses.  The definition of 'first',
+-- e.g., violates the \"extension\" law and causes repeated execution.
+-- Look for a reformulation or a clarification of required properties of
+-- the applicative functor @f@.
+--
+-- See also "Arrows and Computation", which notes that the following type
+-- is "almost an arrow" (<http://www.soi.city.ac.uk/~ross/papers/fop.html>).
+--
+-- >   newtype ListMap i o = LM ([i] -> [o])
+--
+-- http://www.cse.unsw.edu.au/~dons/haskell-1990-2006/msg16550.html
+
+-- |
+
+newtype ArrowAp (~>) f a b = ArrowAp {unArrowAp :: f a ~> f b}
+
+instance (Arrow (~>), Applicative f) => Arrow (ArrowAp (~>) f) where
+  arr                     = ArrowAp . arr . liftA
+  ArrowAp g >>> ArrowAp h = ArrowAp (g >>> h)
+  first (ArrowAp a)       =
+    ArrowAp (arr splitA >>> first a >>> arr mergeA)
+
+instance (ArrowLoop (~>), Applicative f) => ArrowLoop (ArrowAp (~>) f) where
+  -- loop :: UI (b,d) (c,d) -> UI b c
+  loop (ArrowAp k) =
+    ArrowAp (loop (arr mergeA >>> k >>> arr splitA))
+
+mergeA :: Applicative f => (f a, f b) -> f (a,b)
+mergeA ~(fa,fb) = liftA2 (,) fa fb
+
+splitA :: Applicative f => f (a,b) -> (f a, f b)
+splitA fab = (liftA fst fab, liftA snd fab)
+
+-}
+
+{----------------------------------------------------------
+    (->)\/unary composition
+----------------------------------------------------------}
+-- Hm.  See warning above for 'ArrowAp'
+-- Hm.  See warning above for 'ArrowAp'
+-- | Common pattern for 'Arrow's.
+newtype-- | Common pattern for 'Arrow's.FunA h a b = FunA { unFunA :: h a -> h b }
+newtype FunA h a b = FunA { unFunA :: h a -> h b }
+-- | Apply unary function in side a 'FunA' representation.
+inFunA-- | Apply unary function in side a 'FunA' representation.:: ((h a -> h b) -> (h' a' -> h' b'))
+inFunA :: ((FunAh a ->h ahbb)->->FunAh'h'a'->b') b'))
+inFunA ->= unFunAFunA h~>aFunA -> FunA h' a' b')
+inFunA = unFunA ~> FunA
+-- | Apply binary function in side a 'FunA' representation.
+inFunA2-- | Apply binary function in side a 'FunA' representation.:: ((h a -> h b) -> (h' a' -> h' b') -> (h'' a'' -> h'' b''))
+inFunA2->::((FunA(h ah->a h b->) ->FunAh'h'a'a'->b'h'->b'FunA) ->h''h''a''b''->) h'' b''))
+inFunA2->q (FunA h)a=binFunA-> FunA(qh'f)a' b' -> FunA h'' a'' b'')
+inFunA2 q (FunA f) = inFunA (q f)
+-- | Support needed for a 'FunA' to be an 'Arrow'.
+class-- | Support needed for a 'FunA' to be an 'Arrow'.FunAble h where
+classarrFun::h(wherea -> b) -> (h a -> h b) -- ^ for 'arr'
+  arrFunfirstFun  :: (a ->a ->)h->a'(h-> ->(h hab))-- ^ for 'arr'-> h (a',b)) -- for 'first'
+  firstFunsecondFun :: (h a -> h a') -> (h (a,b) -> h (a'a,,b'b)) -- for 'first'-- for 'second'
+  secondFun(***%)    :: (h b -> h b'b))->->((ha'a,->b)h->b'h (->a,b'(h))a,-- for 'second'a') -> h (b,b')) -- for '(***)'
+  (***%)    :: (h a -> h b) -> (h a'a  -> h b') -> (h (a,->a') ->(b,hb'(b,b'-- for '(&&&)')) -- for '(***)'
+  (&&&%)    :: (h a -> h b) -> (h a  -> h b') -> (h a -> h (b,b')) -- for '(&&&)'
+  -- In direct imitation of Arrow defaults:
+  f-- In direct imitation of Arrow defaults:***% g = firstFun f >>> secondFun g
+  f ***% g = firstFunarrFun (\f >>>-> (secondFunb,b)) >>> g ***% g
+  f &&&% g = arrFun (\b -> (b,b)) >>> f ***% g
+
+#if __GLASGOW_HASKELL__ >= 609
+instance FunAble h => Category (FunA h) where
+instanceid  = FunA(arrFun =>id)       (FunA h) where
+  id(.) = FunAinFunA2arrFun(.)  id)
+#endif.) = inFunA2 (.)
+
+
+instance FunAble h => Arrow (FunA h) where
+instancearr p  FunAble= FunA  h =>(arrFunp(FunA h) where
+#if __GLASGOW_HASKELL__ < 609 p  = FunA    (arrFun p)
+  (>>>)  = inFunA2 (>>>)
+#endif
+  first  = inFunA  firstFun
+  firstsecond = inFunA  firstFunsecondFun
+  second(***)  = inFunAinFunA2 secondFun(***%)
+  (***)  = inFunA2 (***%)
+  (&&&)  = inFunA2 (&&&%)
+
+
+{----------------------------------------------------------
+    Monoid constructors
+----------------------------------------------------------}
+-- | Simulates universal constraint @forall a. Monoid (f a)@.
+---- | Simulates universal constraint @forall a. Monoid (f a)@.
+---- See Simulating Quantified Class Constraints
+-- See Simulating Quantified Class Constraints-- (<http://flint.cs.yale.edu/trifonov/papers/sqcc.pdf>)
+--  Instantiate this schema wherever necessary:-- (<http://flint.cs.yale.edu/trifonov/papers/sqcc.pdf>)
+----  Instantiate this schema wherever necessary:
+---- >    instance Monoid_f f where { mempty_f = mempty ; mappend_f = mappend }
+class-- >    instance Monoid_f f where { mempty_f = mempty ; mappend_f = mappend }Monoid_f m where
+classmempty_f:: mforallwherea. m a
+  mempty_fmappend_f :: forall a. m a -> m a -> m a
+  mappend_f :: forall a. m a -> m a -> m a
+--  e.g.,
+instance--  e.g.,Monoid_f [] where { mempty_f = mempty ; mappend_f = mappend }
+instance Monoid_f [] where { mempty_f = mempty ; mappend_f = mappend }
+
+
+{----------------------------------------------------------
+    Flip a binary constructor's type arguments
+----------------------------------------------------------}
+-- | Flip type arguments
+newtype-- | Flip type argumentsFlip j b a = Flip { unFlip :: a `j` b }
+newtype Flip j b a = Flip { unFlip :: a `j` b }
+-- | @newtype@ bijection
+biFlip-- | @newtype@ bijection:: (a `j` b) :<->: Flip j b a
+biFlip ::= BiaFlipj` bunFlip) :<->: Flip j b a
+biFlip = Bi Flip unFlip
+-- Apply unary function inside of a 'Flip' representation.
+inFlip-- Apply unary function inside of a 'Flip' representation.:: ((a `j` b) -> (a' `k` b')) -> (Flip j b a -> Flip k b' a')
+inFlip ::= unFlip(a `j`~>b)Flip-> (a' `k` b')) -> (Flip j b a -> Flip k b' a')
+inFlip = unFlip ~> Flip
+-- Apply binary function inside of a 'Flip' representation.
+inFlip2-- Apply binary function inside of a 'Flip' representation.:: ((a `j` b) -> (a' `k` b') -> (a'' `l` b''))
+inFlip2 :: ((Flipa `j` b)a->->(a'Flipk` b')a'->->a''Flipl` b''))a'')
+inFlip2 ->f ((FlipFlipar)b=ainFlip-> Flip(fkar) a' -> Flip l b'' a'')
+inFlip2 f (Flip ar) = inFlip (f ar)
+-- Apply ternary function inside of a 'Flip' representation.
+inFlip3-- Apply ternary function inside of a 'Flip' representation.:: ((a `j` b) -> (a' `k` b') -> (a'' `l` b'') -> (a''' `m` b'''))
+inFlip3 :: ((Flipa `j` b)a->->(a'Flipk` b')a'->->a''Flipl` b'')a''-> (->a'''Flipm` b'''))a''')
+inFlip3 ->f ((FlipFlipar)b=ainFlip2-> Flip(k b')a' -> Flip l b'' a'' -> Flip m b''' a''')
+inFlip3 f (Flip ar) = inFlip2 (f ar)
+instance Arrow arr => ContraFunctor (Flip arr b) where
+instancecontraFmaph arr(Flip=>fContraFunctor) = Flip (arr (Flip>>> arrf)  b) where
+  contraFmap h (Flip f) = Flip (arr h >>> f)
+-- Useful for (~>) = (->).  Maybe others.
+instance-- Useful for (~>) = (->).  Maybe others.(Applicative (j a), Monoid o) => Monoid (Flip j o a) where
+instancemempty (Applicative= Flip (pure(jmempty), Monoid)      o) => Monoid (Flip j o a) where
+  memptymappend = FlipinFlip2pure(liftA2mappend)     )
+  mappend = inFlip2 (liftA2 mappend)
+-- TODO: generalize (->) to (~>) with Applicative_f (~>)
+instance-- TODO: generalize (->) to (~>) with Applicative_f (~>)Monoid o => Monoid_f (Flip (->) o) where
+instance{ mempty_f= mempty => Monoid_f; mappend_fFlip= (mappend->) o) where}
+  { mempty_f = mempty ; mappend_f = mappend }
+-- | (-> IO ()) as a 'Flip'.  A ContraFunctor.
+type-- | (-> IO ()) as a 'Flip'.  A ContraFunctor.OI = Flip (->) (IO ())
+type OI = Flip (->) (IO ())
+-- | Convert to an 'OI'.
+class-- | Convert to an 'OI'.ToOI sink where toOI :: sink b -> OI b
+class ToOI sink where toOI :: sink b -> OI b
+instance ToOI OI where toOI = id
+instance ToOI OI where toOI = id
+{----------------------------------------------------------
+    Type application
+----------------------------------------------------------}
+-- | Type application
+-- | Type application-- We can also drop the @App@ constructor, but then we overlap with many
+-- other instances, like @[a]@.  Here's a template for @App@-free-- We can also drop the @App@ constructor, but then we overlap with many
+-- instances.-- other instances, like @[a]@.  Here's a template for @App@-free
+---- instances.
+---- >    instance (Applicative f, Monoid a) => Monoid (f a) where
+-- >      mempty  = pure mempty-- >    instance (Applicative f, Monoid a) => Monoid (f a) where
+-- >      mempty  = pure mempty-- >      mappend = liftA2 mappend
+newtype-- >      mappend = liftA2 mappendf :$ a = App { unApp :: f a }
+newtype f :$ a = App { unApp :: f a }
+-- | Compatibility synonym for (:$).
+type-- | Compatibility synonym for (:$).App = (:$)
+type App = (:$)
+-- How about?
+-- How about?-- data f :$ a = App { unApp :: f a }
+-- data f :$ a = App { unApp :: f a }
+-- | @newtype@ bijection
+biApp-- | @newtype@ bijection:: f a :<->: App f a
+biApp ::= Bi aAppunApp f a
+biApp = Bi App unApp
+-- Apply unary function inside of an 'App representation.
+inApp-- Apply unary function inside of an 'App representation.:: (f a -> f' a') -> (App f a -> App f' a')
+inApp ::= unAppf a -> f'Appa') -> (App f a -> App f' a')
+inApp = unApp ~> App
+-- Apply binary function inside of a 'App' representation.
+inApp2-- Apply binary function inside of a 'App' representation.:: (f a -> f' a' -> f'' a'') -> (App f a -> App f' a' -> App f'' a'')
+inApp2 ::h ((Appf afa->) f'= inApp ->(f''h faa'')  ) -> (App f a -> App f' a' -> App f'' a'')
+inApp2 h (App fa) = inApp (h fa)
+-- Example: App IO ()
+instance-- Example: App IO ()(Applicative f, Monoid m) => Monoid (App f m) where
+instancemempty (Applicative=   App  (pure, Monoidmempty))=> Monoid (App f m) where
+  memptymappend = inApp2  (pureliftA2 memptymappend)
+  mappend = inApp2 (liftA2 mappend)
+--  App a `mappend` App b = App (liftA2 mappend a b)
+--  App a `mappend` App b = App (liftA2 mappend a b)
+
+{----------------------------------------------------------
+    Identity
+----------------------------------------------------------}
+-- | Identity type constructor.  Until there's a better place to find it.
+-- I'd use "Control.Monad.Identity", but I don't want to introduce a-- | Identity type constructor.  Until there's a better place to find it.
+-- dependency on mtl just for Id.-- I'd use "Control.Monad.Identity", but I don't want to introduce a
+newtype-- dependency on mtl just for Id.Id a = Id a deriving Show
+newtype Id a = Id a deriving Show
+-- Could define record field:
+---- Could define record field:
+----   newtype Id a = Id { unId :: a } deriving Show
+----   newtype Id a = Id { unId :: a } deriving Show
+---- but then Show is uglier.
+-- but then Show is uglier.
+-- Extract value from an 'Id'
+unId-- Extract value from an 'Id':: Id a -> a
+unId ::(IdIda)a=->a a
+unId (Id a) = a
+inId :: (a -> b) -> (Id a -> Id b)
+inId ::= unIda ->~>b)Id-> (Id a -> Id b)
+inId = unId ~> Id
+inId2 :: (a -> b -> c) -> (Id a -> Id b -> Id c)
+inId2 ::f ((Ida ->a) b ->inId)(->f a(Id a -> Id b -> Id c)
+inId2 f (Id a) = inId (f a)
+-- | @newtype@ bijection
+biId-- | @newtype@ bijection:: a :<->: Id a
+biId ::= Bi :<->:Id unId a
+biId = Bi Id unId
+instance Functor Id where
+instancefmap f Functor= inId fId where
+  fmap f = inId f
+instance Applicative Id where
+instancepure  =ApplicativeId         Id where
+  pure(<*>) = IdinId2 ($)
+  (<*>) = inId2 ($)
+instance Monad Id where
+instancereturn Monad= pureId where
+  returnId x >>== puref = f x
+  Id x >>= f = f x
+instance Foldable Id where
+instancefoldMapFoldablef (Id a)Id= wheref a
+  foldMap-- foldMap f = f . unId (Id a) = f a
+  -- foldMap = (. unId)-- foldMap f = f . unId
+  -- foldMap = (. unId)
+instance Traversable Id where
+instancesequenceA(Id fa) =IdfmapwhereId fa
+  sequenceA (Id fa) = fmap Id fa
+-- Id fa :: Id (f a)
+-- fa :: f a-- Id fa :: Id (f a)
+-- fa :: f a-- fmap Id fa = f (Id a)
+-- fmap Id fa = f (Id a)
+{----------------------------------------------------------
+    Unary constructor pairing
+----------------------------------------------------------}
+-- | Pairing of unary type constructors
+newtype-- | Pairing of unary type constructors(f :*: g) a = Prod { unProd :: (f a, g a) }
+newtype-- deriving (Show, Eq, Ord)(f :*: g) a = Prod { unProd :: (f a, g a) }
+  -- deriving (Show, Eq, Ord)
+-- | Handy infix & curried 'Prod'
+(-- | Handy infix & curried 'Prod'*:*) :: f a -> g a -> (f :*: g) a
+(*:*) ::= curry a ->Prod a -> (f :*: g) a
+(*:*) = curry Prod
+-- | @newtype@ bijection
+biProd-- | @newtype@ bijection:: (f a, g a) :<->: (f :*: g) a
+biProd ::= BifProd, gunProd) :<->: (f :*: g) a
+biProd = Bi Prod unProd
+-- | Compose a bijection
+convProd-- | Compose a bijection:: (b :<->: f a) -> (c :<->: g a) -> (b,c) :<->: (f :*: g) a
+convProd ::biF(bbiG= biF a***) ->biGc>>>Bi gProd) ->unProdb,c) :<->: (f :*: g) a
+convProd biF biG = biF *** biG >>> Bi Prod unProd
+-- In GHC 6.7, deriving no longer works on types like :*:.  Take out the
+-- following three instances when deriving works again, in GHC 6.8.-- In GHC 6.7, deriving no longer works on types like :*:.  Take out the
+-- following three instances when deriving works again, in GHC 6.8.
+instance (Show (f a, g a)) => Show ((f :*: g) a) where
+instanceshow (ProdShowp)(f a"Prod ", g a))++=>showp((f :*: g) a) where
+  show (Prod p) = "Prod " ++ show p
+instance (Eq (f a, g a)) => Eq ((f :*: g) a) where
+instanceProd p (==EqProdf a, g a))===>q Eq ((f :*: g) a) where
+  Prod p == Prod q = p == q
+instance (Ord (f a, g a)) => Ord ((f :*: g) a) where
+instanceProd p (<=OrdProdf a,=gpa)<=) =>q  Ord ((f :*: g) a) where
+  Prod p <=`compare q =Prod <=q q p `compare` q
+  Prod p `compare` Prod q = p `compare` q
+-- | Apply unary function inside of @f :*: g@ representation.
+inProd-- | Apply unary function inside of @f :*: g@ representation.:: ((f a, g a) -> (f' a', g' a'))
+inProd :: ((f a:*:, gga)a->->(f'(f'a':*:, g'g'a') )a'))
+inProd ->= unProd(f :*:~>g)Prod -> (f' :*: g') a')
+inProd = unProd ~> Prod
+-- | Apply binary function inside of @f :*: g@ representation.
+inProd2-- | Apply binary function inside of @f :*: g@ representation.:: ((f a, g a) -> (f' a', g' a') -> (f'' a'', g'' a''))
+inProd2 :: ((f a:*:, gga)a->->(f'(f'a':*:, g'g'a') )a'->->(f''(f''a'':*:, g'')a''a''))
+inProd2 ->h ((Prod(f :*:p) g)inProd -> (f'(h :*:p)  g') a' -> (f'' :*: g'') a'')
+inProd2 h (Prod p) = inProd (h p)
+-- | Apply ternary function inside of @f :*: g@ representation.
+inProd3-- | Apply ternary function inside of @f :*: g@ representation.:: ((f a, g a) -> (f' a', g' a') -> (f'' a'', g'' a'')
+inProd3 :: ((f a, g a) -> (f'f''',a''',a'g''') ->a'''f''))a'', g'' a'')
+        -> ((f :*: g) a->->(f'''(f' :*:g',)g'''a' ->(f'')) :*: g'') a''
+        -> ((f :*: g) a -> (f'f''':*:)g''')->a'''f'')  :*: g'') a''
+inProd3 h (Prod p) = inProd2-> (f'''(h p:*:)   g''') a''')
+inProd3 h (Prod p) = inProd2 (h p)
+-- | A handy combining form.  See '(***#)' for an sample use.
+(-- | A handy combining form.  See '(***#)' for an sample use.$*) :: (a -> b, a' -> b') -> (a,a') -> (b,b')
+($*) ::= uncurrya -> b,***)-> b') -> (a,a') -> (b,b')
+($*) = uncurry (***)
+-- | Combine two binary functions into a binary function on pairs
+(-- | Combine two binary functions into a binary function on pairs***#) :: (a -> b -> c) -> (a' -> b' -> c')
+(***#) :: (a,->a'b -> c),->b'(a'->->(cb', c'->) c')
+h ***# -> (a, a')bs->->b,hb',h'))->$*(cas, c')bs
+h ***# h' = \-- (uncurry (***)) . (h *** h') bs -> (h,h') $* as $* bs
+            -- (uncurry (***)) . (h *** h')-- \ as bs -> uncurry (***) ((h *** h') as) bs
+            -- \ as bs -> (h *** h') as $* bs-- \ as bs -> uncurry (***) ((h *** h') as) bs
+            -- \ as bs -> (h *** h') as $* bs-- \ (a,a') (b,b') -> (h a b, h' a' b')
+            -- \ (a,a') (b,b') -> (h a b, h' a' b')
+-- instance (Monoid a, Monoid b) => Monoid (a,b) where
+--  mempty = (mempty, mempty)-- instance (Monoid a, Monoid b) => Monoid (a,b) where
+--  mempty = (mempty, mempty)--  mappend = mappend ***# mappend
+--  mappend = mappend ***# mappend
+instance (Monoid_f f, Monoid_f g) => Monoid_f (f :*: g) where
+instancemempty_fMonoid_f= Prod f,mempty_f,mempty_f) => Monoid_f)        (f :*: g) where
+  mempty_fmappend_f = ProdinProd2mempty_f(mappend_f,mempty_f***#)mappend_f)
+  mappend_f = inProd2 (mappend_f ***# mappend_f)
+instance (Functor f, Functor g) => Functor (f :*: g) where
+instancefmap h (FunctorinProd f,fmaph ***g)fmap=> Functorh)      (f :*: g) where
+  fmap h = inProd (fmap h *** fmap h)
+instance (Applicative f, Applicative g) => Applicative (f :*: g) where
+instancepure a (ApplicativeProd (pure f, Applicativepure a)     g) => Applicative (f :*: g) where
+  pure(<*>)a==inProd2 (pure(\ (a,gpure) (a,a) -> (f <*> a, g <*> b))
+  (<*>) = inProd2 (\ (f,g) (a,b) -> (f <*> a, g <*> b))
+{----------------------------------------------------------
+    Binary constructor pairing
+----------------------------------------------------------}
+-- | Pairing of binary type constructors
+newtype-- | Pairing of binary type constructors(f ::*:: g) a b = Prodd { unProdd :: (f a b, g a b) }
+newtypederiving(f ::*::(Show,g)Eqa bOrd=)Prodd { unProdd :: (f a b, g a b) }
+  deriving (Show, Eq, Ord)
+-- | Handy infix & curried 'Prodd'
+(-- | Handy infix & curried 'Prodd'*::*) :: f a b -> g a b -> (f ::*:: g) a b
+(*::*) ::= curry a bProdd-> g a b -> (f ::*:: g) a b
+(*::*) = curry Prodd
+-- -- Remove the next three when GHC can derive them (6.8).
+-- -- Remove the next three when GHC can derive them (6.8).
+-- instance (Show (f a b, g a b)) => Show ((f ::*:: g) a b) where
+--   show (Prodd p) = "Prod " ++ show p-- instance (Show (f a b, g a b)) => Show ((f ::*:: g) a b) where
+--   show (Prodd p) = "Prod " ++ show p
+-- instance (Eq (f a b, g a b)) => Eq ((f ::*:: g) a b) where
+--   Prodd p == Prodd q = p == q-- instance (Eq (f a b, g a b)) => Eq ((f ::*:: g) a b) where
+--   Prodd p == Prodd q = p == q
+-- instance (Ord (f a b, g a b)) => Ord ((f ::*:: g) a b) where
+--   Prodd p < Prodd q = p < q-- instance (Ord (f a b, g a b)) => Ord ((f ::*:: g) a b) where
+--   Prodd p < Prodd q = p < q
+-- | Apply binary function inside of @f :*: g@ representation.
+inProdd-- | Apply binary function inside of @f :*: g@ representation.:: ((f a b, g a b) -> (f' a' b', g' a' b'))
+inProdd :: ((f a::*::, gga b)b->->(f'(f'a'::*::, g')a'a'b'b'))
+inProdd ->= unProdd(f ::*::~> gProdd) a b -> (f' ::*:: g') a' b')
+inProdd = unProdd ~> Prodd
+-- | Apply binary function inside of @f :*: g@ representation.
+inProdd2-- | Apply binary function inside of @f :*: g@ representation.:: ((f a b, g a b) -> (f' a' b', g' a' b') -> (f'' a'' b'', g'' a'' b''))
+inProdd2 :: ((f a::*::, gga b)b->->(f'(f'a'::*::, g')a'a'b'b') -> (f'' a''::*::g'', g'') a''b'') ))
+inProdd2 ->h ((Prodd(f ::*::p) =g)inProdd b ->((f'p)::*:: g') a' b' -> (f'' ::*:: g'') a'' b'')
+inProdd2 h (Prodd p) = inProdd (h p)
+
+#if __GLASGOW_HASKELL__ >= 609
+instance (Category f, Category f') => Category (f ::*:: f') where
+instanceid  = ProddCategory(id,id, Category f') => Category (f ::*:: f') where
+  id(.) = ProddinProdd2id,id(.) ***# (.))
+#endif.) = inProdd2 ((.) ***# (.))
+
+
+instance (Arrow f, Arrow f') => Arrow (f ::*:: f') where
+instancearr    (ArrowProddf, Arrow(arr &&&) =>arrArrow)     (f ::*:: f') where
+#if __GLASGOW_HASKELL__ < 609    = Prodd . (arr &&&  arr)
+  (>>>)  = inProdd2 ((>>>) ***# (>>>))
+#endif
+  first  = inProdd  (first  ***  first )
+  firstsecond = inProdd  (firstsecond ***  firstsecond)
+  second(***)  = inProddinProdd2 (second(***)  ******# second(***) )
+  (***)  = inProdd2 ((***)  ***# (***) )
+  (&&&)  = inProdd2 ((&&&)  ***# (&&&) )
+
+{----------------------------------------------------------
+    Arrow between /two/ constructor applications
+----------------------------------------------------------}
+-- | Arrow-like type between type constructors (doesn't enforce @Arrow
+-- (~>)@ here).-- | Arrow-like type between type constructors (doesn't enforce @Arrow
+newtype-- (~>)@ here).Arrw j f g a = Arrw { unArrw :: f a `j` g a } -- deriving Monoid
+newtype Arrw j f g a = Arrw { unArrw :: f a `j` g a } -- deriving Monoid
+-- For ghc-6.6, use the "deriving" above, but for 6.8 use the "deriving" below.
+-- For ghc-6.6, use the "deriving" above, but for 6.8 use the "deriving" below.
+deriving instance Monoid (f a `j` g a) => Monoid (Arrw j f g a)
+deriving instance Monoid (f a `j` g a) => Monoid (Arrw j f g a)
+-- Replace with generalized bijection?
+-- Replace with generalized bijection?
+-- toArrw :: Arrow j => (f a ~> b) -> (c ~> g a) -> ((b ~> c) -> Arrw j f g a)
+-- toArrw fromF toG h = Arrw (fromF >>> h >>> toG)-- toArrw :: Arrow j => (f a ~> b) -> (c ~> g a) -> ((b ~> c) -> Arrw j f g a)
+-- toArrw fromF toG h = Arrw (fromF >>> h >>> toG)
+-- fromArrw :: Arrow j => (b ~> f a) -> (g a ~> c) -> (Arrw j f g a -> (b ~> c))
+-- fromArrw toF fromG (Arrw h') = toF >>> h' >>> fromG-- fromArrw :: Arrow j => (b ~> f a) -> (g a ~> c) -> (Arrw j f g a -> (b ~> c))
+-- fromArrw toF fromG (Arrw h') = toF >>> h' >>> fromG
+-- | Apply unary function inside of @Arrw@ representation.
+inArrw-- | Apply unary function inside of @Arrw@ representation.:: ((f a `j` g a) -> (f' a' `j` g' a'))
+inArrw :: ((fArrw `j`fgga)a->->(f'(Arrw `j`f'g'g'a') )a'))
+inArrw ->= unArrw(Arrw~> fArrw) a -> (Arrw j f' g') a')
+inArrw = unArrw ~> Arrw
+-- | Apply binary function inside of @Arrw j f g@ representation.
+inArrw2-- | Apply binary function inside of @Arrw j f g@ representation.:: ((f a `j` g a) -> (f' a' `j` g' a') -> (f'' a'' `j` g'' a''))
+inArrw2 :: ((Arrwf a `j` g a)->->Arrwf' a'j f'j`g'g'a'a'->) ->Arrwf''j f''g''j`a'') a''))
+inArrw2 ->h ((ArrwArrwpj f ginArrw -> Arrw(h p)j f' g' a' -> Arrw j f'' g'' a'')
+inArrw2 h (Arrw p) = inArrw (h p)
+-- | Apply ternary function inside of @Arrw j f g@ representation.
+inArrw3-- | Apply ternary function inside of @Arrw j f g@ representation.::
+inArrw3((f a ::`j` g a) -> (f' a' `j` g' a') ->
+  ((ff'' `a''j` gja)g''-> (a''f')a'->`j`f''' a'a''') ->`j` g''' a'''))
+  ->f''((Arrw `j` g''g) aa''->)(->Arrwf'''j f'a'''g') `a'j`->(Arrwj))f'' g'') a'' -> (Arrw j f''' g''') a''')
+inArrw3-> ((Arrwh (Arrw f g) a ->inArrw2Arrw(j f'p) g') a' -> (Arrw j f'' g'') a'' -> (Arrw j f''' g''') a''')
+inArrw3 h (Arrw p) = inArrw2 (h p)
+-- Functor & ContraFunctor instances.  Beware use of 'arr', which is not
+-- available for some of my favorite arrows.-- Functor & ContraFunctor instances.  Beware use of 'arr', which is not
+-- available for some of my favorite arrows.
+instance (Arrow j, ContraFunctor f, Functor g) => Functor (Arrw j f g) where
+instancefmap h (ArrowinArrw,$ContraFunctor\ fga -> arr f,contraFmap g))=>>>>fga >>>Arrwarr jfmap g)hwhere)
+  fmap h = inArrw $ \ fga -> arr (contraFmap h) >>> fga >>> arr (fmap h)
+instance (Arrow j, Functor f, ContraFunctor g) => ContraFunctor (Arrw j f g) where
+instancecontraFmapArrowh =j,inArrw$ \f,fga-> arr (fmapg))=>>>>fga >>> arr (ArrwcontraFmap f g)hwhere)
+  contraFmap h = inArrw $ \ fga -> arr (fmap h) >>> fga >>> arr (contraFmap h)
+-- Restated,
+---- Restated,
+----   contraFmap h = inArrw $ (arr (fmap h) >>>) . (>>> arr (contraFmap h))
+--   contraFmap h = inArrw $ (arr (fmap h) >>>) . (>>> arr (contraFmap h))
+-- 'Arrw' specialized to functions.
+type-- 'Arrw' specialized to functions.(:->:) = Arrw (->)
+type (:->:) = Arrw (->)
+-- | @newtype@ bijection
+biFun-- | @newtype@ bijection:: (f a -> g a) :<->: (f :->: g) a
+biFun ::= BifArrw ->unArrw a) :<->: (f :->: g) a
+biFun = Bi Arrw unArrw
+-- | Compose a bijection
+convFun-- | Compose a bijection:: (b :<->: f a) -> (c :<->: g a) -> ((b -> c) :<->: (f :->: g) a)
+convFun ::bfa(bcga= (bfa a)--->-> (cgac :<->:) >>> gbiFun) -> ((b -> c) :<->: (f :->: g) a)
+convFun bfa cga = (bfa ---> cga) >>> biFun
+-- biA :: ((f a -> g a) :<->: (f :->: g) a)
+-- biA = Bi Arrw unArrw-- biA :: ((f a -> g a) :<->: (f :->: g) a)
+-- biA = Bi Arrw unArrw
+
+{----------------------------------------------------------
+    Augment other modules
+----------------------------------------------------------}
+---- For Control.Applicative Const
+---- For Control.Applicative Const
+-- newtype Const a b = Const { getConst :: a }
+-- newtype Const a b = Const { getConst :: a }
+-- | @newtype@ bijection
+biConst-- | @newtype@ bijection:: a :<->: Const a b
+biConst ::= Bi :<->: ConstgetConst b
+biConst = Bi Const getConst
+inConst :: (a -> b) -> (Const a u -> Const b v)
+inConst ::= getConsta -> b)~>->ConstConst a u -> Const b v)
+inConst = getConst ~> Const
+inConst2 :: (a -> b -> c) -> Const a u -> Const b v -> Const c w
+inConst2 ::f ((Consta -> b)->= cinConst) -> Const(f aa u -> Const b v -> Const c w
+inConst2 f (Const a) = inConst (f a)
+inConst3 :: (a -> b -> c -> d)
+inConst3 :: (Consta -> b ->u -> ->Const) b v -> Const c w -> Const  d x
+inConst3 ->f (Const a)u=->inConst2 b(v ->a) Const c w -> Const  d x
+inConst3 f (Const a) = inConst2 (f a)
+
+---- For Control.Applicative.Endo
+---- For Control.Applicative.Endo
+#if defined(__GLASGOW_HASKELL__) && __GLASGOW_HASKELL__ < 707
+-- deriving instance Monoid o => Monoid (Const o a)
+instance Monoid o => Monoid (Const o a) where
+  mempty  = Const mempty
+  mappend = inConst2 mappend
+#endif
+
+-- newtype Endo a = Endo { appEndo :: a -> a }
+-- newtype Endo a = Endo { appEndo :: a -> a }
+-- | @newtype@ bijection
+biEndo-- | @newtype@ bijection:: (a -> a) :<->: Endo a
+biEndo ::= BiaEndo-> a)appEndo Endo a
+biEndo = Bi Endo appEndo
+instance Monoid_f Endo where { mempty_f = mempty; mappend_f = mappend }
+instance Monoid_f Endo where { mempty_f = mempty; mappend_f = mappend }
+-- | Convenience for partial-manipulating functions
+inEndo-- | Convenience for partial-manipulating functions:: (Unop a -> Unop a') -> (Endo a -> Endo a')
+inEndo ::f =(Unop a ->f .UnopappEndo) -> (Endo a -> Endo a')
+inEndo f = Endo . f . appEndo
+-- -- | Dual for 'inEndo'
+-- -- | Dual for 'inEndo'-- outEndo :: (Endo a -> Endo a') -> ((a->a) -> (a'->a'))
+-- outEndo g = appEndo . g . Endo-- outEndo :: (Endo a -> Endo a') -> ((a->a) -> (a'->a'))
+-- outEndo g = appEndo . g . Endo
+-- -- Missing from Control.Applicative
+-- -- Missing from Control.Applicative-- instance Arbitrary a => Arbitrary (Endo a) where
+--   arbitrary   = fmap Endo arbitrary-- instance Arbitrary a => Arbitrary (Endo a) where
+--   arbitrary   = fmap Endo arbitrary--   coarbitrary = coarbitrary . appEndo
+--   coarbitrary = coarbitrary . appEndo
+-- -- Simple show instance.  Better: show an arbitrary sampling of the function.
+-- instance Show (Endo a) where show _ = "Endo <function>"-- -- Simple show instance.  Better: show an arbitrary sampling of the function.
+-- instance Show (Endo a) where show _ = "Endo <function>"
+
+
+
+</pre>

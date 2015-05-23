@@ -1,0 +1,818 @@
+<a href="Helpers.hs1439025357738342585.out.html">prev</a></br><a href="failures.html">home</a></br><a href="httpTests.hs563613512101929267.out.html">next</a></br></br><pre>15c15
+< -- to the simple datatype in \WinDll.Structs.Structures\
+---
+> -- to the simple datatype in \WinDll.Structs.Structures\-- to the simple datatype in \WinDll.Structs.Structures-- These parsers are for the main program
+71c71
+< -- | Read a file in, And store it in the list of \WinDll.Module\ and \WinDll.CodeGen.CommentDecl\
+---
+> -- | Read a file in, And store it in the list of \WinDll.Module\ and \WinDll.CodeGen.CommentDecl\-- | Read a file in, And store it in the list of \WinDll.Module\ and \WinDll.CodeGen.CommentDeclreadFromFiles :: Exec ()
+403a404
+> 
+</pre></br><h2>original</h2></br><pre>{-# LANGUAGE RelaxedPolyRec #-}
+{-# LANGUAGE CPP            #-}
+
+-----------------------------------------------------------------------------
+-- |
+-- Module      :  Windll
+-- Copyright   :  (c) Tamar Christina 2009 - 2010
+-- License     :  BSD3
+--
+-- Maintainer  :  tamar@zhox.com
+-- Stability   :  experimental
+-- Portability :  portable
+--
+-- Parsers for the preprocessor. Parses using Haskell-src-exts
+-- to the simple datatype in \WinDll.Structs.Structures\
+-- These parsers are for the main program
+--
+-----------------------------------------------------------------------------
+
+module WinDll.Parsers.Hs2lib where
+
+import Language.Haskell.Exts
+import Language.Haskell.Exts.Extension
+import qualified Language.Haskell.Exts as Exts
+import Language.Haskell.Exts.Parser
+import Language.Haskell.Exts.Syntax
+import Language.Haskell.Exts.SrcLoc
+import Language.Haskell.Exts.Comments
+
+import Data.Generics
+
+import Data.IORef
+
+import Data.List
+import Data.Char
+import Data.Maybe
+
+import System.IO.Unsafe
+import System.FilePath
+import System.Directory
+
+import Control.Monad
+
+import WinDll.Structs.Structures hiding (Module)
+import qualified WinDll.Structs.Structures as WinDll
+import WinDll.Session.Hs2lib
+import WinDll.Version.Hs2lib
+import WinDll.Utils.Feedback
+import WinDll.Structs.PrettyPrinting
+import WinDll.Structs.MShow.HaskellSrcExts
+import WinDll.Structs.MShow.MShow
+import WinDll.Structs.Folds.HaskellSrcExts
+import WinDll.Utils.Types
+
+import qualified Debug.Trace as D
+
+-- testFile = "C:\\Users\\Phyx\\Documents\\Haskell\\WinDLL\\test.hs"
+testFile = "C:\\Users\\Phyx\\Documents\\Desktop\\native\\GHCDll.hs"
+
+instance Num SrcLoc where
+    (SrcLoc f l1 c1) - (SrcLoc _ l2 c2) = SrcLoc f (l1-l2) (c1-c2)
+    (SrcLoc f l1 c1) + (SrcLoc _ l2 c2) = SrcLoc f (l1+l2) (c1+c2)
+    (SrcLoc f l1 c1) * (SrcLoc _ l2 c2) = SrcLoc f (l1*l2) (c1*c2)
+    abs (SrcLoc f l c)                  = SrcLoc f (abs l) (abs c)
+    signum (SrcLoc f l c)               = SrcLoc f (signum l) (signum c)
+    fromInteger i                       = SrcLoc [] (fromInteger i) 0
+
+-- instance Ord Decl where
+    -- compare a b = if (a == b) then EQ else LT
+
+-- | Read a file in, And store it in the list of \WinDll.Module\ and \WinDll.CodeGen.CommentDecl\
+readFromFiles :: Exec ()
+readFromFiles =
+ do session <- get
+    inform _normal "Reading and parsing all dependencies..."
+    let workset = workingset session
+    paths <- liftIO $ mapM guessPath ((drop 1 (dependencies workset))++includes session)
+    (result, c0) <- liftM unzip $ forM (absPath session : paths) pdata
+    put $ session { workingset = workset { modules = result
+                                         , pragmas = catMaybes (parseComments (join c0)) } }
+    where pdata :: FilePath -> Exec ((WinDll.Module, [CommentDecl]),[Comment])
+          pdata path =
+            do (m0,c0) <- parseFromFile path
+               inform _detail "Converting AST to internal representation..."
+               moddata' <- convertModule m0 c0
+               inform _detail "Updating module name..."
+               let moddata     = moddata' { header = (header moddata') { headername = reverse $ drop 1 $ dropWhile (/='.') $ reverse $ takeFileName path } }
+               inform _detail "Matching and resolving comments..."
+               let modcomment  = matchFunctionsWithComments c0 (findTypeSignatures m0)
+               inform _detail ("Finished processing " ++ path ++ "...\n")
+               return ((moddata,modcomment), c0)
+
+          fixDependencies :: String -> FilePath
+          fixDependencies current = let ldata = map (\a-> if a == '.' then pathSeparator else a) current
+                                        fdata = ldata++".hs"
+                                    in case unsafePerformIO (doesFileExist fdata) of
+                                           True -> fdata
+                                           False -> ldata ++ ".lhs"
+
+-- | Convert the right comments to the correct pragmas. These are all globally scoped.
+--   .
+--   . supported pragmas are:
+--   .    {- @@ HS2LIB_OPTS <opts>          @@ -} -=- turn on dynamic options present in this file
+--   .    {- @@ INSTANCE <name> <count>     @@ -} -=- generate type info required to work correctly but also hides the warning of missing data definition
+--   .    {- @@ IMPORT <list>               @@ -} -=- Imports to carry over to the new generated module
+--   .    {- @@ HS2C  <htype> <type>@<size> @@ -} -=- Specifies what to translate the Haskell htype to the C type, but we also need its size in bytes
+--   .    {- @@ HS2CS <htype> <c#type>      @@ -} -=- Specifies what to translate the Haskell htype to the C# type, but we also need its size in bytes
+--   .    {- @@ HS2HS <htype> <htype>       @@ -} -=- Specifies what to translate the Haskell htype should be in terms of a compatible FFI type.
+--   .                                                There needs to be an FFIType instance for these types, or be covered by one of the defaults`
+--   .    {- @@ LANGUAGE [Pragmas]          @@ -} -=- Enable these pragmas in the generated source code.
+--   .
+parseComments :: [Comment] -> [Maybe Pragma]
+parseComments []                      = []
+parseComments ((Comment True _ s):xs) = f (trim s): parseComments xs
+ where f :: String -> Maybe Pragma
+       f s | "@@ " `isPrefixOf` s && " @@" `isSuffixOf` s = let stack  = trim (drop 3 (take (length s - 3) s))
+                                                                (x:xs) = lexwords stack
+                                                                name   = (map toUpper x)
+                                                                xs'    = if name == (upper_name ++"_OPTS") then tail $ words stack else xs
+                                                            in if null stack then Nothing else Just (Pragma name xs')
+           | otherwise                                    = Nothing
+
+       trim :: String -> String
+       trim = reverse . dropWhile (==' ') . reverse . dropWhile (==' ')
+parseComments (_                 :xs) = parseComments xs
+
+lexwords :: String -> [String]
+lexwords []  = []
+lexwords str = let res        = lex str
+                   (cur,rest) =  head res
+                   cur'       = case cur of
+                                 []     -> []
+                                 '"':xs -> init xs : lexwords rest
+                                 '-':_  -> let other  = lexwords rest
+                                               (x:xs) = other
+                                           in if null other then cur : other else (cur++x) : xs
+                                 x      -> x : lexwords rest
+               in if null res then [] else cur'
+
+-- | Parse a module from file while retaining comments
+parseFromFile :: FilePath -> Exec (Module, [Comment])
+parseFromFile path =
+ do inform _detail ("Parsing '" ++ path ++ "'")
+    result <- liftIO $ parseFileWithComments (defaultParseMode { extensions = (map EnableExtension [TemplateHaskell, BangPatterns, NamedFieldPuns, ExplicitForAll] ++ glasgowExts), parseFilename = path, fixities = Just baseFixities }) path
+    case result of
+        (ParseOk a) -> return a
+        (ParseFailed loc str) -> die (exename ++ " parse failure, reason: " ++ str ++ " at " ++ show loc)
+
+-- | Finds all the type declarations from a given file.
+findTypeSignatures :: Module -> [Decl]
+findTypeSignatures = listify inner
+    where inner (TypeSig _ _ _) = True
+          inner _               = False
+
+-- | Finds all the type synonym declarations from a given file.
+findTypeDecl :: Module -> [Decl]
+findTypeDecl = listify inner
+    where inner (TypeDecl _ _ _ _) = True
+          inner _                  = False
+
+-- | Finds all the foreign export declarations in a file
+findForeignExports :: Module -> [Decl]
+findForeignExports = listify inner
+   where inner (ForExp _ _ _ _ _) = True
+         inner _                  = False
+
+-- | Finds all the newtype or data declarations withing the given structure
+findDataDeclarations :: Module -> [Decl]
+findDataDeclarations = listify inner
+    where inner (DataDecl _ _ _ _ _ _ _) = True
+          inner _                        = False
+
+-- | Finds all the Storable instances declarations
+findStorableDeclarations :: Module -> [Decl]
+findStorableDeclarations = listify inner
+    where inner (InstDecl _ _ name _ _ ) = "Storable" `elem` (findStrings name)
+          inner _                        = False
+
+-- | Match function and comments to eachother and determine which comments indicate out special -- \@\@ comment flag
+matchFunctionsWithComments :: [Comment] -> [Decl] -> [CommentDecl]
+matchFunctionsWithComments comments decls =
+ let directives = filter (\t->"@@" `isPrefixOf` strip (readComment t)) comments
+ in  merge $ catMaybes $ map (matchDecl decls) (map convertComment directives)
+  where readComment :: Comment -> String
+        readComment (Comment _ _ s) = s
+
+        convertComment :: Comment -> MyComment
+        convertComment (Comment _ l s) = MyComment l s
+
+        strip :: String -> String
+        strip = dropWhile isSpace
+
+        maxScore :: Int
+        maxScore = 500
+
+        getScore :: SrcLoc -> Int
+        getScore (SrcLoc _ l f) = if l > 0 then l else maxScore  -- l*l + f*f
+
+        convertLoc :: SrcSpan -> SrcLoc
+        convertLoc (SrcSpan n l f _ _) = SrcLoc n l f
+
+        matchDecl :: [Decl] -> MyComment -> Maybe CommentDecl
+        matchDecl decls (MyComment l s) =
+            let ordered = sort $ map (\t@(TypeSig d _ _)->(getScore (d- (convertLoc l)),([s],t))) decls
+                value   = head ordered
+                score   = fst value
+            in if score < maxScore then Just (snd value) else Nothing
+
+        merge :: [CommentDecl] -> [CommentDecl]
+        merge [] = []
+        merge x  = map (foldr1 (\(a,_) (b,f)->(a++b,f))) $ groupBy (\a b->snd a==snd b) x
+
+-- | Standard imports list for all generated modules
+stdImports :: Exec [Import]
+stdImports = do session <- get
+                let db = debugging session
+                return $ [ if db
+                              then "WinDll.Lib.NativeMapping_Debug"
+                              else "WinDll.Lib.NativeMapping"
+                         ,if db
+                             then "WinDll.Lib.Tuples_Debug"
+                             else "WinDll.Lib.Tuples"
+                         ,"WinDll.Lib.InstancesTypes"
+#if __GLASGOW_HASKELL__ >= 702
+                         , "System.IO.Unsafe"
+                         ,if db
+                             then "Foreign hiding (free, malloc, alloca, realloc, unsafePerformIO)"
+                             else "Foreign hiding (unsafePerformIO)"
+#else
+                         ,if db
+                             then "Foreign hiding (free, malloc, alloca, realloc)"
+                             else "Foreign"
+#endif
+                         ,"Foreign.C"
+                         ,"Foreign.C.Types"
+                         ,"Foreign.Ptr"
+                         ,if db
+                             then "WinDll.Debug.Alloc"
+                             else "Foreign.Marshal.Alloc"
+                         ,"Foreign.Marshal.Utils"
+                         ,"Foreign.ForeignPtr"
+                         ] ++ if db
+                                 then ["WinDll.Debug.Stack"
+                                      ,"qualified WinDll.Debug.Exports as Ex"
+                                      ]
+                                 else []
+
+-- | Convert the parsed Haskell-src-exts to the internal Module definition.
+--  A nother limitation to get this done on time, is that i don't support infix constructors
+convertModule :: Module -> [Comment] -> Exec WinDll.Module
+convertModule m@(Module (SrcLoc file _ _) (ModuleName modname) _ _ _ _ decl) comments =
+    let header    = Header modname []
+        exports   = map createExport t_func
+        datatypes = map createDataType t_data
+        functions = map createFunction t_func
+        tdecl     = map createTypeSyn t_type
+        instances = map createInstance t_inst
+        foreigns  = map createForeign  t_fexpr
+
+        t_func    = filter isExport $ fixC $ matchFunctionsWithComments comments (findTypeSignatures m)
+        t_data    = findDataDeclarations m
+        t_type    = findTypeDecl m
+        t_inst    = findStorableDeclarations m
+        t_fexpr   = findForeignExports m
+
+    in do session <- get
+          let workset = workingset session
+              newset  = workset { n_exports = n_exports workset ++ foreigns }
+              newsess = session { workingset = newset }
+          put newsess
+          stdi <- stdImports
+          return $ WinDll.Module header file (("@"++modname):stdi) exports datatypes functions instances tdecl
+  where isExport :: CommentDecl -> Bool
+        isExport (flags, _) = any (isPrefixOf "export") (map (map toLower) flags)
+
+        strip :: String -> String
+        strip = dropWhile isSpace
+
+        prep :: String -> String
+        prep = strip . drop 2 . strip
+
+        fixC :: [CommentDecl] -> [CommentDecl]
+        fixC = map (\(c,d)->(map prep c,d))
+
+        createFunction :: CommentDecl -> Function
+        createFunction (p,(TypeSig _ name' typ')) = Function name (tlength typ - 1) typ newAnn typ
+         where args      = findStrings typ
+               t_name    = head $ findStrings name'
+               typ       = simplify typ'
+               export    = strip $ drop 6 $ head' $ filter ((=="export").map toLower.takeWhile (not.(\a->isSpace a || a=='='))) p
+               name      = t_name
+
+        createForeign :: Decl -> HaskellExport
+        createForeign (ForExp _ cc _ name ty) = HaskellExport (convert cc) newAnn (Export name' name' typ typ modname)
+         where convert Exts.StdCall = WinDll.Session.Hs2lib.StdCall
+               convert Exts.CCall   = WinDll.Session.Hs2lib.CCall
+
+               typ   = simplify ty
+               name' = mkName name
+
+               mkName (Exts.Ident  s) = s
+               mkName (Exts.Symbol s) = s
+
+        createExport :: CommentDecl -> Export
+        createExport (p,(TypeSig _ name' _type)) = Export name exportn typ typ modname
+         where t_name  = head $ findStrings name'
+               typ     = simplify _type
+               export  = strip $ drop 6 $ head' $ filter ((=="export").map toLower.takeWhile (not.(\a->isSpace a || a=='='))) p
+               exportn = if ("=" `isPrefixOf` export) then (takeWhile (not.isSpace).strip.tail) export else name
+               name    = t_name
+
+        head' :: [[a]] -> [a]
+        head' []     = []
+        head' (x:xs) = x
+
+        newAnn = noAnn { annModule = modname }
+
+        createTypeSyn :: Decl -> WinDll.TypeDecL
+        createTypeSyn (TypeDecl _ name bind typ) = TypeDecL (head $ findStrings name)
+                                                      (findStrings bind) (simplify typ)
+
+        createDataType :: Decl -> WinDll.DataType
+        createDataType (DataDecl _ Exts.DataType _ name types constr _) = WinDll.DataType (head $ findStrings name) (findStrings types) (map (mkConstr (head $ findStrings name)) constr) NoTag
+        createDataType (DataDecl _ Exts.NewType  _ name types constr _) = WinDll.NewType (head $ findStrings name) (findStrings types) (head $ map (mkConstr (head $ findStrings name)) constr) NoTag
+
+        mkConstr str = (\(QualConDecl _ _ _  con)->case con of
+                                                  (ConDecl cname vars) -> Constr xname Normal (genFreeVars modname name 1 vars)
+                                                      where name = let val = map toLower (str++"_"++xname++"_var")
+                                                                   in (val++)
+                                                            xname = (head $ findStrings cname)
+                                                  (RecDecl cname vars) -> Constr (head $ findStrings cname) Normal (genNamedVars modname vars)
+                                                  (InfixConDecl a name b) -> error "Parse error: Sorry, the current version of windll does not support infix constructor types.")
+        createInstance :: Decl -> WinDll.Instance
+        createInstance (InstDecl _ con name types decls)
+          = QualifiedInstance (head $ findStrings name) types
+
+-- | Generate free variable names
+genFreeVars :: WinDll.ModuleName -> (String -> String) -> Int -> [BangType] -> AnnNamedTypes
+genFreeVars nm f _ []     = []
+genFreeVars nm f n (x:xs) = let ann   = noAnn
+                                t     = getTypeFromBang x
+                                name  = (f.show) n
+                                ann'  = ann{ annModule = nm }
+                                value = AnnType name t  ann' t nm
+                            in value : genFreeVars nm f (n+1) xs
+
+-- | Strip a layer away and get to the real type.
+getTypeFromBang :: BangType -> WinDll.Type
+getTypeFromBang (BangedTy   t) = t
+getTypeFromBang (UnBangedTy t) = t
+getTypeFromBang (UnpackedTy t) = t
+
+-- | Create elements of constructor for records.
+genNamedVars :: Data b => WinDll.ModuleName -> [([b],BangType)] -> AnnNamedTypes
+genNamedVars _ []             = []
+genNamedVars n (((x:_),a):xs) = let ann   = noAnn
+                                    ann'  = ann{ annModule = n }
+                                    ty    = getTypeFromBang a
+                                    name  = head $ findStrings x
+                                    value = AnnType name ty  ann' ty n
+                                in value : genNamedVars n xs
+
+-- | Find all type strings, taking care to support things like type application
+findTypeString :: Language.Haskell.Exts.Syntax.Type -> [String]
+findTypeString (TyForall m c t ) = findTypeString t
+findTypeString (TyFun t1 t2    ) = (findTypeString t1)++(findTypeString t2)
+findTypeString (TyTuple b t    ) = ["(" ++ foldr1 (\a b->a++","++b) (concatMap findTypeString t) ++ ")"]
+findTypeString (TyList t       ) = ["[" ++ unwords (findTypeString t) ++ "]"]
+findTypeString (TyApp t1 t2    ) = [unwords (findTypeString t1 ++ findTypeString t2)]
+findTypeString (TyVar n        ) = findStrings' n
+findTypeString (TyCon q        ) = findStrings' q
+findTypeString (TyParen p      ) = ["(" ++ foldr1 (\a b->a++" -> "++b) (findTypeString p) ++ ")"]
+findTypeString (TyInfix t1 q t2) = findTypeString t1 ++ findStrings' q ++
+                                   findTypeString t2
+findTypeString (TyKind t k     ) = findTypeString t
+
+-- | Rename the AST to not treat SpecialCons special but just as strings
+renameAST :: Data a => a -> a
+renameAST = everywhere (mkT inner)
+ where inner :: QName -> QName
+       inner (Special x) = UnQual (Symbol (mshow x))
+       inner x           = x
+
+-- | Merge the specialized Type version along with the generic version
+findStrings :: Data a => a -> [String]
+findStrings = findStrings' -- `extQ` findTypeString).renameAST
+
+-- | The SYB traversals do too much work, I need to figure out how to solve this. (it applies a matching function in both cases.
+mkUnique :: [String] -> [String]
+mkUnique x = filter condition x
+    where condition y = let y' = y ++ " "
+                            y'' = ' ':y
+                            y''' = (' ':y) ++ " "
+                        in not (case y of
+                                 []   -> True
+                                 (o:_) -> any (\a->y' `isPrefixOf` a || y'' `isSuffixOf` a || y''' `isInfixOf` a) x)
+
+-- simpleTest :: FilePath -> [CommentDecl]
+-- simpleTest path = let (m0, c0) = unsafePerformIO $ parseFromFile path
+                  -- in matchFunctionsWithComments c0 (findTypeSignatures m0)
+
+-- test :: IO WinDll.Module
+-- test = fmap (uncurry convertModule) (parseFromFile testFile)
+</pre></br><h2>printed</h2></br><pre>{-# LANGUAGE RelaxedPolyRec #-}
+{-# LANGUAGE CPP            #-}
+
+-----------------------------------------------------------------------------
+-- |
+-- Module      :  Windll
+-- Copyright   :  (c) Tamar Christina 2009 - 2010
+-- License     :  BSD3
+--
+-- Maintainer  :  tamar@zhox.com
+-- Stability   :  experimental
+-- Portability :  portable
+--
+-- Parsers for the preprocessor. Parses using Haskell-src-exts
+-- to the simple datatype in \WinDll.Structs.Structures\-- to the simple datatype in \WinDll.Structs.Structures-- These parsers are for the main program
+-- These parsers are for the main program
+--
+-----------------------------------------------------------------------------
+
+module WinDll.Parsers.Hs2lib where
+
+import Language.Haskell.Exts
+import Language.Haskell.Exts.Extension
+import qualified Language.Haskell.Exts as Exts
+import Language.Haskell.Exts.Parser
+import Language.Haskell.Exts.Syntax
+import Language.Haskell.Exts.SrcLoc
+import Language.Haskell.Exts.Comments
+
+import Data.Generics
+
+import Data.IORef
+
+import Data.List
+import Data.Char
+import Data.Maybe
+
+import System.IO.Unsafe
+import System.FilePath
+import System.Directory
+
+import Control.Monad
+
+import WinDll.Structs.Structures hiding (Module)
+import qualified WinDll.Structs.Structures as WinDll
+import WinDll.Session.Hs2lib
+import WinDll.Version.Hs2lib
+import WinDll.Utils.Feedback
+import WinDll.Structs.PrettyPrinting
+import WinDll.Structs.MShow.HaskellSrcExts
+import WinDll.Structs.MShow.MShow
+import WinDll.Structs.Folds.HaskellSrcExts
+import WinDll.Utils.Types
+
+import qualified Debug.Trace as D
+
+-- testFile = "C:\\Users\\Phyx\\Documents\\Haskell\\WinDLL\\test.hs"
+testFile = "C:\\Users\\Phyx\\Documents\\Desktop\\native\\GHCDll.hs"
+
+instance Num SrcLoc where
+    (SrcLoc f l1 c1) - (SrcLoc _ l2 c2) = SrcLoc f (l1-l2) (c1-c2)
+    (SrcLoc f l1 c1) + (SrcLoc _ l2 c2) = SrcLoc f (l1+l2) (c1+c2)
+    (SrcLoc f l1 c1) * (SrcLoc _ l2 c2) = SrcLoc f (l1*l2) (c1*c2)
+    abs (SrcLoc f l c)                  = SrcLoc f (abs l) (abs c)
+    signum (SrcLoc f l c)               = SrcLoc f (signum l) (signum c)
+    fromInteger i                       = SrcLoc [] (fromInteger i) 0
+
+-- instance Ord Decl where
+    -- compare a b = if (a == b) then EQ else LT
+
+-- | Read a file in, And store it in the list of \WinDll.Module\ and \WinDll.CodeGen.CommentDecl\-- | Read a file in, And store it in the list of \WinDll.Module\ and \WinDll.CodeGen.CommentDeclreadFromFiles :: Exec ()
+readFromFiles :: Exec ()
+readFromFiles =
+ do session <- get
+    inform _normal "Reading and parsing all dependencies..."
+    let workset = workingset session
+    paths <- liftIO $ mapM guessPath ((drop 1 (dependencies workset))++includes session)
+    (result, c0) <- liftM unzip $ forM (absPath session : paths) pdata
+    put $ session { workingset = workset { modules = result
+                                         , pragmas = catMaybes (parseComments (join c0)) } }
+    where pdata :: FilePath -> Exec ((WinDll.Module, [CommentDecl]),[Comment])
+          pdata path =
+            do (m0,c0) <- parseFromFile path
+               inform _detail "Converting AST to internal representation..."
+               moddata' <- convertModule m0 c0
+               inform _detail "Updating module name..."
+               let moddata     = moddata' { header = (header moddata') { headername = reverse $ drop 1 $ dropWhile (/='.') $ reverse $ takeFileName path } }
+               inform _detail "Matching and resolving comments..."
+               let modcomment  = matchFunctionsWithComments c0 (findTypeSignatures m0)
+               inform _detail ("Finished processing " ++ path ++ "...\n")
+               return ((moddata,modcomment), c0)
+
+          fixDependencies :: String -> FilePath
+          fixDependencies current = let ldata = map (\a-> if a == '.' then pathSeparator else a) current
+                                        fdata = ldata++".hs"
+                                    in case unsafePerformIO (doesFileExist fdata) of
+                                           True -> fdata
+                                           False -> ldata ++ ".lhs"
+
+-- | Convert the right comments to the correct pragmas. These are all globally scoped.
+--   .
+--   . supported pragmas are:
+--   .    {- @@ HS2LIB_OPTS <opts>          @@ -} -=- turn on dynamic options present in this file
+--   .    {- @@ INSTANCE <name> <count>     @@ -} -=- generate type info required to work correctly but also hides the warning of missing data definition
+--   .    {- @@ IMPORT <list>               @@ -} -=- Imports to carry over to the new generated module
+--   .    {- @@ HS2C  <htype> <type>@<size> @@ -} -=- Specifies what to translate the Haskell htype to the C type, but we also need its size in bytes
+--   .    {- @@ HS2CS <htype> <c#type>      @@ -} -=- Specifies what to translate the Haskell htype to the C# type, but we also need its size in bytes
+--   .    {- @@ HS2HS <htype> <htype>       @@ -} -=- Specifies what to translate the Haskell htype should be in terms of a compatible FFI type.
+--   .                                                There needs to be an FFIType instance for these types, or be covered by one of the defaults`
+--   .    {- @@ LANGUAGE [Pragmas]          @@ -} -=- Enable these pragmas in the generated source code.
+--   .
+parseComments :: [Comment] -> [Maybe Pragma]
+parseComments []                      = []
+parseComments ((Comment True _ s):xs) = f (trim s): parseComments xs
+ where f :: String -> Maybe Pragma
+       f s | "@@ " `isPrefixOf` s && " @@" `isSuffixOf` s = let stack  = trim (drop 3 (take (length s - 3) s))
+                                                                (x:xs) = lexwords stack
+                                                                name   = (map toUpper x)
+                                                                xs'    = if name == (upper_name ++"_OPTS") then tail $ words stack else xs
+                                                            in if null stack then Nothing else Just (Pragma name xs')
+           | otherwise                                    = Nothing
+
+       trim :: String -> String
+       trim = reverse . dropWhile (==' ') . reverse . dropWhile (==' ')
+parseComments (_                 :xs) = parseComments xs
+
+lexwords :: String -> [String]
+lexwords []  = []
+lexwords str = let res        = lex str
+                   (cur,rest) =  head res
+                   cur'       = case cur of
+                                 []     -> []
+                                 '"':xs -> init xs : lexwords rest
+                                 '-':_  -> let other  = lexwords rest
+                                               (x:xs) = other
+                                           in if null other then cur : other else (cur++x) : xs
+                                 x      -> x : lexwords rest
+               in if null res then [] else cur'
+
+-- | Parse a module from file while retaining comments
+parseFromFile :: FilePath -> Exec (Module, [Comment])
+parseFromFile path =
+ do inform _detail ("Parsing '" ++ path ++ "'")
+    result <- liftIO $ parseFileWithComments (defaultParseMode { extensions = (map EnableExtension [TemplateHaskell, BangPatterns, NamedFieldPuns, ExplicitForAll] ++ glasgowExts), parseFilename = path, fixities = Just baseFixities }) path
+    case result of
+        (ParseOk a) -> return a
+        (ParseFailed loc str) -> die (exename ++ " parse failure, reason: " ++ str ++ " at " ++ show loc)
+
+-- | Finds all the type declarations from a given file.
+findTypeSignatures :: Module -> [Decl]
+findTypeSignatures = listify inner
+    where inner (TypeSig _ _ _) = True
+          inner _               = False
+
+-- | Finds all the type synonym declarations from a given file.
+findTypeDecl :: Module -> [Decl]
+findTypeDecl = listify inner
+    where inner (TypeDecl _ _ _ _) = True
+          inner _                  = False
+
+-- | Finds all the foreign export declarations in a file
+findForeignExports :: Module -> [Decl]
+findForeignExports = listify inner
+   where inner (ForExp _ _ _ _ _) = True
+         inner _                  = False
+
+-- | Finds all the newtype or data declarations withing the given structure
+findDataDeclarations :: Module -> [Decl]
+findDataDeclarations = listify inner
+    where inner (DataDecl _ _ _ _ _ _ _) = True
+          inner _                        = False
+
+-- | Finds all the Storable instances declarations
+findStorableDeclarations :: Module -> [Decl]
+findStorableDeclarations = listify inner
+    where inner (InstDecl _ _ name _ _ ) = "Storable" `elem` (findStrings name)
+          inner _                        = False
+
+-- | Match function and comments to eachother and determine which comments indicate out special -- \@\@ comment flag
+matchFunctionsWithComments :: [Comment] -> [Decl] -> [CommentDecl]
+matchFunctionsWithComments comments decls =
+ let directives = filter (\t->"@@" `isPrefixOf` strip (readComment t)) comments
+ in  merge $ catMaybes $ map (matchDecl decls) (map convertComment directives)
+  where readComment :: Comment -> String
+        readComment (Comment _ _ s) = s
+
+        convertComment :: Comment -> MyComment
+        convertComment (Comment _ l s) = MyComment l s
+
+        strip :: String -> String
+        strip = dropWhile isSpace
+
+        maxScore :: Int
+        maxScore = 500
+
+        getScore :: SrcLoc -> Int
+        getScore (SrcLoc _ l f) = if l > 0 then l else maxScore  -- l*l + f*f
+
+        convertLoc :: SrcSpan -> SrcLoc
+        convertLoc (SrcSpan n l f _ _) = SrcLoc n l f
+
+        matchDecl :: [Decl] -> MyComment -> Maybe CommentDecl
+        matchDecl decls (MyComment l s) =
+            let ordered = sort $ map (\t@(TypeSig d _ _)->(getScore (d- (convertLoc l)),([s],t))) decls
+                value   = head ordered
+                score   = fst value
+            in if score < maxScore then Just (snd value) else Nothing
+
+        merge :: [CommentDecl] -> [CommentDecl]
+        merge [] = []
+        merge x  = map (foldr1 (\(a,_) (b,f)->(a++b,f))) $ groupBy (\a b->snd a==snd b) x
+
+-- | Standard imports list for all generated modules
+stdImports :: Exec [Import]
+stdImports = do session <- get
+                let db = debugging session
+                return $ [ if db
+                              then "WinDll.Lib.NativeMapping_Debug"
+                              else "WinDll.Lib.NativeMapping"
+                         ,if db
+                             then "WinDll.Lib.Tuples_Debug"
+                             else "WinDll.Lib.Tuples"
+                         ,"WinDll.Lib.InstancesTypes"
+#if __GLASGOW_HASKELL__ >= 702
+                         , "System.IO.Unsafe"
+                         ,if db
+                             then "Foreign hiding (free, malloc, alloca, realloc, unsafePerformIO)"
+                             else "Foreign hiding (unsafePerformIO)"
+#else
+                         ,if db
+                             then "Foreign hiding (free, malloc, alloca, realloc)"
+                             else "Foreign"
+#endif
+                         ,"Foreign.C"
+                         ,"Foreign.C.Types"
+                         ,"Foreign.Ptr"
+                         ,if db
+                             then "WinDll.Debug.Alloc"
+                             else "Foreign.Marshal.Alloc"
+                         ,"Foreign.Marshal.Utils"
+                         ,"Foreign.ForeignPtr"
+                         ] ++ if db
+                                 then ["WinDll.Debug.Stack"
+                                      ,"qualified WinDll.Debug.Exports as Ex"
+                                      ]
+                                 else []
+
+-- | Convert the parsed Haskell-src-exts to the internal Module definition.
+--  A nother limitation to get this done on time, is that i don't support infix constructors
+convertModule :: Module -> [Comment] -> Exec WinDll.Module
+convertModule m@(Module (SrcLoc file _ _) (ModuleName modname) _ _ _ _ decl) comments =
+    let header    = Header modname []
+        exports   = map createExport t_func
+        datatypes = map createDataType t_data
+        functions = map createFunction t_func
+        tdecl     = map createTypeSyn t_type
+        instances = map createInstance t_inst
+        foreigns  = map createForeign  t_fexpr
+
+        t_func    = filter isExport $ fixC $ matchFunctionsWithComments comments (findTypeSignatures m)
+        t_data    = findDataDeclarations m
+        t_type    = findTypeDecl m
+        t_inst    = findStorableDeclarations m
+        t_fexpr   = findForeignExports m
+
+    in do session <- get
+          let workset = workingset session
+              newset  = workset { n_exports = n_exports workset ++ foreigns }
+              newsess = session { workingset = newset }
+          put newsess
+          stdi <- stdImports
+          return $ WinDll.Module header file (("@"++modname):stdi) exports datatypes functions instances tdecl
+  where isExport :: CommentDecl -> Bool
+        isExport (flags, _) = any (isPrefixOf "export") (map (map toLower) flags)
+
+        strip :: String -> String
+        strip = dropWhile isSpace
+
+        prep :: String -> String
+        prep = strip . drop 2 . strip
+
+        fixC :: [CommentDecl] -> [CommentDecl]
+        fixC = map (\(c,d)->(map prep c,d))
+
+        createFunction :: CommentDecl -> Function
+        createFunction (p,(TypeSig _ name' typ')) = Function name (tlength typ - 1) typ newAnn typ
+         where args      = findStrings typ
+               t_name    = head $ findStrings name'
+               typ       = simplify typ'
+               export    = strip $ drop 6 $ head' $ filter ((=="export").map toLower.takeWhile (not.(\a->isSpace a || a=='='))) p
+               name      = t_name
+
+        createForeign :: Decl -> HaskellExport
+        createForeign (ForExp _ cc _ name ty) = HaskellExport (convert cc) newAnn (Export name' name' typ typ modname)
+         where convert Exts.StdCall = WinDll.Session.Hs2lib.StdCall
+               convert Exts.CCall   = WinDll.Session.Hs2lib.CCall
+
+               typ   = simplify ty
+               name' = mkName name
+
+               mkName (Exts.Ident  s) = s
+               mkName (Exts.Symbol s) = s
+
+        createExport :: CommentDecl -> Export
+        createExport (p,(TypeSig _ name' _type)) = Export name exportn typ typ modname
+         where t_name  = head $ findStrings name'
+               typ     = simplify _type
+               export  = strip $ drop 6 $ head' $ filter ((=="export").map toLower.takeWhile (not.(\a->isSpace a || a=='='))) p
+               exportn = if ("=" `isPrefixOf` export) then (takeWhile (not.isSpace).strip.tail) export else name
+               name    = t_name
+
+        head' :: [[a]] -> [a]
+        head' []     = []
+        head' (x:xs) = x
+
+        newAnn = noAnn { annModule = modname }
+
+        createTypeSyn :: Decl -> WinDll.TypeDecL
+        createTypeSyn (TypeDecl _ name bind typ) = TypeDecL (head $ findStrings name)
+                                                      (findStrings bind) (simplify typ)
+
+        createDataType :: Decl -> WinDll.DataType
+        createDataType (DataDecl _ Exts.DataType _ name types constr _) = WinDll.DataType (head $ findStrings name) (findStrings types) (map (mkConstr (head $ findStrings name)) constr) NoTag
+        createDataType (DataDecl _ Exts.NewType  _ name types constr _) = WinDll.NewType (head $ findStrings name) (findStrings types) (head $ map (mkConstr (head $ findStrings name)) constr) NoTag
+
+        mkConstr str = (\(QualConDecl _ _ _  con)->case con of
+                                                  (ConDecl cname vars) -> Constr xname Normal (genFreeVars modname name 1 vars)
+                                                      where name = let val = map toLower (str++"_"++xname++"_var")
+                                                                   in (val++)
+                                                            xname = (head $ findStrings cname)
+                                                  (RecDecl cname vars) -> Constr (head $ findStrings cname) Normal (genNamedVars modname vars)
+                                                  (InfixConDecl a name b) -> error "Parse error: Sorry, the current version of windll does not support infix constructor types.")
+        createInstance :: Decl -> WinDll.Instance
+        createInstance (InstDecl _ con name types decls)
+          = QualifiedInstance (head $ findStrings name) types
+
+-- | Generate free variable names
+genFreeVars :: WinDll.ModuleName -> (String -> String) -> Int -> [BangType] -> AnnNamedTypes
+genFreeVars nm f _ []     = []
+genFreeVars nm f n (x:xs) = let ann   = noAnn
+                                t     = getTypeFromBang x
+                                name  = (f.show) n
+                                ann'  = ann{ annModule = nm }
+                                value = AnnType name t  ann' t nm
+                            in value : genFreeVars nm f (n+1) xs
+
+-- | Strip a layer away and get to the real type.
+getTypeFromBang :: BangType -> WinDll.Type
+getTypeFromBang (BangedTy   t) = t
+getTypeFromBang (UnBangedTy t) = t
+getTypeFromBang (UnpackedTy t) = t
+
+-- | Create elements of constructor for records.
+genNamedVars :: Data b => WinDll.ModuleName -> [([b],BangType)] -> AnnNamedTypes
+genNamedVars _ []             = []
+genNamedVars n (((x:_),a):xs) = let ann   = noAnn
+                                    ann'  = ann{ annModule = n }
+                                    ty    = getTypeFromBang a
+                                    name  = head $ findStrings x
+                                    value = AnnType name ty  ann' ty n
+                                in value : genNamedVars n xs
+
+-- | Find all type strings, taking care to support things like type application
+findTypeString :: Language.Haskell.Exts.Syntax.Type -> [String]
+findTypeString (TyForall m c t ) = findTypeString t
+findTypeString (TyFun t1 t2    ) = (findTypeString t1)++(findTypeString t2)
+findTypeString (TyTuple b t    ) = ["(" ++ foldr1 (\a b->a++","++b) (concatMap findTypeString t) ++ ")"]
+findTypeString (TyList t       ) = ["[" ++ unwords (findTypeString t) ++ "]"]
+findTypeString (TyApp t1 t2    ) = [unwords (findTypeString t1 ++ findTypeString t2)]
+findTypeString (TyVar n        ) = findStrings' n
+findTypeString (TyCon q        ) = findStrings' q
+findTypeString (TyParen p      ) = ["(" ++ foldr1 (\a b->a++" -> "++b) (findTypeString p) ++ ")"]
+findTypeString (TyInfix t1 q t2) = findTypeString t1 ++ findStrings' q ++
+                                   findTypeString t2
+findTypeString (TyKind t k     ) = findTypeString t
+
+-- | Rename the AST to not treat SpecialCons special but just as strings
+renameAST :: Data a => a -> a
+renameAST = everywhere (mkT inner)
+ where inner :: QName -> QName
+       inner (Special x) = UnQual (Symbol (mshow x))
+       inner x           = x
+
+-- | Merge the specialized Type version along with the generic version
+findStrings :: Data a => a -> [String]
+findStrings = findStrings' -- `extQ` findTypeString).renameAST
+
+-- | The SYB traversals do too much work, I need to figure out how to solve this. (it applies a matching function in both cases.
+mkUnique :: [String] -> [String]
+mkUnique x = filter condition x
+    where condition y = let y' = y ++ " "
+                            y'' = ' ':y
+                            y''' = (' ':y) ++ " "
+                        in not (case y of
+                                 []   -> True
+                                 (o:_) -> any (\a->y' `isPrefixOf` a || y'' `isSuffixOf` a || y''' `isInfixOf` a) x)
+
+-- simpleTest :: FilePath -> [CommentDecl]
+-- simpleTest path = let (m0, c0) = unsafePerformIO $ parseFromFile path
+                  -- in matchFunctionsWithComments c0 (findTypeSignatures m0)
+
+-- test :: IO WinDll.Module
+-- test = fmap (uncurry convertModule) (parseFromFile testFile)
+
+</pre>

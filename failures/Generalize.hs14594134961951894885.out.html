@@ -1,0 +1,1506 @@
+<a href="Functor.hs2111631616877819790.out.html">prev</a></br><a href="failures.html">home</a></br><a href="GenerateHtmlCombinators.hs11538515011004844897.out.html">next</a></br></br><pre>714c714
+< {-# RULES "L.\\" (\\) = (L.\\) #-};
+---
+> {-# RULES "L.\" (\\) = (L.\\) #-};
+749a750
+> 
+</pre></br><h2>original</h2></br><pre>{-# LANGUAGE MultiParamTypeClasses, RankNTypes, FlexibleInstances, FlexibleContexts, TypeFamilies, FunctionalDependencies, UndecidableInstances #-}
+
+module Prelude.Generalize (
+  module Control.Applicative, module Control.Monad.Logic, module Prelude,
+  module Control.Comonad, module Data.Foldable, module Data.Monoid, bool,
+  (<>>=), (!!), tail, length, filter, consA, snocA, liftPair, Peanoid(..),
+  Copeanoid(..), fair, (++), module Data.Functor.Identity, iterate, church,
+  unfoldr, convList, head, drop, take, find, takeWhile, dropWhile, tails,
+  findIndex, module Control.Category, module Control.Arrow, option,
+  cycle, mcycle, repeat, replicate, module Data.Traversable, count, choice,
+  mreplicate, (>>==), groupBy, lefts, rights, partitionEithers, null, unnull,
+  module Data.Bits, module Data.Int, module Data.Word, Swap(..), Peano,
+  atLeast, (.:), (.::), (.:::), bind2, bind3, (!!!), transEnum, transInt,
+  low8bits, modifyBit, getBits, transPeano, Part1M, Part1(..),
+  Part2M, Part2(..), Part3M, Part3(..), Part4M, Part4(..), Part5M, Part5(..),
+  Part6M, Part6(..), QuestionMarkOp(..), selectItems, selectBits, hGetByte,
+  hPutByte, module System.IO, (>>=||), (>>=|||), (>>=|\/), (>>=\/), azero,
+  aplus, concat, on, sortBy, sort, intersperse, intersperse', intercalate,
+  stripPrefix, stripPrefixBy, isPrefixOf, isSuffixOf, isInfixOf, (\\), nub,
+  nubBy, deleteF, delete, group, insert, insertBy, intersect, intersectBy,
+  partition, permutations, subsequences, transpose, union, unionBy, unzip4,
+  unzip5, unzip6, unzip7, zip4, zip5, zip6, zip7, zipWith4, zipWith5,
+  zipWith6, zipWith7, lcomp, rcomp, loeb, Function(..), spanList, breakList,
+  split, replace, subIndex
+) where {
+
+  import Prelude hiding (head, tail, (!!), foldr, foldl, length, filter, mapM_,
+   sequence_, foldl1, maximum, minimum, product, sum, all, and, or, any, concat,
+   concatMap, elem, foldr1, notElem, Monad, Functor, (=<<), (>>=), (>>), mapM,
+   sequence, fmap, fail, return, (++), iterate, drop, take, takeWhile, dropWhile,
+   ($), (.), id, otherwise, cycle, repeat, replicate, concat, null, Int);
+  import Data.List hiding (head, tail, (!!), foldr, foldl, length, filter,
+   foldl1, maximum, minimum, product, sum, all, and, or, any, concat, concatMap,
+   elem, foldr1, notElem, (++), iterate, unfoldr, drop, take, find, takeWhile,
+   dropWhile, tails, findIndex, cycle, repeat, replicate, minimumBy, maximumBy,
+   groupBy, null, concat, intersperse, intercalate, delete, deleteBy, (\\),
+   group);
+  import Data.Foldable hiding (find, concat);
+  import Control.Arrow;
+  import Control.Applicative;
+  import Control.Category hiding ((<<<), (>>>));
+  import Control.Comonad;
+  import Control.Monad.Logic hiding (mapM_, sequence_, forM_, msum, mapM, forM,
+   sequence);
+  import Data.Either (lefts, rights, partitionEithers);
+  import Data.Functor.Identity;
+  import Data.Monoid;
+  import Data.Function hiding (id, (.), ($));
+  import Data.Traversable;
+  import Data.Bits;
+  import Data.Int;
+  import Data.Word;
+  import Foreign.Ptr;
+  import Foreign.Marshal.Alloc;
+  import Foreign.Storable;
+  import System.IO (Handle, stdin, stdout, stderr, withFile, openFile, IOMode(..),
+   hClose, hIsEOF, isEOF, hFileSize, hFlush, hSeek, NewlineMode(..), nativeNewline,
+   SeekMode(..), hTell, hReady, hGetChar, hGetLine, hPutChar, hPutStr, hPutStrLn,
+   withBinaryFile, openBinaryFile, hSetBinaryMode, TextEncoding, hSetEncoding,
+   Newline(..), hSetNewlineMode);
+
+  import qualified Data.List as L;
+  import qualified Data.Maybe as M;
+  import qualified System.IO as IO;
+
+  newtype Peano = Peano [()] deriving (Eq);
+
+  instance Ord Peano where {
+    compare (Peano []) (Peano []) = EQ;
+    compare (Peano []) (Peano (_ : _)) = LT;
+    compare (Peano (_ : _)) (Peano []) = GT;
+    compare (Peano (_ : x)) (Peano (_ : y)) = compare (Peano x) (Peano y);
+  };
+
+  class Peanoid x where {
+    zeroP :: x;
+    succP :: x -> x;
+  };
+
+  class Copeanoid x where {
+    predP :: x -> Maybe x;
+  };
+
+  class Function f i o | f -> i o where {
+    ($) :: f -> i -> o;
+    infixl 0 $;
+  };
+
+  class Swap f where {
+    swap :: f x y -> f y x;  -- swap . swap = id
+  };
+
+  type family Part1M x y :: *;
+  class Part1 x where {
+    type Part1T x :: *;
+    get1 :: x -> Part1T x;
+    map1 :: (Part1T x -> y) -> x -> Part1M x y;
+  };
+
+  type family Part2M x y :: *;
+  class Part1 x => Part2 x where {
+    type Part2T x :: *;
+    get2 :: x -> Part2T x;
+    map2 :: (Part2T x -> y) -> x -> Part2M x y;
+  };
+
+  type family Part3M x y :: *;
+  class Part2 x => Part3 x where {
+    type Part3T x :: *;
+    get3 :: x -> Part3T x;
+    map3 :: (Part3T x -> y) -> x -> Part3M x y;
+  };
+
+  type family Part4M x y :: *;
+  class Part3 x => Part4 x where {
+    type Part4T x :: *;
+    get4 :: x -> Part4T x;
+    map4 :: (Part4T x -> y) -> x -> Part4M x y;
+  };
+
+  type family Part5M x y :: *;
+  class Part4 x => Part5 x where {
+    type Part5T x :: *;
+    get5 :: x -> Part5T x;
+    map5 :: (Part5T x -> y) -> x -> Part5M x y;
+  };
+
+  type family Part6M x y :: *;
+  class Part5 x => Part6 x where {
+    type Part6T x :: *;
+    get6 :: x -> Part6T x;
+    map6 :: (Part6T x -> y) -> x -> Part6M x y;
+  };
+
+  class QuestionMarkOp x y z | x y -> z, x z -> y where {
+    (?) :: x -> y -> z;
+    idQMO :: x ~ z => y;  -- (? idQMO) = id
+  };
+
+  instance Peanoid Integer where {
+    zeroP = 0;
+    succP = succ;
+  };
+
+  instance Copeanoid Integer where {
+    predP 0 = Nothing;
+    predP x = Just (pred x);
+  };
+
+  instance Peanoid Int where {
+    zeroP = 0;
+    succP = succ;
+  };
+
+  instance Copeanoid Int where {
+    predP 0 = Nothing;
+    predP x = Just (pred x);
+  };
+
+  instance Peanoid Int16 where {
+    zeroP = 0;
+    succP = succ;
+  };
+
+  instance Copeanoid Int16 where {
+    predP 0 = Nothing;
+    predP x = Just (pred x);
+  };
+
+  instance Peanoid Int32 where {
+    zeroP = 0;
+    succP = succ;
+  };
+
+  instance Copeanoid Int32 where {
+    predP 0 = Nothing;
+    predP x = Just (pred x);
+  };
+
+  instance Peanoid Int64 where {
+    zeroP = 0;
+    succP = succ;
+  };
+
+  instance Copeanoid Int64 where {
+    predP 0 = Nothing;
+    predP x = Just (pred x);
+  };
+
+  instance Peanoid Word8 where {
+    zeroP = 0;
+    succP = succ;
+  };
+
+  instance Copeanoid Word8 where {
+    predP 0 = Nothing;
+    predP x = Just (pred x);
+  };
+
+  instance Peanoid Word16 where {
+    zeroP = 0;
+    succP = succ;
+  };
+
+  instance Copeanoid Word16 where {
+    predP 0 = Nothing;
+    predP x = Just (pred x);
+  };
+
+  instance Peanoid Word32 where {
+    zeroP = 0;
+    succP = succ;
+  };
+
+  instance Copeanoid Word32 where {
+    predP 0 = Nothing;
+    predP x = Just (pred x);
+  };
+
+  instance Peanoid Bool where {
+    zeroP = False;
+    succP = not;
+  };
+
+  instance Peanoid () where {
+    zeroP = ();
+    succP = const ();
+  };
+
+  instance Peanoid x => Peanoid [x] where {
+    zeroP = [];
+    succP = (zeroP :) . map succP;
+  };
+
+  instance Copeanoid [x] where {
+    predP [] = Nothing;
+    predP (_ : x) = Just x;
+  };
+
+  instance Peanoid Peano where {
+    zeroP = Peano [];
+    succP (Peano x) = Peano (() : x);
+  };
+
+  instance Copeanoid Peano where {
+    predP (Peano []) = Nothing;
+    predP (Peano (_ : x)) = Just $ Peano x;
+  };
+
+  instance Peanoid x => Peanoid (Maybe x) where {
+    zeroP = Nothing;
+    succP = maybe (Just zeroP) (Just . succP);
+  };
+
+  instance Copeanoid x => Copeanoid (Maybe x) where {
+    predP = maybe Nothing (Just . predP);
+  };
+
+  instance Function (i -> o) i o where {
+    ($) = id;
+  };
+{-# SPECIALIZE ($) :: (i -> o) -> i -> o #-};
+{-# RULES "application$" ($) = id #-};
+
+  instance Function f i o => Function [f] [i] [o] where {
+    ($) = zipWith ($);
+  };
+
+  instance Function (Kleisli m i o) i (m o) where {
+    ($) = runKleisli;
+  };
+
+  instance (Function f1 i1 o1, Function f2 i2 o2) => Function (f1, f2) (i1, i2) (o1, o2) where {
+    (f1, f2) $ (x1, x2) = (f1 $ x1, f2 $ x2);
+  };
+
+  instance (Function f1 i1 o1, Function f2 i2 o2, Function f3 i3 o3) => Function (f1, f2, f3) (i1, i2, i3) (o1, o2, o3) where {
+    (f1, f2, f3) $ (x1, x2, x3) = (f1 $ x1, f2 $ x2, f3 $ x3);
+  };
+
+  instance (Function f1 i1 o, Function f2 i2 o) => Function (Either f1 f2) (i1, i2) o where {
+    Left f $ (x, _) = f $ x;
+    Right f $ (_, x) = f $ x;
+  };
+
+  instance Swap (,) where {
+    swap (x, y) = (y, x);
+  };
+
+  instance Swap ((,,) a) where {
+    swap (a, x, y) = (a, y, x);
+  };
+
+  instance Swap ((,,,) a b) where {
+    swap (a, b, x, y) = (a, b, y, x);
+  };
+
+  instance Swap Either where {
+    swap = either Right Left;
+  };
+
+  type instance Part1M (x, y) z = (z, y);
+  instance Part1 (x, y) where {
+    type Part1T (x, y) = x;
+    get1 = fst;
+    map1 = first;
+  };
+
+  type instance Part2M (x, y) z = (x, z);
+  instance Part2 (x, y) where {
+    type Part2T (x, y) = y;
+    get2 = snd;
+    map2 = second;
+  };
+
+  type instance Part1M (a, b, c) z = (z, b, c);
+  instance Part1 (a, b, c) where {
+    type Part1T (a, b, c) = a;
+    get1 (x, _, _) = x;
+    map1 f (a, b, c) = (f a, b, c);
+  };
+
+  type instance Part2M (a, b, c) z = (a, z, c);
+  instance Part2 (a, b, c) where {
+    type Part2T (a, b, c) = b;
+    get2 (_, x, _) = x;
+    map2 f (a, b, c) = (a, f b, c);
+  };
+
+  type instance Part3M (a, b, c) z = (a, b, z);
+  instance Part3 (a, b, c) where {
+    type Part3T (a, b, c) = c;
+    get3 (_, _, x) = x;
+    map3 f (a, b, c) = (a, b, f c);
+  };
+
+  type instance Part1M (a, b, c, d) z = (z, b, c, d);
+  instance Part1 (a, b, c, d) where {
+    type Part1T (a, b, c, d) = a;
+    get1 (x, _, _, _) = x;
+    map1 f (a, b, c, d) = (f a, b, c, d);
+  };
+
+  type instance Part2M (a, b, c, d) z = (a, z, c, d);
+  instance Part2 (a, b, c, d) where {
+    type Part2T (a, b, c, d) = b;
+    get2 (_, x, _, _) = x;
+    map2 f (a, b, c, d) = (a, f b, c, d);
+  };
+
+  type instance Part3M (a, b, c, d) z = (a, b, z, d);
+  instance Part3 (a, b, c, d) where {
+    type Part3T (a, b, c, d) = c;
+    get3 (_, _, x, _) = x;
+    map3 f (a, b, c, d) = (a, b, f c, d);
+  };
+
+  type instance Part4M (a, b, c, d) z = (a, b, c, z);
+  instance Part4 (a, b, c, d) where {
+    type Part4T (a, b, c, d) = d;
+    get4 (_, _, _, x) = x;
+    map4 f (a, b, c, d) = (a, b, c, f d);
+  };
+
+  type instance Part1M (a, b, c, d, e) z = (z, b, c, d, e);
+  instance Part1 (a, b, c, d, e) where {
+    type Part1T (a, b, c, d, e) = a;
+    get1 (x, _, _, _, _) = x;
+    map1 f (a, b, c, d, e) = (f a, b, c, d, e);
+  };
+
+  type instance Part2M (a, b, c, d, e) z = (a, z, c, d, e);
+  instance Part2 (a, b, c, d, e) where {
+    type Part2T (a, b, c, d, e) = b;
+    get2 (_, x, _, _, _) = x;
+    map2 f (a, b, c, d, e) = (a, f b, c, d, e);
+  };
+
+  type instance Part3M (a, b, c, d, e) z = (a, b, z, d, e);
+  instance Part3 (a, b, c, d, e) where {
+    type Part3T (a, b, c, d, e) = c;
+    get3 (_, _, x, _, _) = x;
+    map3 f (a, b, c, d, e) = (a, b, f c, d, e);
+  };
+
+  type instance Part4M (a, b, c, d, e) z = (a, b, c, z, e);
+  instance Part4 (a, b, c, d, e) where {
+    type Part4T (a, b, c, d, e) = d;
+    get4 (_, _, _, x, _) = x;
+    map4 f (a, b, c, d, e) = (a, b, c, f d, e);
+  };
+
+  type instance Part5M (a, b, c, d, e) z = (a, b, c, d, z);
+  instance Part5 (a, b, c, d, e) where {
+    type Part5T (a, b, c, d, e) = e;
+    get5 (_, _, _, _, x) = x;
+    map5 f (a, b, c, d, e) = (a, b, c, d, f e);
+  };
+
+  instance QuestionMarkOp Bool (a, a) a where {
+    False ? (x, _) = x;
+    True ? (_, x) = x;
+    idQMO = (False, True);
+  };
+
+  instance QuestionMarkOp (Either l r) (l -> a, r -> a) a where {
+    Left x ? (f, _) = f x;
+    Right x ? (_, f) = f x;
+    idQMO = (Left, Right);
+  };
+
+  instance QuestionMarkOp (Maybe x) (a, x -> a) a where {
+    Nothing ? (x, _) = x;
+    Just x ? (_, f) = f x;
+    idQMO = (Nothing, Just);
+  };
+
+  instance QuestionMarkOp Ordering (a, a, a) a where {
+    LT ? (x, _, _) = x;
+    EQ ? (_, x, _) = x;
+    GT ? (_, _, x) = x;
+    idQMO = (LT, EQ, GT);
+  };
+
+  instance QuestionMarkOp [x] (a, x -> [x] -> a) a where {
+    [] ? (x, _) = x;
+    (h : t) ? (_, x) = x h t;
+    idQMO = ([], (:));
+  };
+
+  instance QuestionMarkOp (x, y) (x -> y -> a) a where {
+    (x, y) ? f = f x y;
+    idQMO = (,);
+  };
+
+  instance QuestionMarkOp (x, y, z) (x -> y -> z -> a) a where {
+    (x, y, z) ? f = f x y z;
+    idQMO = (,,);
+  };
+
+  instance QuestionMarkOp (Identity x) (x -> a) a where {
+    Identity x ? f = f x;
+    idQMO = Identity;
+  };
+
+  bool :: x -> x -> Bool -> x;
+  bool x _ False = x;
+  bool _ x True = x;
+{-# INLINABLE bool #-};
+
+  (<>>=) :: (Functor m, Monad m) => m a -> (a -> m b) -> m a;
+  x <>>= f = x >>= ap (<$) f;
+  infixl 1 <>>=;
+
+  tail :: MonadLogic m => m x -> m x;
+  tail = msplit >=> maybe (error "tail: empty list") snd;
+{-# RULES "L.tail" tail = L.tail #-};
+
+  (!!) :: (Copeanoid i, Foldable t) => t x -> i -> x;
+  x !! n = either id (error "(!!): no element") $
+   foldlM (\y z -> maybe (Left z) Right (predP y)) n x;
+{-# RULES "L.!!" (!!) = (L.!!) #-};
+
+  (!!!) :: (Copeanoid i, Foldable t, Alternative f) => t x -> i -> f x;
+  x !!! n = either pure (const empty) $
+   foldlM (\y z -> maybe (Left z) Right (predP y)) n x;
+
+  length :: (Peanoid i, Foldable t) => t x -> i;
+  length = foldr (const succP) zeroP;
+{-# RULES "L.length" length = L.length #-};
+{-# SPECIALIZE length :: Peanoid i => [x] -> i #-};
+{-# SPECIALIZE length :: Foldable t => t x -> Int #-};
+
+  filter :: MonadPlus m => (x -> Bool) -> m x -> m x;
+  filter f = (>>= liftA2 (bool mzero) return f);
+{-# RULES "L.filter" filter = L.filter #-};
+
+  consA :: Alternative f => x -> f x -> f x;
+  consA x y = pure x <|> y;
+{-# RULES "consA" consA = (:) #-};
+
+  option :: Alternative f => x -> f x -> f x;
+  option x y = y <|> pure x;
+
+  snocA :: Alternative f => x -> f x -> f x;
+  snocA = option;
+{-# INLINE snocA #-};
+{-# RULES "snocA" snocA = option #-};
+
+  liftPair :: Applicative f => (f x, f y) -> f (x, y);
+  liftPair = uncurry $ liftA2 (,);
+
+  fair :: MonadLogic m => m (m x) -> m x;
+  fair = (>>- id);
+{-# SPECIALIZE fair :: [[x]] -> [x] #-};
+
+  (++) :: MonadPlus m => m a -> m a -> m a;
+  (++) = mplus;
+  infixr 5 ++;
+{-# INLINE (++) #-};
+{-# RULES "L.++" (++) = (L.++) #-};
+
+  iterate :: Alternative f => (x -> x) -> x -> f x;
+  iterate f x = consA x $ iterate f (f x);
+
+  church :: Copeanoid i => i -> (x -> x) -> x -> x;
+  church i f x = maybe id (\y -> church y f . f) (predP i) x;
+
+  unfoldr :: Alternative f => (b -> Maybe (a, b)) -> b -> f a;
+  unfoldr f b = maybe empty (\(x, y) -> consA x $ unfoldr f y) $ f b;
+
+  convList :: (Alternative f, Foldable t) => t x -> f x;
+  convList = foldr consA empty;
+{-# RULES "L.convList(1)" convList = M.listToMaybe #-};
+{-# RULES "L.convList(2)" convList = M.maybeToList #-};
+
+  head :: Foldable t => t x -> x;
+  head = maybe (error "head: empty list") id . convList;
+{-# RULES "L.head" head = L.head #-};
+
+  drop :: (Copeanoid i, MonadLogic m) => i -> m x -> m x;
+  drop = flip church (msplit >=> maybe mzero snd);
+{-# RULES "L.drop" drop = L.drop #-};
+
+  take :: (Copeanoid i, MonadLogic m) => i -> m x -> m x;
+  take i = msplit >=> maybe mzero (\(x, y) -> maybe mzero (\z -> return x ++ take z y) $ predP i);
+{-# RULES "L.take" take = L.take #-};
+
+  find :: (Alternative f, Foldable t) => (a -> Bool) -> t a -> f a;
+  find p = foldr (liftA2 (bool id) consA p) empty;
+{-# RULES "L.find" find = L.find #-};
+
+  takeWhile :: MonadLogic m => (x -> Bool) -> m x -> m x;
+  takeWhile f = msplit >=> maybe mzero (\(x, y) -> bool mzero (return x ++ takeWhile f y) (f x));
+{-# RULES "L.takeWhile" takeWhile = L.takeWhile #-};
+
+  dropWhile :: MonadLogic m => (x -> Bool) -> m x -> m x;
+  dropWhile f = msplit >=> maybe mzero (\(x, y) -> bool (return x ++ y) (dropWhile f y) (f x));
+{-# RULES "L.dropWhile" dropWhile = L.dropWhile #-};
+
+  tails :: MonadLogic m => m x -> m (m x);
+  tails = msplit >=> maybe (return mzero) (\(x, y) -> return (return x ++ y) ++ tails y);
+{-# RULES "L.tails" tails = L.tails #-};
+
+  findIndex :: (Peanoid i, Alternative f, Foldable t) => (a -> Bool) -> t a -> f i;
+  findIndex p = snd . foldl (\(y, z) x -> (succP y, bool z (z <|> pure y) $ p x)) (zeroP, empty);
+{-# RULES "L.findIndex" findIndex = L.findIndex #-};
+{-# RULES "L.findIndices" findIndex = L.findIndices #-};
+
+  cycle :: Alternative f => f x -> f x;
+  cycle x = x <|> cycle x;
+
+  mcycle :: Monoid x => x -> x;
+  mcycle x = mappend x (mcycle x);
+
+  repeat :: Alternative f => x -> f x;
+  repeat x = consA x (repeat x);
+{-# RULES "L.repeat" repeat = L.repeat #-};
+
+  replicate :: (Copeanoid i, Alternative f) => i -> x -> f x;
+  replicate i x = maybe empty (\z -> consA x $ replicate z x) $ predP i;
+{-# RULES "L.replicate" replicate = L.replicate #-};
+
+  mreplicate :: (Copeanoid i, Monoid x) => i -> x -> x;
+  mreplicate i x = maybe mempty (\z -> mappend x $ mreplicate z x) $ predP i;
+
+  count :: (Copeanoid i, Applicative f, Alternative g, Traversable g) => i -> f x -> f (g x);
+  count i x = sequenceA (replicate i x);
+
+  choice :: (Foldable t, Alternative f) => t (f x) -> f x;
+  choice = foldr (<|>) empty;
+
+  groupBy :: (Foldable t, Alternative f, Alternative g) => (a -> a -> Bool) -> t a -> f (g a);
+  groupBy f = (uncurry $ maybe id (option . snd)) . foldl (foldGroup f) (Nothing, empty);
+{-# RULES "L.groupBy" groupBy = L.groupBy #-};
+
+  group :: (Alternative g, Alternative f, Foldable t, Eq a) => t a -> f (g a);
+  group = groupBy (==);
+{-# RULES "L.group" group = L.group #-};
+
+  foldGroup :: (Alternative f, Alternative g) => (a -> a -> Bool) -> (Maybe (a, g a), f (g a)) -> a -> (Maybe (a, g a), f (g a));
+  foldGroup f (Nothing, x) a = (Just (a, pure a), x);
+  foldGroup f (Just (y, z), x) a = bool (Just (a, pure a), option z x) (Just (a, option a z), x) (f a y);
+
+  null :: Foldable t => t x -> Bool;
+  null = foldr (\_ _ -> False) True;
+{-# RULES "L.null" null = L.null #-};
+{-# RULES "M.null" null = M.isNothing #-};
+
+  unnull :: Foldable t => t x -> Bool;
+  unnull = foldr (\_ _ -> True) False;
+{-# RULES "L.unnull" unnull = not . L.null #-};
+{-# RULES "M.unnull" unnull = M.isJust #-};
+
+  concat :: (MonadPlus m, Foldable f) => m (f x) -> m x;
+  concat = (>>= foldr (mplus . return) mzero);
+{-# RULES "L.concat" concat = L.concat #-};
+
+  (>>==) :: (Functor m, MonadPlus m, Foldable f) => m x -> (x -> f y) -> m y;
+  x >>== f = concat (f <$> x);
+  infixl 1 >>==;
+
+  atLeast :: Copeanoid i => i -> Peano -> Bool;
+  atLeast x (Peano []) = null $ predP x;
+  atLeast x (Peano (_ : y)) = maybe True (flip atLeast $ Peano y) $ predP x;
+
+--  (.:) :: Category cat => cat b c -> (a -> cat a1 b) -> a -> cat a1 c;
+--  (.:) = (.) . (.);
+  (.:) :: (Category cat, Functor f) => cat b c -> f (cat a b) -> f (cat a c);
+  (.:) = fmap <$> (.);
+  infixr 9 .:;
+{-# SPECIALIZE (.:) :: (b -> c) -> (a -> a1 -> b) -> a -> a1 -> c #-};
+{-# INLINE (.:) #-};
+
+--  (.::) :: Category cat => cat b c -> (a -> a1 -> cat a2 b) -> a -> a1 -> cat a2 c;
+--  (.::) = (.) . (.) . (.);
+  (.::) :: (Category cat, Functor f, Functor g) => cat b c -> f (g (cat a b)) -> f (g (cat a c));
+  (.::) = fmap <$> (.:);
+  infixr 9 .::;
+{-# SPECIALIZE (.::) :: (b -> c) -> (a -> a1 -> a2 -> b) -> a -> a1 -> a2 -> c #-};
+{-# INLINE (.::) #-};
+
+--  (.:::) :: Category cat => cat b c -> (a -> a1 -> a2 -> cat a3 b) -> a -> a1 -> a2 -> cat a3 c;
+--  (.:::) = (.) . (.) . (.) . (.);
+  (.:::) :: (Category cat, Functor f, Functor g, Functor h) => cat b c -> f (g (h (cat a b))) -> f (g (h (cat a c)));
+  (.:::) = fmap <$> (.::);
+  infixr 9 .:::;
+{-# SPECIALIZE (.:::) :: (b -> c) -> (a -> a1 -> a2 -> a3 -> b) -> a -> a1 -> a2 -> a3 -> c #-};
+{-# INLINE (.:::) #-};
+
+  bind2 :: Monad m => (x -> y -> m a) -> m x -> m y -> m a;
+  bind2 = join .:: liftM2;
+
+  bind3 :: Monad m => (x -> y -> z -> m a) -> m x -> m y -> m z -> m a;
+  bind3 = join .::: liftM3;
+
+  transEnum :: (Enum t, Enum u) => t -> u;
+  transEnum = toEnum . fromEnum;
+
+  transInt :: (Integral t, Integral u) => t -> u;
+  transInt = fromInteger . toInteger;
+
+  low8bits :: (Integral t, Bits t) => t -> Word8;
+  low8bits = transInt . (.&. 255);
+{-# RULES "low8bits=id" low8bits = id #-};
+
+  modifyBit :: Bits a => Bool -> a -> Int -> a;
+  modifyBit x = bool clearBit setBit x;
+
+  getBits :: (Bits t, Integral t, Integral u) => Int -> Int -> t -> u;
+  getBits h l n = transInt $ shiftR n (h + 1 - l) .&. ((2 ^ l) - 1);
+
+  transPeano :: (Copeanoid i, Peanoid o) => i -> o;
+  transPeano = maybe zeroP (succP . transPeano) . predP;
+
+  selectItems :: [x] -> [Bool] -> [x];
+  selectItems = (map fst . filter snd) .: zip;
+
+  selectBits :: (Bits x, Integral x) => x -> x -> x;
+  selectBits _ 0 = 0;
+  selectBits x y = bool (selectBits (shiftR x 1) (shiftR y 1))
+   ((x .&. 1) .|. shiftL (selectBits (shiftR x 1) (shiftR y 1)) 1) (odd y);
+
+  hPutByte :: Handle -> Word8 -> IO ();
+  hPutByte h x = alloca (\y -> poke y x >> IO.hPutBuf h y 1);
+
+  hGetByte :: Handle -> IO Word8;
+  hGetByte h = alloca (\y -> IO.hGetBuf h y 1 >> peek y);
+
+  (>>=||) :: Monad m => m (a, b) -> (a -> b -> m z) -> m z;
+  m >>=|| f = m >>= \(a, b) -> f a b;
+  infixl 1 >>=||;
+
+  (>>=|||) :: Monad m => m (a, b, c) -> (a -> b -> c -> m z) -> m z;
+  m >>=||| f = m >>= \(a, b, c) -> f a b c;
+  infixl 1 >>=|||;
+
+  (>>=|\/) :: Monad m => m (a, b, c, d) -> (a -> b -> c -> d -> m z) -> m z;
+  m >>=|\/ f = m >>= \(a, b, c, d) -> f a b c d;
+  infixl 1 >>=|\/;
+
+  (>>=\/) :: Monad m => m (a, b, c, d, e) -> (a -> b -> c -> d -> e -> m z) -> m z;
+  m >>=\/ f = m >>= \(a, b, c, d, e) -> f a b c d e;
+  infixl 1 >>=\/;
+
+  azero :: (Applicative f, Monoid x) => f x;
+  azero = pure mempty;
+
+  aplus :: (Applicative f, Monoid x) => f x -> f x -> f x;
+  aplus = liftA2 mappend;
+
+  intersperse :: MonadLogic m => x -> m x -> m x;
+  intersperse x = msplit >=> maybe mzero (\(y, z) -> return y ++ intersperse' x z);
+{-# RULES "L.intersperse" intersperse = L.intersperse #-};
+
+  intersperse' :: MonadLogic m => x -> m x -> m x;
+  intersperse' x = msplit >=> maybe mzero (\(y, z) -> return x ++ return y ++ intersperse' x z);
+
+  intercalate :: MonadLogic m => m x -> m (m x) -> m x;
+  intercalate = join .: intersperse;
+{-# RULES "L.intercalate" intercalate = L.intercalate #-};
+
+  deleteF :: MonadLogic m => (x -> Bool) -> m x -> m x;
+  deleteF f = msplit >=> maybe mzero (\(x, y) -> bool (return x ++ deleteF f y) y (f x));
+{-# SPECIALIZE deleteF :: (x -> Bool) -> [x] -> [x] #-};
+
+  delete :: (Eq x, MonadLogic m) => x -> m x -> m x;
+  delete = deleteF . (==);
+{-# RULES "L.delete" delete = L.delete #-};
+
+  (\\) :: (MonadLogic m, Foldable t, Eq b) => m b -> t b -> m b;
+  (\\) = foldl (flip delete);
+  infixl 5 \\;
+{-# RULES "L.\\" (\\) = (L.\\) #-};
+
+  stripPrefixBy :: (a -> a -> Bool) -> [a] -> [a] -> Maybe [a];
+  stripPrefixBy _ [] y = Just y;
+  stripPrefixBy f (x : xs) (y : ys) | f x y = stripPrefixBy f xs ys;
+  stripPrefixBy _ _ _ = Nothing;
+
+  lcomp :: (Foldable t, Category c) => t (c x x) -> c x x;
+  lcomp = foldl (<<<) id;
+
+  rcomp :: (Foldable t, Category c) => t (c x x) -> c x x;
+  rcomp = foldr (>>>) id;
+
+  loeb :: (Function a (f b) b, Functor f) => f a -> f b;
+  loeb x = ($ loeb x) <$> x;
+{-# SPECIALIZE loeb :: Functor f => f (f x -> x) -> f x #-};
+
+  spanList :: ([a] -> Bool) -> [a] -> ([a], [a]);
+  spanList _ [] = ([], []);
+  spanList f (h : t) = bool ([], h : t) (first (h :) $ spanList f t) $ f (h : t);
+
+  breakList :: ([a] -> Bool) -> [a] -> ([a], [a]);
+  breakList = spanList . (not .);
+
+  split :: (Alternative f, Eq a) => [a] -> [a] -> f [a];
+  split _ [] = empty;
+  split d s = uncurry consA . second (\x -> bool (split d $ drop d x) (pure []) (d == x)) $ breakList (isPrefixOf d) s;
+{-# SPECIALIZE split :: Eq a => [a] -> [a] -> [[a]] #-};
+
+  replace :: Eq a => [a] -> [a] -> [a] -> [a];
+  replace o n = intercalate n . split o;
+
+  subIndex :: (Peanoid i, Alternative f, Eq a) => [a] -> [a] -> f i;
+  subIndex x y = findIndex (isPrefixOf x) (tails y);
+
+}
+</pre></br><h2>printed</h2></br><pre>{-# LANGUAGE MultiParamTypeClasses, RankNTypes, FlexibleInstances, FlexibleContexts, TypeFamilies, FunctionalDependencies, UndecidableInstances #-}
+
+module Prelude.Generalize (
+  module Control.Applicative, module Control.Monad.Logic, module Prelude,
+  module Control.Comonad, module Data.Foldable, module Data.Monoid, bool,
+  (<>>=), (!!), tail, length, filter, consA, snocA, liftPair, Peanoid(..),
+  Copeanoid(..), fair, (++), module Data.Functor.Identity, iterate, church,
+  unfoldr, convList, head, drop, take, find, takeWhile, dropWhile, tails,
+  findIndex, module Control.Category, module Control.Arrow, option,
+  cycle, mcycle, repeat, replicate, module Data.Traversable, count, choice,
+  mreplicate, (>>==), groupBy, lefts, rights, partitionEithers, null, unnull,
+  module Data.Bits, module Data.Int, module Data.Word, Swap(..), Peano,
+  atLeast, (.:), (.::), (.:::), bind2, bind3, (!!!), transEnum, transInt,
+  low8bits, modifyBit, getBits, transPeano, Part1M, Part1(..),
+  Part2M, Part2(..), Part3M, Part3(..), Part4M, Part4(..), Part5M, Part5(..),
+  Part6M, Part6(..), QuestionMarkOp(..), selectItems, selectBits, hGetByte,
+  hPutByte, module System.IO, (>>=||), (>>=|||), (>>=|\/), (>>=\/), azero,
+  aplus, concat, on, sortBy, sort, intersperse, intersperse', intercalate,
+  stripPrefix, stripPrefixBy, isPrefixOf, isSuffixOf, isInfixOf, (\\), nub,
+  nubBy, deleteF, delete, group, insert, insertBy, intersect, intersectBy,
+  partition, permutations, subsequences, transpose, union, unionBy, unzip4,
+  unzip5, unzip6, unzip7, zip4, zip5, zip6, zip7, zipWith4, zipWith5,
+  zipWith6, zipWith7, lcomp, rcomp, loeb, Function(..), spanList, breakList,
+  split, replace, subIndex
+) where {
+
+  import Prelude hiding (head, tail, (!!), foldr, foldl, length, filter, mapM_,
+   sequence_, foldl1, maximum, minimum, product, sum, all, and, or, any, concat,
+   concatMap, elem, foldr1, notElem, Monad, Functor, (=<<), (>>=), (>>), mapM,
+   sequence, fmap, fail, return, (++), iterate, drop, take, takeWhile, dropWhile,
+   ($), (.), id, otherwise, cycle, repeat, replicate, concat, null, Int);
+  import Data.List hiding (head, tail, (!!), foldr, foldl, length, filter,
+   foldl1, maximum, minimum, product, sum, all, and, or, any, concat, concatMap,
+   elem, foldr1, notElem, (++), iterate, unfoldr, drop, take, find, takeWhile,
+   dropWhile, tails, findIndex, cycle, repeat, replicate, minimumBy, maximumBy,
+   groupBy, null, concat, intersperse, intercalate, delete, deleteBy, (\\),
+   group);
+  import Data.Foldable hiding (find, concat);
+  import Control.Arrow;
+  import Control.Applicative;
+  import Control.Category hiding ((<<<), (>>>));
+  import Control.Comonad;
+  import Control.Monad.Logic hiding (mapM_, sequence_, forM_, msum, mapM, forM,
+   sequence);
+  import Data.Either (lefts, rights, partitionEithers);
+  import Data.Functor.Identity;
+  import Data.Monoid;
+  import Data.Function hiding (id, (.), ($));
+  import Data.Traversable;
+  import Data.Bits;
+  import Data.Int;
+  import Data.Word;
+  import Foreign.Ptr;
+  import Foreign.Marshal.Alloc;
+  import Foreign.Storable;
+  import System.IO (Handle, stdin, stdout, stderr, withFile, openFile, IOMode(..),
+   hClose, hIsEOF, isEOF, hFileSize, hFlush, hSeek, NewlineMode(..), nativeNewline,
+   SeekMode(..), hTell, hReady, hGetChar, hGetLine, hPutChar, hPutStr, hPutStrLn,
+   withBinaryFile, openBinaryFile, hSetBinaryMode, TextEncoding, hSetEncoding,
+   Newline(..), hSetNewlineMode);
+
+  import qualified Data.List as L;
+  import qualified Data.Maybe as M;
+  import qualified System.IO as IO;
+
+  newtype Peano = Peano [()] deriving (Eq);
+
+  instance Ord Peano where {
+    compare (Peano []) (Peano []) = EQ;
+    compare (Peano []) (Peano (_ : _)) = LT;
+    compare (Peano (_ : _)) (Peano []) = GT;
+    compare (Peano (_ : x)) (Peano (_ : y)) = compare (Peano x) (Peano y);
+  };
+
+  class Peanoid x where {
+    zeroP :: x;
+    succP :: x -> x;
+  };
+
+  class Copeanoid x where {
+    predP :: x -> Maybe x;
+  };
+
+  class Function f i o | f -> i o where {
+    ($) :: f -> i -> o;
+    infixl 0 $;
+  };
+
+  class Swap f where {
+    swap :: f x y -> f y x;  -- swap . swap = id
+  };
+
+  type family Part1M x y :: *;
+  class Part1 x where {
+    type Part1T x :: *;
+    get1 :: x -> Part1T x;
+    map1 :: (Part1T x -> y) -> x -> Part1M x y;
+  };
+
+  type family Part2M x y :: *;
+  class Part1 x => Part2 x where {
+    type Part2T x :: *;
+    get2 :: x -> Part2T x;
+    map2 :: (Part2T x -> y) -> x -> Part2M x y;
+  };
+
+  type family Part3M x y :: *;
+  class Part2 x => Part3 x where {
+    type Part3T x :: *;
+    get3 :: x -> Part3T x;
+    map3 :: (Part3T x -> y) -> x -> Part3M x y;
+  };
+
+  type family Part4M x y :: *;
+  class Part3 x => Part4 x where {
+    type Part4T x :: *;
+    get4 :: x -> Part4T x;
+    map4 :: (Part4T x -> y) -> x -> Part4M x y;
+  };
+
+  type family Part5M x y :: *;
+  class Part4 x => Part5 x where {
+    type Part5T x :: *;
+    get5 :: x -> Part5T x;
+    map5 :: (Part5T x -> y) -> x -> Part5M x y;
+  };
+
+  type family Part6M x y :: *;
+  class Part5 x => Part6 x where {
+    type Part6T x :: *;
+    get6 :: x -> Part6T x;
+    map6 :: (Part6T x -> y) -> x -> Part6M x y;
+  };
+
+  class QuestionMarkOp x y z | x y -> z, x z -> y where {
+    (?) :: x -> y -> z;
+    idQMO :: x ~ z => y;  -- (? idQMO) = id
+  };
+
+  instance Peanoid Integer where {
+    zeroP = 0;
+    succP = succ;
+  };
+
+  instance Copeanoid Integer where {
+    predP 0 = Nothing;
+    predP x = Just (pred x);
+  };
+
+  instance Peanoid Int where {
+    zeroP = 0;
+    succP = succ;
+  };
+
+  instance Copeanoid Int where {
+    predP 0 = Nothing;
+    predP x = Just (pred x);
+  };
+
+  instance Peanoid Int16 where {
+    zeroP = 0;
+    succP = succ;
+  };
+
+  instance Copeanoid Int16 where {
+    predP 0 = Nothing;
+    predP x = Just (pred x);
+  };
+
+  instance Peanoid Int32 where {
+    zeroP = 0;
+    succP = succ;
+  };
+
+  instance Copeanoid Int32 where {
+    predP 0 = Nothing;
+    predP x = Just (pred x);
+  };
+
+  instance Peanoid Int64 where {
+    zeroP = 0;
+    succP = succ;
+  };
+
+  instance Copeanoid Int64 where {
+    predP 0 = Nothing;
+    predP x = Just (pred x);
+  };
+
+  instance Peanoid Word8 where {
+    zeroP = 0;
+    succP = succ;
+  };
+
+  instance Copeanoid Word8 where {
+    predP 0 = Nothing;
+    predP x = Just (pred x);
+  };
+
+  instance Peanoid Word16 where {
+    zeroP = 0;
+    succP = succ;
+  };
+
+  instance Copeanoid Word16 where {
+    predP 0 = Nothing;
+    predP x = Just (pred x);
+  };
+
+  instance Peanoid Word32 where {
+    zeroP = 0;
+    succP = succ;
+  };
+
+  instance Copeanoid Word32 where {
+    predP 0 = Nothing;
+    predP x = Just (pred x);
+  };
+
+  instance Peanoid Bool where {
+    zeroP = False;
+    succP = not;
+  };
+
+  instance Peanoid () where {
+    zeroP = ();
+    succP = const ();
+  };
+
+  instance Peanoid x => Peanoid [x] where {
+    zeroP = [];
+    succP = (zeroP :) . map succP;
+  };
+
+  instance Copeanoid [x] where {
+    predP [] = Nothing;
+    predP (_ : x) = Just x;
+  };
+
+  instance Peanoid Peano where {
+    zeroP = Peano [];
+    succP (Peano x) = Peano (() : x);
+  };
+
+  instance Copeanoid Peano where {
+    predP (Peano []) = Nothing;
+    predP (Peano (_ : x)) = Just $ Peano x;
+  };
+
+  instance Peanoid x => Peanoid (Maybe x) where {
+    zeroP = Nothing;
+    succP = maybe (Just zeroP) (Just . succP);
+  };
+
+  instance Copeanoid x => Copeanoid (Maybe x) where {
+    predP = maybe Nothing (Just . predP);
+  };
+
+  instance Function (i -> o) i o where {
+    ($) = id;
+  };
+{-# SPECIALIZE ($) :: (i -> o) -> i -> o #-};
+{-# RULES "application$" ($) = id #-};
+
+  instance Function f i o => Function [f] [i] [o] where {
+    ($) = zipWith ($);
+  };
+
+  instance Function (Kleisli m i o) i (m o) where {
+    ($) = runKleisli;
+  };
+
+  instance (Function f1 i1 o1, Function f2 i2 o2) => Function (f1, f2) (i1, i2) (o1, o2) where {
+    (f1, f2) $ (x1, x2) = (f1 $ x1, f2 $ x2);
+  };
+
+  instance (Function f1 i1 o1, Function f2 i2 o2, Function f3 i3 o3) => Function (f1, f2, f3) (i1, i2, i3) (o1, o2, o3) where {
+    (f1, f2, f3) $ (x1, x2, x3) = (f1 $ x1, f2 $ x2, f3 $ x3);
+  };
+
+  instance (Function f1 i1 o, Function f2 i2 o) => Function (Either f1 f2) (i1, i2) o where {
+    Left f $ (x, _) = f $ x;
+    Right f $ (_, x) = f $ x;
+  };
+
+  instance Swap (,) where {
+    swap (x, y) = (y, x);
+  };
+
+  instance Swap ((,,) a) where {
+    swap (a, x, y) = (a, y, x);
+  };
+
+  instance Swap ((,,,) a b) where {
+    swap (a, b, x, y) = (a, b, y, x);
+  };
+
+  instance Swap Either where {
+    swap = either Right Left;
+  };
+
+  type instance Part1M (x, y) z = (z, y);
+  instance Part1 (x, y) where {
+    type Part1T (x, y) = x;
+    get1 = fst;
+    map1 = first;
+  };
+
+  type instance Part2M (x, y) z = (x, z);
+  instance Part2 (x, y) where {
+    type Part2T (x, y) = y;
+    get2 = snd;
+    map2 = second;
+  };
+
+  type instance Part1M (a, b, c) z = (z, b, c);
+  instance Part1 (a, b, c) where {
+    type Part1T (a, b, c) = a;
+    get1 (x, _, _) = x;
+    map1 f (a, b, c) = (f a, b, c);
+  };
+
+  type instance Part2M (a, b, c) z = (a, z, c);
+  instance Part2 (a, b, c) where {
+    type Part2T (a, b, c) = b;
+    get2 (_, x, _) = x;
+    map2 f (a, b, c) = (a, f b, c);
+  };
+
+  type instance Part3M (a, b, c) z = (a, b, z);
+  instance Part3 (a, b, c) where {
+    type Part3T (a, b, c) = c;
+    get3 (_, _, x) = x;
+    map3 f (a, b, c) = (a, b, f c);
+  };
+
+  type instance Part1M (a, b, c, d) z = (z, b, c, d);
+  instance Part1 (a, b, c, d) where {
+    type Part1T (a, b, c, d) = a;
+    get1 (x, _, _, _) = x;
+    map1 f (a, b, c, d) = (f a, b, c, d);
+  };
+
+  type instance Part2M (a, b, c, d) z = (a, z, c, d);
+  instance Part2 (a, b, c, d) where {
+    type Part2T (a, b, c, d) = b;
+    get2 (_, x, _, _) = x;
+    map2 f (a, b, c, d) = (a, f b, c, d);
+  };
+
+  type instance Part3M (a, b, c, d) z = (a, b, z, d);
+  instance Part3 (a, b, c, d) where {
+    type Part3T (a, b, c, d) = c;
+    get3 (_, _, x, _) = x;
+    map3 f (a, b, c, d) = (a, b, f c, d);
+  };
+
+  type instance Part4M (a, b, c, d) z = (a, b, c, z);
+  instance Part4 (a, b, c, d) where {
+    type Part4T (a, b, c, d) = d;
+    get4 (_, _, _, x) = x;
+    map4 f (a, b, c, d) = (a, b, c, f d);
+  };
+
+  type instance Part1M (a, b, c, d, e) z = (z, b, c, d, e);
+  instance Part1 (a, b, c, d, e) where {
+    type Part1T (a, b, c, d, e) = a;
+    get1 (x, _, _, _, _) = x;
+    map1 f (a, b, c, d, e) = (f a, b, c, d, e);
+  };
+
+  type instance Part2M (a, b, c, d, e) z = (a, z, c, d, e);
+  instance Part2 (a, b, c, d, e) where {
+    type Part2T (a, b, c, d, e) = b;
+    get2 (_, x, _, _, _) = x;
+    map2 f (a, b, c, d, e) = (a, f b, c, d, e);
+  };
+
+  type instance Part3M (a, b, c, d, e) z = (a, b, z, d, e);
+  instance Part3 (a, b, c, d, e) where {
+    type Part3T (a, b, c, d, e) = c;
+    get3 (_, _, x, _, _) = x;
+    map3 f (a, b, c, d, e) = (a, b, f c, d, e);
+  };
+
+  type instance Part4M (a, b, c, d, e) z = (a, b, c, z, e);
+  instance Part4 (a, b, c, d, e) where {
+    type Part4T (a, b, c, d, e) = d;
+    get4 (_, _, _, x, _) = x;
+    map4 f (a, b, c, d, e) = (a, b, c, f d, e);
+  };
+
+  type instance Part5M (a, b, c, d, e) z = (a, b, c, d, z);
+  instance Part5 (a, b, c, d, e) where {
+    type Part5T (a, b, c, d, e) = e;
+    get5 (_, _, _, _, x) = x;
+    map5 f (a, b, c, d, e) = (a, b, c, d, f e);
+  };
+
+  instance QuestionMarkOp Bool (a, a) a where {
+    False ? (x, _) = x;
+    True ? (_, x) = x;
+    idQMO = (False, True);
+  };
+
+  instance QuestionMarkOp (Either l r) (l -> a, r -> a) a where {
+    Left x ? (f, _) = f x;
+    Right x ? (_, f) = f x;
+    idQMO = (Left, Right);
+  };
+
+  instance QuestionMarkOp (Maybe x) (a, x -> a) a where {
+    Nothing ? (x, _) = x;
+    Just x ? (_, f) = f x;
+    idQMO = (Nothing, Just);
+  };
+
+  instance QuestionMarkOp Ordering (a, a, a) a where {
+    LT ? (x, _, _) = x;
+    EQ ? (_, x, _) = x;
+    GT ? (_, _, x) = x;
+    idQMO = (LT, EQ, GT);
+  };
+
+  instance QuestionMarkOp [x] (a, x -> [x] -> a) a where {
+    [] ? (x, _) = x;
+    (h : t) ? (_, x) = x h t;
+    idQMO = ([], (:));
+  };
+
+  instance QuestionMarkOp (x, y) (x -> y -> a) a where {
+    (x, y) ? f = f x y;
+    idQMO = (,);
+  };
+
+  instance QuestionMarkOp (x, y, z) (x -> y -> z -> a) a where {
+    (x, y, z) ? f = f x y z;
+    idQMO = (,,);
+  };
+
+  instance QuestionMarkOp (Identity x) (x -> a) a where {
+    Identity x ? f = f x;
+    idQMO = Identity;
+  };
+
+  bool :: x -> x -> Bool -> x;
+  bool x _ False = x;
+  bool _ x True = x;
+{-# INLINABLE bool #-};
+
+  (<>>=) :: (Functor m, Monad m) => m a -> (a -> m b) -> m a;
+  x <>>= f = x >>= ap (<$) f;
+  infixl 1 <>>=;
+
+  tail :: MonadLogic m => m x -> m x;
+  tail = msplit >=> maybe (error "tail: empty list") snd;
+{-# RULES "L.tail" tail = L.tail #-};
+
+  (!!) :: (Copeanoid i, Foldable t) => t x -> i -> x;
+  x !! n = either id (error "(!!): no element") $
+   foldlM (\y z -> maybe (Left z) Right (predP y)) n x;
+{-# RULES "L.!!" (!!) = (L.!!) #-};
+
+  (!!!) :: (Copeanoid i, Foldable t, Alternative f) => t x -> i -> f x;
+  x !!! n = either pure (const empty) $
+   foldlM (\y z -> maybe (Left z) Right (predP y)) n x;
+
+  length :: (Peanoid i, Foldable t) => t x -> i;
+  length = foldr (const succP) zeroP;
+{-# RULES "L.length" length = L.length #-};
+{-# SPECIALIZE length :: Peanoid i => [x] -> i #-};
+{-# SPECIALIZE length :: Foldable t => t x -> Int #-};
+
+  filter :: MonadPlus m => (x -> Bool) -> m x -> m x;
+  filter f = (>>= liftA2 (bool mzero) return f);
+{-# RULES "L.filter" filter = L.filter #-};
+
+  consA :: Alternative f => x -> f x -> f x;
+  consA x y = pure x <|> y;
+{-# RULES "consA" consA = (:) #-};
+
+  option :: Alternative f => x -> f x -> f x;
+  option x y = y <|> pure x;
+
+  snocA :: Alternative f => x -> f x -> f x;
+  snocA = option;
+{-# INLINE snocA #-};
+{-# RULES "snocA" snocA = option #-};
+
+  liftPair :: Applicative f => (f x, f y) -> f (x, y);
+  liftPair = uncurry $ liftA2 (,);
+
+  fair :: MonadLogic m => m (m x) -> m x;
+  fair = (>>- id);
+{-# SPECIALIZE fair :: [[x]] -> [x] #-};
+
+  (++) :: MonadPlus m => m a -> m a -> m a;
+  (++) = mplus;
+  infixr 5 ++;
+{-# INLINE (++) #-};
+{-# RULES "L.++" (++) = (L.++) #-};
+
+  iterate :: Alternative f => (x -> x) -> x -> f x;
+  iterate f x = consA x $ iterate f (f x);
+
+  church :: Copeanoid i => i -> (x -> x) -> x -> x;
+  church i f x = maybe id (\y -> church y f . f) (predP i) x;
+
+  unfoldr :: Alternative f => (b -> Maybe (a, b)) -> b -> f a;
+  unfoldr f b = maybe empty (\(x, y) -> consA x $ unfoldr f y) $ f b;
+
+  convList :: (Alternative f, Foldable t) => t x -> f x;
+  convList = foldr consA empty;
+{-# RULES "L.convList(1)" convList = M.listToMaybe #-};
+{-# RULES "L.convList(2)" convList = M.maybeToList #-};
+
+  head :: Foldable t => t x -> x;
+  head = maybe (error "head: empty list") id . convList;
+{-# RULES "L.head" head = L.head #-};
+
+  drop :: (Copeanoid i, MonadLogic m) => i -> m x -> m x;
+  drop = flip church (msplit >=> maybe mzero snd);
+{-# RULES "L.drop" drop = L.drop #-};
+
+  take :: (Copeanoid i, MonadLogic m) => i -> m x -> m x;
+  take i = msplit >=> maybe mzero (\(x, y) -> maybe mzero (\z -> return x ++ take z y) $ predP i);
+{-# RULES "L.take" take = L.take #-};
+
+  find :: (Alternative f, Foldable t) => (a -> Bool) -> t a -> f a;
+  find p = foldr (liftA2 (bool id) consA p) empty;
+{-# RULES "L.find" find = L.find #-};
+
+  takeWhile :: MonadLogic m => (x -> Bool) -> m x -> m x;
+  takeWhile f = msplit >=> maybe mzero (\(x, y) -> bool mzero (return x ++ takeWhile f y) (f x));
+{-# RULES "L.takeWhile" takeWhile = L.takeWhile #-};
+
+  dropWhile :: MonadLogic m => (x -> Bool) -> m x -> m x;
+  dropWhile f = msplit >=> maybe mzero (\(x, y) -> bool (return x ++ y) (dropWhile f y) (f x));
+{-# RULES "L.dropWhile" dropWhile = L.dropWhile #-};
+
+  tails :: MonadLogic m => m x -> m (m x);
+  tails = msplit >=> maybe (return mzero) (\(x, y) -> return (return x ++ y) ++ tails y);
+{-# RULES "L.tails" tails = L.tails #-};
+
+  findIndex :: (Peanoid i, Alternative f, Foldable t) => (a -> Bool) -> t a -> f i;
+  findIndex p = snd . foldl (\(y, z) x -> (succP y, bool z (z <|> pure y) $ p x)) (zeroP, empty);
+{-# RULES "L.findIndex" findIndex = L.findIndex #-};
+{-# RULES "L.findIndices" findIndex = L.findIndices #-};
+
+  cycle :: Alternative f => f x -> f x;
+  cycle x = x <|> cycle x;
+
+  mcycle :: Monoid x => x -> x;
+  mcycle x = mappend x (mcycle x);
+
+  repeat :: Alternative f => x -> f x;
+  repeat x = consA x (repeat x);
+{-# RULES "L.repeat" repeat = L.repeat #-};
+
+  replicate :: (Copeanoid i, Alternative f) => i -> x -> f x;
+  replicate i x = maybe empty (\z -> consA x $ replicate z x) $ predP i;
+{-# RULES "L.replicate" replicate = L.replicate #-};
+
+  mreplicate :: (Copeanoid i, Monoid x) => i -> x -> x;
+  mreplicate i x = maybe mempty (\z -> mappend x $ mreplicate z x) $ predP i;
+
+  count :: (Copeanoid i, Applicative f, Alternative g, Traversable g) => i -> f x -> f (g x);
+  count i x = sequenceA (replicate i x);
+
+  choice :: (Foldable t, Alternative f) => t (f x) -> f x;
+  choice = foldr (<|>) empty;
+
+  groupBy :: (Foldable t, Alternative f, Alternative g) => (a -> a -> Bool) -> t a -> f (g a);
+  groupBy f = (uncurry $ maybe id (option . snd)) . foldl (foldGroup f) (Nothing, empty);
+{-# RULES "L.groupBy" groupBy = L.groupBy #-};
+
+  group :: (Alternative g, Alternative f, Foldable t, Eq a) => t a -> f (g a);
+  group = groupBy (==);
+{-# RULES "L.group" group = L.group #-};
+
+  foldGroup :: (Alternative f, Alternative g) => (a -> a -> Bool) -> (Maybe (a, g a), f (g a)) -> a -> (Maybe (a, g a), f (g a));
+  foldGroup f (Nothing, x) a = (Just (a, pure a), x);
+  foldGroup f (Just (y, z), x) a = bool (Just (a, pure a), option z x) (Just (a, option a z), x) (f a y);
+
+  null :: Foldable t => t x -> Bool;
+  null = foldr (\_ _ -> False) True;
+{-# RULES "L.null" null = L.null #-};
+{-# RULES "M.null" null = M.isNothing #-};
+
+  unnull :: Foldable t => t x -> Bool;
+  unnull = foldr (\_ _ -> True) False;
+{-# RULES "L.unnull" unnull = not . L.null #-};
+{-# RULES "M.unnull" unnull = M.isJust #-};
+
+  concat :: (MonadPlus m, Foldable f) => m (f x) -> m x;
+  concat = (>>= foldr (mplus . return) mzero);
+{-# RULES "L.concat" concat = L.concat #-};
+
+  (>>==) :: (Functor m, MonadPlus m, Foldable f) => m x -> (x -> f y) -> m y;
+  x >>== f = concat (f <$> x);
+  infixl 1 >>==;
+
+  atLeast :: Copeanoid i => i -> Peano -> Bool;
+  atLeast x (Peano []) = null $ predP x;
+  atLeast x (Peano (_ : y)) = maybe True (flip atLeast $ Peano y) $ predP x;
+
+--  (.:) :: Category cat => cat b c -> (a -> cat a1 b) -> a -> cat a1 c;
+--  (.:) = (.) . (.);
+  (.:) :: (Category cat, Functor f) => cat b c -> f (cat a b) -> f (cat a c);
+  (.:) = fmap <$> (.);
+  infixr 9 .:;
+{-# SPECIALIZE (.:) :: (b -> c) -> (a -> a1 -> b) -> a -> a1 -> c #-};
+{-# INLINE (.:) #-};
+
+--  (.::) :: Category cat => cat b c -> (a -> a1 -> cat a2 b) -> a -> a1 -> cat a2 c;
+--  (.::) = (.) . (.) . (.);
+  (.::) :: (Category cat, Functor f, Functor g) => cat b c -> f (g (cat a b)) -> f (g (cat a c));
+  (.::) = fmap <$> (.:);
+  infixr 9 .::;
+{-# SPECIALIZE (.::) :: (b -> c) -> (a -> a1 -> a2 -> b) -> a -> a1 -> a2 -> c #-};
+{-# INLINE (.::) #-};
+
+--  (.:::) :: Category cat => cat b c -> (a -> a1 -> a2 -> cat a3 b) -> a -> a1 -> a2 -> cat a3 c;
+--  (.:::) = (.) . (.) . (.) . (.);
+  (.:::) :: (Category cat, Functor f, Functor g, Functor h) => cat b c -> f (g (h (cat a b))) -> f (g (h (cat a c)));
+  (.:::) = fmap <$> (.::);
+  infixr 9 .:::;
+{-# SPECIALIZE (.:::) :: (b -> c) -> (a -> a1 -> a2 -> a3 -> b) -> a -> a1 -> a2 -> a3 -> c #-};
+{-# INLINE (.:::) #-};
+
+  bind2 :: Monad m => (x -> y -> m a) -> m x -> m y -> m a;
+  bind2 = join .:: liftM2;
+
+  bind3 :: Monad m => (x -> y -> z -> m a) -> m x -> m y -> m z -> m a;
+  bind3 = join .::: liftM3;
+
+  transEnum :: (Enum t, Enum u) => t -> u;
+  transEnum = toEnum . fromEnum;
+
+  transInt :: (Integral t, Integral u) => t -> u;
+  transInt = fromInteger . toInteger;
+
+  low8bits :: (Integral t, Bits t) => t -> Word8;
+  low8bits = transInt . (.&. 255);
+{-# RULES "low8bits=id" low8bits = id #-};
+
+  modifyBit :: Bits a => Bool -> a -> Int -> a;
+  modifyBit x = bool clearBit setBit x;
+
+  getBits :: (Bits t, Integral t, Integral u) => Int -> Int -> t -> u;
+  getBits h l n = transInt $ shiftR n (h + 1 - l) .&. ((2 ^ l) - 1);
+
+  transPeano :: (Copeanoid i, Peanoid o) => i -> o;
+  transPeano = maybe zeroP (succP . transPeano) . predP;
+
+  selectItems :: [x] -> [Bool] -> [x];
+  selectItems = (map fst . filter snd) .: zip;
+
+  selectBits :: (Bits x, Integral x) => x -> x -> x;
+  selectBits _ 0 = 0;
+  selectBits x y = bool (selectBits (shiftR x 1) (shiftR y 1))
+   ((x .&. 1) .|. shiftL (selectBits (shiftR x 1) (shiftR y 1)) 1) (odd y);
+
+  hPutByte :: Handle -> Word8 -> IO ();
+  hPutByte h x = alloca (\y -> poke y x >> IO.hPutBuf h y 1);
+
+  hGetByte :: Handle -> IO Word8;
+  hGetByte h = alloca (\y -> IO.hGetBuf h y 1 >> peek y);
+
+  (>>=||) :: Monad m => m (a, b) -> (a -> b -> m z) -> m z;
+  m >>=|| f = m >>= \(a, b) -> f a b;
+  infixl 1 >>=||;
+
+  (>>=|||) :: Monad m => m (a, b, c) -> (a -> b -> c -> m z) -> m z;
+  m >>=||| f = m >>= \(a, b, c) -> f a b c;
+  infixl 1 >>=|||;
+
+  (>>=|\/) :: Monad m => m (a, b, c, d) -> (a -> b -> c -> d -> m z) -> m z;
+  m >>=|\/ f = m >>= \(a, b, c, d) -> f a b c d;
+  infixl 1 >>=|\/;
+
+  (>>=\/) :: Monad m => m (a, b, c, d, e) -> (a -> b -> c -> d -> e -> m z) -> m z;
+  m >>=\/ f = m >>= \(a, b, c, d, e) -> f a b c d e;
+  infixl 1 >>=\/;
+
+  azero :: (Applicative f, Monoid x) => f x;
+  azero = pure mempty;
+
+  aplus :: (Applicative f, Monoid x) => f x -> f x -> f x;
+  aplus = liftA2 mappend;
+
+  intersperse :: MonadLogic m => x -> m x -> m x;
+  intersperse x = msplit >=> maybe mzero (\(y, z) -> return y ++ intersperse' x z);
+{-# RULES "L.intersperse" intersperse = L.intersperse #-};
+
+  intersperse' :: MonadLogic m => x -> m x -> m x;
+  intersperse' x = msplit >=> maybe mzero (\(y, z) -> return x ++ return y ++ intersperse' x z);
+
+  intercalate :: MonadLogic m => m x -> m (m x) -> m x;
+  intercalate = join .: intersperse;
+{-# RULES "L.intercalate" intercalate = L.intercalate #-};
+
+  deleteF :: MonadLogic m => (x -> Bool) -> m x -> m x;
+  deleteF f = msplit >=> maybe mzero (\(x, y) -> bool (return x ++ deleteF f y) y (f x));
+{-# SPECIALIZE deleteF :: (x -> Bool) -> [x] -> [x] #-};
+
+  delete :: (Eq x, MonadLogic m) => x -> m x -> m x;
+  delete = deleteF . (==);
+{-# RULES "L.delete" delete = L.delete #-};
+
+  (\\) :: (MonadLogic m, Foldable t, Eq b) => m b -> t b -> m b;
+  (\\) = foldl (flip delete);
+  infixl 5 \\;
+{-# RULES "L.\" (\\) = (L.\\) #-};
+
+  stripPrefixBy :: (a -> a -> Bool) -> [a] -> [a] -> Maybe [a];
+  stripPrefixBy _ [] y = Just y;
+  stripPrefixBy f (x : xs) (y : ys) | f x y = stripPrefixBy f xs ys;
+  stripPrefixBy _ _ _ = Nothing;
+
+  lcomp :: (Foldable t, Category c) => t (c x x) -> c x x;
+  lcomp = foldl (<<<) id;
+
+  rcomp :: (Foldable t, Category c) => t (c x x) -> c x x;
+  rcomp = foldr (>>>) id;
+
+  loeb :: (Function a (f b) b, Functor f) => f a -> f b;
+  loeb x = ($ loeb x) <$> x;
+{-# SPECIALIZE loeb :: Functor f => f (f x -> x) -> f x #-};
+
+  spanList :: ([a] -> Bool) -> [a] -> ([a], [a]);
+  spanList _ [] = ([], []);
+  spanList f (h : t) = bool ([], h : t) (first (h :) $ spanList f t) $ f (h : t);
+
+  breakList :: ([a] -> Bool) -> [a] -> ([a], [a]);
+  breakList = spanList . (not .);
+
+  split :: (Alternative f, Eq a) => [a] -> [a] -> f [a];
+  split _ [] = empty;
+  split d s = uncurry consA . second (\x -> bool (split d $ drop d x) (pure []) (d == x)) $ breakList (isPrefixOf d) s;
+{-# SPECIALIZE split :: Eq a => [a] -> [a] -> [[a]] #-};
+
+  replace :: Eq a => [a] -> [a] -> [a] -> [a];
+  replace o n = intercalate n . split o;
+
+  subIndex :: (Peanoid i, Alternative f, Eq a) => [a] -> [a] -> f i;
+  subIndex x y = findIndex (isPrefixOf x) (tails y);
+
+}
+
+</pre>
