@@ -8,8 +8,128 @@
         <name>Matthew Pickering</name>
         <email>matthewtpickering@gmail.com</email>
     </author>
-    <updated>2014-12-20T00:00:00Z</updated>
+    <updated>2015-07-23T00:00:00Z</updated>
     <entry>
+    <title>Announcing ghc-exactprint: a new foundation for refactoring tools</title>
+    <link href="http://mpickering.github.io/posts/2015-07-23-ghc-exactprint.html" />
+    <id>http://mpickering.github.io/posts/2015-07-23-ghc-exactprint.html</id>
+    <published>2015-07-23T00:00:00Z</published>
+    <updated>2015-07-23T00:00:00Z</updated>
+    <summary type="html"><![CDATA[<h2 class="post"> Announcing ghc-exactprint: a new foundation for refactoring tools </h2>
+<div class="info">
+    Posted on July 23, 2015
+    
+</div>
+
+<p>Thompson and Reinke originally described 22 refactorings in their <a href="http://www.cs.kent.ac.uk/projects/refactor-fp/publications/refactoring-draft-catalogue.pdf">catalogue</a> of functional refactorings which motivated the development of HaRe. Missing from their list is the identity transformation, in the context of refactoring this is perhaps the most important. When applying any kind of change to small segment of your project it is undesirable for the tooling to modify another part of your file unexpectedly. The identity refactoring seems to be the easiest of all but it is important that any refactoring tool behaves in this way.</p>
+<!--more-->
+<h1 id="representation">Representation</h1>
+<p>If your only concern is to perform the identity transformation then perhaps the representation you choose is not very important. One can easily choose to operate directly on the source files for instance. The representation becomes much more important when considering other refactoring operations.</p>
+<p>When deciding on a representation, you have to take into account more complicated transformations such as renamings, insertions and deletions which are made much easier by manipulating an AST. Most current source manipulations are based on <code>haskell-src-exts</code> which provides a separate parser and as a result lacks support for many modern language extensions. We instead chose to base <code>ghc-exactprint</code> directly on the GHC parser so that we don’t have to worry (much) about adding support for future changes to the parser and secondly, working with GHC directly is essential if you want to perform <em>type-aware</em> refactorings.</p>
+<p>We work in two stages.</p>
+<p>After recieving the output of the GHC parser, the first stage converts all the absolute source positions into relative positions.</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell">not <span class="dt">True</span> <span class="fu">=</span> <span class="dt">False</span></code></pre>
+<p>For example, in the preceding declaration, using absolute source positions we might describe the the declaration starts at (0,0), the first argument starts at (0,4) and the RHS of the definition starts at (0,12). Using relative positioning like in the library, we instead describe the position of each element relative to the position of the previous element. For example, <code>True</code> is 0 lines and 1 column further than <code>not</code> and <code>False</code> is 0 lines and 1 column further than <code>=</code>.</p>
+<p>We hope this approach will make it easy to perform transformations without worrying too much about where exactly everything will end up. With this style, replacing expressions is easy as we don’t have to worry about updating anything at all, just by replacing the expression in the AST produces the correct output.</p>
+<p>Secondly, we perform the reverse of this transformation and produce a source file given an AST and the previously worked out relative positions. Thus a refactoring becomes two things:</p>
+<ol style="list-style-type: decimal">
+<li>A direct modification of the AST.</li>
+<li>A modification of the associated annotations.</li>
+</ol>
+<h1 id="results">Results</h1>
+<p>Much of the last 10 months was spent modifying GHC in order to be able to apply this transformation successfully. After testing the program on around 50,000 source files from Hackage, we can say with confidence that at least the foundations are in place for further tooling to be built.</p>
+<p>A glance at the <a href="https://github.com/alanz/ghc-exactprint/tree/master/tests/examples">test suite</a> will show some particularly tricky examples. The IOHCC also provided a good source of test material..</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="kw">import </span><span class="dt">Data.Char</span>
+e<span class="fu">=</span><span class="dv">181021504832735228091659724090293195791121747536890433</span>
+
+u(f,m)x<span class="fu">=</span>i(m(x),       [],<span class="kw">let</span>(a,b)<span class="fu">=</span>f(x)       <span class="kw">in</span>(a<span class="fu">:</span>u(f,m)b))
+(v,h)<span class="fu">=</span>(foldr(\x(y    )<span class="ot">-&gt;</span><span class="dv">00</span><span class="fu">+</span><span class="dv">128</span><span class="fu">*</span>y<span class="fu">+</span>x)<span class="dv">0</span>,u(     sp(<span class="dv">25</span>),((<span class="fu">==</span>)<span class="st">&quot;&quot;</span>)))
+<span class="ot">p::</span>(<span class="dt">Integer</span>,<span class="dt">Integer</span> )<span class="ot">-&gt;</span><span class="dt">Integer</span>      <span class="ot">-&gt;</span>     <span class="dt">Integer</span>    <span class="co">--NotInt</span>
+p(n,m)x     <span class="fu">=</span>i(n<span class="fu">==</span><span class="dv">0</span> ,<span class="dv">1</span>,i(z n             ,q(n,m)x,    r(n,m)x))
+i(n,e,d     )<span class="fu">=</span><span class="kw">if</span>(n) <span class="kw">then</span>(e)              <span class="kw">else</span>  (d)    <span class="co">--23+3d4f</span>
+(g,main     ,s,un)<span class="fu">=</span> (\x<span class="ot">-&gt;</span>x,             y(j),\x<span class="ot">-&gt;</span>x<span class="fu">*</span>x,unlines)<span class="co">--)</span>
+j(o)<span class="fu">=</span>i(take(<span class="dv">2</span>)o<span class="fu">==</span>   <span class="st">&quot;e=&quot;</span>,<span class="st">&quot;e=&quot;</span><span class="fu">++</span>t        (drop(<span class="dv">4</span><span class="fu">-</span><span class="dv">2</span>)o),i(d<span class="fu">&gt;</span>e,k,l)o)
+l<span class="fu">=</span>un<span class="fu">.</span>map (show<span class="fu">.</span>p      (e,n)<span class="fu">.</span>v<span class="fu">.</span>map(      fromIntegral<span class="co">{-g-}</span><span class="fu">.</span>ord))<span class="fu">.</span>h
+k<span class="fu">=</span>co<span class="fu">.</span>map(map(chr       <span class="fu">.</span>fromIntegral    )<span class="fu">.</span>w<span class="fu">.</span>p(d,n)<span class="fu">.</span>   read)<span class="fu">.</span>lines
+(t,y)<span class="fu">=</span>(\ (o<span class="fu">:</span>q)<span class="ot">-&gt;</span>              i(o<span class="fu">==</span><span class="ch">&#39;-&#39;</span>  ,<span class="ch">&#39;1&#39;</span>,<span class="ch">&#39;-&#39;</span> )<span class="fu">:</span>   q,interact)
+q(n,m)x<span class="fu">=</span>   mod(s(    p(        div(n)<span class="dv">2</span>, m<span class="co">{-jl-}</span>)x)    )m<span class="co">--hd&amp;&amp;gdb</span>
+(r,z,co)    <span class="fu">=</span>(\(n,   m)x<span class="ot">-&gt;</span>mod(x<span class="fu">*</span>p(n<span class="fu">-</span><span class="dv">1</span>,  m)x)m,even    ,concat)<span class="co">--6</span>
+(w,sp)<span class="fu">=</span>(    u(\x<span class="ot">-&gt;</span>(   mod(x)<span class="dv">128</span>,div(x   )<span class="dv">128</span>),(<span class="fu">==</span><span class="dv">0</span>    )),splitAt)
+
+d<span class="fu">=</span><span class="dv">563347325936</span><span class="fu">+</span><span class="dv">1197371806136556985877790097</span><span class="fu">-</span><span class="dv">563347325936</span>
+n<span class="fu">=</span><span class="dv">351189532146914946493104395525009571831256157560461451</span></code></pre>
+<p>Replacements, deletions and rearrangements are very easy using this framework. Most of the time they can be specified by generic traversals (with any generics library) The last piece of the puzzle is to make it just as easy to add new items into the AST. A challenge that I and Alan Zimmerman will now begin to work on.</p>
+<h2 id="future-work">Future Work</h2>
+<ul>
+<li>We are looking at using pattern synonyms in order to smooth over the rough corners of the GHC API.</li>
+<li>I have used this tooling to write a <a href="https://github.com/mpickering/apply-refact">tool</a> which automatically applies hlint suggestions.</li>
+<li>HaRe is currently being rewritten to use this new machinery.</li>
+</ul>
+<h2 id="caveats">Caveats</h2>
+<p>There are a few things which remain difficult to process.</p>
+<ul>
+<li>CPP - I think that every Haskell tool has difficultly dealing with CPP and we are no exception.</li>
+<li>Minimal Pragmas - The GHC AST performs normalisation on complicated Minimial Pragmas which means that</li>
+<li>Unicode Syntax - The lexer doesn’t differentiate between unicode characters and their ascii equivalents. For the most part we can work around this by comparing the length of symbols. The exception is ★, which has the same length as it’s ascii equivalent *.</li>
+</ul>
+<h2 id="a-simple-insertion">A simple insertion</h2>
+<p>This simple example inserts a type signature making sure to move comments to the right place.</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="ot">{-# LANGUAGE NamedFieldPuns #-}</span>
+<span class="kw">module</span> <span class="dt">InsertSignature</span> <span class="kw">where</span>
+
+<span class="kw">import </span><span class="dt">Language.Haskell.GHC.ExactPrint</span>
+<span class="kw">import </span><span class="dt">Language.Haskell.GHC.ExactPrint.Parsers</span>
+<span class="kw">import </span><span class="dt">Language.Haskell.GHC.ExactPrint.Types</span>
+<span class="kw">import </span><span class="dt">Language.Haskell.GHC.ExactPrint.Utils</span>
+
+<span class="kw">import qualified</span> <span class="dt">Data.Map</span> <span class="kw">as</span> <span class="dt">Map</span>
+
+<span class="kw">import qualified</span> <span class="dt">HsSyn</span> <span class="kw">as</span> <span class="dt">GHC</span>
+<span class="kw">import qualified</span> <span class="dt">RdrName</span> <span class="kw">as</span> <span class="dt">GHC</span>
+<span class="kw">import qualified</span> <span class="dt">SrcLoc</span> <span class="kw">as</span> <span class="dt">GHC</span>
+
+<span class="kw">type</span> <span class="dt">Module</span> <span class="fu">=</span> <span class="dt">GHC.Located</span> (<span class="dt">GHC.HsModule</span> <span class="dt">GHC.RdrName</span>)
+
+<span class="ot">main ::</span> <span class="dt">IO</span> ()
+main <span class="fu">=</span> <span class="kw">do</span>
+  <span class="dt">Right</span> (as, m) <span class="ot">&lt;-</span> parseModule <span class="st">&quot;test.hs&quot;</span>
+  (finalAs, finalM) <span class="ot">&lt;-</span> addSignature <span class="st">&quot;baz&quot;</span> <span class="st">&quot;baz :: String -&gt; Int&quot;</span> as m
+  putStrLn <span class="fu">$</span> exactPrintWithAnns finalM finalAs
+
+
+<span class="ot">addSignature ::</span> <span class="dt">String</span> <span class="co">-- ^ Function to add a signature for</span>
+             <span class="ot">-&gt;</span> <span class="dt">String</span> <span class="co">-- ^ Type signature</span>
+             <span class="ot">-&gt;</span> <span class="dt">Anns</span>
+             <span class="ot">-&gt;</span> <span class="dt">Module</span>
+             <span class="ot">-&gt;</span> <span class="dt">IO</span> (<span class="dt">Anns</span>, <span class="dt">Module</span>)
+addSignature funid tsig as (<span class="dt">GHC.L</span> l m) <span class="fu">=</span> <span class="kw">do</span>
+  <span class="dt">Right</span> (sigAnns, sig) <span class="ot">&lt;-</span> withDynFlags (\d <span class="ot">-&gt;</span> parseDecl d <span class="st">&quot;template&quot;</span> tsig)
+  <span class="kw">let</span> (before, (bind<span class="fu">:</span> after)) <span class="fu">=</span> break findFunBind (GHC.hsmodDecls m)
+      newAs <span class="fu">=</span> Map.union as sigAnns
+      <span class="dt">Just</span> <span class="dt">Ann</span>{annEntryDelta, annPriorComments} <span class="fu">=</span> Map.lookup (mkAnnKey bind) newAs
+      finalAnns <span class="fu">=</span> Map.adjust (\sigAnn <span class="ot">-&gt;</span> sigAnn { annEntryDelta <span class="fu">=</span> annEntryDelta
+                                                , annPriorComments <span class="fu">=</span> annPriorComments })
+                             (mkAnnKey sig)
+                  <span class="fu">.</span> Map.adjust (\bindAnn <span class="ot">-&gt;</span> bindAnn { annEntryDelta <span class="fu">=</span> <span class="dt">DP</span> (<span class="dv">1</span>, <span class="dv">0</span>)
+                                                    , annPriorComments <span class="fu">=</span> [] })
+                               (mkAnnKey bind) <span class="fu">$</span> newAs
+
+      finalMod <span class="fu">=</span> m { GHC.hsmodDecls <span class="fu">=</span> before <span class="fu">++</span> [sig, bind] <span class="fu">++</span> after }
+
+  return (finalAnns, <span class="dt">GHC.L</span> l finalMod)
+
+
+  <span class="kw">where</span>
+<span class="ot">    findFunBind ::</span> <span class="dt">GHC.LHsDecl</span> <span class="dt">GHC.RdrName</span> <span class="ot">-&gt;</span> <span class="dt">Bool</span>
+    findFunBind (<span class="dt">GHC.L</span> _ (<span class="dt">GHC.ValD</span> b<span class="fu">@</span>(<span class="dt">GHC.FunBind</span> {})))
+      <span class="fu">|</span> showGhc (GHC.unLoc (GHC.fun_id  b)) <span class="fu">==</span> funid <span class="fu">=</span> <span class="dt">True</span>
+    findFunBind _ <span class="fu">=</span> <span class="dt">False</span></code></pre>
+<div class="references">
+
+</div>
+]]></summary>
+</entry>
+<entry>
     <title>Data Types à la Carte with Closed Type Families</title>
     <link href="http://mpickering.github.io/posts/2014-12-20-closed-type-family-data-types.html" />
     <id>http://mpickering.github.io/posts/2014-12-20-closed-type-family-data-types.html</id>
