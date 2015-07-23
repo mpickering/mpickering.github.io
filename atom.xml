@@ -21,17 +21,18 @@
     
 </div>
 
-<p>Over the last few months Alan Zimmerman and myself have been working on what will hopefully become a new foundation for refactoring Haskell programs. We have called this foundation <code>ghc-exactprint</code> and it is now availible from <a href="https://hackage.haskell.org/package/ghc-exactprint">hackage</a>.</p>
+<p>Over the last few months Alan Zimmerman and myself have been working on what will hopefully become a new foundation for refactoring Haskell programs. We have called this foundation <code>ghc-exactprint</code> and it is now available on <a href="https://hackage.haskell.org/package/ghc-exactprint">hackage</a> to coincide with the release of GHC 7.10.2.</p>
 <p>Thompson and Reinke originally described 22 refactorings in their <a href="http://www.cs.kent.ac.uk/projects/refactor-fp/publications/refactoring-draft-catalogue.pdf">catalogue</a> of functional refactorings which motivated the development of HaRe. Missing from their list is the identity transformation, in the context of refactoring this is perhaps the most important. When applying any kind of change to small segment of your project it is undesirable for the tooling to modify another part of your file unexpectedly. The identity refactoring seems to be the easiest of all but it is important that any refactoring tool behaves in this way.</p>
 <p>The biggest challenge of the last few months was being able to perform the identity refactoring whilst retaining a suitable representation to be able to easily transform programs. Now that we believe that <code>ghc-exactprint</code> is robust, the challenge is to build the promised refactoring tools upon it.</p>
 <!--more-->
 <h1 id="representation">Representation</h1>
 <p>If your only concern is to perform the identity transformation then perhaps the representation you choose is not very important. One can easily choose to operate directly on the source files for instance. The representation becomes much more important when considering other refactoring operations.</p>
-<p>When deciding on a representation, you have to take into account more complicated transformations such as renamings, insertions and deletions which are made much easier by manipulating an AST. Most current source manipulations are based on <code>haskell-src-exts</code> which provides a separate parser and as a result lacks support for many modern language extensions. We instead chose to base <code>ghc-exactprint</code> directly on the GHC parser so that we don’t have to worry (much) about adding support for future changes to the parser and secondly, working with GHC directly is essential if you want to perform <em>type-aware</em> refactorings.</p>
+<p>When deciding on a representation, you have to take into account more complicated transformations such as renamings, insertions and deletions which are made much easier by manipulating an AST. Most current source manipulations are based on <code>haskell-src-exts</code> which provides a separate parser and as a result lacks support for many modern language extensions. We instead chose to base <code>ghc-exactprint</code> directly on the GHC parser so that we don’t have to worry (much) about adding support for future language extensions and secondly, working with the GHC AST directly is essential if you want to perform <em>type-aware</em> refactorings.</p>
 <p>We work in two stages.</p>
-<p>After recieving the output of the GHC parser, the first stage converts all the absolute source positions into relative positions.</p>
+<p>After receiving the output of the GHC parser, the first stage converts all the absolute source positions into relative positions.</p>
 <pre class="sourceCode haskell"><code class="sourceCode haskell">not <span class="dt">True</span> <span class="fu">=</span> <span class="dt">False</span></code></pre>
-<p>For example, in the preceding declaration, using absolute source positions we might describe the the declaration starts at (0,0), the first argument starts at (0,4) and the RHS of the definition starts at (0,12). Using relative positioning like in the library, we instead describe the position of each element relative to the position of the previous element. For example, <code>True</code> is 0 lines and 1 column further than <code>not</code> and <code>False</code> is 0 lines and 1 column further than <code>=</code>.</p>
+<p>For example, in the preceding declaration, using absolute source positions we might describe the the declaration starts at <code>(0,0)</code>, the first argument starts at <code>(0,4)</code> and the RHS of the definition starts at <code>(0,12)</code>. Using relative positioning like in the library, we instead describe the position of each element relative to the position of the previous element. For example, <code>True</code> is 0 lines and 1 column further than <code>not</code> and <code>False</code> is 0 lines and 1 column further than <code>=</code>.</p>
+<p>To keep track of this information we introduce a separate data structure which we call <em>annotations</em>. This data structure keeps track of the relative positions of all AST elements and keywords as well as any necessary information which is not included in the AST in order to exactly reproduce the original source file.</p>
 <p>We hope this approach will make it easy to perform transformations without worrying too much about where exactly everything will end up. With this style, replacing expressions is easy as we don’t have to worry about updating anything at all, just by replacing the expression in the AST produces the correct output.</p>
 <p>Secondly, we perform the reverse of this transformation and produce a source file given an AST and the previously worked out relative positions. Thus a refactoring becomes two things:</p>
 <ol style="list-style-type: decimal">
@@ -39,7 +40,7 @@
 <li>A modification of the associated annotations.</li>
 </ol>
 <h1 id="results">Results</h1>
-<p>Much of the last 10 months was spent modifying GHC in order to be able to apply this transformation successfully. After testing the program on around 50,000 source files from Hackage, we can say with confidence that at least the foundations are in place for further tooling to be built.</p>
+<p>Much of the last 10 months was spent modifying GHC and <code>ghc-exactprint</code> in order to be able roundtrip any source file successfully. The library has been through many iterations with varying levels of success but finally has reached an understandable and usable core. After testing the program on around 50,000 source files from Hackage, we can say with confidence that at least the foundations are in place for further tooling to be built.</p>
 <p>A glance at the <a href="https://github.com/alanz/ghc-exactprint/tree/master/tests/examples">test suite</a> will show some particularly tricky examples. The IOHCC also provided a good source of test material..</p>
 <pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="kw">import </span><span class="dt">Data.Char</span>
 e<span class="fu">=</span><span class="dv">181021504832735228091659724090293195791121747536890433</span>
@@ -63,24 +64,33 @@ n<span class="fu">=</span><span class="dv">3511895321469149464931043955250095718
 <p>Replacements, deletions and rearrangements are very easy using this framework. Most of the time they can be specified by generic traversals (with any generics library) The last piece of the puzzle is to make it just as easy to add new items into the AST. A challenge that I and Alan Zimmerman will now begin to work on.</p>
 <h2 id="future-work">Future Work</h2>
 <ul>
-<li>We are looking at using pattern synonyms in order to smooth over the rough corners of the GHC API.</li>
 <li>I have used this tooling to write a <a href="https://github.com/mpickering/apply-refact">tool</a> which automatically applies hlint suggestions.</li>
 <li>HaRe is currently being rewritten to use this new machinery.</li>
+<li>We are looking at using pattern synonyms in order to smooth over the rough corners of the GHC API.</li>
 </ul>
+<p>If you are interested in using the tooling then we are both active in <code>#haskell-refactorer</code>.</p>
 <h2 id="caveats">Caveats</h2>
 <p>There are a few things which remain difficult to process.</p>
 <ul>
 <li>CPP - I think that every Haskell tool has difficultly dealing with CPP and we are no exception.</li>
-<li>Minimal Pragmas - The GHC AST performs normalisation on complicated Minimial Pragmas which means that</li>
-<li>Unicode Syntax - The lexer doesn’t differentiate between unicode characters and their ascii equivalents. For the most part we can work around this by comparing the length of symbols. The exception is ★, which has the same length as it’s ascii equivalent *.</li>
+<li>Minimal Pragmas - The GHC AST performs normalisation on complicated Minimal Pragmas which means that some positional information is lost. This will be fixed for GHC 7.12.</li>
+<li>Unicode Syntax - The lexer doesn’t differentiate between unicode characters and their ascii equivalents. For the most part we can work around this by comparing the length of symbols. The exception is ★, which has the same length as it’s ascii equivalent * which means that ★’s are unfortunately lost on conversion.</li>
 </ul>
 <h2 id="a-simple-insertion">A simple insertion</h2>
 <p>This simple example inserts a type signature making sure to move comments to the right place. We hope to build a higher level interface on top of this low level manipulation.</p>
+<p>Along with the changes that Alan made to GHC to keep track of all the locations of keywords during parsing there have been two other improvements to enable this work.</p>
+<ol style="list-style-type: decimal">
+<li>Andrew Gibiansky added some more parser entry points which have proved invaluable.</li>
+<li>All the datatypes in the GHC AST now derive Data and Typeable instances which enables generic traversals.</li>
+</ol>
+<p>The following example takes advantage of the former of these two additions.</p>
+<h3 id="input">Input</h3>
 <pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="co">-- test.hs</span>
 <span class="kw">module</span> <span class="dt">Foo</span> <span class="kw">where</span>
 
 baz <span class="st">&quot;one&quot;</span> <span class="fu">=</span> <span class="dv">1</span>
 baz <span class="st">&quot;two&quot;</span> <span class="fu">=</span> <span class="dv">2</span></code></pre>
+<h3 id="program">Program</h3>
 <pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="ot">{-# LANGUAGE NamedFieldPuns #-}</span>
 <span class="kw">module</span> <span class="dt">InsertSignature</span> <span class="kw">where</span>
 
@@ -110,9 +120,14 @@ main <span class="fu">=</span> <span class="kw">do</span>
              <span class="ot">-&gt;</span> <span class="dt">Module</span>
              <span class="ot">-&gt;</span> <span class="dt">IO</span> (<span class="dt">Anns</span>, <span class="dt">Module</span>)
 addSignature funid tsig as (<span class="dt">GHC.L</span> l m) <span class="fu">=</span> <span class="kw">do</span>
+  <span class="co">-- Parse new AST element</span>
   <span class="dt">Right</span> (sigAnns, sig) <span class="ot">&lt;-</span> withDynFlags (\d <span class="ot">-&gt;</span> parseDecl d <span class="st">&quot;template&quot;</span> tsig)
   <span class="kw">let</span> (before, (bind<span class="fu">:</span> after)) <span class="fu">=</span> break findFunBind (GHC.hsmodDecls m)
+      <span class="co">-- Add new annotations to the map</span>
       newAs <span class="fu">=</span> Map.union as sigAnns
+      <span class="co">-- Modify the annotations to</span>
+      <span class="co">-- 1. Retain the original spacing</span>
+      <span class="co">-- 2. Make sure that comments are placed correctly.</span>
       <span class="dt">Just</span> <span class="dt">Ann</span>{annEntryDelta, annPriorComments} <span class="fu">=</span> Map.lookup (mkAnnKey bind) newAs
       finalAnns <span class="fu">=</span> Map.adjust (\sigAnn <span class="ot">-&gt;</span> sigAnn { annEntryDelta <span class="fu">=</span> annEntryDelta
                                                 , annPriorComments <span class="fu">=</span> annPriorComments })
@@ -131,6 +146,12 @@ addSignature funid tsig as (<span class="dt">GHC.L</span> l m) <span class="fu">
     findFunBind (<span class="dt">GHC.L</span> _ (<span class="dt">GHC.ValD</span> b<span class="fu">@</span>(<span class="dt">GHC.FunBind</span> {})))
       <span class="fu">|</span> showGhc (GHC.unLoc (GHC.fun_id  b)) <span class="fu">==</span> funid <span class="fu">=</span> <span class="dt">True</span>
     findFunBind _ <span class="fu">=</span> <span class="dt">False</span></code></pre>
+<h3 id="result">Result</h3>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="kw">module</span> <span class="dt">Foo</span> <span class="kw">where</span>
+
+<span class="ot">baz ::</span> <span class="dt">String</span> <span class="ot">-&gt;</span> <span class="dt">Int</span>
+baz <span class="st">&quot;one&quot;</span> <span class="fu">=</span> <span class="dv">1</span>
+baz <span class="st">&quot;two&quot;</span> <span class="fu">=</span> <span class="dv">2</span></code></pre>
 <div class="references">
 
 </div>
