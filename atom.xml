@@ -21,56 +21,6 @@
     
 </div>
 
-<p>Users upgrading to <a href="https://hackage.haskell.org/package/hlint-1.9.23">hlint 1.9.23</a> will now be able to take advantage of the new <code>--refactor</code> flag which by invoking the <code>refactor</code> executable supplied by <a href="https://hackage.haskell.org/package/apply-refact-0.1.0.0"><code>apply-refact</code></a> will automatically apply suggestions.</p>
-<p><img src="http://i.imgur.com/5hiEZJo.gif" alt="example" /><br />
- <!--more--></p>
-<h1 id="getting-started">Getting Started</h1>
-<pre><code>cabal install hlint
-cabal install apply-refact
-hlint --refactor myfile.hs</code></pre>
-<p>To take advantage of this flag users also need to install the <code>refactor</code> executable which is provided by <code>apply-refact</code>. Users can directly invoke <code>refactor</code> if they wish but it is easier to invoke it via hlint, passing any extra options with the <code>--refactor-options</code> flag.</p>
-<p>Hlint will by default apply all suggestions without any prompts to the user and output the result on stdout.</p>
-<p><img src="http://i.imgur.com/cmxQJiI.gif" alt="example2" /><br />
- If you’re feeling cautious, the <code>-s</code> flag will prompt you before applying each refactoring.</p>
-<p><img src="http://i.imgur.com/pxygqXI.gif" alt="sexample" /><br />
- If you’re feeling brave, the <code>-i</code> flag will perform the refactoring in place.</p>
-<p><img src="http://i.imgur.com/QJOGoHL.gif?1" alt="iexample" /><br />
- The final option which is useful for tool writers is the <code>--pos</code> flag which specifies the region to which hints should be applied to.</p>
-<p><img src="http://i.imgur.com/vOmNwq0.gif?1" alt="posexample" /><br />
-</p>
-<h1 id="editor-integration">Editor Integration</h1>
-<p>There are plugins availible for vim, emacs and atom. Moritz Kiefer has already helped me with the emacs plugin, pull requests to clean up the other two plugins would be greatly appreciated.</p>
-<ul>
-<li><a href="https://github.com/mpickering/hlint-refactor-vim"><code>hlint-refactor-vim</code></a></li>
-<li><a href="https://github.com/mpickering/hlint-refactor-atom"><code>hlint-refactor-atom</code></a></li>
-<li><a href="https://github.com/mpickering/hlint-refactor-mode"><code>hlint-refactor-mode</code></a></li>
-</ul>
-<h1 id="reporting-bugs">Reporting Bugs</h1>
-<p>If you find that the program gives you an unexpected result then please report a bug to the <a href="https://github.com/mpickering/apply-refact">issue tracker</a>. Please also include the output of <code>hlint --serialise</code> and the input file.</p>
-<p>There are a few known problems with CPP and a few corner cases which are not handled by the underlying library but for most users, a pain-free experience is expected.</p>
-<h2 id="known-issues">Known Issues</h2>
-<ul>
-<li><p>Tabs and trailing whitespace will be removed (this is by design and not going to change). Line endings are changed to unix line endings.</p></li>
-<li><p>Not all hlint suggestions are supported. A notable exception being the eta reduction refactoring as it proved quite difficult to implement correctly.</p></li>
-<li><p>Sometimes hlint suggests a refactoring which uses a name which isn’t in scope. The tool is quite dumb! It just takes whatever hlint suggests and applies it blindly. It might be good to add an option to hlint to avoid spitting out hints which do this.</p></li>
-</ul>
-<div id="refs" class="references">
-
-</div>
-]]></summary>
-</entry>
-<entry>
-    <title>Automatically Apply Hlint Suggestions</title>
-    <link href="http://mpickering.github.io/posts/2015-08-01-hlint-refactor.html" />
-    <id>http://mpickering.github.io/posts/2015-08-01-hlint-refactor.html</id>
-    <published>2015-08-01T00:00:00Z</published>
-    <updated>2015-08-01T00:00:00Z</updated>
-    <summary type="html"><![CDATA[<h2 class="post"> Automatically Apply Hlint Suggestions </h2>
-<div class="info">
-    Posted on August  1, 2015
-    
-</div>
-
 <p>Users upgrading to <a href="https://hackage.haskell.org/package/hlint-1.9.23">hlint 1.9.23</a> will now be able to take advantage of the new <code>--refactor</code> flag which by invoking the <code>refactor</code> executable supplied by <a href="https://hackage.haskell.org/package/apply-refact-0.1.0.0"><code>apply-refact</code></a> can automatically apply suggestions.</p>
 <p><img src="http://i.imgur.com/5hiEZJo.gif" alt="example" /><br />
  <!--more--></p>
@@ -129,7 +79,7 @@ hlint --refactor myfile.hs</code></pre>
 <p>When deciding on a representation, you have to take into account more complicated transformations such as renamings, insertions and deletions which are made much easier by manipulating an AST. Most current source manipulations are based on <code>haskell-src-exts</code> which provides a separate parser and as a result lacks support for many modern language extensions. We instead chose to base <code>ghc-exactprint</code> directly on the GHC parser so that we don’t have to worry (much) about adding support for future language extensions and secondly, working with the GHC AST directly is essential if you want to perform <em>type-aware</em> refactorings.</p>
 <p>We work in two stages.</p>
 <p>After receiving the output of the GHC parser, the first stage converts all the absolute source positions into relative positions.</p>
-<pre class="sourceCode haskell"><code class="sourceCode haskell">not <span class="dt">True</span> <span class="fu">=</span> <span class="dt">False</span></code></pre>
+<div class="sourceCode"><pre class="sourceCode haskell"><code class="sourceCode haskell">not <span class="dt">True</span> <span class="fu">=</span> <span class="dt">False</span></code></pre></div>
 <p>For example, in the preceding declaration, using absolute source positions we might describe the the declaration starts at <code>(0,0)</code>, the first argument starts at <code>(0,4)</code> and the RHS of the definition starts at <code>(0,12)</code>. Using relative positioning like in the library, we instead describe the position of each element relative to the position of the previous element. For example, <code>True</code> is 0 lines and 1 column further than <code>not</code> and <code>False</code> is 0 lines and 1 column further than <code>=</code>.</p>
 <p>To keep track of this information we introduce a separate data structure which we call <em>annotations</em>. This data structure keeps track of the relative positions of all AST elements and keywords as well as any necessary information which is not included in the AST in order to exactly reproduce the original source file.</p>
 <p>We hope this approach will make it easy to perform transformations without worrying too much about where exactly everything will end up. With this style, replacing expressions is easy as we don’t have to worry about updating anything at all, just by replacing the expression in the AST produces the correct output.</p>
@@ -141,7 +91,7 @@ hlint --refactor myfile.hs</code></pre>
 <h1 id="results">Results</h1>
 <p>Much of the last 10 months was spent modifying GHC and <code>ghc-exactprint</code> in order to be able roundtrip any source file successfully. The library has been through many iterations with varying levels of success but finally has reached an understandable and usable core. After testing the program on around 50,000 source files from Hackage, we can say with confidence that at least the foundations are in place for further tooling to be built.</p>
 <p>A glance at the <a href="https://github.com/alanz/ghc-exactprint/tree/master/tests/examples">test suite</a> will show some particularly tricky examples. The IOHCC also provided a good source of test material..</p>
-<pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="kw">import </span><span class="dt">Data.Char</span>
+<div class="sourceCode"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="kw">import </span><span class="dt">Data.Char</span>
 e<span class="fu">=</span><span class="dv">181021504832735228091659724090293195791121747536890433</span>
 
 u(f,m)x<span class="fu">=</span>i(m(x),       [],<span class="kw">let</span>(a,b)<span class="fu">=</span>f(x)       <span class="kw">in</span>(a<span class="fu">:</span>u(f,m)b))
@@ -159,7 +109,7 @@ q(n,m)x<span class="fu">=</span>   mod(s(    p(        div(n)<span class="dv">2<
 (w,sp)<span class="fu">=</span>(    u(\x<span class="ot">-&gt;</span>(   mod(x)<span class="dv">128</span>,div(x   )<span class="dv">128</span>),(<span class="fu">==</span><span class="dv">0</span>    )),splitAt)
 
 d<span class="fu">=</span><span class="dv">563347325936</span><span class="fu">+</span><span class="dv">1197371806136556985877790097</span><span class="fu">-</span><span class="dv">563347325936</span>
-n<span class="fu">=</span><span class="dv">351189532146914946493104395525009571831256157560461451</span></code></pre>
+n<span class="fu">=</span><span class="dv">351189532146914946493104395525009571831256157560461451</span></code></pre></div>
 <p>Replacements, deletions and rearrangements are very easy using this framework. Most of the time they can be specified by generic traversals (with any generics library) The last piece of the puzzle is to make it just as easy to add new items into the AST. A challenge that I and Alan Zimmerman will now begin to work on.</p>
 <h2 id="future-work">Future Work</h2>
 <ul>
@@ -184,13 +134,13 @@ n<span class="fu">=</span><span class="dv">3511895321469149464931043955250095718
 </ol>
 <p>The following example takes advantage of the former of these two additions.</p>
 <h3 id="input">Input</h3>
-<pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="co">-- test.hs</span>
+<div class="sourceCode"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="co">-- test.hs</span>
 <span class="kw">module</span> <span class="dt">Foo</span> <span class="kw">where</span>
 
 baz <span class="st">&quot;one&quot;</span> <span class="fu">=</span> <span class="dv">1</span>
-baz <span class="st">&quot;two&quot;</span> <span class="fu">=</span> <span class="dv">2</span></code></pre>
+baz <span class="st">&quot;two&quot;</span> <span class="fu">=</span> <span class="dv">2</span></code></pre></div>
 <h3 id="program">Program</h3>
-<pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="ot">{-# LANGUAGE NamedFieldPuns #-}</span>
+<div class="sourceCode"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="ot">{-# LANGUAGE NamedFieldPuns #-}</span>
 <span class="kw">module</span> <span class="dt">InsertSignature</span> <span class="kw">where</span>
 
 <span class="kw">import </span><span class="dt">Language.Haskell.GHC.ExactPrint</span>
@@ -244,14 +194,14 @@ addSignature funid tsig as (<span class="dt">GHC.L</span> l m) <span class="fu">
 <span class="ot">    findFunBind ::</span> <span class="dt">GHC.LHsDecl</span> <span class="dt">GHC.RdrName</span> <span class="ot">-&gt;</span> <span class="dt">Bool</span>
     findFunBind (<span class="dt">GHC.L</span> _ (<span class="dt">GHC.ValD</span> b<span class="fu">@</span>(<span class="dt">GHC.FunBind</span> {})))
       <span class="fu">|</span> showGhc (GHC.unLoc (GHC.fun_id  b)) <span class="fu">==</span> funid <span class="fu">=</span> <span class="dt">True</span>
-    findFunBind _ <span class="fu">=</span> <span class="dt">False</span></code></pre>
+    findFunBind _ <span class="fu">=</span> <span class="dt">False</span></code></pre></div>
 <h3 id="result">Result</h3>
-<pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="kw">module</span> <span class="dt">Foo</span> <span class="kw">where</span>
+<div class="sourceCode"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="kw">module</span> <span class="dt">Foo</span> <span class="kw">where</span>
 
 <span class="ot">baz ::</span> <span class="dt">String</span> <span class="ot">-&gt;</span> <span class="dt">Int</span>
 baz <span class="st">&quot;one&quot;</span> <span class="fu">=</span> <span class="dv">1</span>
-baz <span class="st">&quot;two&quot;</span> <span class="fu">=</span> <span class="dv">2</span></code></pre>
-<div class="references">
+baz <span class="st">&quot;two&quot;</span> <span class="fu">=</span> <span class="dv">2</span></code></pre></div>
+<div id="refs" class="references">
 
 </div>
 ]]></summary>
@@ -273,7 +223,7 @@ baz <span class="st">&quot;two&quot;</span> <span class="fu">=</span> <span clas
 <p>For a general overview of the approach there is no better introduction than the original <a href="http://citeseerx.ist.psu.edu/viewdoc/summary?doi=10.1.1.101.4131">functional pearl</a>.</p>
 <!--more-->
 <p>To recap, in order to ease writing composed data types, we define a type class <code>a :&lt;: b</code> to express that <code>a</code> is a subtype of <code>b</code>. To do this we require three instances.</p>
-<pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="co">-- Coproduct</span>
+<div class="sourceCode"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="co">-- Coproduct</span>
 <span class="kw">data</span> (f <span class="fu">:+:</span> g) e <span class="fu">=</span> <span class="dt">Inl</span> (f e) <span class="fu">|</span> <span class="dt">Inr</span> (g e)
 
 <span class="kw">class</span> f <span class="fu">:&lt;:</span> g <span class="kw">where</span>
@@ -286,7 +236,7 @@ baz <span class="st">&quot;two&quot;</span> <span class="fu">=</span> <span clas
   inj <span class="fu">=</span> <span class="dt">Inl</span>
 
 <span class="kw">instance</span> (f <span class="fu">:&lt;:</span> h) <span class="ot">=&gt;</span>  f <span class="fu">:&lt;:</span> (g <span class="fu">:+:</span> h) <span class="kw">where</span>
-  inj <span class="fu">=</span> inj <span class="fu">.</span> <span class="dt">Inr</span></code></pre>
+  inj <span class="fu">=</span> inj <span class="fu">.</span> <span class="dt">Inr</span></code></pre></div>
 <p>Together these three instances model a linear search through our nested coproduct whilst picking out the correct injection.</p>
 <p>Closed type families as introduced by Richard Eisenberg <span class="citation">(2013)</span> are on a simple level are restricted functions which act on types. With this observation, it seems that they can be used to reimplement most type class tricks in a more explicit manner and indeed this is the case. Patrick Bahr <span class="citation">(2014)</span> was the first to explore this idea in connection with compositional data types, this post closely follows his exposition.</p>
 <p>Patrick incrementally builds a solution to provide a more robust subtyping constraint. He proceeds in three stages.</p>
@@ -301,22 +251,22 @@ baz <span class="st">&quot;two&quot;</span> <span class="fu">=</span> <span clas
 <p>Thus, our first step will be to check whether such an injection exists from <code>f</code> to <code>g</code>.</p>
 <p>As type class resolution operators without backtracking - we can’t express any kind of branching computation in type class instances. This led to the convention where we were forced to make sure that <code>:+:</code> associated to the right.<a href="#fn1" class="footnoteRef" id="fnref1"><sup>1</sup></a> Hence, it was easy to think about our composed data types as lists of types (with <code>:+:</code> being a type level cons and <code>:&lt;:</code> searching through the list). As type families allow us to backtrack, this restriction is needless. Instead it is much easier to think about our constructed data types as trees.</p>
 <p>Our goal becomes to find a type family which searches these trees. To do this, we consider how we would do so at the term level.</p>
-<pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="kw">data</span> <span class="dt">Tree</span> a <span class="fu">=</span> <span class="dt">Tip</span> a <span class="fu">|</span> <span class="dt">Branch</span> (<span class="dt">Tree</span> a) (<span class="dt">Tree</span> a
+<div class="sourceCode"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="kw">data</span> <span class="dt">Tree</span> a <span class="fu">=</span> <span class="dt">Tip</span> a <span class="fu">|</span> <span class="dt">Branch</span> (<span class="dt">Tree</span> a) (<span class="dt">Tree</span> a
 
 elem<span class="ot"> ::</span> <span class="dt">Eq</span> v <span class="ot">=&gt;</span> a <span class="ot">-&gt;</span> <span class="dt">Tree</span> a <span class="ot">-&gt;</span> <span class="dt">Bool</span>
 elem v (<span class="dt">Tip</span> x) <span class="fu">=</span> <span class="kw">if</span> v <span class="fu">==</span> x <span class="kw">then</span> <span class="dt">True</span> <span class="kw">else</span> <span class="dt">False</span>
-elem v (<span class="dt">Branch</span> l r) <span class="fu">=</span> (elem v l) <span class="fu">||</span> (elem v r)</code></pre>
+elem v (<span class="dt">Branch</span> l r) <span class="fu">=</span> (elem v l) <span class="fu">||</span> (elem v r)</code></pre></div>
 <p>We can define a very similar type family which searches a composite coproduct at the type level. Note that we will make extensive implicit use of the <code>DataKinds</code> extension. For example in the following example, <code>True</code> and <code>False</code> are the promoted constructors.<a href="#fn2" class="footnoteRef" id="fnref2"><sup>2</sup></a>.</p>
-<pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="kw">type</span> family <span class="dt">Elem</span> e<span class="ot"> f ::</span> <span class="dt">Bool</span> <span class="kw">where</span>
+<div class="sourceCode"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="kw">type</span> family <span class="dt">Elem</span> e<span class="ot"> f ::</span> <span class="dt">Bool</span> <span class="kw">where</span>
   <span class="dt">Elem</span> e e <span class="fu">=</span> <span class="dt">True</span>
   <span class="dt">Elem</span> e (l <span class="fu">:+:</span> r) <span class="fu">=</span> <span class="dt">Or</span> (<span class="dt">Elem</span> e l) (<span class="dt">Elem</span> e r)
   <span class="dt">Elem</span> e f <span class="fu">=</span> <span class="dt">False</span>
 
 <span class="kw">type</span> family <span class="dt">Or</span> a<span class="ot"> b ::</span> <span class="dt">Bool</span>
   <span class="dt">Or</span> <span class="dt">False</span> <span class="dt">False</span> <span class="fu">=</span> <span class="dt">False</span>
-  <span class="dt">Or</span> a b         <span class="fu">=</span> <span class="dt">True</span></code></pre>
+  <span class="dt">Or</span> a b         <span class="fu">=</span> <span class="dt">True</span></code></pre></div>
 <p>This is no use to us as we must also calculate the injection, to do this, we need to know the path we took to find the value in the tree. By introducing a new data type <code>Res</code> and <code>Crumbs</code> we can construct the trail necessary. The modified definition of <code>Elem</code> and <code>Or</code> follow naturally.</p>
-<pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="kw">data</span> <span class="dt">Crumbs</span> <span class="fu">=</span> <span class="dt">Here</span> <span class="fu">|</span> <span class="dt">L</span> <span class="dt">Crumbs</span> <span class="fu">|</span> <span class="dt">R</span> <span class="dt">Crumbs</span>
+<div class="sourceCode"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="kw">data</span> <span class="dt">Crumbs</span> <span class="fu">=</span> <span class="dt">Here</span> <span class="fu">|</span> <span class="dt">L</span> <span class="dt">Crumbs</span> <span class="fu">|</span> <span class="dt">R</span> <span class="dt">Crumbs</span>
 
 <span class="kw">data</span> <span class="dt">Res</span> <span class="fu">=</span> <span class="dt">Found</span> <span class="dt">Crumbs</span> <span class="fu">|</span> <span class="dt">NotFound</span>
 
@@ -328,29 +278,29 @@ elem v (<span class="dt">Branch</span> l r) <span class="fu">=</span> (elem v l)
 <span class="kw">type</span> family <span class="dt">Choose</span> e<span class="ot"> f ::</span> <span class="dt">Res</span> <span class="kw">where</span>
   <span class="dt">Choose</span> (<span class="dt">Found</span> a) b <span class="fu">=</span> <span class="dt">Found</span> (<span class="dt">L</span> a)
   <span class="dt">Choose</span> a (<span class="dt">Found</span> b) <span class="fu">=</span> <span class="dt">Found</span> (<span class="dt">R</span> b)
-  <span class="dt">Choose</span> a b         <span class="fu">=</span> <span class="dt">NotFound</span></code></pre>
+  <span class="dt">Choose</span> a b         <span class="fu">=</span> <span class="dt">NotFound</span></code></pre></div>
 <p>Again, this is very similar to the term-level definition but is more verbose thanks to the lack of type-level type classes.</p>
 <p>Now we have the path to the type, we must also construct the injection. In fact, another type class is what we need but this time thanks to our additional work we don’t need to rely on convention nor <code>OverlappingInstances</code>.</p>
-<pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="kw">class</span> <span class="dt">MakeInj</span> (<span class="ot">res ::</span> <span class="dt">Res</span>) f g <span class="kw">where</span>
-<span class="ot">  mkInj ::</span> <span class="dt">Proxy</span> res <span class="ot">-&gt;</span> f a <span class="ot">-&gt;</span> g a</code></pre>
+<div class="sourceCode"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="kw">class</span> <span class="dt">MakeInj</span> (<span class="ot">res ::</span> <span class="dt">Res</span>) f g <span class="kw">where</span>
+<span class="ot">  mkInj ::</span> <span class="dt">Proxy</span> res <span class="ot">-&gt;</span> f a <span class="ot">-&gt;</span> g a</code></pre></div>
 <p>Notice one difference here is that as we are going to explicitly use the computed type level path, we need someway to make this information accessible to our type class. One way to do this is to use a <a href="http://hackage.haskell.org/package/base-4.7.0.1/docs/Data-Proxy.html">proxy variable</a>. At first glace it may seem useless to define a data type in this fashion but it allows us to pass around type information in exactly the way we want to here.</p>
-<pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="kw">instance</span> <span class="dt">MakeInj</span> (<span class="dt">Found</span> <span class="dt">Here</span>) f f <span class="kw">where</span>
+<div class="sourceCode"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="kw">instance</span> <span class="dt">MakeInj</span> (<span class="dt">Found</span> <span class="dt">Here</span>) f f <span class="kw">where</span>
   mkInj _ <span class="fu">=</span> id
 
 <span class="kw">instance</span> <span class="dt">MakeInj</span> (<span class="dt">MakeInj</span> (<span class="dt">Found</span> p) f l) <span class="ot">=&gt;</span> <span class="dt">MakeInj</span> (<span class="dt">Found</span> (<span class="dt">L</span> p)) f (l <span class="fu">:+:</span> r) <span class="kw">where</span>
   mkInj _ <span class="fu">=</span> <span class="dt">Inl</span> <span class="fu">.</span> mkInj (<span class="dt">Proxy</span><span class="ot"> ::</span> <span class="dt">Proxy</span> (<span class="dt">Found</span> p))
 
 <span class="kw">instance</span> <span class="dt">MakeInj</span> (<span class="dt">MakeInj</span> (<span class="dt">Found</span> p) f r) <span class="ot">=&gt;</span> <span class="dt">MakeInj</span> (<span class="dt">Found</span> (<span class="dt">R</span> p)) f (l <span class="fu">:+:</span> r) <span class="kw">where</span>
-  mkInj _ <span class="fu">=</span> <span class="dt">Inr</span> <span class="fu">.</span> mkInj (<span class="dt">Proxy</span><span class="ot"> ::</span> <span class="dt">Proxy</span> (<span class="dt">Found</span> p))</code></pre>
+  mkInj _ <span class="fu">=</span> <span class="dt">Inr</span> <span class="fu">.</span> mkInj (<span class="dt">Proxy</span><span class="ot"> ::</span> <span class="dt">Proxy</span> (<span class="dt">Found</span> p))</code></pre></div>
 <p>Notice how the proxy is used to direct the construction.</p>
 <p>Finally we can define <code>:&lt;:</code>.</p>
-<pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="kw">type</span> f <span class="fu">:&lt;:</span> g <span class="fu">=</span> <span class="dt">MakeInj</span> (<span class="dt">Elem</span> f g) f g</code></pre>
+<div class="sourceCode"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="kw">type</span> f <span class="fu">:&lt;:</span> g <span class="fu">=</span> <span class="dt">MakeInj</span> (<span class="dt">Elem</span> f g) f g</code></pre></div>
 <p>That is to say, <code>f</code> is a subtype of <code>g</code> if there is an injection from <code>f</code> to <code>g</code>. Notice that there is an injection if <code>Elem f g</code> is not <code>NotFound</code>.</p>
 <p>Using closed type families might seem like more work but the approach is inherently more powerful. There is also something to be said about making our search strategy explicit. Without knowledge of the type class resolution mechanism it can be confusing why a certain subtyping would fail. With this implementation, even if unfamiliar with the nuances of type families, it is much clearer.</p>
 <h1 id="ambiguity">Ambiguity</h1>
 <p>Another wart was the possibility of ambiguous injections if the same constructor was specified twice in a type signature. One example where it would be impossible to guarantee a consistent injection would be <code>Lit :+: Lit</code>. We want to disallow such signatures at compile time as they are always a programming error.</p>
 <p>To do this we can extend the <code>Res</code> data type to include a new constructor <code>Ambiguous</code> and altering the definition of <code>Choose</code>.</p>
-<pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="kw">data</span> <span class="dt">Res</span> <span class="fu">=</span> <span class="dt">Found</span> <span class="dt">Crumbs</span> <span class="fu">|</span> <span class="dt">NotFound</span> <span class="fu">|</span> <span class="dt">Ambiguous</span>
+<div class="sourceCode"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="kw">data</span> <span class="dt">Res</span> <span class="fu">=</span> <span class="dt">Found</span> <span class="dt">Crumbs</span> <span class="fu">|</span> <span class="dt">NotFound</span> <span class="fu">|</span> <span class="dt">Ambiguous</span>
 
 <span class="kw">type</span> family <span class="dt">Choose</span> e<span class="ot"> f ::</span> <span class="dt">Res</span> <span class="kw">where</span>
     <span class="dt">Choose</span> (<span class="dt">Found</span> x) (<span class="dt">Found</span> y) <span class="fu">=</span> <span class="dt">Ambiguous</span>
@@ -358,16 +308,16 @@ elem v (<span class="dt">Branch</span> l r) <span class="fu">=</span> (elem v l)
     <span class="dt">Choose</span> x <span class="dt">Ambiguous</span> <span class="fu">=</span> <span class="dt">Ambiguous</span>
     <span class="dt">Choose</span> (<span class="dt">Found</span> a) b <span class="fu">=</span> <span class="dt">Found</span> (<span class="dt">L</span> a)
     <span class="dt">Choose</span> a (<span class="dt">Found</span> b) <span class="fu">=</span> <span class="dt">Found</span> (<span class="dt">R</span> b)
-    <span class="dt">Choose</span> a b <span class="fu">=</span> <span class="dt">NotFound</span></code></pre>
+    <span class="dt">Choose</span> a b <span class="fu">=</span> <span class="dt">NotFound</span></code></pre></div>
 <p>The choice here to use a new constructor <code>Ambiguous</code> is stylistic, we could have easily reused the <code>NotFound</code> constructor. The reason for doing so is that the error messages produced by a fine grained result type are better. For example now attempting to compile the following expression results in an error which specifically mentions ambiguity.</p>
-<pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="ot">lit2 ::</span> <span class="dt">Expr</span> (<span class="dt">Lit</span> <span class="fu">:+:</span> <span class="dt">Lit</span>)
+<div class="sourceCode"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="ot">lit2 ::</span> <span class="dt">Expr</span> (<span class="dt">Lit</span> <span class="fu">:+:</span> <span class="dt">Lit</span>)
 lit2 <span class="fu">=</span> lit <span class="dv">2</span>
 
 <span class="dt">No</span> <span class="kw">instance</span> for (<span class="dt">MakeInj</span> <span class="ch">&#39;Ambiguous Lit (Lit :+: Lit))</span>
    arising from a use <span class="kw">of</span> ‘lit’
    <span class="dt">In</span> the expression<span class="fu">:</span> lit <span class="dv">2</span>
    <span class="dt">In</span> an equation for ‘lit2’<span class="fu">:</span> lit2 <span class="fu">=</span> lit <span class="dv">2</span>
-<span class="dt">Failed</span>, modules loaded<span class="fu">:</span> none<span class="fu">.</span></code></pre>
+<span class="dt">Failed</span>, modules loaded<span class="fu">:</span> none<span class="fu">.</span></code></pre></div>
 <h1 id="further-work">Further Work</h1>
 <p>We’ll wrap things up there for today but Patrick goes on to explore the possibility of further extending the subtyping relation to deal with more complicated injections. Even with the machinery he developed, intuitively correct subtyping relationships (such as <code>Add :+: Mult :&lt;: Add :+: Mult :+: Lit</code>) fail to hold. To avoid any suspense, he shows how to further extend <code>:&lt;:</code> to allow such relationships.</p>
 <p>These ideas and more are implemented in the <a href="https://hackage.haskell.org/package/compdata">compdata</a> package.</p>
@@ -375,9 +325,13 @@ lit2 <span class="fu">=</span> lit <span class="dv">2</span>
 <ul>
 <li><a href="http://ezyang.tumblr.com/post/74438034022/richard-a-eisenberg-closed-type-families-with">Q&amp;A with Richard Eisenberg</a></li>
 </ul>
-<div class="references">
+<div id="refs" class="references">
+<div id="ref-Bahr2014">
 <p>Bahr, Patrick. 2014. “Composing and decomposing data types: a closed type families implementation of data types à la carte.” <em>Proceedings of the 10th ACM SIGPLAN Workshop on …</em>, 71–82. <a href="http://dl.acm.org/citation.cfm?id=2633635" class="uri">http://dl.acm.org/citation.cfm?id=2633635</a>.</p>
+</div>
+<div id="ref-Eisenberg2013">
 <p>Eisenberg, RA, D Vytiniotis, SP Jones, and Stephanie Weirich. 2013. “Closed type families with overlapping equations (extended version),” 1–21. <a href="http://research.microsoft.com/en-us/um/people/simonpj/papers/ext-f/axioms-extended.pdf" class="uri">http://research.microsoft.com/en-us/um/people/simonpj/papers/ext-f/axioms-extended.pdf</a>.</p>
+</div>
 </div>
 <div class="footnotes">
 <hr />
@@ -404,28 +358,28 @@ lit2 <span class="fu">=</span> lit <span class="dv">2</span>
 <p>It is common to define closed data types. Later if one wants to annotate their syntax tree or pass along any other additional information this can cause significant problems. A clean solution is to redefine the data type using open recursion and then taking the fixed point.<a href="#fn1" class="footnoteRef" id="fnref1"><sup>1</sup></a> This approach allows great flexibility and access to uniform <a href="http://hackage.haskell.org/package/recursion-schemes">recursion schemes</a> but used to come at a cost. If the library writer had exposed the constructors, all existing user code would break with these changes. Since GHC 7.10, patterns allow us to completely swap out the underlying data type whilst maintaining the original interface.</p>
 <!--more-->
 <p>Here’s how. Consider Hutton’s Razor.</p>
-<pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="kw">data</span> <span class="dt">Hutton</span> <span class="fu">=</span> <span class="dt">Int</span> <span class="dt">Int</span> <span class="fu">|</span> <span class="dt">Add</span> <span class="dt">Hutton</span> <span class="dt">Hutton</span></code></pre>
+<div class="sourceCode"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="kw">data</span> <span class="dt">Hutton</span> <span class="fu">=</span> <span class="dt">Int</span> <span class="dt">Int</span> <span class="fu">|</span> <span class="dt">Add</span> <span class="dt">Hutton</span> <span class="dt">Hutton</span></code></pre></div>
 <p>Typically there will be many different operations defined as traversals of the syntax tree. One might typically be an evaluator.</p>
-<pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="ot">eval ::</span> <span class="dt">Hutton</span> <span class="ot">-&gt;</span> <span class="dt">Int</span>
+<div class="sourceCode"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="ot">eval ::</span> <span class="dt">Hutton</span> <span class="ot">-&gt;</span> <span class="dt">Int</span>
 eval (<span class="dt">Int</span> n) <span class="fu">=</span> n
-eval (<span class="dt">Add</span> n m) <span class="fu">=</span> eval n <span class="fu">+</span> eval m</code></pre>
+eval (<span class="dt">Add</span> n m) <span class="fu">=</span> eval n <span class="fu">+</span> eval m</code></pre></div>
 <p>Later, we might want to define the unfixed version of <code>Hutton</code>.</p>
-<pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="kw">data</span> <span class="dt">HuttonF</span> a <span class="fu">=</span> <span class="dt">IntF</span> <span class="dt">Int</span> <span class="fu">|</span> <span class="dt">AddF</span> a a <span class="kw">deriving</span> <span class="dt">Functor</span>
+<div class="sourceCode"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="kw">data</span> <span class="dt">HuttonF</span> a <span class="fu">=</span> <span class="dt">IntF</span> <span class="dt">Int</span> <span class="fu">|</span> <span class="dt">AddF</span> a a <span class="kw">deriving</span> <span class="dt">Functor</span>
 
 <span class="kw">newtype</span> <span class="dt">Fix</span> f <span class="fu">=</span> <span class="dt">Fix</span> (f (<span class="dt">Fix</span> f))
 
-<span class="kw">type</span> <span class="dt">Hutton</span> <span class="fu">=</span> <span class="dt">Fix</span> <span class="dt">HuttonF</span></code></pre>
+<span class="kw">type</span> <span class="dt">Hutton</span> <span class="fu">=</span> <span class="dt">Fix</span> <span class="dt">HuttonF</span></code></pre></div>
 <p>Unfortunately, we can no longer use any of our existing functions. Fortunately, using pattern synonyms we can regain this functionality.</p>
-<pre class="sourceCode haskell"><code class="sourceCode haskell">pattern (<span class="dt">Int</span> n) <span class="fu">=</span> <span class="dt">Fix</span> (<span class="dt">IntF</span> n)
-pattern (<span class="dt">Add</span> x y) <span class="fu">=</span> <span class="dt">Fix</span> (<span class="dt">AddF</span> x y)</code></pre>
+<div class="sourceCode"><pre class="sourceCode haskell"><code class="sourceCode haskell">pattern (<span class="dt">Int</span> n) <span class="fu">=</span> <span class="dt">Fix</span> (<span class="dt">IntF</span> n)
+pattern (<span class="dt">Add</span> x y) <span class="fu">=</span> <span class="dt">Fix</span> (<span class="dt">AddF</span> x y)</code></pre></div>
 <p>This is as far as GHC 7.8 will take us. To move further we need to take advantage of <a href="https://ghc.haskell.org/trac/ghc/ticket/8581">explicitly-bidirectional pattern synonyms</a> which are set to be introduced in GHC 7.10. These allow us to explicitly specify the constructor as well as the pattern. Useless in this case but what if we also wanted to annotate out AST?</p>
 <p>To do so it is usual to define a product type, <code>Annotate</code>,</p>
-<pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="kw">data</span> <span class="dt">Annotate</span> f <span class="fu">=</span> <span class="dt">Annotate</span> <span class="dt">Label</span> (f (<span class="dt">Annotate</span> f))</code></pre>
+<div class="sourceCode"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="kw">data</span> <span class="dt">Annotate</span> f <span class="fu">=</span> <span class="dt">Annotate</span> <span class="dt">Label</span> (f (<span class="dt">Annotate</span> f))</code></pre></div>
 <p>which we can then take the fixed point to get an annotated AST.</p>
-<pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="kw">data</span> <span class="dt">Annotated</span> <span class="fu">=</span> <span class="dt">Annotate</span> <span class="dt">Hutton</span></code></pre>
+<div class="sourceCode"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="kw">data</span> <span class="dt">Annotated</span> <span class="fu">=</span> <span class="dt">Annotate</span> <span class="dt">Hutton</span></code></pre></div>
 <p>Now we want to be able to keep using our existing functions for both annotated and unannotated values. The catch is that we can only have one pattern which corresponds to each constructor. To get around this we can use view patterns and a type class in order to use the same pattern for both our annotated and unannotated AST.</p>
 <p><code>View</code> provides an injection and projection function. Then defining suitable instances for <code>Annotated</code> and <code>Hutton</code>, we can reuse all of our previous definitions.</p>
-<pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="kw">class</span> <span class="dt">View</span> a <span class="kw">where</span>
+<div class="sourceCode"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="kw">class</span> <span class="dt">View</span> a <span class="kw">where</span>
 <span class="ot">  proj ::</span> a <span class="ot">-&gt;</span> <span class="dt">HuttonF</span> a
 <span class="ot">  inj ::</span> <span class="dt">HuttonF</span> a <span class="ot">-&gt;</span> a
 
@@ -444,9 +398,9 @@ pattern <span class="dt">Add</span> a b <span class="ot">&lt;-</span> (proj <spa
   proj (<span class="dt">Annotated</span> _ e) <span class="fu">=</span> e
   inj v <span class="fu">=</span> <span class="dt">Annotated</span> (mkLabel v) v
 
-<span class="ot">mkLabel ::</span> <span class="dt">HuttonF</span> <span class="dt">Annotated</span> <span class="ot">-&gt;</span> <span class="dt">Label</span></code></pre>
+<span class="ot">mkLabel ::</span> <span class="dt">HuttonF</span> <span class="dt">Annotated</span> <span class="ot">-&gt;</span> <span class="dt">Label</span></code></pre></div>
 <p>So far so good. Let’s test out our sample program.</p>
-<pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="ot">eval ::</span> <span class="dt">View</span> a <span class="ot">=&gt;</span> a <span class="ot">-&gt;</span> <span class="dt">Int</span>
+<div class="sourceCode"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="ot">eval ::</span> <span class="dt">View</span> a <span class="ot">=&gt;</span> a <span class="ot">-&gt;</span> <span class="dt">Int</span>
 eval (<span class="dt">I</span> n) <span class="fu">=</span> n
 eval (<span class="dt">Add</span> a b) <span class="fu">=</span> eval a <span class="fu">+</span> eval b
 
@@ -460,23 +414,23 @@ main <span class="fu">=</span> <span class="kw">do</span>
 
 <span class="fu">&gt;</span> <span class="fu">./</span>patterns
 <span class="dv">11</span>
-<span class="dv">11</span></code></pre>
+<span class="dv">11</span></code></pre></div>
 <p>To take stock for a moment - using technology available in GHC 7.8 we were able to swap out our standard data type and replace it with an unfixed variant. Then with machinery available to us in GHC 7.10, we were able to vary this underlying type as long as we could provide suitable mapping functions.</p>
 <p>Looking back at our definition of <code>inj</code> for <code>Annotated</code>, depending on what we want the label to be, it could make little sense to fill in the annotation whilst we are building the AST. It seems sensible to separate our <code>View</code> typeclass into two separate classes, one for projection and one for injection as they might not both make sense for all data types. Indeed if we introduce one more example, it is clear that they don’t.</p>
-<pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="kw">data</span> <span class="dt">Holey</span> f <span class="fu">=</span> <span class="dt">Hole</span> <span class="fu">|</span> <span class="dt">Expr</span> (f (<span class="dt">Holey</span> f))
+<div class="sourceCode"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="kw">data</span> <span class="dt">Holey</span> f <span class="fu">=</span> <span class="dt">Hole</span> <span class="fu">|</span> <span class="dt">Expr</span> (f (<span class="dt">Holey</span> f))
 
-<span class="kw">type</span> <span class="dt">HuttonHole</span> <span class="fu">=</span> <span class="dt">Holey</span> <span class="dt">HuttonF</span></code></pre>
+<span class="kw">type</span> <span class="dt">HuttonHole</span> <span class="fu">=</span> <span class="dt">Holey</span> <span class="dt">HuttonF</span></code></pre></div>
 <p>This union type represents syntax trees which might have holes in. Clearly there is no total definition of <code>proj</code> so we redefine our type classes as follows.</p>
-<pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="kw">class</span> <span class="dt">Project</span> a <span class="kw">where</span>
+<div class="sourceCode"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="kw">class</span> <span class="dt">Project</span> a <span class="kw">where</span>
 <span class="ot">  proj ::</span> a <span class="ot">-&gt;</span> <span class="dt">HuttonF</span> a
 
 <span class="kw">class</span> <span class="dt">Inject</span> a <span class="kw">where</span>
 <span class="ot">  inj ::</span> <span class="dt">HuttonF</span> a <span class="ot">-&gt;</span> a
 
 <span class="kw">instance</span> <span class="dt">Inject</span> <span class="dt">HuttonHole</span> <span class="kw">where</span>
-  inj <span class="fu">=</span> <span class="dt">Expr</span></code></pre>
+  inj <span class="fu">=</span> <span class="dt">Expr</span></code></pre></div>
 <p>Now we <em>should</em> be able to use this data type very naturally to construct trees which might contain holes and later fill in the holes with whatever we please.</p>
-<pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="ot">hole ::</span> <span class="dt">HuttonHole</span>
+<div class="sourceCode"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="ot">hole ::</span> <span class="dt">HuttonHole</span>
 hole <span class="fu">=</span> <span class="dt">Hole</span>
 
 <span class="ot">p4 ::</span> <span class="dt">HuttonHole</span>
@@ -484,7 +438,7 @@ p4 <span class="fu">=</span> <span class="dt">Add</span> (<span class="dt">I</sp
 
 <span class="ot">fillHole ::</span> (<span class="dt">Hole</span> <span class="ot">-&gt;</span> <span class="dt">Hutton</span>) <span class="ot">-&gt;</span> <span class="dt">HuttonHole</span> <span class="ot">-&gt;</span> <span class="dt">Hutton</span>
 fillHole f <span class="dt">Hole</span> <span class="fu">=</span> f <span class="dt">Hole</span>
-fillHole _ (<span class="dt">Expr</span> v) <span class="fu">=</span> v</code></pre>
+fillHole _ (<span class="dt">Expr</span> v) <span class="fu">=</span> v</code></pre></div>
 <p>Unfortunately we have pushed pattern synonyms a little bit too far. Instead of sweet sweet compilation, we are greeted with the following error message for each of the patterns.</p>
 <pre><code>Could not deduce (Inject a) arising from a use of ‘inj’
     from the context (Project a)
@@ -497,7 +451,7 @@ fillHole _ (<span class="dt">Expr</span> v) <span class="fu">=</span> v</code></
     In an equation for ‘I’: I n = inj (IF n)</code></pre>
 <p>GHC baulks at the fact that we have different class constraints for the pattern and constructor. I don’t think there is any reason that they <em>need</em> to have the same constraints but it might be desirable so that constructors, even synonyms, continue to match up with patterns.</p>
 <p>There are many powerful abstractions in Haskell which allow a library maintainer to provide a consistent interface across interactions. Unfortunately, if they ever chose to expose their internal syntax tree to the end-user, it was previously very difficult to maintain backwards compatibility. Pattern synonyms provide the perfect tool to do just this but they don’t appear to stretch quite far enough to tackle all interesting use cases.</p>
-<div class="references">
+<div id="refs" class="references">
 
 </div>
 <div class="footnotes">
@@ -530,7 +484,7 @@ fillHole _ (<span class="dt">Expr</span> v) <span class="fu">=</span> v</code></
 &gt; This is the new line in the new file
 &gt;</code></pre>
 <p>Easy as that!</p>
-<div class="references">
+<div id="refs" class="references">
 
 </div>
 ]]></summary>

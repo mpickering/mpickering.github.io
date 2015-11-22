@@ -32,7 +32,7 @@
 <p>When deciding on a representation, you have to take into account more complicated transformations such as renamings, insertions and deletions which are made much easier by manipulating an AST. Most current source manipulations are based on <code>haskell-src-exts</code> which provides a separate parser and as a result lacks support for many modern language extensions. We instead chose to base <code>ghc-exactprint</code> directly on the GHC parser so that we don’t have to worry (much) about adding support for future language extensions and secondly, working with the GHC AST directly is essential if you want to perform <em>type-aware</em> refactorings.</p>
 <p>We work in two stages.</p>
 <p>After receiving the output of the GHC parser, the first stage converts all the absolute source positions into relative positions.</p>
-<pre class="sourceCode haskell"><code class="sourceCode haskell">not <span class="dt">True</span> <span class="fu">=</span> <span class="dt">False</span></code></pre>
+<div class="sourceCode"><pre class="sourceCode haskell"><code class="sourceCode haskell">not <span class="dt">True</span> <span class="fu">=</span> <span class="dt">False</span></code></pre></div>
 <p>For example, in the preceding declaration, using absolute source positions we might describe the the declaration starts at <code>(0,0)</code>, the first argument starts at <code>(0,4)</code> and the RHS of the definition starts at <code>(0,12)</code>. Using relative positioning like in the library, we instead describe the position of each element relative to the position of the previous element. For example, <code>True</code> is 0 lines and 1 column further than <code>not</code> and <code>False</code> is 0 lines and 1 column further than <code>=</code>.</p>
 <p>To keep track of this information we introduce a separate data structure which we call <em>annotations</em>. This data structure keeps track of the relative positions of all AST elements and keywords as well as any necessary information which is not included in the AST in order to exactly reproduce the original source file.</p>
 <p>We hope this approach will make it easy to perform transformations without worrying too much about where exactly everything will end up. With this style, replacing expressions is easy as we don’t have to worry about updating anything at all, just by replacing the expression in the AST produces the correct output.</p>
@@ -44,7 +44,7 @@
 <h1 id="results">Results</h1>
 <p>Much of the last 10 months was spent modifying GHC and <code>ghc-exactprint</code> in order to be able roundtrip any source file successfully. The library has been through many iterations with varying levels of success but finally has reached an understandable and usable core. After testing the program on around 50,000 source files from Hackage, we can say with confidence that at least the foundations are in place for further tooling to be built.</p>
 <p>A glance at the <a href="https://github.com/alanz/ghc-exactprint/tree/master/tests/examples">test suite</a> will show some particularly tricky examples. The IOHCC also provided a good source of test material..</p>
-<pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="kw">import </span><span class="dt">Data.Char</span>
+<div class="sourceCode"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="kw">import </span><span class="dt">Data.Char</span>
 e<span class="fu">=</span><span class="dv">181021504832735228091659724090293195791121747536890433</span>
 
 u(f,m)x<span class="fu">=</span>i(m(x),       [],<span class="kw">let</span>(a,b)<span class="fu">=</span>f(x)       <span class="kw">in</span>(a<span class="fu">:</span>u(f,m)b))
@@ -62,7 +62,7 @@ q(n,m)x<span class="fu">=</span>   mod(s(    p(        div(n)<span class="dv">2<
 (w,sp)<span class="fu">=</span>(    u(\x<span class="ot">-&gt;</span>(   mod(x)<span class="dv">128</span>,div(x   )<span class="dv">128</span>),(<span class="fu">==</span><span class="dv">0</span>    )),splitAt)
 
 d<span class="fu">=</span><span class="dv">563347325936</span><span class="fu">+</span><span class="dv">1197371806136556985877790097</span><span class="fu">-</span><span class="dv">563347325936</span>
-n<span class="fu">=</span><span class="dv">351189532146914946493104395525009571831256157560461451</span></code></pre>
+n<span class="fu">=</span><span class="dv">351189532146914946493104395525009571831256157560461451</span></code></pre></div>
 <p>Replacements, deletions and rearrangements are very easy using this framework. Most of the time they can be specified by generic traversals (with any generics library) The last piece of the puzzle is to make it just as easy to add new items into the AST. A challenge that I and Alan Zimmerman will now begin to work on.</p>
 <h2 id="future-work">Future Work</h2>
 <ul>
@@ -87,13 +87,13 @@ n<span class="fu">=</span><span class="dv">3511895321469149464931043955250095718
 </ol>
 <p>The following example takes advantage of the former of these two additions.</p>
 <h3 id="input">Input</h3>
-<pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="co">-- test.hs</span>
+<div class="sourceCode"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="co">-- test.hs</span>
 <span class="kw">module</span> <span class="dt">Foo</span> <span class="kw">where</span>
 
 baz <span class="st">&quot;one&quot;</span> <span class="fu">=</span> <span class="dv">1</span>
-baz <span class="st">&quot;two&quot;</span> <span class="fu">=</span> <span class="dv">2</span></code></pre>
+baz <span class="st">&quot;two&quot;</span> <span class="fu">=</span> <span class="dv">2</span></code></pre></div>
 <h3 id="program">Program</h3>
-<pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="ot">{-# LANGUAGE NamedFieldPuns #-}</span>
+<div class="sourceCode"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="ot">{-# LANGUAGE NamedFieldPuns #-}</span>
 <span class="kw">module</span> <span class="dt">InsertSignature</span> <span class="kw">where</span>
 
 <span class="kw">import </span><span class="dt">Language.Haskell.GHC.ExactPrint</span>
@@ -147,14 +147,14 @@ addSignature funid tsig as (<span class="dt">GHC.L</span> l m) <span class="fu">
 <span class="ot">    findFunBind ::</span> <span class="dt">GHC.LHsDecl</span> <span class="dt">GHC.RdrName</span> <span class="ot">-&gt;</span> <span class="dt">Bool</span>
     findFunBind (<span class="dt">GHC.L</span> _ (<span class="dt">GHC.ValD</span> b<span class="fu">@</span>(<span class="dt">GHC.FunBind</span> {})))
       <span class="fu">|</span> showGhc (GHC.unLoc (GHC.fun_id  b)) <span class="fu">==</span> funid <span class="fu">=</span> <span class="dt">True</span>
-    findFunBind _ <span class="fu">=</span> <span class="dt">False</span></code></pre>
+    findFunBind _ <span class="fu">=</span> <span class="dt">False</span></code></pre></div>
 <h3 id="result">Result</h3>
-<pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="kw">module</span> <span class="dt">Foo</span> <span class="kw">where</span>
+<div class="sourceCode"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="kw">module</span> <span class="dt">Foo</span> <span class="kw">where</span>
 
 <span class="ot">baz ::</span> <span class="dt">String</span> <span class="ot">-&gt;</span> <span class="dt">Int</span>
 baz <span class="st">&quot;one&quot;</span> <span class="fu">=</span> <span class="dv">1</span>
-baz <span class="st">&quot;two&quot;</span> <span class="fu">=</span> <span class="dv">2</span></code></pre>
-<div class="references">
+baz <span class="st">&quot;two&quot;</span> <span class="fu">=</span> <span class="dv">2</span></code></pre></div>
+<div id="refs" class="references">
 
 </div>
 
