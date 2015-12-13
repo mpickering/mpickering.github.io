@@ -1,0 +1,398 @@
+
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>6.13. Debugging the compiler &mdash; Glasgow Haskell Compiler &lt;release&gt; Users Guide</title>
+    
+    <link rel="stylesheet" href="_static/ghc-theme.css" type="text/css" />
+    <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    './',
+        VERSION:     '7.11.20151211',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="_static/jquery.js"></script>
+    <script type="text/javascript" src="_static/underscore.js"></script>
+    <script type="text/javascript" src="_static/doctools.js"></script>
+    <link rel="top" title="Glasgow Haskell Compiler &lt;release&gt; Users Guide" href="index.html" />
+    <link rel="up" title="6. Using GHC" href="usage.html" />
+    <link rel="next" title="7. Profiling" href="profiling.html" />
+    <link rel="prev" title="6.12. Using shared libraries" href="shared_libs.html" /> 
+  </head>
+  <body role="document">
+<div class="logo">
+    <h1><a href="index.html">Glasgow Haskell Compiler Users Guide</a></h1>
+</div>
+
+    <div class="related" role="navigation" aria-label="related navigation">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="profiling.html" title="7. Profiling"
+             accesskey="N">next</a> |</li>
+        <li class="right" >
+          <a href="shared_libs.html" title="6.12. Using shared libraries"
+             accesskey="P">previous</a> |</li>
+        <li class="nav-item nav-item-0"><a href="index.html">GHC 7.11.20151211 Users Guide</a> &raquo;</li>
+          <li class="nav-item nav-item-1"><a href="usage.html" accesskey="U">6. Using GHC</a> &raquo;</li> 
+      </ul>
+    </div>
+
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+  <h3><a href="index.html">Table Of Contents</a></h3>
+  <ul>
+<li><a class="reference internal" href="#">6.13. Debugging the compiler</a><ul>
+<li><a class="reference internal" href="#dumping-out-compiler-intermediate-structures">6.13.1. Dumping out compiler intermediate structures</a></li>
+<li><a class="reference internal" href="#formatting-dumps">6.13.2. Formatting dumps</a></li>
+<li><a class="reference internal" href="#suppressing-unwanted-information">6.13.3. Suppressing unwanted information</a></li>
+<li><a class="reference internal" href="#checking-for-consistency">6.13.4. Checking for consistency</a></li>
+<li><a class="reference internal" href="#checking-for-determinism">6.13.5. Checking for determinism</a></li>
+</ul>
+</li>
+</ul>
+
+  <h4>Previous topic</h4>
+  <p class="topless"><a href="shared_libs.html"
+                        title="previous chapter">6.12. Using shared libraries</a></p>
+  <h4>Next topic</h4>
+  <p class="topless"><a href="profiling.html"
+                        title="next chapter">7. Profiling</a></p>
+  <div role="note" aria-label="source link">
+    <h3>This Page</h3>
+    <ul class="this-page-menu">
+      <li><a href="_sources/debugging.txt"
+            rel="nofollow">Show Source</a></li>
+    </ul>
+   </div>
+<div id="searchbox" style="display: none" role="search">
+  <h3>Quick search</h3>
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body" role="main">
+            
+  <div class="section" id="debugging-the-compiler">
+<span id="options-debugging"></span><h1>6.13. Debugging the compiler<a class="headerlink" href="#debugging-the-compiler" title="Permalink to this headline">¶</a></h1>
+<p id="index-0">HACKER TERRITORY. HACKER TERRITORY. (You were warned.)</p>
+<div class="section" id="dumping-out-compiler-intermediate-structures">
+<span id="dumping-output"></span><h2>6.13.1. Dumping out compiler intermediate structures<a class="headerlink" href="#dumping-out-compiler-intermediate-structures" title="Permalink to this headline">¶</a></h2>
+<dl class="docutils" id="index-1">
+<dt><code class="docutils literal"><span class="pre">-ddump-</span></code> ⟨pass⟩</dt>
+<dd><p class="first" id="index-2">Make a debugging dump after pass <code class="docutils literal"><span class="pre">&lt;pass&gt;</span></code> (may be common enough to
+need a short form…). You can get all of these at once (<em>lots</em> of
+output) by using <code class="docutils literal"><span class="pre">-v5</span></code>, or most of them with <code class="docutils literal"><span class="pre">-v4</span></code>. You can
+prevent them from clogging up your standard output by passing
+<code class="docutils literal"><span class="pre">-ddump-to-file</span></code>. Some of the most useful ones are:</p>
+<dl class="last docutils">
+<dt><code class="docutils literal"><span class="pre">-ddump-parsed</span></code></dt>
+<dd><p class="first last" id="index-3">Dump parser output</p>
+</dd>
+<dt><code class="docutils literal"><span class="pre">-ddump-rn</span></code></dt>
+<dd><p class="first last" id="index-4">Dump renamer output</p>
+</dd>
+<dt><code class="docutils literal"><span class="pre">-ddump-tc</span></code></dt>
+<dd><p class="first last" id="index-5">Dump typechecker output</p>
+</dd>
+<dt><code class="docutils literal"><span class="pre">-ddump-splices</span></code></dt>
+<dd><p class="first last" id="index-6">Dump Template Haskell expressions that we splice in, and what
+Haskell code the expression evaluates to.</p>
+</dd>
+<dt><code class="docutils literal"><span class="pre">-ddump-types</span></code></dt>
+<dd><p class="first last" id="index-7">Dump a type signature for each value defined at the top level of
+the module. The list is sorted alphabetically. Using
+<code class="docutils literal"><span class="pre">-dppr-debug</span></code> dumps a type signature for all the imported and
+system-defined things as well; useful for debugging the
+compiler.</p>
+</dd>
+<dt><code class="docutils literal"><span class="pre">-ddump-deriv</span></code></dt>
+<dd><p class="first last" id="index-8">Dump derived instances</p>
+</dd>
+<dt><code class="docutils literal"><span class="pre">-ddump-ds</span></code></dt>
+<dd><p class="first last" id="index-9">Dump desugarer output</p>
+</dd>
+<dt><code class="docutils literal"><span class="pre">-ddump-spec</span></code></dt>
+<dd><p class="first last" id="index-10">Dump output of specialisation pass</p>
+</dd>
+<dt><code class="docutils literal"><span class="pre">-ddump-rules</span></code></dt>
+<dd><p class="first last" id="index-11">Dumps all rewrite rules specified in this module; see
+<a class="reference internal" href="glasgow_exts.html#controlling-rules"><span>Controlling what&#8217;s going on in rewrite rules</span></a>.</p>
+</dd>
+<dt><code class="docutils literal"><span class="pre">-ddump-rule-firings</span></code></dt>
+<dd><p class="first last" id="index-12">Dumps the names of all rules that fired in this module</p>
+</dd>
+<dt><code class="docutils literal"><span class="pre">-ddump-rule-rewrites</span></code></dt>
+<dd><p class="first last" id="index-13">Dumps detailed information about all rules that fired in this
+module</p>
+</dd>
+<dt><code class="docutils literal"><span class="pre">-ddump-vect</span></code></dt>
+<dd><p class="first last" id="index-14">Dumps the output of the vectoriser.</p>
+</dd>
+<dt><code class="docutils literal"><span class="pre">-ddump-simpl</span></code></dt>
+<dd><p class="first last" id="index-15">Dump simplifier output (Core-to-Core passes)</p>
+</dd>
+<dt><code class="docutils literal"><span class="pre">-ddump-inlinings</span></code></dt>
+<dd><p class="first last" id="index-16">Dumps inlining info from the simplifier</p>
+</dd>
+<dt><code class="docutils literal"><span class="pre">-ddump-stranal</span></code></dt>
+<dd><p class="first last" id="index-17">Dump strictness analyser output</p>
+</dd>
+<dt><code class="docutils literal"><span class="pre">-ddump-strsigs</span></code></dt>
+<dd><p class="first last" id="index-18">Dump strictness signatures</p>
+</dd>
+<dt><code class="docutils literal"><span class="pre">-ddump-cse</span></code></dt>
+<dd><p class="first last" id="index-19">Dump common subexpression elimination (CSE) pass output</p>
+</dd>
+<dt><code class="docutils literal"><span class="pre">-ddump-worker-wrapper</span></code></dt>
+<dd><p class="first last" id="index-20">Dump worker/wrapper split output</p>
+</dd>
+<dt><code class="docutils literal"><span class="pre">-ddump-occur-anal</span></code></dt>
+<dd><p class="first last" id="index-21">Dump &#8220;occurrence analysis&#8221; output</p>
+</dd>
+<dt><code class="docutils literal"><span class="pre">-ddump-prep</span></code></dt>
+<dd><p class="first last" id="index-22">Dump output of Core preparation pass</p>
+</dd>
+<dt><code class="docutils literal"><span class="pre">-ddump-stg</span></code></dt>
+<dd><p class="first last" id="index-23">Dump output of STG-to-STG passes</p>
+</dd>
+<dt><code class="docutils literal"><span class="pre">-ddump-cmm</span></code></dt>
+<dd><p class="first last" id="index-24">Print the C&#8211; code out.</p>
+</dd>
+<dt><code class="docutils literal"><span class="pre">-ddump-opt-cmm</span></code></dt>
+<dd><p class="first last" id="index-25">Dump the results of C&#8211; to C&#8211; optimising passes.</p>
+</dd>
+<dt><code class="docutils literal"><span class="pre">-ddump-asm</span></code></dt>
+<dd><p class="first last" id="index-26">Dump assembly language produced by the <a class="reference internal" href="codegens.html#native-code-gen"><span>native code
+generator</span></a></p>
+</dd>
+<dt><code class="docutils literal"><span class="pre">-ddump-llvm</span></code></dt>
+<dd><p class="first last" id="index-27">LLVM code from the <a class="reference internal" href="codegens.html#llvm-code-gen"><span>LLVM code generator</span></a></p>
+</dd>
+<dt><code class="docutils literal"><span class="pre">-ddump-bcos</span></code></dt>
+<dd><p class="first last" id="index-28">Dump byte-code compiler output</p>
+</dd>
+<dt><code class="docutils literal"><span class="pre">-ddump-foreign</span></code></dt>
+<dd><p class="first last" id="index-29">dump foreign export stubs</p>
+</dd>
+</dl>
+</dd>
+<dt><code class="docutils literal"><span class="pre">-ddump-simpl-iterations</span></code></dt>
+<dd><p class="first last" id="index-30">Show the output of each <em>iteration</em> of the simplifier (each run of
+the simplifier has a maximum number of iterations, normally 4). This
+outputs even more information than <code class="docutils literal"><span class="pre">-ddump-simpl-phases</span></code>.</p>
+</dd>
+<dt><code class="docutils literal"><span class="pre">-ddump-simpl-stats</span></code></dt>
+<dd><p class="first last" id="index-31">Dump statistics about how many of each kind of transformation too
+place. If you add <code class="docutils literal"><span class="pre">-dppr-debug</span></code> you get more detailed information.</p>
+</dd>
+<dt><code class="docutils literal"><span class="pre">-ddump-if-trace</span></code></dt>
+<dd><p class="first last" id="index-32">Make the interface loader be <em>real</em> chatty about what it is up to.</p>
+</dd>
+<dt><code class="docutils literal"><span class="pre">-ddump-tc-trace</span></code></dt>
+<dd><p class="first last" id="index-33">Make the type checker be <em>real</em> chatty about what it is up to.</p>
+</dd>
+<dt><code class="docutils literal"><span class="pre">-ddump-vt-trace</span></code></dt>
+<dd><p class="first last" id="index-34">Make the vectoriser be <em>real</em> chatty about what it is up to.</p>
+</dd>
+<dt><code class="docutils literal"><span class="pre">-ddump-rn-trace</span></code></dt>
+<dd><p class="first last" id="index-35">Make the renamer be <em>real</em> chatty about what it is up to.</p>
+</dd>
+<dt><code class="docutils literal"><span class="pre">-ddump-rn-stats</span></code></dt>
+<dd><p class="first last" id="index-36">Print out summary of what kind of information the renamer had to
+bring in.</p>
+</dd>
+<dt><code class="docutils literal"><span class="pre">-dverbose-core2core</span></code>, <code class="docutils literal"><span class="pre">-dverbose-stg2stg</span></code></dt>
+<dd><p class="first" id="index-37">Show the output of the intermediate Core-to-Core and STG-to-STG
+passes, respectively. (<em>lots</em> of output!) So: when we&#8217;re really
+desperate:</p>
+<div class="last highlight-haskell"><div class="highlight"><pre><span class="o">%</span> <span class="n">ghc</span> <span class="o">-</span><span class="n">noC</span> <span class="o">-</span><span class="kt">O</span> <span class="o">-</span><span class="n">ddump</span><span class="o">-</span><span class="n">simpl</span> <span class="o">-</span><span class="n">dverbose</span><span class="o">-</span><span class="n">core2core</span> <span class="o">-</span><span class="n">dcore</span><span class="o">-</span><span class="n">lint</span> <span class="kt">Foo</span><span class="o">.</span><span class="n">hs</span>
+</pre></div>
+</div>
+</dd>
+<dt><code class="docutils literal"><span class="pre">-dshow-passes</span></code></dt>
+<dd><p class="first last" id="index-38">Print out each pass name as it happens.</p>
+</dd>
+<dt><code class="docutils literal"><span class="pre">-ddump-core-stats</span></code></dt>
+<dd><p class="first last" id="index-39">Print a one-line summary of the size of the Core program at the end
+of the optimisation pipeline.</p>
+</dd>
+<dt><code class="docutils literal"><span class="pre">-dfaststring-stats</span></code></dt>
+<dd><p class="first last" id="index-40">Show statistics on the usage of fast strings by the compiler.</p>
+</dd>
+<dt><code class="docutils literal"><span class="pre">-dppr-debug</span></code></dt>
+<dd><p class="first last" id="index-41">Debugging output is in one of several &#8220;styles.&#8221; Take the printing of
+types, for example. In the &#8220;user&#8221; style (the default), the
+compiler&#8217;s internal ideas about types are presented in Haskell
+source-level syntax, insofar as possible. In the &#8220;debug&#8221; style
+(which is the default for debugging output), the types are printed
+in with explicit foralls, and variables have their unique-id
+attached (so you can check for things that look the same but
+aren&#8217;t). This flag makes debugging output appear in the more verbose
+debug style.</p>
+</dd>
+</dl>
+</div>
+<div class="section" id="formatting-dumps">
+<span id="id1"></span><h2>6.13.2. Formatting dumps<a class="headerlink" href="#formatting-dumps" title="Permalink to this headline">¶</a></h2>
+<dl class="docutils" id="index-42">
+<dt><code class="docutils literal"><span class="pre">-dppr-user-length</span></code></dt>
+<dd><p class="first last" id="index-43">In error messages, expressions are printed to a certain &#8220;depth&#8221;,
+with subexpressions beyond the depth replaced by ellipses. This flag
+sets the depth. Its default value is 5.</p>
+</dd>
+<dt><code class="docutils literal"><span class="pre">-dppr-colsNNN</span></code></dt>
+<dd><p class="first last" id="index-44">Set the width of debugging output. Use this if your code is wrapping
+too much. For example: <code class="docutils literal"><span class="pre">-dppr-cols200</span></code>.</p>
+</dd>
+<dt><code class="docutils literal"><span class="pre">-dppr-case-as-let</span></code></dt>
+<dd><p class="first last" id="index-45">Print single alternative case expressions as though they were strict
+let expressions. This is helpful when your code does a lot of
+unboxing.</p>
+</dd>
+<dt><code class="docutils literal"><span class="pre">-dno-debug-output</span></code></dt>
+<dd><p class="first last" id="index-46">Suppress any unsolicited debugging output. When GHC has been built
+with the <code class="docutils literal"><span class="pre">DEBUG</span></code> option it occasionally emits debug output of
+interest to developers. The extra output can confuse the testing
+framework and cause bogus test failures, so this flag is provided to
+turn it off.</p>
+</dd>
+</dl>
+</div>
+<div class="section" id="suppressing-unwanted-information">
+<span id="suppression"></span><h2>6.13.3. Suppressing unwanted information<a class="headerlink" href="#suppressing-unwanted-information" title="Permalink to this headline">¶</a></h2>
+<p id="index-47">Core dumps contain a large amount of information. Depending on what you
+are doing, not all of it will be useful. Use these flags to suppress the
+parts that you are not interested in.</p>
+<dl class="docutils">
+<dt><code class="docutils literal"><span class="pre">-dsuppress-all</span></code></dt>
+<dd><p class="first last" id="index-48">Suppress everything that can be suppressed, except for unique ids as
+this often makes the printout ambiguous. If you just want to see the
+overall structure of the code, then start here.</p>
+</dd>
+<dt><code class="docutils literal"><span class="pre">-dsuppress-uniques</span></code></dt>
+<dd><p class="first last" id="index-49">Suppress the printing of uniques. This may make the printout
+ambiguous (e.g. unclear where an occurrence of &#8216;x&#8217; is bound), but it
+makes the output of two compiler runs have many fewer gratuitous
+differences, so you can realistically apply <code class="docutils literal"><span class="pre">diff</span></code>. Once <code class="docutils literal"><span class="pre">diff</span></code>
+has shown you where to look, you can try again without
+<code class="docutils literal"><span class="pre">-dsuppress-uniques</span></code></p>
+</dd>
+<dt><code class="docutils literal"><span class="pre">-dsuppress-idinfo</span></code></dt>
+<dd><p class="first last" id="index-50">Suppress extended information about identifiers where they are
+bound. This includes strictness information and inliner templates.
+Using this flag can cut the size of the core dump in half, due to
+the lack of inliner templates</p>
+</dd>
+<dt><code class="docutils literal"><span class="pre">-dsuppress-unfoldings</span></code></dt>
+<dd><p class="first last" id="index-51">Suppress the printing of the stable unfolding of a variable at its
+binding site.</p>
+</dd>
+<dt><code class="docutils literal"><span class="pre">-dsuppress-module-prefixes</span></code></dt>
+<dd><p class="first last" id="index-52">Suppress the printing of module qualification prefixes. This is the
+<code class="docutils literal"><span class="pre">Data.List</span></code> in <code class="docutils literal"><span class="pre">Data.List.length</span></code>.</p>
+</dd>
+<dt><code class="docutils literal"><span class="pre">-dsuppress-type-signatures</span></code></dt>
+<dd><p class="first last" id="index-53">Suppress the printing of type signatures.</p>
+</dd>
+<dt><code class="docutils literal"><span class="pre">-dsuppress-type-applications</span></code></dt>
+<dd><p class="first last" id="index-54">Suppress the printing of type applications.</p>
+</dd>
+<dt><code class="docutils literal"><span class="pre">-dsuppress-coercions</span></code></dt>
+<dd><p class="first last" id="index-55">Suppress the printing of type coercions.</p>
+</dd>
+</dl>
+</div>
+<div class="section" id="checking-for-consistency">
+<span id="checking-consistency"></span><h2>6.13.4. Checking for consistency<a class="headerlink" href="#checking-for-consistency" title="Permalink to this headline">¶</a></h2>
+<dl class="docutils" id="index-56">
+<dt><code class="docutils literal"><span class="pre">-dcore-lint</span></code></dt>
+<dd><p class="first last" id="index-57">Turn on heavyweight intra-pass sanity-checking within GHC, at Core
+level. (It checks GHC&#8217;s sanity, not yours.)</p>
+</dd>
+<dt><code class="docutils literal"><span class="pre">-dstg-lint</span></code></dt>
+<dd><p class="first last" id="index-58">Ditto for STG level. (note: currently doesn&#8217;t work).</p>
+</dd>
+<dt><code class="docutils literal"><span class="pre">-dcmm-lint</span></code></dt>
+<dd><p class="first last" id="index-59">Ditto for C&#8211; level.</p>
+</dd>
+</dl>
+</div>
+<div class="section" id="checking-for-determinism">
+<span id="checking-determinism"></span><h2>6.13.5. Checking for determinism<a class="headerlink" href="#checking-for-determinism" title="Permalink to this headline">¶</a></h2>
+<dl class="docutils" id="index-60">
+<dt><code class="docutils literal"><span class="pre">-dinitial-unique=⟨s⟩</span></code></dt>
+<dd><p class="first last" id="index-61">Start <code class="docutils literal"><span class="pre">UniqSupply</span></code> allocation from ⟨s⟩.</p>
+</dd>
+<dt><code class="docutils literal"><span class="pre">-dunique-increment=⟨i⟩</span></code></dt>
+<dd><p class="first" id="index-62">Set the increment for the generated <code class="docutils literal"><span class="pre">Unique</span></code>&#8216;s to ⟨i⟩.</p>
+<p>This is useful in combination with <code class="docutils literal"><span class="pre">-dinitial-unique</span></code> to test if the
+generated files depend on the order of <code class="docutils literal"><span class="pre">Unique</span></code>&#8216;s.</p>
+<p>Some interesting values:</p>
+<ul class="last simple">
+<li><code class="docutils literal"><span class="pre">-dinitial-unique=0</span> <span class="pre">-dunique-increment=1</span></code> - current sequential
+<code class="docutils literal"><span class="pre">UniqSupply</span></code></li>
+<li><code class="docutils literal"><span class="pre">-dinitial-unique=16777215</span> <span class="pre">-dunique-increment=-1</span></code> - <code class="docutils literal"><span class="pre">UniqSupply</span></code> that
+generates in decreasing order</li>
+<li><code class="docutils literal"><span class="pre">-dinitial-unique=1</span> <span class="pre">-dunique-increment=PRIME</span></code> - where PRIME big enough
+to overflow often - nonsequential order</li>
+</ul>
+</dd>
+</dl>
+</div>
+</div>
+
+
+          </div>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related" role="navigation" aria-label="related navigation">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="profiling.html" title="7. Profiling"
+             >next</a> |</li>
+        <li class="right" >
+          <a href="shared_libs.html" title="6.12. Using shared libraries"
+             >previous</a> |</li>
+        <li class="nav-item nav-item-0"><a href="index.html">GHC 7.11.20151211 Users Guide</a> &raquo;</li>
+          <li class="nav-item nav-item-1"><a href="usage.html" >6. Using GHC</a> &raquo;</li> 
+      </ul>
+    </div>
+    <div class="footer" role="contentinfo">
+        &copy; Copyright 2015, GHC Team.
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.3.1.
+    </div>
+  </body>
+</html>

@@ -1,0 +1,969 @@
+
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>6.8. Filenames and separate compilation &mdash; Glasgow Haskell Compiler &lt;release&gt; Users Guide</title>
+    
+    <link rel="stylesheet" href="_static/ghc-theme.css" type="text/css" />
+    <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    './',
+        VERSION:     '7.11.20151211',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="_static/jquery.js"></script>
+    <script type="text/javascript" src="_static/underscore.js"></script>
+    <script type="text/javascript" src="_static/doctools.js"></script>
+    <link rel="top" title="Glasgow Haskell Compiler &lt;release&gt; Users Guide" href="index.html" />
+    <link rel="up" title="6. Using GHC" href="usage.html" />
+    <link rel="next" title="6.9. Packages" href="packages.html" />
+    <link rel="prev" title="6.7. Running a compiled program" href="runtime_control.html" /> 
+  </head>
+  <body role="document">
+<div class="logo">
+    <h1><a href="index.html">Glasgow Haskell Compiler Users Guide</a></h1>
+</div>
+
+    <div class="related" role="navigation" aria-label="related navigation">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="packages.html" title="6.9. Packages"
+             accesskey="N">next</a> |</li>
+        <li class="right" >
+          <a href="runtime_control.html" title="6.7. Running a compiled program"
+             accesskey="P">previous</a> |</li>
+        <li class="nav-item nav-item-0"><a href="index.html">GHC 7.11.20151211 Users Guide</a> &raquo;</li>
+          <li class="nav-item nav-item-1"><a href="usage.html" accesskey="U">6. Using GHC</a> &raquo;</li> 
+      </ul>
+    </div>
+
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+  <h3><a href="index.html">Table Of Contents</a></h3>
+  <ul>
+<li><a class="reference internal" href="#">6.8. Filenames and separate compilation</a><ul>
+<li><a class="reference internal" href="#haskell-source-files">6.8.1. Haskell source files</a></li>
+<li><a class="reference internal" href="#output-files">6.8.2. Output files</a></li>
+<li><a class="reference internal" href="#the-search-path">6.8.3. The search path</a></li>
+<li><a class="reference internal" href="#redirecting-the-compilation-output-s">6.8.4. Redirecting the compilation output(s)</a></li>
+<li><a class="reference internal" href="#keeping-intermediate-files">6.8.5. Keeping Intermediate Files</a></li>
+<li><a class="reference internal" href="#redirecting-temporary-files">6.8.6. Redirecting temporary files</a></li>
+<li><a class="reference internal" href="#other-options-related-to-interface-files">6.8.7. Other options related to interface files</a></li>
+<li><a class="reference internal" href="#the-recompilation-checker">6.8.8. The recompilation checker</a></li>
+<li><a class="reference internal" href="#how-to-compile-mutually-recursive-modules">6.8.9. How to compile mutually recursive modules</a></li>
+<li><a class="reference internal" href="#module-signatures">6.8.10. Module signatures</a></li>
+<li><a class="reference internal" href="#using-make">6.8.11. Using <code class="docutils literal"><span class="pre">make</span></code></a></li>
+<li><a class="reference internal" href="#dependency-generation">6.8.12. Dependency generation</a></li>
+<li><a class="reference internal" href="#orphan-modules-and-instance-declarations">6.8.13. Orphan modules and instance declarations</a></li>
+</ul>
+</li>
+</ul>
+
+  <h4>Previous topic</h4>
+  <p class="topless"><a href="runtime_control.html"
+                        title="previous chapter">6.7. Running a compiled program</a></p>
+  <h4>Next topic</h4>
+  <p class="topless"><a href="packages.html"
+                        title="next chapter">6.9. Packages</a></p>
+  <div role="note" aria-label="source link">
+    <h3>This Page</h3>
+    <ul class="this-page-menu">
+      <li><a href="_sources/separate_compilation.txt"
+            rel="nofollow">Show Source</a></li>
+    </ul>
+   </div>
+<div id="searchbox" style="display: none" role="search">
+  <h3>Quick search</h3>
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body" role="main">
+            
+  <div class="section" id="filenames-and-separate-compilation">
+<span id="separate-compilation"></span><h1>6.8. Filenames and separate compilation<a class="headerlink" href="#filenames-and-separate-compilation" title="Permalink to this headline">¶</a></h1>
+<p id="index-0">This section describes what files GHC expects to find, what files it
+creates, where these files are stored, and what options affect this
+behaviour.</p>
+<p>Note that this section is written with hierarchical modules in mind (see
+<a class="reference internal" href="glasgow_exts.html#hierarchical-modules"><span>Hierarchical Modules</span></a>); hierarchical modules are an extension to
+Haskell 98 which extends the lexical syntax of module names to include a
+dot <code class="docutils literal"><span class="pre">.</span></code>. Non-hierarchical modules are thus a special case in which none
+of the module names contain dots.</p>
+<p>Pathname conventions vary from system to system. In particular, the
+directory separator is &#8220;<code class="docutils literal"><span class="pre">/</span></code>&#8221; on Unix systems and &#8220;<code class="docutils literal"><span class="pre">\</span></code>&#8221; on
+Windows systems. In the sections that follow, we shall consistently use
+&#8220;<code class="docutils literal"><span class="pre">/</span></code>&#8221; as the directory separator; substitute this for the
+appropriate character for your system.</p>
+<div class="section" id="haskell-source-files">
+<span id="source-files"></span><h2>6.8.1. Haskell source files<a class="headerlink" href="#haskell-source-files" title="Permalink to this headline">¶</a></h2>
+<p id="index-1">Each Haskell source module should be placed in a file on its own.</p>
+<p>Usually, the file should be named after the module name, replacing dots
+in the module name by directory separators. For example, on a Unix
+system, the module <code class="docutils literal"><span class="pre">A.B.C</span></code> should be placed in the file <code class="docutils literal"><span class="pre">A/B/C.hs</span></code>,
+relative to some base directory. If the module is not going to be
+imported by another module (<code class="docutils literal"><span class="pre">Main</span></code>, for example), then you are free to
+use any filename for it.</p>
+<p id="index-2">GHC assumes that source files are ASCII or UTF-8 only, other
+encoding are not recognised. However, invalid UTF-8 sequences
+will be ignored in comments, so it is possible to use other encodings
+such as Latin-1, as long as the non-comment source code is ASCII
+only.</p>
+</div>
+<div class="section" id="output-files">
+<span id="id1"></span><h2>6.8.2. Output files<a class="headerlink" href="#output-files" title="Permalink to this headline">¶</a></h2>
+<p id="index-3">When asked to compile a source file, GHC normally generates two files:
+an object file, and an interface file.</p>
+<p>The object file, which normally ends in a <code class="docutils literal"><span class="pre">.o</span></code> suffix, contains the
+compiled code for the module.</p>
+<p>The interface file, which normally ends in a <code class="docutils literal"><span class="pre">.hi</span></code> suffix, contains
+the information that GHC needs in order to compile further modules that
+depend on this module. It contains things like the types of exported
+functions, definitions of data types, and so on. It is stored in a
+binary format, so don&#8217;t try to read one; use the <code class="docutils literal"><span class="pre">--show-iface</span></code> option
+instead (see <a class="reference internal" href="#hi-options"><span>Other options related to interface files</span></a>).</p>
+<p>You should think of the object file and the interface file as a pair,
+since the interface file is in a sense a compiler-readable description
+of the contents of the object file. If the interface file and object
+file get out of sync for any reason, then the compiler may end up making
+assumptions about the object file that aren&#8217;t true; trouble will almost
+certainly follow. For this reason, we recommend keeping object files and
+interface files in the same place (GHC does this by default, but it is
+possible to override the defaults as we&#8217;ll explain shortly).</p>
+<p>Every module has a <em>module name</em> defined in its source code
+(<code class="docutils literal"><span class="pre">module</span> <span class="pre">A.B.C</span> <span class="pre">where</span> <span class="pre">...</span></code>).</p>
+<p>The name of the object file generated by GHC is derived according to the
+following rules, where ⟨osuf⟩ is the object-file suffix (this can be
+changed with the <code class="docutils literal"><span class="pre">-osuf</span></code> option).</p>
+<ul class="simple">
+<li>If there is no <code class="docutils literal"><span class="pre">-odir</span></code> option (the default), then the object
+filename is derived from the source filename (ignoring the module
+name) by replacing the suffix with ⟨osuf⟩.</li>
+<li>If <code class="docutils literal"><span class="pre">-odir</span> <span class="pre">⟨dir⟩</span></code> has been specified, then the object filename is
+⟨dir⟩/⟨mod⟩.⟨osuf⟩, where ⟨mod⟩ is the module name with dots replaced
+by slashes. GHC will silently create the necessary directory
+structure underneath ⟨dir⟩, if it does not already exist.</li>
+</ul>
+<p>The name of the interface file is derived using the same rules, except
+that the suffix is ⟨hisuf⟩ (<code class="docutils literal"><span class="pre">.hi</span></code> by default) instead of ⟨osuf⟩, and
+the relevant options are <code class="docutils literal"><span class="pre">-hidir</span></code> and <code class="docutils literal"><span class="pre">-hisuf</span></code> instead of <code class="docutils literal"><span class="pre">-odir</span></code>
+and <code class="docutils literal"><span class="pre">-osuf</span></code> respectively.</p>
+<p>For example, if GHC compiles the module <code class="docutils literal"><span class="pre">A.B.C</span></code> in the file
+<code class="docutils literal"><span class="pre">src/A/B/C.hs</span></code>, with no <code class="docutils literal"><span class="pre">-odir</span></code> or <code class="docutils literal"><span class="pre">-hidir</span></code> flags, the interface
+file will be put in <code class="docutils literal"><span class="pre">src/A/B/C.hi</span></code> and the object file in
+<code class="docutils literal"><span class="pre">src/A/B/C.o</span></code>.</p>
+<p>For any module that is imported, GHC requires that the name of the
+module in the import statement exactly matches the name of the module in
+the interface file (or source file) found using the strategy specified
+in <a class="reference internal" href="#search-path"><span>The search path</span></a>. This means that for most modules, the source file
+name should match the module name.</p>
+<p>However, note that it is reasonable to have a module <code class="docutils literal"><span class="pre">Main</span></code> in a file
+named <code class="docutils literal"><span class="pre">foo.hs</span></code>, but this only works because GHC never needs to search
+for the interface for module <code class="docutils literal"><span class="pre">Main</span></code> (because it is never imported). It
+is therefore possible to have several <code class="docutils literal"><span class="pre">Main</span></code> modules in separate
+source files in the same directory, and GHC will not get confused.</p>
+<p>In batch compilation mode, the name of the object file can also be
+overridden using the <code class="docutils literal"><span class="pre">-o</span></code> option, and the name of the interface file
+can be specified directly using the <code class="docutils literal"><span class="pre">-ohi</span></code> option.</p>
+</div>
+<div class="section" id="the-search-path">
+<span id="search-path"></span><h2>6.8.3. The search path<a class="headerlink" href="#the-search-path" title="Permalink to this headline">¶</a></h2>
+<p id="index-4">In your program, you import a module <code class="docutils literal"><span class="pre">Foo</span></code> by saying <code class="docutils literal"><span class="pre">import</span> <span class="pre">Foo</span></code>.
+In <code class="docutils literal"><span class="pre">--make</span></code> mode or GHCi, GHC will look for a source file for <code class="docutils literal"><span class="pre">Foo</span></code>
+and arrange to compile it first. Without <code class="docutils literal"><span class="pre">--make</span></code>, GHC will look for
+the interface file for <code class="docutils literal"><span class="pre">Foo</span></code>, which should have been created by an
+earlier compilation of <code class="docutils literal"><span class="pre">Foo</span></code>. GHC uses the same strategy in each of
+these cases for finding the appropriate file.</p>
+<p>This strategy is as follows: GHC keeps a list of directories called the
+search path. For each of these directories, it tries appending
+<code class="docutils literal"><span class="pre">⟨basename⟩.⟨extension⟩</span></code> to the directory, and checks whether the
+file exists. The value of ⟨basename⟩ is the module name with dots
+replaced by the directory separator (&#8220;<code class="docutils literal"><span class="pre">/</span></code>&#8221; or &#8220;<code class="docutils literal"><span class="pre">\\&quot;</span></code>, depending on the
+system), and ⟨extension⟩ is a source extension (<code class="docutils literal"><span class="pre">hs</span></code>, <code class="docutils literal"><span class="pre">lhs</span></code>) if we
+are in <code class="docutils literal"><span class="pre">--make</span></code> mode or GHCi, or ⟨hisuf⟩ otherwise.</p>
+<p>For example, suppose the search path contains directories <code class="docutils literal"><span class="pre">d1</span></code>,
+<code class="docutils literal"><span class="pre">d2</span></code>, and <code class="docutils literal"><span class="pre">d3</span></code>, and we are in <code class="docutils literal"><span class="pre">--make</span></code> mode looking for the source
+file for a module <code class="docutils literal"><span class="pre">A.B.C</span></code>. GHC will look in <code class="docutils literal"><span class="pre">d1/A/B/C.hs</span></code>,
+<code class="docutils literal"><span class="pre">d1/A/B/C.lhs</span></code>, <code class="docutils literal"><span class="pre">d2/A/B/C.hs</span></code>, and so on.</p>
+<p>The search path by default contains a single directory: &#8220;<code class="docutils literal"><span class="pre">.</span></code>&#8221; (i.e. the
+current directory). The following options can be used to add to or change the
+contents of the search path:</p>
+<dl class="docutils">
+<dt><code class="docutils literal"><span class="pre">-i⟨dir⟩[:⟨dir⟩]*</span></code></dt>
+<dd><p class="first last" id="index-5">This flag appends a colon-separated list of <code class="docutils literal"><span class="pre">dirs</span></code> to
+the search path.</p>
+</dd>
+<dt><code class="docutils literal"><span class="pre">-i</span></code></dt>
+<dd>resets the search path back to nothing.</dd>
+</dl>
+<p>This isn&#8217;t the whole story: GHC also looks for modules in pre-compiled
+libraries, known as packages. See the section on packages
+(<a class="reference internal" href="packages.html#packages"><span>Packages</span></a>) for details.</p>
+</div>
+<div class="section" id="redirecting-the-compilation-output-s">
+<span id="options-output"></span><h2>6.8.4. Redirecting the compilation output(s)<a class="headerlink" href="#redirecting-the-compilation-output-s" title="Permalink to this headline">¶</a></h2>
+<dl class="docutils" id="index-6">
+<dt><code class="docutils literal"><span class="pre">-o</span> <span class="pre">⟨file⟩</span></code></dt>
+<dd><p class="first" id="index-7">GHC&#8217;s compiled output normally goes into a <code class="docutils literal"><span class="pre">.hc</span></code>, <code class="docutils literal"><span class="pre">.o</span></code>, etc.,
+file, depending on the last-run compilation phase. The option
+<code class="docutils literal"><span class="pre">-o</span> <span class="pre">file</span></code> re-directs the output of that last-run phase to ⟨file⟩.</p>
+<div class="admonition note">
+<p class="first admonition-title">Note</p>
+<p class="last">This “feature” can be counterintuitive: <code class="docutils literal"><span class="pre">ghc</span> <span class="pre">-C</span> <span class="pre">-o</span> <span class="pre">foo.o</span> <span class="pre">foo.hs</span></code>
+will put the intermediate C code in the file <code class="docutils literal"><span class="pre">foo.o</span></code>, name
+notwithstanding!</p>
+</div>
+<p>This option is most often used when creating an executable file, to
+set the filename of the executable. For example:</p>
+<div class="highlight-haskell"><div class="highlight"><pre><span class="nf">ghc</span> <span class="o">-</span><span class="n">o</span> <span class="n">prog</span> <span class="c1">--make Main</span>
+</pre></div>
+</div>
+<p>will compile the program starting with module <code class="docutils literal"><span class="pre">Main</span></code> and put the
+executable in the file <code class="docutils literal"><span class="pre">prog</span></code>.</p>
+<p>Note: on Windows, if the result is an executable file, the extension
+&#8220;<code class="docutils literal"><span class="pre">.exe</span></code>&#8221; is added if the specified filename does not already have
+an extension. Thus</p>
+<div class="highlight-haskell"><div class="highlight"><pre><span class="nf">ghc</span> <span class="o">-</span><span class="n">o</span> <span class="n">foo</span> <span class="kt">Main</span><span class="o">.</span><span class="n">hs</span>
+</pre></div>
+</div>
+<p>will compile and link the module <code class="docutils literal"><span class="pre">Main.hs</span></code>, and put the resulting
+executable in <code class="docutils literal"><span class="pre">foo.exe</span></code> (not <code class="docutils literal"><span class="pre">foo</span></code>).</p>
+<p>If you use <code class="docutils literal"><span class="pre">ghc</span> <span class="pre">--make</span></code> and you don&#8217;t use the <code class="docutils literal"><span class="pre">-o</span></code>, the name GHC
+will choose for the executable will be based on the name of the file
+containing the module <code class="docutils literal"><span class="pre">Main</span></code>. Note that with GHC the <code class="docutils literal"><span class="pre">Main</span></code>
+module doesn&#8217;t have to be put in file <code class="docutils literal"><span class="pre">Main.hs</span></code>. Thus both</p>
+<div class="highlight-haskell"><div class="highlight"><pre><span class="nf">ghc</span> <span class="c1">--make Prog</span>
+</pre></div>
+</div>
+<p>and</p>
+<div class="highlight-haskell"><div class="highlight"><pre><span class="nf">ghc</span> <span class="c1">--make Prog.hs</span>
+</pre></div>
+</div>
+<p class="last">will produce <code class="docutils literal"><span class="pre">Prog</span></code> (or <code class="docutils literal"><span class="pre">Prog.exe</span></code> if you are on Windows).</p>
+</dd>
+<dt><code class="docutils literal"><span class="pre">-odir</span> <span class="pre">⟨dir⟩</span></code></dt>
+<dd><p class="first" id="index-8">Redirects object files to directory ⟨dir⟩. For example:</p>
+<div class="highlight-haskell"><div class="highlight"><pre><span class="o">$</span> <span class="n">ghc</span> <span class="o">-</span><span class="n">c</span> <span class="n">parse</span><span class="o">/</span><span class="kt">Foo</span><span class="o">.</span><span class="n">hs</span> <span class="n">parse</span><span class="o">/</span><span class="kt">Bar</span><span class="o">.</span><span class="n">hs</span> <span class="n">gurgle</span><span class="o">/</span><span class="kt">Bumble</span><span class="o">.</span><span class="n">hs</span> <span class="o">-</span><span class="n">odir</span> <span class="p">`</span><span class="n">uname</span> <span class="o">-</span><span class="n">m</span><span class="p">`</span>
+</pre></div>
+</div>
+<p>The object files, <code class="docutils literal"><span class="pre">Foo.o</span></code>, <code class="docutils literal"><span class="pre">Bar.o</span></code>, and <code class="docutils literal"><span class="pre">Bumble.o</span></code> would be
+put into a subdirectory named after the architecture of the
+executing machine (<code class="docutils literal"><span class="pre">x86</span></code>, <code class="docutils literal"><span class="pre">mips</span></code>, etc).</p>
+<p class="last">Note that the <code class="docutils literal"><span class="pre">-odir</span></code> option does <em>not</em> affect where the interface
+files are put; use the <code class="docutils literal"><span class="pre">-hidir</span></code> option for that. In the above
+example, they would still be put in <code class="docutils literal"><span class="pre">parse/Foo.hi</span></code>,
+<code class="docutils literal"><span class="pre">parse/Bar.hi</span></code>, and <code class="docutils literal"><span class="pre">gurgle/Bumble.hi</span></code>.</p>
+</dd>
+<dt><code class="docutils literal"><span class="pre">-ohi</span> <span class="pre">⟨file⟩</span></code></dt>
+<dd><p class="first" id="index-9">The interface output may be directed to another file
+<code class="docutils literal"><span class="pre">bar2/Wurble.iface</span></code> with the option <code class="docutils literal"><span class="pre">-ohi</span> <span class="pre">bar2/Wurble.iface</span></code>
+(not recommended).</p>
+<div class="admonition warning">
+<p class="first admonition-title">Warning</p>
+<p class="last">If you redirect the interface file somewhere that GHC can&#8217;t
+find it, then the recompilation checker may get confused (at the
+least, you won&#8217;t get any recompilation avoidance). We recommend
+using a combination of <code class="docutils literal"><span class="pre">-hidir</span></code> and <code class="docutils literal"><span class="pre">-hisuf</span></code> options instead, if
+possible.</p>
+</div>
+<p class="last">To avoid generating an interface at all, you could use this option
+to redirect the interface into the bit bucket: <code class="docutils literal"><span class="pre">-ohi</span> <span class="pre">/dev/null</span></code>,
+for example.</p>
+</dd>
+<dt><code class="docutils literal"><span class="pre">-hidir</span> <span class="pre">⟨dir⟩</span></code></dt>
+<dd><p class="first last" id="index-10">Redirects all generated interface files into ⟨dir⟩, instead of the
+default.</p>
+</dd>
+<dt><code class="docutils literal"><span class="pre">-stubdir</span> <span class="pre">⟨dir⟩</span></code></dt>
+<dd><p class="first last" id="index-11">Redirects all generated FFI stub files into ⟨dir⟩. Stub files are
+generated when the Haskell source contains a <code class="docutils literal"><span class="pre">foreign</span> <span class="pre">export</span></code> or
+<code class="docutils literal"><span class="pre">foreign</span> <span class="pre">import</span> <span class="pre">&quot;&amp;wrapper&quot;</span></code> declaration (see
+<a class="reference internal" href="ffi-chap.html#foreign-export-ghc"><span>Using foreign export and foreign import ccall &#8220;wrapper&#8221; with GHC</span></a>). The <code class="docutils literal"><span class="pre">-stubdir</span></code> option behaves in
+exactly the same way as <code class="docutils literal"><span class="pre">-odir</span></code> and <code class="docutils literal"><span class="pre">-hidir</span></code> with respect to
+hierarchical modules.</p>
+</dd>
+<dt><code class="docutils literal"><span class="pre">-dumpdir</span> <span class="pre">⟨dir⟩</span></code></dt>
+<dd><p class="first last" id="index-12">Redirects all dump files into ⟨dir⟩. Dump files are generated when
+<code class="docutils literal"><span class="pre">-ddump-to-file</span></code> is used with other <code class="docutils literal"><span class="pre">-ddump-*</span></code> flags.</p>
+</dd>
+<dt><code class="docutils literal"><span class="pre">-outputdir</span> <span class="pre">⟨dir⟩</span></code></dt>
+<dd><p class="first last" id="index-13">The <code class="docutils literal"><span class="pre">-outputdir</span></code> option is shorthand for the combination of
+<code class="docutils literal"><span class="pre">-odir</span></code>, <code class="docutils literal"><span class="pre">-hidir</span></code>, <code class="docutils literal"><span class="pre">-stubdir</span></code> and <code class="docutils literal"><span class="pre">-dumpdir</span></code>.</p>
+</dd>
+<dt><code class="docutils literal"><span class="pre">-osuf</span> <span class="pre">⟨suffix⟩;</span> <span class="pre">\</span> <span class="pre">``-hisuf</span></code>⟨suffix⟩; <code class="docutils literal"><span class="pre">-hcsuf</span></code>⟨suffix⟩``</dt>
+<dd><span class="target" id="index-14"></span><span class="target" id="index-15"></span><p class="first" id="index-16">The <code class="docutils literal"><span class="pre">-osuf</span></code> ⟨suffix⟩ will change the <code class="docutils literal"><span class="pre">.o</span></code> file suffix for object
+files to whatever you specify. We use this when compiling libraries,
+so that objects for the profiling versions of the libraries don&#8217;t
+clobber the normal ones.</p>
+<p>Similarly, the <code class="docutils literal"><span class="pre">-hisuf</span></code> ⟨suffix⟩ will change the <code class="docutils literal"><span class="pre">.hi</span></code> file
+suffix for non-system interface files (see <a class="reference internal" href="#hi-options"><span>Other options related to interface files</span></a>).</p>
+<p>Finally, the option <code class="docutils literal"><span class="pre">-hcsuf</span></code> ⟨suffix⟩ will change the <code class="docutils literal"><span class="pre">.hc</span></code> file
+suffix for compiler-generated intermediate C files.</p>
+<p>The <code class="docutils literal"><span class="pre">-hisuf</span></code>/<code class="docutils literal"><span class="pre">-osuf</span></code> game is particularly useful if you want to
+compile a program both with and without profiling, in the same
+directory. You can say:</p>
+<div class="highlight-haskell"><div class="highlight"><pre><span class="nf">ghc</span> <span class="o">...</span>
+</pre></div>
+</div>
+<p>to get the ordinary version, and</p>
+<div class="highlight-haskell"><div class="highlight"><pre><span class="nf">ghc</span> <span class="o">...</span> <span class="o">-</span><span class="n">osuf</span> <span class="n">prof</span><span class="o">.</span><span class="n">o</span> <span class="o">-</span><span class="n">hisuf</span> <span class="n">prof</span><span class="o">.</span><span class="n">hi</span> <span class="o">-</span><span class="n">prof</span> <span class="o">-</span><span class="n">auto</span><span class="o">-</span><span class="n">all</span>
+</pre></div>
+</div>
+<p class="last">to get the profiled version.</p>
+</dd>
+</dl>
+</div>
+<div class="section" id="keeping-intermediate-files">
+<span id="keeping-intermediates"></span><h2>6.8.5. Keeping Intermediate Files<a class="headerlink" href="#keeping-intermediate-files" title="Permalink to this headline">¶</a></h2>
+<p id="index-17">The following options are useful for keeping certain intermediate files
+around, when normally GHC would throw these away after compilation:</p>
+<dl class="docutils">
+<dt><code class="docutils literal"><span class="pre">-keep-hc-file</span></code></dt>
+<dd><p class="first last" id="index-18">Keep intermediate <code class="docutils literal"><span class="pre">.hc</span></code> files when doing <code class="docutils literal"><span class="pre">.hs</span></code>-to-<code class="docutils literal"><span class="pre">.o</span></code>
+compilations via <a class="reference internal" href="codegens.html#c-code-gen"><span>C</span></a> (Note: <code class="docutils literal"><span class="pre">.hc</span></code> files are only
+generated by <a class="reference internal" href="codegens.html#unreg"><span>unregisterised</span></a> compilers).</p>
+</dd>
+<dt><code class="docutils literal"><span class="pre">-keep-llvm-file</span></code></dt>
+<dd><p class="first last" id="index-19">Keep intermediate <code class="docutils literal"><span class="pre">.ll</span></code> files when doing <code class="docutils literal"><span class="pre">.hs</span></code>-to-<code class="docutils literal"><span class="pre">.o</span></code>
+compilations via <a class="reference internal" href="codegens.html#llvm-code-gen"><span>LLVM</span></a> (Note: <code class="docutils literal"><span class="pre">.ll</span></code> files
+aren&#8217;t generated when using the native code generator, you may need
+to use <code class="docutils literal"><span class="pre">-fllvm</span></code> to force them to be produced).</p>
+</dd>
+<dt><code class="docutils literal"><span class="pre">-keep-s-file</span></code></dt>
+<dd><p class="first last" id="index-20">Keep intermediate <code class="docutils literal"><span class="pre">.s</span></code> files.</p>
+</dd>
+<dt><code class="docutils literal"><span class="pre">-keep-tmp-files</span></code></dt>
+<dd><p class="first last" id="index-21">Instructs the GHC driver not to delete any of its temporary files,
+which it normally keeps in <code class="docutils literal"><span class="pre">/tmp</span></code> (or possibly elsewhere; see
+<a class="reference internal" href="#temp-files"><span>Redirecting temporary files</span></a>). Running GHC with <code class="docutils literal"><span class="pre">-v</span></code> will show you what
+temporary files were generated along the way.</p>
+</dd>
+</dl>
+</div>
+<div class="section" id="redirecting-temporary-files">
+<span id="temp-files"></span><h2>6.8.6. Redirecting temporary files<a class="headerlink" href="#redirecting-temporary-files" title="Permalink to this headline">¶</a></h2>
+<dl class="docutils" id="index-22">
+<dt><code class="docutils literal"><span class="pre">-tmpdir</span></code></dt>
+<dd><p class="first" id="index-23">If you have trouble because of running out of space in <code class="docutils literal"><span class="pre">/tmp</span></code> (or
+wherever your installation thinks temporary files should go), you
+may use the <code class="docutils literal"><span class="pre">-tmpdir</span> <span class="pre">&lt;dir&gt;</span></code>-tmpdir &lt;dir&gt; option option to specify an
+alternate directory. For example, <code class="docutils literal"><span class="pre">-tmpdir</span> <span class="pre">.</span></code> says to put temporary files
+in the current working directory.</p>
+<p>Alternatively, use your <code class="docutils literal"><span class="pre">TMPDIR</span></code> environment variable.TMPDIR
+environment variable Set it to the name of the directory where
+temporary files should be put. GCC and other programs will honour
+the <code class="docutils literal"><span class="pre">TMPDIR</span></code> variable as well.</p>
+<p class="last">Even better idea: Set the <code class="docutils literal"><span class="pre">DEFAULT_TMPDIR</span></code> make variable when
+building GHC, and never worry about <code class="docutils literal"><span class="pre">TMPDIR</span></code> again. (see the build
+documentation).</p>
+</dd>
+</dl>
+</div>
+<div class="section" id="other-options-related-to-interface-files">
+<span id="hi-options"></span><h2>6.8.7. Other options related to interface files<a class="headerlink" href="#other-options-related-to-interface-files" title="Permalink to this headline">¶</a></h2>
+<dl class="docutils" id="index-24">
+<dt><code class="docutils literal"><span class="pre">-ddump-hi</span></code></dt>
+<dd><p class="first last" id="index-25">Dumps the new interface to standard output.</p>
+</dd>
+<dt><code class="docutils literal"><span class="pre">-ddump-hi-diffs</span></code></dt>
+<dd><p class="first last" id="index-26">The compiler does not overwrite an existing <code class="docutils literal"><span class="pre">.hi</span></code> interface file
+if the new one is the same as the old one; this is friendly to
+<code class="docutils literal"><span class="pre">make</span></code>. When an interface does change, it is often enlightening to
+be informed. The <code class="docutils literal"><span class="pre">-ddump-hi-diffs</span></code> option will make GHC report the
+differences between the old and new <code class="docutils literal"><span class="pre">.hi</span></code> files.</p>
+</dd>
+<dt><code class="docutils literal"><span class="pre">-ddump-minimal-imports</span></code></dt>
+<dd><p class="first" id="index-27">Dump to the file <code class="docutils literal"><span class="pre">M.imports</span></code> (where ⟨M⟩ is the name of the module
+being compiled) a &#8220;minimal&#8221; set of import declarations. The
+directory where the <code class="docutils literal"><span class="pre">.imports</span></code> files are created can be controlled
+via the <code class="docutils literal"><span class="pre">-dumpdir</span></code> option.</p>
+<p class="last">You can safely replace all the import declarations in <code class="docutils literal"><span class="pre">M.hs</span></code> with
+those found in its respective <code class="docutils literal"><span class="pre">.imports</span></code> file. Why would you want
+to do that? Because the &#8220;minimal&#8221; imports (a) import everything
+explicitly, by name, and (b) import nothing that is not required. It
+can be quite painful to maintain this property by hand, so this flag
+is intended to reduce the labour.</p>
+</dd>
+<dt><code class="docutils literal"><span class="pre">--show-iface</span> <span class="pre">⟨file⟩</span></code></dt>
+<dd><p class="first last" id="index-28">where ⟨file⟩ is the name of an interface file, dumps the contents of
+that interface in a human-readable format. See <a class="reference internal" href="using.html#modes"><span>Modes of operation</span></a>.</p>
+</dd>
+</dl>
+</div>
+<div class="section" id="the-recompilation-checker">
+<span id="recomp"></span><h2>6.8.8. The recompilation checker<a class="headerlink" href="#the-recompilation-checker" title="Permalink to this headline">¶</a></h2>
+<dl class="docutils" id="index-29">
+<dt><code class="docutils literal"><span class="pre">-fforce-recomp</span></code></dt>
+<dd><p class="first last" id="index-30">Turn off recompilation checking (which is on by default).
+Recompilation checking normally stops compilation early, leaving an
+existing <code class="docutils literal"><span class="pre">.o</span></code> file in place, if it can be determined that the
+module does not need to be recompiled.</p>
+</dd>
+</dl>
+<p>In the olden days, GHC compared the newly-generated <code class="docutils literal"><span class="pre">.hi</span></code> file with
+the previous version; if they were identical, it left the old one alone
+and didn&#8217;t change its modification date. In consequence, importers of a
+module with an unchanged output <code class="docutils literal"><span class="pre">.hi</span></code> file were not recompiled.</p>
+<p>This doesn&#8217;t work any more. Suppose module <code class="docutils literal"><span class="pre">C</span></code> imports module <code class="docutils literal"><span class="pre">B</span></code>,
+and <code class="docutils literal"><span class="pre">B</span></code> imports module <code class="docutils literal"><span class="pre">A</span></code>. So changes to module <code class="docutils literal"><span class="pre">A</span></code> might require
+module <code class="docutils literal"><span class="pre">C</span></code> to be recompiled, and hence when <code class="docutils literal"><span class="pre">A.hi</span></code> changes we should
+check whether <code class="docutils literal"><span class="pre">C</span></code> should be recompiled. However, the dependencies of
+<code class="docutils literal"><span class="pre">C</span></code> will only list <code class="docutils literal"><span class="pre">B.hi</span></code>, not <code class="docutils literal"><span class="pre">A.hi</span></code>, and some changes to <code class="docutils literal"><span class="pre">A</span></code>
+(changing the definition of a function that appears in an inlining of a
+function exported by <code class="docutils literal"><span class="pre">B</span></code>, say) may conceivably not change <code class="docutils literal"><span class="pre">B.hi</span></code> one
+jot. So now…</p>
+<p>GHC calculates a fingerprint (in fact an MD5 hash) of each interface
+file, and of each declaration within the interface file. It also keeps
+in every interface file a list of the fingerprints of everything it used
+when it last compiled the file. If the source file&#8217;s modification date
+is earlier than the <code class="docutils literal"><span class="pre">.o</span></code> file&#8217;s date (i.e. the source hasn&#8217;t changed
+since the file was last compiled), and the recompilation checking is on,
+GHC will be clever. It compares the fingerprints on the things it needs
+this time with the fingerprints on the things it needed last time
+(gleaned from the interface file of the module being compiled); if they
+are all the same it stops compiling early in the process saying
+“Compilation IS NOT required”. What a beautiful sight!</p>
+<p>You can read about <a class="reference external" href="http://ghc.haskell.org/trac/ghc/wiki/Commentary/Compiler/RecompilationAvoidance">how all this
+works</a>
+in the GHC commentary.</p>
+</div>
+<div class="section" id="how-to-compile-mutually-recursive-modules">
+<span id="mutual-recursion"></span><h2>6.8.9. How to compile mutually recursive modules<a class="headerlink" href="#how-to-compile-mutually-recursive-modules" title="Permalink to this headline">¶</a></h2>
+<p id="index-31">GHC supports the compilation of mutually recursive modules. This section
+explains how.</p>
+<p>Every cycle in the module import graph must be broken by a <code class="docutils literal"><span class="pre">hs-boot</span></code>
+file. Suppose that modules <code class="docutils literal"><span class="pre">A.hs</span></code> and <code class="docutils literal"><span class="pre">B.hs</span></code> are Haskell source
+files, thus:</p>
+<div class="highlight-haskell"><div class="highlight"><pre>module A where
+    import B( TB(..) )
+
+    newtype TA = MkTA Int
+
+    f :: TB -&gt; TA
+    f (MkTB x) = MkTA x
+
+module B where
+    import {-# SOURCE #-} A( TA(..) )
+
+    data TB = MkTB !Int
+
+    g :: TA -&gt; TB
+    g (MkTA x) = MkTB x
+</pre></div>
+</div>
+<p><code class="docutils literal"><span class="pre">hs-boot</span></code> files importing, <code class="docutils literal"><span class="pre">hi-boot</span></code> files Here <code class="docutils literal"><span class="pre">A</span></code> imports <code class="docutils literal"><span class="pre">B</span></code>,
+but <code class="docutils literal"><span class="pre">B</span></code> imports <code class="docutils literal"><span class="pre">A</span></code> with a <code class="docutils literal"><span class="pre">{-#</span> <span class="pre">SOURCE</span> <span class="pre">#-}</span></code> pragma, which breaks
+the circular dependency. Every loop in the module import graph must be
+broken by a <code class="docutils literal"><span class="pre">{-#</span> <span class="pre">SOURCE</span> <span class="pre">#-}</span></code> import; or, equivalently, the module
+import graph must be acyclic if <code class="docutils literal"><span class="pre">{-#</span> <span class="pre">SOURCE</span> <span class="pre">#-}</span></code> imports are ignored.</p>
+<p>For every module <code class="docutils literal"><span class="pre">A.hs</span></code> that is <code class="docutils literal"><span class="pre">{-#</span> <span class="pre">SOURCE</span> <span class="pre">#-}</span></code>-imported in this
+way there must exist a source file <code class="docutils literal"><span class="pre">A.hs-boot</span></code>. This file contains an
+abbreviated version of <code class="docutils literal"><span class="pre">A.hs</span></code>, thus:</p>
+<div class="highlight-haskell"><div class="highlight"><pre><span class="kr">module</span> <span class="nn">A</span> <span class="kr">where</span>
+    <span class="kr">newtype</span> <span class="kt">TA</span> <span class="ow">=</span> <span class="kt">MkTA</span> <span class="kt">Int</span>
+</pre></div>
+</div>
+<p>To compile these three files, issue the following commands:</p>
+<div class="highlight-haskell"><div class="highlight"><pre><span class="nf">ghc</span> <span class="o">-</span><span class="n">c</span> <span class="kt">A</span><span class="o">.</span><span class="n">hs</span><span class="o">-</span><span class="n">boot</span>    <span class="c1">-- Produces A.hi-boot, A.o-boot</span>
+<span class="nf">ghc</span> <span class="o">-</span><span class="n">c</span> <span class="kt">B</span><span class="o">.</span><span class="n">hs</span>         <span class="c1">-- Consumes A.hi-boot, produces B.hi, B.o</span>
+<span class="nf">ghc</span> <span class="o">-</span><span class="n">c</span> <span class="kt">A</span><span class="o">.</span><span class="n">hs</span>         <span class="c1">-- Consumes B.hi, produces A.hi, A.o</span>
+<span class="nf">ghc</span> <span class="o">-</span><span class="n">o</span> <span class="n">foo</span> <span class="kt">A</span><span class="o">.</span><span class="n">o</span> <span class="kt">B</span><span class="o">.</span><span class="n">o</span>  <span class="c1">-- Linking the program</span>
+</pre></div>
+</div>
+<p>There are several points to note here:</p>
+<ul>
+<li><p class="first">The file <code class="docutils literal"><span class="pre">A.hs-boot</span></code> is a programmer-written source file. It must
+live in the same directory as its parent source file <code class="docutils literal"><span class="pre">A.hs</span></code>.
+Currently, if you use a literate source file <code class="docutils literal"><span class="pre">A.lhs</span></code> you must also
+use a literate boot file, <code class="docutils literal"><span class="pre">A.lhs-boot</span></code>; and vice versa.</p>
+</li>
+<li><p class="first">A <code class="docutils literal"><span class="pre">hs-boot</span></code> file is compiled by GHC, just like a <code class="docutils literal"><span class="pre">hs</span></code> file:</p>
+<div class="highlight-haskell"><div class="highlight"><pre><span class="nf">ghc</span> <span class="o">-</span><span class="n">c</span> <span class="kt">A</span><span class="o">.</span><span class="n">hs</span><span class="o">-</span><span class="n">boot</span>
+</pre></div>
+</div>
+<p>When a hs-boot file <code class="docutils literal"><span class="pre">A.hs-boot</span></code> is compiled, it is checked for
+scope and type errors. When its parent module <code class="docutils literal"><span class="pre">A.hs</span></code> is compiled,
+the two are compared, and an error is reported if the two are
+inconsistent.</p>
+</li>
+<li><p class="first">Just as compiling <code class="docutils literal"><span class="pre">A.hs</span></code> produces an interface file <code class="docutils literal"><span class="pre">A.hi</span></code>, and
+an object file <code class="docutils literal"><span class="pre">A.o</span></code>, so compiling <code class="docutils literal"><span class="pre">A.hs-boot</span></code> produces an
+interface file <code class="docutils literal"><span class="pre">A.hi-boot</span></code>, and an pseudo-object file <code class="docutils literal"><span class="pre">A.o-boot</span></code>:</p>
+<ul class="simple">
+<li>The pseudo-object file <code class="docutils literal"><span class="pre">A.o-boot</span></code> is empty (don&#8217;t link it!), but
+it is very useful when using a Makefile, to record when the
+<code class="docutils literal"><span class="pre">A.hi-boot</span></code> was last brought up to date (see <a class="reference internal" href="#using-make"><span>Using make</span></a>).</li>
+<li>The <code class="docutils literal"><span class="pre">hi-boot</span></code> generated by compiling a <code class="docutils literal"><span class="pre">hs-boot</span></code> file is in
+the same machine-generated binary format as any other
+GHC-generated interface file (e.g. <code class="docutils literal"><span class="pre">B.hi</span></code>). You can display its
+contents with <code class="docutils literal"><span class="pre">ghc</span> <span class="pre">--show-iface</span></code>. If you specify a directory for
+interface files, the <code class="docutils literal"><span class="pre">-ohidir</span></code> flag, then that affects <code class="docutils literal"><span class="pre">hi-boot</span></code> files
+too.</li>
+</ul>
+</li>
+<li><p class="first">If hs-boot files are considered distinct from their parent source
+files, and if a <code class="docutils literal"><span class="pre">{-#</span> <span class="pre">SOURCE</span> <span class="pre">#-}</span></code> import is considered to refer to
+the hs-boot file, then the module import graph must have no cycles.
+The command <code class="docutils literal"><span class="pre">ghc</span> <span class="pre">-M</span></code> will report an error if a cycle is found.</p>
+</li>
+<li><p class="first">A module <code class="docutils literal"><span class="pre">M</span></code> that is <code class="docutils literal"><span class="pre">{-#</span> <span class="pre">SOURCE</span> <span class="pre">#-}</span></code>-imported in a program will
+usually also be ordinarily imported elsewhere. If not, <code class="docutils literal"><span class="pre">ghc</span> <span class="pre">--make</span></code>
+automatically adds <code class="docutils literal"><span class="pre">M</span></code> to the set of modules it tries to compile
+and link, to ensure that <code class="docutils literal"><span class="pre">M</span></code>&#8216;s implementation is included in the
+final program.</p>
+</li>
+</ul>
+<p>A hs-boot file need only contain the bare minimum of information needed
+to get the bootstrapping process started. For example, it doesn&#8217;t need
+to contain declarations for <em>everything</em> that module <code class="docutils literal"><span class="pre">A</span></code> exports, only
+the things required by the module(s) that import <code class="docutils literal"><span class="pre">A</span></code> recursively.</p>
+<p>A hs-boot file is written in a subset of Haskell:</p>
+<ul>
+<li><p class="first">The module header (including the export list), and import statements,
+are exactly as in Haskell, and so are the scoping rules. Hence, to
+mention a non-Prelude type or class, you must import it.</p>
+</li>
+<li><p class="first">There must be no value declarations, but there can be type signatures
+for values. For example:</p>
+<div class="highlight-haskell"><div class="highlight"><pre><span class="nf">double</span> <span class="ow">::</span> <span class="kt">Int</span> <span class="ow">-&gt;</span> <span class="kt">Int</span>
+</pre></div>
+</div>
+</li>
+<li><p class="first">Fixity declarations are exactly as in Haskell.</p>
+</li>
+<li><p class="first">Vanilla type synonym declarations are exactly as in Haskell.</p>
+</li>
+<li><p class="first">Open type and data family declarations are exactly as in Haskell.</p>
+</li>
+<li><p class="first">A closed type family may optionally omit its equations, as in the
+following example:</p>
+<div class="highlight-haskell"><div class="highlight"><pre><span class="kr">type</span> <span class="n">family</span> <span class="kt">ClosedFam</span> <span class="n">a</span> <span class="kr">where</span> <span class="o">..</span>
+</pre></div>
+</div>
+<p>The <code class="docutils literal"><span class="pre">..</span></code> is meant literally &#8211; you should write two dots in your
+file. Note that the <code class="docutils literal"><span class="pre">where</span></code> clause is still necessary to
+distinguish closed families from open ones. If you give any equations
+of a closed family, you must give all of them, in the same order as
+they appear in the accompanying Haskell file.</p>
+</li>
+<li><p class="first">A data type declaration can either be given in full, exactly as in
+Haskell, or it can be given abstractly, by omitting the &#8216;=&#8217; sign and
+everything that follows. For example:</p>
+<div class="highlight-haskell"><div class="highlight"><pre><span class="kr">data</span> <span class="kt">T</span> <span class="n">a</span> <span class="n">b</span>
+</pre></div>
+</div>
+<p>In a <em>source</em> program this would declare TA to have no constructors
+(a GHC extension: see <a class="reference internal" href="glasgow_exts.html#nullary-types"><span>Data types with no constructors</span></a>), but in an hi-boot file
+it means &#8220;I don&#8217;t know or care what the constructors are&#8221;. This is
+the most common form of data type declaration, because it&#8217;s easy to
+get right. You <em>can</em> also write out the constructors but, if you do
+so, you must write it out precisely as in its real definition.</p>
+<p>If you do not write out the constructors, you may need to give a kind
+annotation (<a class="reference internal" href="glasgow_exts.html#kinding"><span>Explicitly-kinded quantification</span></a>), to tell GHC the kind of the type
+variable, if it is not &#8220;*&#8221;. (In source files, this is worked out
+from the way the type variable is used in the constructors.) For
+example:</p>
+<div class="highlight-haskell"><div class="highlight"><pre><span class="kr">data</span> <span class="kt">R</span> <span class="p">(</span><span class="n">x</span> <span class="ow">::</span> <span class="o">*</span> <span class="ow">-&gt;</span> <span class="o">*</span><span class="p">)</span> <span class="n">y</span>
+</pre></div>
+</div>
+<p>You cannot use <code class="docutils literal"><span class="pre">deriving</span></code> on a data type declaration; write an
+<code class="docutils literal"><span class="pre">instance</span></code> declaration instead.</p>
+</li>
+<li><p class="first">Class declarations is exactly as in Haskell, except that you may not
+put default method declarations. You can also omit all the
+superclasses and class methods entirely; but you must either omit
+them all or put them all in.</p>
+</li>
+<li><p class="first">You can include instance declarations just as in Haskell; but omit
+the &#8220;where&#8221; part.</p>
+</li>
+<li><p class="first">The default role for abstract datatype parameters is now
+representational. (An abstract datatype is one with no constructors
+listed.) To get another role, use a role annotation. (See
+<a class="reference internal" href="glasgow_exts.html#roles"><span>Roles</span></a>.)</p>
+</li>
+</ul>
+</div>
+<div class="section" id="module-signatures">
+<span id="id2"></span><h2>6.8.10. Module signatures<a class="headerlink" href="#module-signatures" title="Permalink to this headline">¶</a></h2>
+<p>GHC supports the specification of module signatures, which both
+implementations and users can typecheck against separately. This
+functionality should be considered experimental for now; some details,
+especially for type classes and type families, may change. This system
+was originally described in <a class="reference external" href="http://plv.mpi-sws.org/backpack/">Backpack: Retrofitting Haskell with
+Interfaces</a>. Signature files are
+somewhat similar to <code class="docutils literal"><span class="pre">hs-boot</span></code> files, but have the <code class="docutils literal"><span class="pre">hsig</span></code> extension
+and behave slightly differently.</p>
+<p>Suppose that I have modules <code class="docutils literal"><span class="pre">String.hs</span></code> and <code class="docutils literal"><span class="pre">A.hs</span></code>, thus:</p>
+<div class="highlight-haskell"><div class="highlight"><pre><span class="kr">module</span> <span class="nn">Text</span> <span class="kr">where</span>
+    <span class="kr">data</span> <span class="kt">Text</span> <span class="ow">=</span> <span class="kt">Text</span> <span class="kt">String</span>
+
+    <span class="n">empty</span> <span class="ow">::</span> <span class="kt">Text</span>
+    <span class="n">empty</span> <span class="ow">=</span> <span class="kt">Text</span> <span class="s">&quot;&quot;</span>
+
+    <span class="n">toString</span> <span class="ow">::</span> <span class="kt">Text</span> <span class="ow">-&gt;</span> <span class="kt">String</span>
+    <span class="n">toString</span> <span class="p">(</span><span class="kt">Text</span> <span class="n">s</span><span class="p">)</span> <span class="ow">=</span> <span class="n">s</span>
+
+<span class="kr">module</span> <span class="nn">A</span> <span class="kr">where</span>
+    <span class="kr">import</span> <span class="nn">Text</span>
+    <span class="n">z</span> <span class="ow">=</span> <span class="n">toString</span> <span class="n">empty</span>
+</pre></div>
+</div>
+<p>Presently, module <code class="docutils literal"><span class="pre">A</span></code> depends explicitly on a concrete implementation
+of <code class="docutils literal"><span class="pre">Text</span></code>. What if we wanted to a signature <code class="docutils literal"><span class="pre">Text</span></code>, so we could vary
+the implementation with other possibilities (e.g. packed UTF-8 encoded
+bytestrings)? To do this, we can write a signature <code class="docutils literal"><span class="pre">TextSig.hsig</span></code>, and
+modify <code class="docutils literal"><span class="pre">A</span></code> to include the signature instead:</p>
+<div class="highlight-haskell"><div class="highlight"><pre><span class="kr">module</span> <span class="nn">TextSig</span> <span class="kr">where</span>
+    <span class="kr">data</span> <span class="kt">Text</span>
+    <span class="n">empty</span> <span class="ow">::</span> <span class="kt">Text</span>
+    <span class="n">toString</span> <span class="ow">::</span> <span class="kt">Text</span> <span class="ow">-&gt;</span> <span class="kt">String</span>
+
+<span class="kr">module</span> <span class="nn">A</span> <span class="kr">where</span>
+    <span class="kr">import</span> <span class="nn">TextSig</span>
+    <span class="n">z</span> <span class="ow">=</span> <span class="n">toString</span> <span class="n">empty</span>
+</pre></div>
+</div>
+<p>To compile these two files, we need to specify what module we would like
+to use to implement the signature. This can be done by compiling the
+implementation, and then using the <code class="docutils literal"><span class="pre">-sig-of</span></code> flag to specify the
+implementation backing a signature:</p>
+<div class="highlight-haskell"><div class="highlight"><pre><span class="nf">ghc</span> <span class="o">-</span><span class="n">c</span> <span class="kt">Text</span><span class="o">.</span><span class="n">hs</span>
+<span class="nf">ghc</span> <span class="o">-</span><span class="n">c</span> <span class="kt">TextSig</span><span class="o">.</span><span class="n">hsig</span> <span class="o">-</span><span class="n">sig</span><span class="o">-</span><span class="kr">of</span> <span class="s">&quot;TextSig is main:Text&quot;</span>
+<span class="nf">ghc</span> <span class="o">-</span><span class="n">c</span> <span class="kt">A</span><span class="o">.</span><span class="n">hs</span>
+</pre></div>
+</div>
+<p>To specify multiple signatures, use a comma-separated list. The
+<code class="docutils literal"><span class="pre">-sig-of</span></code> parameter is required to specify the backing implementations
+of all home modules, even in one-shot compilation mode. At the moment,
+you must specify the full module name (unit ID, colon, and then
+module name), although in the future we may support more user-friendly
+syntax.</p>
+<p>To just type-check an interface file, no <code class="docutils literal"><span class="pre">-sig-of</span></code> is necessary;
+instead, just pass the options <code class="docutils literal"><span class="pre">-fno-code</span> <span class="pre">-fwrite-interface</span></code>. <code class="docutils literal"><span class="pre">hsig</span></code>
+files will generate normal interface files which other files can also
+use to type-check against. However, at the moment, we always assume that
+an entity defined in a signature is a unique identifier (even though we
+may happen to know it is type equal with another identifier). In the
+future, we will support passing shaping information to the compiler in
+order to let it know about these type equalities.</p>
+<p>Just like <code class="docutils literal"><span class="pre">hs-boot</span></code> files, when an <code class="docutils literal"><span class="pre">hsig</span></code> file is compiled it is
+checked for type consistency against the backing implementation.
+Signature files are also written in a subset of Haskell essentially
+identical to that of <code class="docutils literal"><span class="pre">hs-boot</span></code> files.</p>
+<p>There is one important gotcha with the current implementation:
+currently, instances from backing implementations will &#8220;leak&#8221; code that
+uses signatures, and explicit instance declarations in signatures are
+forbidden. This behavior will be subject to change.</p>
+</div>
+<div class="section" id="using-make">
+<span id="id3"></span><h2>6.8.11. Using <code class="docutils literal"><span class="pre">make</span></code><a class="headerlink" href="#using-make" title="Permalink to this headline">¶</a></h2>
+<p id="index-32">It is reasonably straightforward to set up a <code class="docutils literal"><span class="pre">Makefile</span></code> to use with
+GHC, assuming you name your source files the same as your modules. Thus:</p>
+<div class="highlight-haskell"><div class="highlight"><pre>HC      = ghc
+HC_OPTS = -cpp $(EXTRA_HC_OPTS)
+
+SRCS = Main.lhs Foo.lhs Bar.lhs
+OBJS = Main.o   Foo.o   Bar.o
+
+.SUFFIXES : .o .hs .hi .lhs .hc .s
+
+cool_pgm : $(OBJS)
+        rm -f $@
+        $(HC) -o $@ $(HC_OPTS) $(OBJS)
+
+# Standard suffix rules
+.o.hi:
+        @:
+
+.lhs.o:
+        $(HC) -c $&lt; $(HC_OPTS)
+
+.hs.o:
+        $(HC) -c $&lt; $(HC_OPTS)
+
+.o-boot.hi-boot:
+        @:
+
+.lhs-boot.o-boot:
+        $(HC) -c $&lt; $(HC_OPTS)
+
+.hs-boot.o-boot:
+        $(HC) -c $&lt; $(HC_OPTS)
+
+# Inter-module dependencies
+Foo.o Foo.hc Foo.s    : Baz.hi          # Foo imports Baz
+Main.o Main.hc Main.s : Foo.hi Baz.hi   # Main imports Foo and Baz
+</pre></div>
+</div>
+<div class="admonition note">
+<p class="first admonition-title">Note</p>
+<p>Sophisticated <code class="docutils literal"><span class="pre">make</span></code> variants may achieve some of the above more
+elegantly. Notably, <code class="docutils literal"><span class="pre">gmake</span></code>&#8216;s pattern rules let you write the more
+comprehensible:</p>
+<div class="highlight-haskell"><div class="highlight"><pre><span class="o">%.</span><span class="n">o</span> <span class="kt">:</span> <span class="o">%.</span><span class="n">lhs</span>
+        <span class="o">$</span><span class="p">(</span><span class="kt">HC</span><span class="p">)</span> <span class="o">-</span><span class="n">c</span> <span class="o">$&lt;</span> <span class="o">$</span><span class="p">(</span><span class="kt">HC_OPTS</span><span class="p">)</span>
+</pre></div>
+</div>
+<p class="last">What we&#8217;ve shown should work with any <code class="docutils literal"><span class="pre">make</span></code>.</p>
+</div>
+<p>Note the cheesy <code class="docutils literal"><span class="pre">.o.hi</span></code> rule: It records the dependency of the
+interface (<code class="docutils literal"><span class="pre">.hi</span></code>) file on the source. The rule says a <code class="docutils literal"><span class="pre">.hi</span></code> file can
+be made from a <code class="docutils literal"><span class="pre">.o</span></code> file by doing…nothing. Which is true.</p>
+<p>Note that the suffix rules are all repeated twice, once for normal
+Haskell source files, and once for <code class="docutils literal"><span class="pre">hs-boot</span></code> files (see
+<a class="reference internal" href="#mutual-recursion"><span>How to compile mutually recursive modules</span></a>).</p>
+<p>Note also the inter-module dependencies at the end of the Makefile,
+which take the form</p>
+<div class="highlight-haskell"><div class="highlight"><pre><span class="kt">Foo</span><span class="o">.</span><span class="n">o</span> <span class="kt">Foo</span><span class="o">.</span><span class="n">hc</span> <span class="kt">Foo</span><span class="o">.</span><span class="n">s</span>    <span class="kt">:</span> <span class="kt">Baz</span><span class="o">.</span><span class="n">hi</span>          <span class="o">#</span> <span class="kt">Foo</span> <span class="n">imports</span> <span class="kt">Baz</span>
+</pre></div>
+</div>
+<p>They tell <code class="docutils literal"><span class="pre">make</span></code> that if any of <code class="docutils literal"><span class="pre">Foo.o</span></code>, <code class="docutils literal"><span class="pre">Foo.hc</span></code> or <code class="docutils literal"><span class="pre">Foo.s</span></code>
+have an earlier modification date than <code class="docutils literal"><span class="pre">Baz.hi</span></code>, then the out-of-date
+file must be brought up to date. To bring it up to date, <code class="docutils literal"><span class="pre">make</span></code> looks
+for a rule to do so; one of the preceding suffix rules does the job
+nicely. These dependencies can be generated automatically by <code class="docutils literal"><span class="pre">ghc</span></code>;
+see <a class="reference internal" href="#makefile-dependencies"><span>Dependency generation</span></a></p>
+</div>
+<div class="section" id="dependency-generation">
+<span id="makefile-dependencies"></span><h2>6.8.12. Dependency generation<a class="headerlink" href="#dependency-generation" title="Permalink to this headline">¶</a></h2>
+<p id="index-33">Putting inter-dependencies of the form <code class="docutils literal"><span class="pre">Foo.o</span> <span class="pre">:</span> <span class="pre">Bar.hi</span></code> into your
+<code class="docutils literal"><span class="pre">Makefile</span></code> by hand is rather error-prone. Don&#8217;t worry, GHC has support
+for automatically generating the required dependencies. Add the
+following to your <code class="docutils literal"><span class="pre">Makefile</span></code>:</p>
+<div class="highlight-haskell"><div class="highlight"><pre><span class="nf">depend</span> <span class="kt">:</span>
+        <span class="n">ghc</span> <span class="o">-</span><span class="kt">M</span> <span class="o">$</span><span class="p">(</span><span class="kt">HC_OPTS</span><span class="p">)</span> <span class="o">$</span><span class="p">(</span><span class="kt">SRCS</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Now, before you start compiling, and any time you change the <code class="docutils literal"><span class="pre">imports</span></code>
+in your program, do <code class="docutils literal"><span class="pre">make</span> <span class="pre">depend</span></code> before you do <code class="docutils literal"><span class="pre">make</span> <span class="pre">cool_pgm</span></code>. The command
+<code class="docutils literal"><span class="pre">ghc</span> <span class="pre">-M</span></code> will append the needed dependencies to your <code class="docutils literal"><span class="pre">Makefile</span></code>.</p>
+<p>In general, <code class="docutils literal"><span class="pre">ghc</span> <span class="pre">-M</span> <span class="pre">Foo</span></code> does the following. For each module <code class="docutils literal"><span class="pre">M</span></code> in
+the set <code class="docutils literal"><span class="pre">Foo</span></code> plus all its imports (transitively), it adds to the
+Makefile:</p>
+<ul>
+<li><p class="first">A line recording the dependence of the object file on the source
+file.</p>
+<div class="highlight-haskell"><div class="highlight"><pre><span class="kt">M</span><span class="o">.</span><span class="n">o</span> <span class="kt">:</span> <span class="kt">M</span><span class="o">.</span><span class="n">hs</span>
+</pre></div>
+</div>
+<p>(or <code class="docutils literal"><span class="pre">M.lhs</span></code> if that is the filename you used).</p>
+</li>
+<li><p class="first">For each import declaration <code class="docutils literal"><span class="pre">import</span> <span class="pre">X</span></code> in <code class="docutils literal"><span class="pre">M</span></code>, a line recording
+the dependence of <code class="docutils literal"><span class="pre">M</span></code> on <code class="docutils literal"><span class="pre">X</span></code>:</p>
+<div class="highlight-haskell"><div class="highlight"><pre><span class="kt">M</span><span class="o">.</span><span class="n">o</span> <span class="kt">:</span> <span class="kt">X</span><span class="o">.</span><span class="n">hi</span>
+</pre></div>
+</div>
+</li>
+<li><p class="first">For each import declaration <code class="docutils literal"><span class="pre">import</span> <span class="pre">{-#</span> <span class="pre">SOURCE</span> <span class="pre">#-}</span> <span class="pre">X</span></code> in <code class="docutils literal"><span class="pre">M</span></code>, a
+line recording the dependence of <code class="docutils literal"><span class="pre">M</span></code> on <code class="docutils literal"><span class="pre">X</span></code>:</p>
+<div class="highlight-haskell"><div class="highlight"><pre><span class="kt">M</span><span class="o">.</span><span class="n">o</span> <span class="kt">:</span> <span class="kt">X</span><span class="o">.</span><span class="n">hi</span><span class="o">-</span><span class="n">boot</span>
+</pre></div>
+</div>
+<p>(See <a class="reference internal" href="#mutual-recursion"><span>How to compile mutually recursive modules</span></a> for details of <code class="docutils literal"><span class="pre">hi-boot</span></code> style
+interface files.)</p>
+</li>
+</ul>
+<p>If <code class="docutils literal"><span class="pre">M</span></code> imports multiple modules, then there will be multiple lines
+with <code class="docutils literal"><span class="pre">M.o</span></code> as the target.</p>
+<p>There is no need to list all of the source files as arguments to the
+<code class="docutils literal"><span class="pre">ghc</span> <span class="pre">-M</span></code> command; <code class="docutils literal"><span class="pre">ghc</span></code> traces the dependencies, just like
+<code class="docutils literal"><span class="pre">ghc</span> <span class="pre">--make</span></code> (a new feature in GHC 6.4).</p>
+<p>Note that <code class="docutils literal"><span class="pre">ghc</span> <span class="pre">-M</span></code> needs to find a <em>source file</em> for each module in
+the dependency graph, so that it can parse the import declarations and
+follow dependencies. Any pre-compiled modules without source files must
+therefore belong to a package <a class="footnote-reference" href="#id5" id="id4">[1]</a>.</p>
+<p>By default, <code class="docutils literal"><span class="pre">ghc</span> <span class="pre">-M</span></code> generates all the dependencies, and then
+concatenates them onto the end of <code class="docutils literal"><span class="pre">makefile</span></code> (or <code class="docutils literal"><span class="pre">Makefile</span></code> if
+<code class="docutils literal"><span class="pre">makefile</span></code> doesn&#8217;t exist) bracketed by the lines
+&#8220;<code class="docutils literal"><span class="pre">#</span> <span class="pre">DO</span> <span class="pre">NOT</span> <span class="pre">DELETE:</span> <span class="pre">Beginning</span> <span class="pre">of</span> <span class="pre">Haskell</span> <span class="pre">dependencies</span></code>&#8221; and
+&#8220;<code class="docutils literal"><span class="pre">#</span> <span class="pre">DO</span> <span class="pre">NOT</span> <span class="pre">DELETE:</span> <span class="pre">End</span> <span class="pre">of</span> <span class="pre">Haskell</span> <span class="pre">dependencies</span></code>&#8221;. If these lines
+already exist in the <code class="docutils literal"><span class="pre">makefile</span></code>, then the old dependencies are deleted
+first.</p>
+<p>Don&#8217;t forget to use the same <code class="docutils literal"><span class="pre">-package</span></code> options on the <code class="docutils literal"><span class="pre">ghc</span> <span class="pre">-M</span></code>
+command line as you would when compiling; this enables the dependency
+generator to locate any imported modules that come from packages. The
+package modules won&#8217;t be included in the dependencies generated, though
+(but see the <code class="docutils literal"><span class="pre">-include-pkg-deps</span></code> option below).</p>
+<p>The dependency generation phase of GHC can take some additional options,
+which you may find useful. The options which affect dependency
+generation are:</p>
+<dl class="docutils">
+<dt><code class="docutils literal"><span class="pre">-ddump-mod-cycles</span></code></dt>
+<dd>Display a list of the cycles in the module graph. This is useful
+when trying to eliminate such cycles.</dd>
+<dt><code class="docutils literal"><span class="pre">-v2</span></code></dt>
+<dd>Print a full list of the module dependencies to stdout. (This is the
+standard verbosity flag, so the list will also be displayed with
+<code class="docutils literal"><span class="pre">-v3</span></code> and <code class="docutils literal"><span class="pre">-v4</span></code>; <a class="reference internal" href="using.html#options-help"><span>Verbosity options</span></a>.)</dd>
+<dt><code class="docutils literal"><span class="pre">-dep-makefile</span> <span class="pre">⟨file⟩</span></code></dt>
+<dd>Use ⟨file⟩ as the makefile, rather than <code class="docutils literal"><span class="pre">makefile</span></code> or
+<code class="docutils literal"><span class="pre">Makefile</span></code>. If ⟨file⟩ doesn&#8217;t exist, <code class="docutils literal"><span class="pre">mkdependHS</span></code> creates it. We
+often use <code class="docutils literal"><span class="pre">-dep-makefile</span> <span class="pre">.depend</span></code> to put the dependencies in
+<code class="docutils literal"><span class="pre">.depend</span></code> and then <code class="docutils literal"><span class="pre">include</span></code> the file <code class="docutils literal"><span class="pre">.depend</span></code> into
+<code class="docutils literal"><span class="pre">Makefile</span></code>.</dd>
+<dt><code class="docutils literal"><span class="pre">-dep-suffix</span> <span class="pre">&lt;suf&gt;</span></code></dt>
+<dd>Make extra dependencies that declare that files with suffix
+<code class="docutils literal"><span class="pre">.&lt;suf&gt;_&lt;osuf&gt;</span></code> depend on interface files with suffix
+<code class="docutils literal"><span class="pre">.&lt;suf&gt;_hi</span></code>, or (for <code class="docutils literal"><span class="pre">{-#</span> <span class="pre">SOURCE</span> <span class="pre">#-}</span></code> imports) on <code class="docutils literal"><span class="pre">.hi-boot</span></code>.
+Multiple <code class="docutils literal"><span class="pre">-dep-suffix</span></code> flags are permitted. For example,
+<code class="docutils literal"><span class="pre">-dep-suffix</span> <span class="pre">a</span> <span class="pre">-dep-suffix</span> <span class="pre">b</span></code> will make dependencies for <code class="docutils literal"><span class="pre">.hs</span></code>
+on <code class="docutils literal"><span class="pre">.hi</span></code>, <code class="docutils literal"><span class="pre">.a_hs</span></code> on <code class="docutils literal"><span class="pre">.a_hi</span></code>, and <code class="docutils literal"><span class="pre">.b_hs</span></code> on <code class="docutils literal"><span class="pre">.b_hi</span></code>.
+(Useful in conjunction with NoFib &#8220;ways&#8221;.)</dd>
+<dt><code class="docutils literal"><span class="pre">--exclude-module=&lt;file&gt;</span></code></dt>
+<dd>Regard <code class="docutils literal"><span class="pre">&lt;file&gt;</span></code> as &#8220;stable&#8221;; i.e., exclude it from having
+dependencies on it.</dd>
+<dt><code class="docutils literal"><span class="pre">-include-pkg-deps</span></code></dt>
+<dd>Regard modules imported from packages as unstable, i.e., generate
+dependencies on any imported package modules (including <code class="docutils literal"><span class="pre">Prelude</span></code>,
+and all other standard Haskell libraries). Dependencies are not
+traced recursively into packages; dependencies are only generated
+for home-package modules on external-package modules directly
+imported by the home package module. This option is normally only
+used by the various system libraries.</dd>
+</dl>
+</div>
+<div class="section" id="orphan-modules-and-instance-declarations">
+<span id="orphan-modules"></span><h2>6.8.13. Orphan modules and instance declarations<a class="headerlink" href="#orphan-modules-and-instance-declarations" title="Permalink to this headline">¶</a></h2>
+<p>Haskell specifies that when compiling module <code class="docutils literal"><span class="pre">M</span></code>, any instance declaration
+in any module &#8220;below&#8221; <code class="docutils literal"><span class="pre">M</span></code> is visible. (Module <code class="docutils literal"><span class="pre">A</span></code> is &#8220;below&#8221; <code class="docutils literal"><span class="pre">M</span></code> if <code class="docutils literal"><span class="pre">A</span></code> is
+imported directly by <code class="docutils literal"><span class="pre">M</span></code>, or if <code class="docutils literal"><span class="pre">A</span></code> is below a module that <code class="docutils literal"><span class="pre">M</span></code> imports
+directly.) In principle, GHC must therefore read the interface files of
+every module below <code class="docutils literal"><span class="pre">M</span></code>, just in case they contain an instance declaration
+that matters to <code class="docutils literal"><span class="pre">M</span></code>. This would be a disaster in practice, so GHC tries to
+be clever.</p>
+<p>In particular, if an instance declaration is in the same module as the
+definition of any type or class mentioned in the <em>head</em> of the instance
+declaration (the part after the &#8220;<code class="docutils literal"><span class="pre">=&gt;</span></code>&#8221;; see <a class="reference internal" href="glasgow_exts.html#instance-rules"><span>Relaxed rules for instance contexts</span></a>), then GHC
+has to visit that interface file anyway. Example:</p>
+<div class="highlight-haskell"><div class="highlight"><pre><span class="kr">module</span> <span class="nn">A</span> <span class="kr">where</span>
+  <span class="kr">instance</span> <span class="kt">C</span> <span class="n">a</span> <span class="ow">=&gt;</span> <span class="kt">D</span> <span class="p">(</span><span class="kt">T</span> <span class="n">a</span><span class="p">)</span> <span class="kr">where</span> <span class="o">...</span>
+  <span class="kr">data</span> <span class="kt">T</span> <span class="n">a</span> <span class="ow">=</span> <span class="o">...</span>
+</pre></div>
+</div>
+<p>The instance declaration is only relevant if the type <code class="docutils literal"><span class="pre">T</span></code> is in use, and
+if so, GHC will have visited <code class="docutils literal"><span class="pre">A</span></code>&#8216;s interface file to find <code class="docutils literal"><span class="pre">T</span></code>&#8216;s definition.</p>
+<p>The only problem comes when a module contains an instance declaration
+and GHC has no other reason for visiting the module. Example:</p>
+<div class="highlight-haskell"><div class="highlight"><pre><span class="kr">module</span> <span class="nn">Orphan</span> <span class="kr">where</span>
+  <span class="kr">instance</span> <span class="kt">C</span> <span class="n">a</span> <span class="ow">=&gt;</span> <span class="kt">D</span> <span class="p">(</span><span class="kt">T</span> <span class="n">a</span><span class="p">)</span> <span class="kr">where</span> <span class="o">...</span>
+  <span class="kr">class</span> <span class="kt">C</span> <span class="n">a</span> <span class="kr">where</span> <span class="o">...</span>
+</pre></div>
+</div>
+<p>Here, neither <code class="docutils literal"><span class="pre">D</span></code> nor <code class="docutils literal"><span class="pre">T</span></code> is declared in module <code class="docutils literal"><span class="pre">Orphan</span></code>. We call such modules
+“orphan modules”. GHC identifies orphan modules, and visits the
+interface file of every orphan module below the module being compiled.
+This is usually wasted work, but there is no avoiding it. You should
+therefore do your best to have as few orphan modules as possible.</p>
+<p>Functional dependencies complicate matters. Suppose we have:</p>
+<div class="highlight-haskell"><div class="highlight"><pre><span class="kr">module</span> <span class="nn">B</span> <span class="kr">where</span>
+  <span class="kr">instance</span> <span class="kt">E</span> <span class="kt">T</span> <span class="kt">Int</span> <span class="kr">where</span> <span class="o">...</span>
+  <span class="kr">data</span> <span class="kt">T</span> <span class="ow">=</span> <span class="o">...</span>
+</pre></div>
+</div>
+<p>Is this an orphan module? Apparently not, because <code class="docutils literal"><span class="pre">T</span></code> is declared in
+the same module. But suppose class <code class="docutils literal"><span class="pre">E</span></code> had a functional dependency:</p>
+<div class="highlight-haskell"><div class="highlight"><pre><span class="kr">module</span> <span class="nn">Lib</span> <span class="kr">where</span>
+  <span class="kr">class</span> <span class="kt">E</span> <span class="n">x</span> <span class="n">y</span> <span class="o">|</span> <span class="n">y</span> <span class="ow">-&gt;</span> <span class="n">x</span> <span class="kr">where</span> <span class="o">...</span>
+</pre></div>
+</div>
+<p>Then in some importing module <code class="docutils literal"><span class="pre">M</span></code>, the constraint <code class="docutils literal"><span class="pre">(E</span> <span class="pre">a</span> <span class="pre">Int)</span></code> should be
+&#8220;improved&#8221; by setting <code class="docutils literal"><span class="pre">a</span> <span class="pre">=</span> <span class="pre">T</span></code>, <em>even though there is no explicit
+mention</em> of <code class="docutils literal"><span class="pre">T</span></code> in <code class="docutils literal"><span class="pre">M</span></code>.</p>
+<p>These considerations lead to the following definition of an orphan
+module:</p>
+<ul>
+<li><p class="first">An <em>orphan module</em> orphan module contains at least one <em>orphan
+instance</em> or at least one <em>orphan rule</em>.</p>
+</li>
+<li><p class="first">An instance declaration in a module <code class="docutils literal"><span class="pre">M</span></code> is an <em>orphan instance</em> if
+orphan instance</p>
+<ul class="simple">
+<li>The class of the instance declaration is not declared in <code class="docutils literal"><span class="pre">M</span></code>, and</li>
+<li><em>Either</em> the class has no functional dependencies, and none of the
+type constructors in the instance head is declared in <code class="docutils literal"><span class="pre">M</span></code>; <em>or</em>
+there is a functional dependency for which none of the type
+constructors mentioned in the <em>non-determined</em> part of the
+instance head is defined in <code class="docutils literal"><span class="pre">M</span></code>.</li>
+</ul>
+<p>Only the instance head counts. In the example above, it is not good
+enough for <code class="docutils literal"><span class="pre">C</span></code>&#8216;s declaration to be in module <code class="docutils literal"><span class="pre">A</span></code>; it must be the
+declaration of <code class="docutils literal"><span class="pre">D</span></code> or <code class="docutils literal"><span class="pre">T</span></code>.</p>
+</li>
+<li><p class="first">A rewrite rule in a module <code class="docutils literal"><span class="pre">M</span></code> is an <em>orphan rule</em> orphan rule if none
+of the variables, type constructors, or classes that are free in the
+left hand side of the rule are declared in <code class="docutils literal"><span class="pre">M</span></code>.</p>
+</li>
+</ul>
+<p>If you use the flag <code class="docutils literal"><span class="pre">-fwarn-orphans</span></code>, GHC will warn you if you are
+creating an orphan module. Like any warning, you can switch the warning
+off with <code class="docutils literal"><span class="pre">-fno-warn-orphans</span></code>, and <code class="docutils literal"><span class="pre">-Werror</span></code> will make the
+compilation fail if the warning is issued.</p>
+<p>You can identify an orphan module by looking in its interface file,
+<code class="docutils literal"><span class="pre">M.hi</span></code>, using the <code class="docutils literal"><span class="pre">--show-iface</span></code> <a class="reference internal" href="using.html#modes"><span>mode</span></a>. If there is a
+<code class="docutils literal"><span class="pre">[orphan</span> <span class="pre">module]</span></code> on the first line, GHC considers it an orphan
+module.</p>
+<table class="docutils footnote" frame="void" id="id5" rules="none">
+<colgroup><col class="label" /><col /></colgroup>
+<tbody valign="top">
+<tr><td class="label"><a class="fn-backref" href="#id4">[1]</a></td><td>This is a change in behaviour relative to 6.2 and earlier.</td></tr>
+</tbody>
+</table>
+</div>
+</div>
+
+
+          </div>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related" role="navigation" aria-label="related navigation">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="packages.html" title="6.9. Packages"
+             >next</a> |</li>
+        <li class="right" >
+          <a href="runtime_control.html" title="6.7. Running a compiled program"
+             >previous</a> |</li>
+        <li class="nav-item nav-item-0"><a href="index.html">GHC 7.11.20151211 Users Guide</a> &raquo;</li>
+          <li class="nav-item nav-item-1"><a href="usage.html" >6. Using GHC</a> &raquo;</li> 
+      </ul>
+    </div>
+    <div class="footer" role="contentinfo">
+        &copy; Copyright 2015, GHC Team.
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.3.1.
+    </div>
+  </body>
+</html>
