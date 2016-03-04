@@ -1,0 +1,81 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd"><html xmlns="http://www.w3.org/1999/xhtml"><head><link rel="stylesheet" type="text/css" href="style.css" /><script type="text/javascript" src="highlight.js"></script></head><body><pre><span class="hs-pragma">{-# LANGUAGE RecordWildCards #-}</span><span>
+</span><a name="line-2"></a><span>
+</span><a name="line-3"></a><span class="hs-comment">-- | This module manages storing the various GHC option flags in a modules</span><span>
+</span><a name="line-4"></a><span class="hs-comment">-- interface file as part of the recompilation checking infrastructure.</span><span>
+</span><a name="line-5"></a><span class="hs-keyword">module</span><span> </span><span class="hs-identifier">FlagChecker</span><span> </span><span class="hs-special">(</span><span>
+</span><a name="line-6"></a><span>        </span><a href="FlagChecker.html#fingerprintDynFlags"><span class="hs-identifier hs-var">fingerprintDynFlags</span></a><span>
+</span><a name="line-7"></a><span>    </span><span class="hs-special">)</span><span> </span><span class="hs-keyword">where</span><span>
+</span><a name="line-8"></a><span>
+</span><a name="line-9"></a><span class="hs-keyword">import</span><span> </span><a href="Binary.html"><span class="hs-identifier">Binary</span></a><span>
+</span><a name="line-10"></a><span class="hs-keyword">import</span><span> </span><a href="BinIface.html"><span class="hs-identifier">BinIface</span></a><span> </span><span class="hs-special">(</span><span class="hs-special">)</span><span>
+</span><a name="line-11"></a><span class="hs-keyword">import</span><span> </span><a href="DynFlags.html"><span class="hs-identifier">DynFlags</span></a><span>
+</span><a name="line-12"></a><span class="hs-keyword">import</span><span> </span><a href="HscTypes.html"><span class="hs-identifier">HscTypes</span></a><span>
+</span><a name="line-13"></a><span class="hs-keyword">import</span><span> </span><a href="Module.html"><span class="hs-identifier">Module</span></a><span>
+</span><a name="line-14"></a><span class="hs-keyword">import</span><span> </span><a href="Name.html"><span class="hs-identifier">Name</span></a><span>
+</span><a name="line-15"></a><span class="hs-keyword">import</span><span> </span><a href="Fingerprint.html"><span class="hs-identifier">Fingerprint</span></a><span>
+</span><a name="line-16"></a><span class="hs-comment">-- import Outputable</span><span>
+</span><a name="line-17"></a><span>
+</span><a name="line-18"></a><span class="hs-keyword">import</span><span> </span><span class="hs-keyword">qualified</span><span> </span><a href="../containers-0.5.7.1/src/%{MODULE/./-}.html#%{NAME}/Data.IntSet.html"><span class="hs-identifier">Data</span><span class="hs-operator">.</span><span class="hs-identifier">IntSet</span></a><span> </span><span class="hs-keyword">as</span><span> </span><span class="hs-identifier">IntSet</span><span>
+</span><a name="line-19"></a><span class="hs-keyword">import</span><span> </span><a href="../filepath-1.4.1.0/src/%{MODULE/./-}.html#%{NAME}/System.FilePath.html"><span class="hs-identifier">System</span><span class="hs-operator">.</span><span class="hs-identifier">FilePath</span></a><span> </span><span class="hs-special">(</span><a href="../filepath-1.4.1.0/src/%{MODULE/./-}.html#%{NAME}/System.FilePath.Posix.html#normalise"><span class="hs-identifier hs-var">normalise</span></a><span class="hs-special">)</span><span>
+</span><a name="line-20"></a><span>
+</span><a name="line-21"></a><span class="hs-comment">-- | Produce a fingerprint of a @DynFlags@ value. We only base</span><span>
+</span><a name="line-22"></a><span class="hs-comment">-- the finger print on important fields in @DynFlags@ so that</span><span>
+</span><a name="line-23"></a><span class="hs-comment">-- the recompilation checker can use this fingerprint.</span><span>
+</span><a name="line-24"></a><span class="hs-identifier">fingerprintDynFlags</span><span> </span><span class="hs-glyph">::</span><span> </span><a href="DynFlags.html#DynFlags"><span class="hs-identifier hs-type">DynFlags</span></a><span> </span><span class="hs-glyph">-&gt;</span><span> </span><a href="Module.html#Module"><span class="hs-identifier hs-type">Module</span></a><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-special">(</span><a href="Binary.html#BinHandle"><span class="hs-identifier hs-type">BinHandle</span></a><span> </span><span class="hs-glyph">-&gt;</span><span> </span><a href="Name.html#Name"><span class="hs-identifier hs-type">Name</span></a><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-identifier hs-type">IO</span><span> </span><span class="hs-special">(</span><span class="hs-special">)</span><span class="hs-special">)</span><span>
+</span><a name="line-25"></a><span>                    </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-identifier hs-type">IO</span><span> </span><a href="../base-4.9.0.0/src/%{MODULE/./-}.html#%{NAME}/GHC.Fingerprint.Type.html#Fingerprint"><span class="hs-identifier hs-type">Fingerprint</span></a><span>
+</span><a name="line-26"></a><span>
+</span><a name="line-27"></a><a name="fingerprintDynFlags"><a href="FlagChecker.html#fingerprintDynFlags"><span class="hs-identifier">fingerprintDynFlags</span></a></a><span> </span><a name="local-1627991192"><a href="#local-1627991192"><span class="hs-identifier">dflags</span></a></a><span class="hs-glyph">@</span><a href="DynFlags.html#DynFlags"><span class="hs-identifier hs-var">DynFlags</span></a><span class="hs-special">{</span><span class="hs-glyph">..</span><span class="hs-special">}</span><span> </span><a name="local-1627991328"><a href="#local-1627991328"><span class="hs-identifier">this_mod</span></a></a><span> </span><a name="local-1627991329"><a href="#local-1627991329"><span class="hs-identifier">nameio</span></a></a><span> </span><span class="hs-glyph">=</span><span>
+</span><a name="line-28"></a><span>    </span><span class="hs-keyword">let</span><span> </span><a name="local-1627991330"><a href="#local-1627991330"><span class="hs-identifier">mainis</span></a></a><span>   </span><span class="hs-glyph">=</span><span> </span><span class="hs-keyword">if</span><span> </span><a href="#local-1627991218"><span class="hs-identifier hs-var">mainModIs</span></a><span> </span><span class="hs-operator hs-var">==</span><span> </span><a href="#local-1627991328"><span class="hs-identifier hs-var">this_mod</span></a><span> </span><span class="hs-keyword">then</span><span> </span><a href="../base-4.9.0.0/src/%{MODULE/./-}.html#%{NAME}/GHC.Base.html#Just"><span class="hs-identifier hs-var">Just</span></a><span> </span><a href="#local-1627991219"><span class="hs-identifier hs-var">mainFunIs</span></a><span> </span><span class="hs-keyword">else</span><span> </span><a href="../base-4.9.0.0/src/%{MODULE/./-}.html#%{NAME}/GHC.Base.html#Nothing"><span class="hs-identifier hs-var">Nothing</span></a><span>
+</span><a name="line-29"></a><span>                      </span><span class="hs-comment">-- see #5878</span><span>
+</span><a name="line-30"></a><span>        </span><span class="hs-comment">-- pkgopts  = (thisPackage dflags, sort $ packageFlags dflags)</span><span>
+</span><a name="line-31"></a><span>        </span><a name="local-1627991331"><a href="#local-1627991331"><span class="hs-identifier">safeHs</span></a></a><span>   </span><span class="hs-glyph">=</span><span> </span><a href="HscTypes.html#setSafeMode"><span class="hs-identifier hs-var">setSafeMode</span></a><span> </span><a href="#local-1627991280"><span class="hs-identifier hs-var">safeHaskell</span></a><span>
+</span><a name="line-32"></a><span>        </span><span class="hs-comment">-- oflags   = sort $ filter filterOFlags $ flags dflags</span><span>
+</span><a name="line-33"></a><span>
+</span><a name="line-34"></a><span>        </span><span class="hs-comment">-- *all* the extension flags and the language</span><span>
+</span><a name="line-35"></a><span>        </span><a name="local-1627991332"><a href="#local-1627991332"><span class="hs-identifier">lang</span></a></a><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-special">(</span><a href="../base-4.9.0.0/src/%{MODULE/./-}.html#%{NAME}/GHC.Base.html#fmap"><span class="hs-identifier hs-var">fmap</span></a><span> </span><a href="../base-4.9.0.0/src/%{MODULE/./-}.html#%{NAME}/GHC.Enum.html#fromEnum"><span class="hs-identifier hs-var">fromEnum</span></a><span> </span><a href="#local-1627991279"><span class="hs-identifier hs-var">language</span></a><span class="hs-special">,</span><span>
+</span><a name="line-36"></a><span>                </span><a href="../containers-0.5.7.1/src/%{MODULE/./-}.html#%{NAME}/Data.IntSet.Base.html#toList"><span class="hs-identifier hs-var">IntSet</span><span class="hs-operator hs-var">.</span><span class="hs-identifier hs-var">toList</span></a><span> </span><a href="../base-4.9.0.0/src/%{MODULE/./-}.html#%{NAME}/GHC.Base.html#%24"><span class="hs-operator hs-var">$</span></a><span> </span><a href="#local-1627991292"><span class="hs-identifier hs-var">extensionFlags</span></a><span class="hs-special">)</span><span>
+</span><a name="line-37"></a><span>
+</span><a name="line-38"></a><span>        </span><span class="hs-comment">-- -I, -D and -U flags affect CPP</span><span>
+</span><a name="line-39"></a><span>        </span><a name="local-1627991333"><a href="#local-1627991333"><span class="hs-identifier">cpp</span></a></a><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-special">(</span><a href="../base-4.9.0.0/src/%{MODULE/./-}.html#%{NAME}/GHC.Base.html#map"><span class="hs-identifier hs-var">map</span></a><span> </span><a href="../filepath-1.4.1.0/src/%{MODULE/./-}.html#%{NAME}/System.FilePath.Posix.html#normalise"><span class="hs-identifier hs-var">normalise</span></a><span> </span><a href="#local-1627991247"><span class="hs-identifier hs-var">includePaths</span></a><span class="hs-special">,</span><span> </span><a href="DynFlags.html#opt_P"><span class="hs-identifier hs-var">opt_P</span></a><span> </span><a href="#local-1627991192"><span class="hs-identifier hs-var">dflags</span></a><span> </span><a href="../base-4.9.0.0/src/%{MODULE/./-}.html#%{NAME}/GHC.Base.html#%2B%2B"><span class="hs-operator hs-var">++</span></a><span> </span><a href="DynFlags.html#picPOpts"><span class="hs-identifier hs-var">picPOpts</span></a><span> </span><a href="#local-1627991192"><span class="hs-identifier hs-var">dflags</span></a><span class="hs-special">)</span><span>
+</span><a name="line-40"></a><span>            </span><span class="hs-comment">-- normalise: eliminate spurious differences due to &quot;./foo&quot; vs &quot;foo&quot;</span><span>
+</span><a name="line-41"></a><span>
+</span><a name="line-42"></a><span>        </span><span class="hs-comment">-- Note [path flags and recompilation]</span><span>
+</span><a name="line-43"></a><span>        </span><a name="local-1627991334"><a href="#local-1627991334"><span class="hs-identifier">paths</span></a></a><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-special">[</span><span> </span><a href="#local-1627991233"><span class="hs-identifier hs-var">hcSuf</span></a><span> </span><span class="hs-special">]</span><span>
+</span><a name="line-44"></a><span>
+</span><a name="line-45"></a><span>        </span><span class="hs-comment">-- -fprof-auto etc.</span><span>
+</span><a name="line-46"></a><span>        </span><a name="local-1627991335"><a href="#local-1627991335"><span class="hs-identifier">prof</span></a></a><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-keyword">if</span><span> </span><a href="DynFlags.html#gopt"><span class="hs-identifier hs-var">gopt</span></a><span> </span><a href="DynFlags.html#Opt_SccProfilingOn"><span class="hs-identifier hs-var">Opt_SccProfilingOn</span></a><span> </span><a href="#local-1627991192"><span class="hs-identifier hs-var">dflags</span></a><span> </span><span class="hs-keyword">then</span><span> </span><a href="../base-4.9.0.0/src/%{MODULE/./-}.html#%{NAME}/GHC.Enum.html#fromEnum"><span class="hs-identifier hs-var">fromEnum</span></a><span> </span><a href="#local-1627991310"><span class="hs-identifier hs-var">profAuto</span></a><span> </span><span class="hs-keyword">else</span><span> </span><span class="hs-number">0</span><span>
+</span><a name="line-47"></a><span>
+</span><a name="line-48"></a><span>    </span><span class="hs-keyword">in</span><span> </span><span class="hs-comment">-- pprTrace &quot;flags&quot; (ppr (mainis, safeHs, lang, cpp, paths)) $</span><span>
+</span><a name="line-49"></a><span>       </span><a href="Binary.html#computeFingerprint"><span class="hs-identifier hs-var">computeFingerprint</span></a><span> </span><a href="#local-1627991329"><span class="hs-identifier hs-var">nameio</span></a><span> </span><span class="hs-special">(</span><a href="#local-1627991330"><span class="hs-identifier hs-var">mainis</span></a><span class="hs-special">,</span><span> </span><a href="#local-1627991331"><span class="hs-identifier hs-var">safeHs</span></a><span class="hs-special">,</span><span> </span><a href="#local-1627991332"><span class="hs-identifier hs-var">lang</span></a><span class="hs-special">,</span><span> </span><a href="#local-1627991333"><span class="hs-identifier hs-var">cpp</span></a><span class="hs-special">,</span><span> </span><a href="#local-1627991334"><span class="hs-identifier hs-var">paths</span></a><span class="hs-special">,</span><span> </span><a href="#local-1627991335"><span class="hs-identifier hs-var">prof</span></a><span class="hs-special">)</span><span>
+</span><a name="line-50"></a><span>
+</span><a name="line-51"></a><span>
+</span><a name="line-52"></a><span class="hs-comment">{- Note [path flags and recompilation]
+
+There are several flags that we deliberately omit from the
+recompilation check; here we explain why.
+
+-osuf, -odir, -hisuf, -hidir
+  If GHC decides that it does not need to recompile, then
+  it must have found an up-to-date .hi file and .o file.
+  There is no point recording these flags - the user must
+  have passed the correct ones.  Indeed, the user may
+  have compiled the source file in one-shot mode using
+  -o to specify the .o file, and then loaded it in GHCi
+  using -odir.
+
+-stubdir
+  We omit this one because it is automatically set by -outputdir, and
+  we don't want changes in -outputdir to automatically trigger
+  recompilation.  This could be wrong, but only in very rare cases.
+
+-i (importPaths)
+  For the same reason as -osuf etc. above: if GHC decides not to
+  recompile, then it must have already checked all the .hi files on
+  which the current module depends, so it must have found them
+  successfully.  It is occasionally useful to be able to cd to a
+  different directory and use -i flags to enable GHC to find the .hi
+  files; we don't want this to force recompilation.
+
+The only path-related flag left is -hcsuf.
+-}</span><span>
+</span><a name="line-81"></a></pre></body></html>

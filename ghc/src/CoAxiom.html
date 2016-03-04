@@ -1,0 +1,525 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd"><html xmlns="http://www.w3.org/1999/xhtml"><head><link rel="stylesheet" type="text/css" href="style.css" /><script type="text/javascript" src="highlight.js"></script></head><body><pre><span class="hs-comment">-- (c) The University of Glasgow 2012</span><span>
+</span><a name="line-2"></a><span>
+</span><a name="line-3"></a><span class="hs-pragma">{-# LANGUAGE CPP, DataKinds, DeriveDataTypeable, GADTs, KindSignatures,
+             ScopedTypeVariables, StandaloneDeriving, RoleAnnotations #-}</span><span>
+</span><a name="line-5"></a><span>
+</span><a name="line-6"></a><span class="hs-comment">-- | Module for coercion axioms, used to represent type family instances</span><span>
+</span><a name="line-7"></a><span class="hs-comment">-- and newtypes</span><span>
+</span><a name="line-8"></a><span>
+</span><a name="line-9"></a><span class="hs-keyword">module</span><span> </span><span class="hs-identifier">CoAxiom</span><span> </span><span class="hs-special">(</span><span>
+</span><a name="line-10"></a><span>       </span><a href="CoAxiom.html#BranchFlag"><span class="hs-identifier hs-type">BranchFlag</span></a><span class="hs-special">,</span><span> </span><a href="CoAxiom.html#Branched"><span class="hs-identifier hs-type">Branched</span></a><span class="hs-special">,</span><span> </span><a href="CoAxiom.html#Unbranched"><span class="hs-identifier hs-type">Unbranched</span></a><span class="hs-special">,</span><span> </span><a href="CoAxiom.html#BranchIndex"><span class="hs-identifier hs-type">BranchIndex</span></a><span class="hs-special">,</span><span> </span><a href="CoAxiom.html#Branches"><span class="hs-identifier hs-type">Branches</span></a><span class="hs-special">,</span><span>
+</span><a name="line-11"></a><span>       </span><a href="CoAxiom.html#manyBranches"><span class="hs-identifier hs-var">manyBranches</span></a><span class="hs-special">,</span><span> </span><a href="CoAxiom.html#unbranched"><span class="hs-identifier hs-var">unbranched</span></a><span class="hs-special">,</span><span>
+</span><a name="line-12"></a><span>       </span><a href="CoAxiom.html#fromBranches"><span class="hs-identifier hs-var">fromBranches</span></a><span class="hs-special">,</span><span> </span><a href="CoAxiom.html#numBranches"><span class="hs-identifier hs-var">numBranches</span></a><span class="hs-special">,</span><span>
+</span><a name="line-13"></a><span>       </span><a href="CoAxiom.html#mapAccumBranches"><span class="hs-identifier hs-var">mapAccumBranches</span></a><span class="hs-special">,</span><span>
+</span><a name="line-14"></a><span>
+</span><a name="line-15"></a><span>       </span><a href="CoAxiom.html#CoAxiom"><span class="hs-identifier hs-type">CoAxiom</span></a><span class="hs-special">(</span><span class="hs-glyph">..</span><span class="hs-special">)</span><span class="hs-special">,</span><span> </span><a href="CoAxiom.html#CoAxBranch"><span class="hs-identifier hs-type">CoAxBranch</span></a><span class="hs-special">(</span><span class="hs-glyph">..</span><span class="hs-special">)</span><span class="hs-special">,</span><span>
+</span><a name="line-16"></a><span>
+</span><a name="line-17"></a><span>       </span><a href="CoAxiom.html#toBranchedAxiom"><span class="hs-identifier hs-var">toBranchedAxiom</span></a><span class="hs-special">,</span><span> </span><a href="CoAxiom.html#toUnbranchedAxiom"><span class="hs-identifier hs-var">toUnbranchedAxiom</span></a><span class="hs-special">,</span><span>
+</span><a name="line-18"></a><span>       </span><a href="CoAxiom.html#coAxiomName"><span class="hs-identifier hs-var">coAxiomName</span></a><span class="hs-special">,</span><span> </span><a href="CoAxiom.html#coAxiomArity"><span class="hs-identifier hs-var">coAxiomArity</span></a><span class="hs-special">,</span><span> </span><a href="CoAxiom.html#coAxiomBranches"><span class="hs-identifier hs-var">coAxiomBranches</span></a><span class="hs-special">,</span><span>
+</span><a name="line-19"></a><span>       </span><a href="CoAxiom.html#coAxiomTyCon"><span class="hs-identifier hs-var">coAxiomTyCon</span></a><span class="hs-special">,</span><span> </span><a href="CoAxiom.html#isImplicitCoAxiom"><span class="hs-identifier hs-var">isImplicitCoAxiom</span></a><span class="hs-special">,</span><span> </span><a href="CoAxiom.html#coAxiomNumPats"><span class="hs-identifier hs-var">coAxiomNumPats</span></a><span class="hs-special">,</span><span>
+</span><a name="line-20"></a><span>       </span><a href="CoAxiom.html#coAxiomNthBranch"><span class="hs-identifier hs-var">coAxiomNthBranch</span></a><span class="hs-special">,</span><span> </span><a href="CoAxiom.html#coAxiomSingleBranch_maybe"><span class="hs-identifier hs-var">coAxiomSingleBranch_maybe</span></a><span class="hs-special">,</span><span> </span><a href="CoAxiom.html#coAxiomRole"><span class="hs-identifier hs-var">coAxiomRole</span></a><span class="hs-special">,</span><span>
+</span><a name="line-21"></a><span>       </span><a href="CoAxiom.html#coAxiomSingleBranch"><span class="hs-identifier hs-var">coAxiomSingleBranch</span></a><span class="hs-special">,</span><span> </span><a href="CoAxiom.html#coAxBranchTyVars"><span class="hs-identifier hs-var">coAxBranchTyVars</span></a><span class="hs-special">,</span><span> </span><a href="CoAxiom.html#coAxBranchCoVars"><span class="hs-identifier hs-var">coAxBranchCoVars</span></a><span class="hs-special">,</span><span>
+</span><a name="line-22"></a><span>       </span><a href="CoAxiom.html#coAxBranchRoles"><span class="hs-identifier hs-var">coAxBranchRoles</span></a><span class="hs-special">,</span><span>
+</span><a name="line-23"></a><span>       </span><a href="CoAxiom.html#coAxBranchLHS"><span class="hs-identifier hs-var">coAxBranchLHS</span></a><span class="hs-special">,</span><span> </span><a href="CoAxiom.html#coAxBranchRHS"><span class="hs-identifier hs-var">coAxBranchRHS</span></a><span class="hs-special">,</span><span> </span><a href="CoAxiom.html#coAxBranchSpan"><span class="hs-identifier hs-var">coAxBranchSpan</span></a><span class="hs-special">,</span><span> </span><a href="CoAxiom.html#coAxBranchIncomps"><span class="hs-identifier hs-var">coAxBranchIncomps</span></a><span class="hs-special">,</span><span>
+</span><a name="line-24"></a><span>       </span><a href="CoAxiom.html#placeHolderIncomps"><span class="hs-identifier hs-var">placeHolderIncomps</span></a><span class="hs-special">,</span><span>
+</span><a name="line-25"></a><span>
+</span><a name="line-26"></a><span>       </span><a href="CoAxiom.html#Role"><span class="hs-identifier hs-type">Role</span></a><span class="hs-special">(</span><span class="hs-glyph">..</span><span class="hs-special">)</span><span class="hs-special">,</span><span> </span><a href="CoAxiom.html#fsFromRole"><span class="hs-identifier hs-var">fsFromRole</span></a><span class="hs-special">,</span><span>
+</span><a name="line-27"></a><span>
+</span><a name="line-28"></a><span>       </span><a href="CoAxiom.html#CoAxiomRule"><span class="hs-identifier hs-type">CoAxiomRule</span></a><span class="hs-special">(</span><span class="hs-glyph">..</span><span class="hs-special">)</span><span class="hs-special">,</span><span> </span><a href="CoAxiom.html#Eqn"><span class="hs-identifier hs-type">Eqn</span></a><span class="hs-special">,</span><span>
+</span><a name="line-29"></a><span>       </span><a href="CoAxiom.html#BuiltInSynFamily"><span class="hs-identifier hs-type">BuiltInSynFamily</span></a><span class="hs-special">(</span><span class="hs-glyph">..</span><span class="hs-special">)</span><span class="hs-special">,</span><span> </span><a href="CoAxiom.html#trivialBuiltInFamily"><span class="hs-identifier hs-var">trivialBuiltInFamily</span></a><span>
+</span><a name="line-30"></a><span>       </span><span class="hs-special">)</span><span> </span><span class="hs-keyword">where</span><span>
+</span><a name="line-31"></a><span>
+</span><a name="line-32"></a><span class="hs-keyword">import</span><span> </span><span class="hs-pragma">{-# SOURCE #-}</span><span> </span><a href="TyCoRep.html"><span class="hs-identifier">TyCoRep</span></a><span> </span><span class="hs-special">(</span><span> </span><a href="TyCoRep.html#Type"><span class="hs-identifier hs-type">Type</span></a><span> </span><span class="hs-special">)</span><span>
+</span><a name="line-33"></a><span class="hs-keyword">import</span><span> </span><span class="hs-pragma">{-# SOURCE #-}</span><span> </span><a href="TyCon.html"><span class="hs-identifier">TyCon</span></a><span> </span><span class="hs-special">(</span><span> </span><a href="TyCon.html#TyCon"><span class="hs-identifier hs-type">TyCon</span></a><span> </span><span class="hs-special">)</span><span>
+</span><a name="line-34"></a><span class="hs-keyword">import</span><span> </span><a href="Outputable.html"><span class="hs-identifier">Outputable</span></a><span>
+</span><a name="line-35"></a><span class="hs-keyword">import</span><span> </span><a href="FastString.html"><span class="hs-identifier">FastString</span></a><span>
+</span><a name="line-36"></a><span class="hs-keyword">import</span><span> </span><a href="Name.html"><span class="hs-identifier">Name</span></a><span>
+</span><a name="line-37"></a><span class="hs-keyword">import</span><span> </span><a href="Unique.html"><span class="hs-identifier">Unique</span></a><span>
+</span><a name="line-38"></a><span class="hs-keyword">import</span><span> </span><a href="Var.html"><span class="hs-identifier">Var</span></a><span>
+</span><a name="line-39"></a><span class="hs-keyword">import</span><span> </span><a href="Util.html"><span class="hs-identifier">Util</span></a><span>
+</span><a name="line-40"></a><span class="hs-keyword">import</span><span> </span><a href="Binary.html"><span class="hs-identifier">Binary</span></a><span>
+</span><a name="line-41"></a><span class="hs-keyword">import</span><span> </span><a href="Pair.html"><span class="hs-identifier">Pair</span></a><span>
+</span><a name="line-42"></a><span class="hs-keyword">import</span><span> </span><a href="BasicTypes.html"><span class="hs-identifier">BasicTypes</span></a><span>
+</span><a name="line-43"></a><span class="hs-keyword">import</span><span> </span><a href="../base-4.9.0.0/src/%{MODULE/./-}.html#%{NAME}/Data.Typeable.html"><span class="hs-identifier">Data</span><span class="hs-operator">.</span><span class="hs-identifier">Typeable</span></a><span> </span><span class="hs-special">(</span><span> </span><a href="../base-4.9.0.0/src/%{MODULE/./-}.html#%{NAME}/Data.Typeable.Internal.html#Typeable"><span class="hs-identifier hs-type">Typeable</span></a><span> </span><span class="hs-special">)</span><span>
+</span><a name="line-44"></a><span class="hs-keyword">import</span><span> </span><a href="SrcLoc.html"><span class="hs-identifier">SrcLoc</span></a><span>
+</span><a name="line-45"></a><span class="hs-keyword">import</span><span> </span><span class="hs-keyword">qualified</span><span> </span><a href="../base-4.9.0.0/src/%{MODULE/./-}.html#%{NAME}/Data.Data.html"><span class="hs-identifier">Data</span><span class="hs-operator">.</span><span class="hs-identifier">Data</span></a><span> </span><span class="hs-keyword">as</span><span> </span><span class="hs-identifier">Data</span><span>
+</span><a name="line-46"></a><span class="hs-keyword">import</span><span> </span><a href="../array-0.5.1.0/src/%{MODULE/./-}.html#%{NAME}/Data.Array.html"><span class="hs-identifier">Data</span><span class="hs-operator">.</span><span class="hs-identifier">Array</span></a><span>
+</span><a name="line-47"></a><span class="hs-keyword">import</span><span> </span><a href="../base-4.9.0.0/src/%{MODULE/./-}.html#%{NAME}/Data.List.html"><span class="hs-identifier">Data</span><span class="hs-operator">.</span><span class="hs-identifier">List</span></a><span> </span><span class="hs-special">(</span><span> </span><a href="../base-4.9.0.0/src/%{MODULE/./-}.html#%{NAME}/Data.Traversable.html#mapAccumL"><span class="hs-identifier hs-var">mapAccumL</span></a><span> </span><span class="hs-special">)</span><span>
+</span><a name="line-48"></a><span>
+</span><a name="line-49"></a><span class="hs-cpp">#include &quot;HsVersions.h&quot;</span><span>
+</span><a name="line-50"></a><span>
+</span><a name="line-51"></a><span class="hs-comment">{-
+Note [Coercion axiom branches]
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+In order to allow closed type families, an axiom needs to contain an
+ordered list of alternatives, called branches. The kind of the coercion built
+from an axiom is determined by which index is used when building the coercion
+from the axiom.
+
+For example, consider the axiom derived from the following declaration:
+
+type family F a where
+  F [Int] = Bool
+  F [a]   = Double
+  F (a b) = Char
+
+This will give rise to this axiom:
+
+axF :: {                                         F [Int] ~ Bool
+       ; forall (a :: *).                        F [a]   ~ Double
+       ; forall (k :: *) (a :: k -&gt; *) (b :: k). F (a b) ~ Char
+       }
+
+The axiom is used with the AxiomInstCo constructor of Coercion. If we wish
+to have a coercion showing that F (Maybe Int) ~ Char, it will look like
+
+axF[2] &lt;*&gt; &lt;Maybe&gt; &lt;Int&gt; :: F (Maybe Int) ~ Char
+-- or, written using concrete-ish syntax --
+AxiomInstCo axF 2 [Refl *, Refl Maybe, Refl Int]
+
+Note that the index is 0-based.
+
+For type-checking, it is also necessary to check that no previous pattern
+can unify with the supplied arguments. After all, it is possible that some
+of the type arguments are lambda-bound type variables whose instantiation may
+cause an earlier match among the branches. We wish to prohibit this behavior,
+so the type checker rules out the choice of a branch where a previous branch
+can unify. See also [Apartness] in FamInstEnv.hs.
+
+For example, the following is malformed, where 'a' is a lambda-bound type
+variable:
+
+axF[2] &lt;*&gt; &lt;a&gt; &lt;Bool&gt; :: F (a Bool) ~ Char
+
+Why? Because a might be instantiated with [], meaning that branch 1 should
+apply, not branch 2. This is a vital consistency check; without it, we could
+derive Int ~ Bool, and that is a Bad Thing.
+
+Note [Branched axioms]
+~~~~~~~~~~~~~~~~~~~~~~
+Although a CoAxiom has the capacity to store many branches, in certain cases,
+we want only one. These cases are in data/newtype family instances, newtype
+coercions, and type family instances.
+Furthermore, these unbranched axioms are used in a
+variety of places throughout GHC, and it would difficult to generalize all of
+that code to deal with branched axioms, especially when the code can be sure
+of the fact that an axiom is indeed a singleton. At the same time, it seems
+dangerous to assume singlehood in various places through GHC.
+
+The solution to this is to label a CoAxiom with a phantom type variable
+declaring whether it is known to be a singleton or not. The branches
+are stored using a special datatype, declared below, that ensures that the
+type variable is accurate.
+
+************************************************************************
+*                                                                      *
+                    Branches
+*                                                                      *
+************************************************************************
+-}</span><span>
+</span><a name="line-120"></a><span>
+</span><a name="line-121"></a><span class="hs-keyword">type</span><span> </span><a name="BranchIndex"><a href="CoAxiom.html#BranchIndex"><span class="hs-identifier">BranchIndex</span></a></a><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-identifier hs-type">Int</span><span>  </span><span class="hs-comment">-- The index of the branch in the list of branches</span><span>
+</span><a name="line-122"></a><span>                        </span><span class="hs-comment">-- Counting from zero</span><span>
+</span><a name="line-123"></a><span>
+</span><a name="line-124"></a><span class="hs-comment">-- promoted data type</span><span>
+</span><a name="line-125"></a><span class="hs-keyword">data</span><span> </span><a name="BranchFlag"><a href="CoAxiom.html#BranchFlag"><span class="hs-identifier">BranchFlag</span></a></a><span> </span><span class="hs-glyph">=</span><span> </span><a name="Branched"><a href="CoAxiom.html#Branched"><span class="hs-identifier">Branched</span></a></a><span> </span><span class="hs-glyph">|</span><span> </span><a name="Unbranched"><a href="CoAxiom.html#Unbranched"><span class="hs-identifier">Unbranched</span></a></a><span>
+</span><a name="line-126"></a><span class="hs-keyword">type</span><span> </span><a name="Branched"><a href="CoAxiom.html#Branched"><span class="hs-identifier">Branched</span></a></a><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-char">'Branched
+deriving instance Typeable 'Branched
+type Unbranched = 'Unbranched
+deriving instance Typeable 'Unbranched
+-- By using type synonyms for the promoted constructors, we avoid needing
+-- DataKinds and the promotion quote in client modules. This also means that
+-- we don't need to export the term-level constructors, which should never be used.
+
+newtype Branches (br :: BranchFlag)
+  = MkBranches { unMkBranches :: Array BranchIndex CoAxBranch }
+  deriving Typeable
+type role Branches nominal
+
+manyBranches :: [CoAxBranch] -&gt; Branches Branched
+manyBranches brs = ASSERT( snd bnds &gt;= fst bnds )
+                   MkBranches (listArray bnds brs)
+  where
+    bnds = (0, length brs - 1)
+
+unbranched :: CoAxBranch -&gt; Branches Unbranched
+unbranched br = MkBranches (listArray (0, 0) [br])
+
+toBranched :: Branches br -&gt; Branches Branched
+toBranched = MkBranches . unMkBranches
+
+toUnbranched :: Branches br -&gt; Branches Unbranched
+toUnbranched (MkBranches arr) = ASSERT( bounds arr == (0,0) )
+                                MkBranches arr
+
+fromBranches :: Branches br -&gt; [CoAxBranch]
+fromBranches = elems . unMkBranches
+
+branchesNth :: Branches br -&gt; BranchIndex -&gt; CoAxBranch
+branchesNth (MkBranches arr) n = arr ! n
+
+numBranches :: Branches br -&gt; Int
+numBranches (MkBranches arr) = snd (bounds arr) + 1
+
+-- | The @[CoAxBranch]@ passed into the mapping function is a list of
+-- all previous branches, reversed
+mapAccumBranches :: ([CoAxBranch] -&gt; CoAxBranch -&gt; CoAxBranch)
+                  -&gt; Branches br -&gt; Branches br
+mapAccumBranches f (MkBranches arr)
+  = MkBranches (listArray (bounds arr) (snd $ mapAccumL go [] (elems arr)))
+  where
+    go :: [CoAxBranch] -&gt; CoAxBranch -&gt; ([CoAxBranch], CoAxBranch)
+    go prev_branches cur_branch = ( cur_branch : prev_branches
+                                  , f prev_branches cur_branch )
+
+
+{-
+************************************************************************
+*                                                                      *
+                    Coercion axioms
+*                                                                      *
+************************************************************************
+
+Note [Storing compatibility]
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+During axiom application, we need to be aware of which branches are compatible
+with which others. The full explanation is in Note [Compatibility] in
+FamInstEnv. (The code is placed there to avoid a dependency from CoAxiom on
+the unification algorithm.) Although we could theoretically compute
+compatibility on the fly, this is silly, so we store it in a CoAxiom.
+
+Specifically, each branch refers to all other branches with which it is
+incompatible. This list might well be empty, and it will always be for the
+first branch of any axiom.
+
+CoAxBranches that do not (yet) belong to a CoAxiom should have a panic thunk
+stored in cab_incomps. The incompatibilities are properly a property of the
+axiom as a whole, and they are computed only when the final axiom is built.
+
+During serialization, the list is converted into a list of the indices
+of the branches.
+-}
+
+-- | A 'CoAxiom' is a \&quot;coercion constructor\&quot;, i.e. a named equality axiom.
+
+-- If you edit this type, you may need to update the GHC formalism
+-- See Note [GHC Formalism] in coreSyn/CoreLint.hs
+data CoAxiom br
+  = CoAxiom                   -- Type equality axiom.
+    { co_ax_unique   :: Unique        -- Unique identifier
+    , co_ax_name     :: Name          -- Name for pretty-printing
+    , co_ax_role     :: Role          -- Role of the axiom's equality
+    , co_ax_tc       :: TyCon         -- The head of the LHS patterns
+                                      -- e.g.  the newtype or family tycon
+    , co_ax_branches :: Branches br   -- The branches that form this axiom
+    , co_ax_implicit :: Bool          -- True &lt;=&gt; the axiom is &quot;implicit&quot;
+                                      -- See Note [Implicit axioms]
+         -- INVARIANT: co_ax_implicit == True implies length co_ax_branches == 1.
+    }
+  deriving Typeable
+
+data CoAxBranch
+  = CoAxBranch
+    { cab_loc      :: SrcSpan       -- Location of the defining equation
+                                    -- See Note [CoAxiom locations]
+    , cab_tvs      :: [TyVar]       -- Bound type variables; not necessarily fresh
+                                    -- See Note [CoAxBranch type variables]
+    , cab_cvs      :: [CoVar]       -- Bound coercion variables
+                                    -- Always empty, for now.
+                                    -- See Note [Constraints in patterns]
+                                    -- in TcTyClsDecls
+    , cab_roles    :: [Role]        -- See Note [CoAxBranch roles]
+    , cab_lhs      :: [Type]        -- Type patterns to match against
+                                    -- See Note [CoAxiom saturation]
+    , cab_rhs      :: Type          -- Right-hand side of the equality
+    , cab_incomps  :: [CoAxBranch]  -- The previous incompatible branches
+                                    -- See Note [Storing compatibility]
+    }
+  deriving ( Data.Data, Data.Typeable )
+
+toBranchedAxiom :: CoAxiom br -&gt; CoAxiom Branched
+toBranchedAxiom (CoAxiom unique name role tc branches implicit)
+  = CoAxiom unique name role tc (toBranched branches) implicit
+
+toUnbranchedAxiom :: CoAxiom br -&gt; CoAxiom Unbranched
+toUnbranchedAxiom (CoAxiom unique name role tc branches implicit)
+  = CoAxiom unique name role tc (toUnbranched branches) implicit
+
+coAxiomNumPats :: CoAxiom br -&gt; Int
+coAxiomNumPats = length . coAxBranchLHS . (flip coAxiomNthBranch 0)
+
+coAxiomNthBranch :: CoAxiom br -&gt; BranchIndex -&gt; CoAxBranch
+coAxiomNthBranch (CoAxiom { co_ax_branches = bs }) index
+  = branchesNth bs index
+
+coAxiomArity :: CoAxiom br -&gt; BranchIndex -&gt; Arity
+coAxiomArity ax index
+  = length tvs + length cvs
+  where
+    CoAxBranch { cab_tvs = tvs, cab_cvs = cvs } = coAxiomNthBranch ax index
+
+coAxiomName :: CoAxiom br -&gt; Name
+coAxiomName = co_ax_name
+
+coAxiomRole :: CoAxiom br -&gt; Role
+coAxiomRole = co_ax_role
+
+coAxiomBranches :: CoAxiom br -&gt; Branches br
+coAxiomBranches = co_ax_branches
+
+coAxiomSingleBranch_maybe :: CoAxiom br -&gt; Maybe CoAxBranch
+coAxiomSingleBranch_maybe (CoAxiom { co_ax_branches = MkBranches arr })
+  | snd (bounds arr) == 0
+  = Just $ arr ! 0
+  | otherwise
+  = Nothing
+
+coAxiomSingleBranch :: CoAxiom Unbranched -&gt; CoAxBranch
+coAxiomSingleBranch (CoAxiom { co_ax_branches = MkBranches arr })
+  = arr ! 0
+
+coAxiomTyCon :: CoAxiom br -&gt; TyCon
+coAxiomTyCon = co_ax_tc
+
+coAxBranchTyVars :: CoAxBranch -&gt; [TyVar]
+coAxBranchTyVars = cab_tvs
+
+coAxBranchCoVars :: CoAxBranch -&gt; [CoVar]
+coAxBranchCoVars = cab_cvs
+
+coAxBranchLHS :: CoAxBranch -&gt; [Type]
+coAxBranchLHS = cab_lhs
+
+coAxBranchRHS :: CoAxBranch -&gt; Type
+coAxBranchRHS = cab_rhs
+
+coAxBranchRoles :: CoAxBranch -&gt; [Role]
+coAxBranchRoles = cab_roles
+
+coAxBranchSpan :: CoAxBranch -&gt; SrcSpan
+coAxBranchSpan = cab_loc
+
+isImplicitCoAxiom :: CoAxiom br -&gt; Bool
+isImplicitCoAxiom = co_ax_implicit
+
+coAxBranchIncomps :: CoAxBranch -&gt; [CoAxBranch]
+coAxBranchIncomps = cab_incomps
+
+-- See Note [Compatibility checking] in FamInstEnv
+placeHolderIncomps :: [CoAxBranch]
+placeHolderIncomps = panic &quot;placeHolderIncomps&quot;
+
+{- Note [CoAxiom saturation]
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+* When co
+
+Note [CoAxBranch type variables]
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+In the case of a CoAxBranch of an associated type-family instance,
+we use the *same* type variables (where possible) as the
+enclosing class or instance.  Consider
+   class C a b where
+     type F x b
+     type F [y] b = ...     -- Second param must be b
+
+   instance C Int [z] where
+     type F Int [z] = ...   -- Second param must be [z]
+
+In the CoAxBranch in the instance decl (F Int [z]) we use the
+same 'z', so that it's easy to check that that type is the same
+as that in the instance header.
+
+Similarly in the CoAxBranch for the default decl for F in the
+class decl, we use the same 'b' to make the same check easy.
+
+So, unlike FamInsts, there is no expectation that the cab_tvs
+are fresh wrt each other, or any other CoAxBranch.
+
+Note [CoAxBranch roles]
+~~~~~~~~~~~~~~~~~~~~~~~
+Consider this code:
+
+  newtype Age = MkAge Int
+  newtype Wrap a = MkWrap a
+
+  convert :: Wrap Age -&gt; Int
+  convert (MkWrap (MkAge i)) = i
+
+We want this to compile to:
+
+  NTCo:Wrap :: forall a. Wrap a ~R a
+  NTCo:Age  :: Age ~R Int
+  convert = \x -&gt; x |&gt; (NTCo:Wrap[0] NTCo:Age[0])
+
+But, note that NTCo:Age is at role R. Thus, we need to be able to pass
+coercions at role R into axioms. However, we don't *always* want to be able to
+do this, as it would be disastrous with type families. The solution is to
+annotate the arguments to the axiom with roles, much like we annotate tycon
+tyvars. Where do these roles get set? Newtype axioms inherit their roles from
+the newtype tycon; family axioms are all at role N.
+
+Note [CoAxiom locations]
+~~~~~~~~~~~~~~~~~~~~~~~~
+The source location of a CoAxiom is stored in two places in the
+datatype tree.
+  * The first is in the location info buried in the Name of the
+    CoAxiom. This span includes all of the branches of a branched
+    CoAxiom.
+  * The second is in the cab_loc fields of the CoAxBranches.
+
+In the case of a single branch, we can extract the source location of
+the branch from the name of the CoAxiom. In other cases, we need an
+explicit SrcSpan to correctly store the location of the equation
+giving rise to the FamInstBranch.
+
+Note [Implicit axioms]
+~~~~~~~~~~~~~~~~~~~~~~
+See also Note [Implicit TyThings] in HscTypes
+* A CoAxiom arising from data/type family instances is not &quot;implicit&quot;.
+  That is, it has its own IfaceAxiom declaration in an interface file
+
+* The CoAxiom arising from a newtype declaration *is* &quot;implicit&quot;.
+  That is, it does not have its own IfaceAxiom declaration in an
+  interface file; instead the CoAxiom is generated by type-checking
+  the newtype declaration
+-}
+
+instance Eq (CoAxiom br) where
+    a == b = case (a `compare` b) of { EQ -&gt; True;   _ -&gt; False }
+    a /= b = case (a `compare` b) of { EQ -&gt; False;  _ -&gt; True  }
+
+instance Ord (CoAxiom br) where
+    a &lt;= b = case (a `compare` b) of { LT -&gt; True;  EQ -&gt; True;  GT -&gt; False }
+    a &lt;  b = case (a `compare` b) of { LT -&gt; True;  EQ -&gt; False; GT -&gt; False }
+    a &gt;= b = case (a `compare` b) of { LT -&gt; False; EQ -&gt; True;  GT -&gt; True  }
+    a &gt;  b = case (a `compare` b) of { LT -&gt; False; EQ -&gt; False; GT -&gt; True  }
+    compare a b = getUnique a `compare` getUnique b
+
+instance Uniquable (CoAxiom br) where
+    getUnique = co_ax_unique
+
+instance Outputable (CoAxiom br) where
+    ppr = ppr . getName
+
+instance NamedThing (CoAxiom br) where
+    getName = co_ax_name
+
+instance Typeable br =&gt; Data.Data (CoAxiom br) where
+    -- don't traverse?
+    toConstr _   = abstractConstr &quot;CoAxiom&quot;
+    gunfold _ _  = error &quot;gunfold&quot;
+    dataTypeOf _ = mkNoRepType &quot;CoAxiom&quot;
+
+instance Outputable CoAxBranch where
+  ppr (CoAxBranch { cab_loc = loc
+                  , cab_lhs = lhs
+                  , cab_rhs = rhs }) =
+    text &quot;CoAxBranch&quot; &lt;+&gt; parens (ppr loc) &lt;&gt; colon &lt;+&gt; ppr lhs &lt;+&gt;
+    text &quot;=&gt;&quot; &lt;+&gt; ppr rhs
+
+{-
+************************************************************************
+*                                                                      *
+                    Roles
+*                                                                      *
+************************************************************************
+
+Roles are defined here to avoid circular dependencies.
+-}
+
+-- See Note [Roles] in Coercion
+-- defined here to avoid cyclic dependency with Coercion
+data Role = Nominal | Representational | Phantom
+  deriving (Eq, Ord, Data.Data, Data.Typeable)
+
+-- These names are slurped into the parser code. Changing these strings
+-- will change the **surface syntax** that GHC accepts! If you want to
+-- change only the pretty-printing, do some replumbing. See
+-- mkRoleAnnotDecl in RdrHsSyn
+fsFromRole :: Role -&gt; FastString
+fsFromRole Nominal          = fsLit &quot;nominal&quot;
+fsFromRole Representational = fsLit &quot;representational&quot;
+fsFromRole Phantom          = fsLit &quot;phantom&quot;
+
+instance Outputable Role where
+  ppr = ftext . fsFromRole
+
+instance Binary Role where
+  put_ bh Nominal          = putByte bh 1
+  put_ bh Representational = putByte bh 2
+  put_ bh Phantom          = putByte bh 3
+
+  get bh = do tag &lt;- getByte bh
+              case tag of 1 -&gt; return Nominal
+                          2 -&gt; return Representational
+                          3 -&gt; return Phantom
+                          _ -&gt; panic (&quot;get Role &quot; ++ show tag)
+
+{-
+************************************************************************
+*                                                                      *
+                    CoAxiomRule
+              Rules for building Evidence
+*                                                                      *
+************************************************************************
+
+Conditional axioms.  The general idea is that a `CoAxiomRule` looks like this:
+
+    forall as. (r1 ~ r2, s1 ~ s2) =&gt; t1 ~ t2
+
+My intention is to reuse these for both (~) and (~#).
+The short-term plan is to use this datatype to represent the type-nat axioms.
+In the longer run, it may be good to unify this and `CoAxiom`,
+as `CoAxiom` is the special case when there are no assumptions.
+-}
+
+-- | A more explicit representation for `t1 ~ t2`.
+type Eqn = Pair Type
+
+-- | For now, we work only with nominal equality.
+data CoAxiomRule = CoAxiomRule
+  { coaxrName      :: FastString
+  , coaxrAsmpRoles :: [Role]    -- roles of parameter equations
+  , coaxrRole      :: Role      -- role of resulting equation
+  , coaxrProves    :: [Eqn] -&gt; Maybe Eqn
+        -- ^ coaxrProves returns @Nothing@ when it doesn't like
+        -- the supplied arguments.  When this happens in a coercion
+        -- that means that the coercion is ill-formed, and Core Lint
+        -- checks for that.
+  } deriving Typeable
+
+instance Data.Data CoAxiomRule where
+  -- don't traverse?
+  toConstr _   = abstractConstr &quot;CoAxiomRule&quot;
+  gunfold _ _  = error &quot;gunfold&quot;
+  dataTypeOf _ = mkNoRepType &quot;CoAxiomRule&quot;
+
+instance Uniquable CoAxiomRule where
+  getUnique = getUnique . coaxrName
+
+instance Eq CoAxiomRule where
+  x == y = coaxrName x == coaxrName y
+
+instance Ord CoAxiomRule where
+  compare x y = compare (coaxrName x) (coaxrName y)
+
+instance Outputable CoAxiomRule where
+  ppr = ppr . coaxrName
+
+
+-- Type checking of built-in families
+data BuiltInSynFamily = BuiltInSynFamily
+  { sfMatchFam      :: [Type] -&gt; Maybe (CoAxiomRule, [Type], Type)
+  , sfInteractTop   :: [Type] -&gt; Type -&gt; [Eqn]
+  , sfInteractInert :: [Type] -&gt; Type -&gt;
+                       [Type] -&gt; Type -&gt; [Eqn]
+  }
+
+-- Provides default implementations that do nothing.
+trivialBuiltInFamily :: BuiltInSynFamily
+trivialBuiltInFamily = BuiltInSynFamily
+  { sfMatchFam      = \_ -&gt; Nothing
+  , sfInteractTop   = \_ _ -&gt; []
+  , sfInteractInert = \_ _ _ _ -&gt; []
+  }
+</span></pre></body></html>

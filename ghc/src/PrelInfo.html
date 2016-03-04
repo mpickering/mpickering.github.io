@@ -1,0 +1,188 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd"><html xmlns="http://www.w3.org/1999/xhtml"><head><link rel="stylesheet" type="text/css" href="style.css" /><script type="text/javascript" src="highlight.js"></script></head><body><pre><span class="hs-comment">{-
+(c) The GRASP/AQUA Project, Glasgow University, 1992-1998
+
+\section[PrelInfo]{The @PrelInfo@ interface to the compiler's prelude knowledge}
+-}</span><span>
+</span><a name="line-6"></a><span>
+</span><a name="line-7"></a><span class="hs-pragma">{-# LANGUAGE CPP #-}</span><span>
+</span><a name="line-8"></a><span class="hs-keyword">module</span><span> </span><span class="hs-identifier">PrelInfo</span><span> </span><span class="hs-special">(</span><span>
+</span><a name="line-9"></a><span>        </span><a href="MkId.html#wiredInIds"><span class="hs-identifier hs-var">wiredInIds</span></a><span class="hs-special">,</span><span> </span><a href="MkId.html#ghcPrimIds"><span class="hs-identifier hs-var">ghcPrimIds</span></a><span class="hs-special">,</span><span>
+</span><a name="line-10"></a><span>        </span><a href="PrelRules.html#primOpRules"><span class="hs-identifier hs-var">primOpRules</span></a><span class="hs-special">,</span><span> </span><a href="PrelRules.html#builtinRules"><span class="hs-identifier hs-var">builtinRules</span></a><span class="hs-special">,</span><span>
+</span><a name="line-11"></a><span>
+</span><a name="line-12"></a><span>        </span><a href="PrelInfo.html#ghcPrimExports"><span class="hs-identifier hs-var">ghcPrimExports</span></a><span class="hs-special">,</span><span>
+</span><a name="line-13"></a><span>        </span><a href="PrelInfo.html#knownKeyNames"><span class="hs-identifier hs-var">knownKeyNames</span></a><span class="hs-special">,</span><span>
+</span><a name="line-14"></a><span>        </span><a href="PrelInfo.html#primOpId"><span class="hs-identifier hs-var">primOpId</span></a><span class="hs-special">,</span><span>
+</span><a name="line-15"></a><span>
+</span><a name="line-16"></a><span>        </span><span class="hs-comment">-- Random other things</span><span>
+</span><a name="line-17"></a><span>        </span><a href="PrelInfo.html#maybeCharLikeCon"><span class="hs-identifier hs-var">maybeCharLikeCon</span></a><span class="hs-special">,</span><span> </span><a href="PrelInfo.html#maybeIntLikeCon"><span class="hs-identifier hs-var">maybeIntLikeCon</span></a><span class="hs-special">,</span><span>
+</span><a name="line-18"></a><span>
+</span><a name="line-19"></a><span>        </span><span class="hs-comment">-- Class categories</span><span>
+</span><a name="line-20"></a><span>        </span><a href="PrelInfo.html#isNumericClass"><span class="hs-identifier hs-var">isNumericClass</span></a><span class="hs-special">,</span><span> </span><a href="PrelInfo.html#isStandardClass"><span class="hs-identifier hs-var">isStandardClass</span></a><span>
+</span><a name="line-21"></a><span>
+</span><a name="line-22"></a><span>    </span><span class="hs-special">)</span><span> </span><span class="hs-keyword">where</span><span>
+</span><a name="line-23"></a><span>
+</span><a name="line-24"></a><span class="hs-cpp">#include &quot;HsVersions.h&quot;</span><span>
+</span><a name="line-25"></a><span>
+</span><a name="line-26"></a><span class="hs-keyword">import</span><span> </span><a href="Constants.html"><span class="hs-identifier">Constants</span></a><span>        </span><span class="hs-special">(</span><span> </span><a href="Constants.html#mAX_TUPLE_SIZE"><span class="hs-identifier hs-var">mAX_TUPLE_SIZE</span></a><span> </span><span class="hs-special">)</span><span>
+</span><a name="line-27"></a><span class="hs-keyword">import</span><span> </span><a href="BasicTypes.html"><span class="hs-identifier">BasicTypes</span></a><span>       </span><span class="hs-special">(</span><span> </span><a href="BasicTypes.html#Boxity"><span class="hs-identifier hs-type">Boxity</span></a><span class="hs-special">(</span><span class="hs-glyph">..</span><span class="hs-special">)</span><span> </span><span class="hs-special">)</span><span>
+</span><a name="line-28"></a><span class="hs-keyword">import</span><span> </span><a href="ConLike.html"><span class="hs-identifier">ConLike</span></a><span>          </span><span class="hs-special">(</span><span> </span><a href="ConLike.html#ConLike"><span class="hs-identifier hs-type">ConLike</span></a><span class="hs-special">(</span><span class="hs-glyph">..</span><span class="hs-special">)</span><span> </span><span class="hs-special">)</span><span>
+</span><a name="line-29"></a><span class="hs-keyword">import</span><span> </span><a href="PrelNames.html"><span class="hs-identifier">PrelNames</span></a><span>
+</span><a name="line-30"></a><span class="hs-keyword">import</span><span> </span><a href="PrelRules.html"><span class="hs-identifier">PrelRules</span></a><span>
+</span><a name="line-31"></a><span class="hs-keyword">import</span><span> </span><a href="Avail.html"><span class="hs-identifier">Avail</span></a><span>
+</span><a name="line-32"></a><span class="hs-keyword">import</span><span> </span><a href="PrimOp.html"><span class="hs-identifier">PrimOp</span></a><span>
+</span><a name="line-33"></a><span class="hs-keyword">import</span><span> </span><a href="DataCon.html"><span class="hs-identifier">DataCon</span></a><span>
+</span><a name="line-34"></a><span class="hs-keyword">import</span><span> </span><a href="Id.html"><span class="hs-identifier">Id</span></a><span>
+</span><a name="line-35"></a><span class="hs-keyword">import</span><span> </span><a href="Name.html"><span class="hs-identifier">Name</span></a><span>
+</span><a name="line-36"></a><span class="hs-keyword">import</span><span> </span><a href="MkId.html"><span class="hs-identifier">MkId</span></a><span>
+</span><a name="line-37"></a><span class="hs-keyword">import</span><span> </span><a href="TysPrim.html"><span class="hs-identifier">TysPrim</span></a><span>
+</span><a name="line-38"></a><span class="hs-keyword">import</span><span> </span><a href="TysWiredIn.html"><span class="hs-identifier">TysWiredIn</span></a><span>
+</span><a name="line-39"></a><span class="hs-keyword">import</span><span> </span><a href="HscTypes.html"><span class="hs-identifier">HscTypes</span></a><span>
+</span><a name="line-40"></a><span class="hs-keyword">import</span><span> </span><a href="Class.html"><span class="hs-identifier">Class</span></a><span>
+</span><a name="line-41"></a><span class="hs-keyword">import</span><span> </span><a href="TyCon.html"><span class="hs-identifier">TyCon</span></a><span>
+</span><a name="line-42"></a><span class="hs-keyword">import</span><span> </span><a href="Util.html"><span class="hs-identifier">Util</span></a><span>
+</span><a name="line-43"></a><span class="hs-keyword">import</span><span> </span><span class="hs-pragma">{-# SOURCE #-}</span><span> </span><a href="TcTypeNats.html"><span class="hs-identifier">TcTypeNats</span></a><span> </span><span class="hs-special">(</span><span> </span><a href="TcTypeNats.html#typeNatTyCons"><span class="hs-identifier hs-var">typeNatTyCons</span></a><span> </span><span class="hs-special">)</span><span>
+</span><a name="line-44"></a><span>
+</span><a name="line-45"></a><span class="hs-keyword">import</span><span> </span><a href="../array-0.5.1.0/src/%{MODULE/./-}.html#%{NAME}/Data.Array.html"><span class="hs-identifier">Data</span><span class="hs-operator">.</span><span class="hs-identifier">Array</span></a><span>
+</span><a name="line-46"></a><span>
+</span><a name="line-47"></a><span class="hs-comment">{-
+************************************************************************
+*                                                                      *
+\subsection[builtinNameInfo]{Lookup built-in names}
+*                                                                      *
+************************************************************************
+
+Notes about wired in things
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+* Wired-in things are Ids\/TyCons that are completely known to the compiler.
+  They are global values in GHC, (e.g.  listTyCon :: TyCon).
+
+* A wired in Name contains the thing itself inside the Name:
+        see Name.wiredInNameTyThing_maybe
+  (E.g. listTyConName contains listTyCon.
+
+* The name cache is initialised with (the names of) all wired-in things
+
+* The type environment itself contains no wired in things. The type
+  checker sees if the Name is wired in before looking up the name in
+  the type environment.
+
+* MkIface prunes out wired-in things before putting them in an interface file.
+  So interface files never contain wired-in things.
+-}</span><span>
+</span><a name="line-72"></a><span>
+</span><a name="line-73"></a><span>
+</span><a name="line-74"></a><span class="hs-identifier">knownKeyNames</span><span> </span><span class="hs-glyph">::</span><span> </span><span class="hs-special">[</span><a href="Name.html#Name"><span class="hs-identifier hs-type">Name</span></a><span class="hs-special">]</span><span>
+</span><a name="line-75"></a><span class="hs-comment">-- This list is used to ensure that when you say &quot;Prelude.map&quot;</span><span>
+</span><a name="line-76"></a><span class="hs-comment">--  in your source code, or in an interface file,</span><span>
+</span><a name="line-77"></a><span class="hs-comment">-- you get a Name with the correct known key</span><span>
+</span><a name="line-78"></a><span class="hs-comment">-- (See Note [Known-key names] in PrelNames)</span><span>
+</span><a name="line-79"></a><a name="knownKeyNames"><a href="PrelInfo.html#knownKeyNames"><span class="hs-identifier">knownKeyNames</span></a></a><span>
+</span><a name="line-80"></a><span>  </span><span class="hs-glyph">=</span><span> </span><a href="../base-4.9.0.0/src/%{MODULE/./-}.html#%{NAME}/Data.Foldable.html#concat"><span class="hs-identifier hs-var">concat</span></a><span> </span><span class="hs-special">[</span><span> </span><a href="#local-1627959375"><span class="hs-identifier hs-var">tycon_kk_names</span></a><span> </span><a href="TysPrim.html#funTyCon"><span class="hs-identifier hs-var">funTyCon</span></a><span>
+</span><a name="line-81"></a><span>           </span><span class="hs-special">,</span><span> </span><a href="../base-4.9.0.0/src/%{MODULE/./-}.html#%{NAME}/Data.Foldable.html#concatMap"><span class="hs-identifier hs-var">concatMap</span></a><span> </span><a href="#local-1627959375"><span class="hs-identifier hs-var">tycon_kk_names</span></a><span> </span><a href="TysPrim.html#primTyCons"><span class="hs-identifier hs-var">primTyCons</span></a><span>
+</span><a name="line-82"></a><span>
+</span><a name="line-83"></a><span>           </span><span class="hs-special">,</span><span> </span><a href="../base-4.9.0.0/src/%{MODULE/./-}.html#%{NAME}/Data.Foldable.html#concatMap"><span class="hs-identifier hs-var">concatMap</span></a><span> </span><a href="#local-1627959375"><span class="hs-identifier hs-var">tycon_kk_names</span></a><span> </span><a href="TysWiredIn.html#wiredInTyCons"><span class="hs-identifier hs-var">wiredInTyCons</span></a><span>
+</span><a name="line-84"></a><span>             </span><span class="hs-comment">-- Does not include tuples</span><span>
+</span><a name="line-85"></a><span>
+</span><a name="line-86"></a><span>           </span><span class="hs-special">,</span><span> </span><a href="../base-4.9.0.0/src/%{MODULE/./-}.html#%{NAME}/Data.Foldable.html#concatMap"><span class="hs-identifier hs-var">concatMap</span></a><span> </span><a href="#local-1627959375"><span class="hs-identifier hs-var">tycon_kk_names</span></a><span> </span><a href="TcTypeNats.html#typeNatTyCons"><span class="hs-identifier hs-var">typeNatTyCons</span></a><span>
+</span><a name="line-87"></a><span>
+</span><a name="line-88"></a><span>           </span><span class="hs-special">,</span><span> </span><a href="../base-4.9.0.0/src/%{MODULE/./-}.html#%{NAME}/Data.Foldable.html#concatMap"><span class="hs-identifier hs-var">concatMap</span></a><span> </span><span class="hs-special">(</span><a href="#local-1627959378"><span class="hs-identifier hs-var">rep_names</span></a><span> </span><a href="../base-4.9.0.0/src/%{MODULE/./-}.html#%{NAME}/GHC.Base.html#."><span class="hs-operator hs-var">.</span></a><span> </span><a href="TysWiredIn.html#tupleTyCon"><span class="hs-identifier hs-var">tupleTyCon</span></a><span> </span><a href="BasicTypes.html#Boxed"><span class="hs-identifier hs-var">Boxed</span></a><span class="hs-special">)</span><span> </span><span class="hs-special">[</span><span class="hs-number">2</span><span class="hs-glyph">..</span><a href="Constants.html#mAX_TUPLE_SIZE"><span class="hs-identifier hs-var">mAX_TUPLE_SIZE</span></a><span class="hs-special">]</span><span>  </span><span class="hs-comment">-- Yuk</span><span>
+</span><a name="line-89"></a><span>
+</span><a name="line-90"></a><span>           </span><span class="hs-special">,</span><span> </span><a href="TysWiredIn.html#cTupleTyConNames"><span class="hs-identifier hs-var">cTupleTyConNames</span></a><span>
+</span><a name="line-91"></a><span>             </span><span class="hs-comment">-- Constraint tuples are known-key but not wired-in</span><span>
+</span><a name="line-92"></a><span>             </span><span class="hs-comment">-- They can't show up in source code, but can appear</span><span>
+</span><a name="line-93"></a><span>             </span><span class="hs-comment">-- in intreface files</span><span>
+</span><a name="line-94"></a><span>
+</span><a name="line-95"></a><span>           </span><span class="hs-special">,</span><span> </span><a href="../base-4.9.0.0/src/%{MODULE/./-}.html#%{NAME}/GHC.Base.html#map"><span class="hs-identifier hs-var">map</span></a><span> </span><a href="Id.html#idName"><span class="hs-identifier hs-var">idName</span></a><span> </span><a href="MkId.html#wiredInIds"><span class="hs-identifier hs-var">wiredInIds</span></a><span>
+</span><a name="line-96"></a><span>           </span><span class="hs-special">,</span><span> </span><a href="../base-4.9.0.0/src/%{MODULE/./-}.html#%{NAME}/GHC.Base.html#map"><span class="hs-identifier hs-var">map</span></a><span> </span><span class="hs-special">(</span><a href="Id.html#idName"><span class="hs-identifier hs-var">idName</span></a><span> </span><a href="../base-4.9.0.0/src/%{MODULE/./-}.html#%{NAME}/GHC.Base.html#."><span class="hs-operator hs-var">.</span></a><span> </span><a href="PrelInfo.html#primOpId"><span class="hs-identifier hs-var">primOpId</span></a><span class="hs-special">)</span><span> </span><a href="PrimOp.html#allThePrimOps"><span class="hs-identifier hs-var">allThePrimOps</span></a><span>
+</span><a name="line-97"></a><span>           </span><span class="hs-special">,</span><span> </span><a href="PrelNames.html#basicKnownKeyNames"><span class="hs-identifier hs-var">basicKnownKeyNames</span></a><span> </span><span class="hs-special">]</span><span>
+</span><a name="line-98"></a><span>
+</span><a name="line-99"></a><span>  </span><span class="hs-keyword">where</span><span>
+</span><a name="line-100"></a><span>    </span><span class="hs-comment">-- &quot;kk&quot; short for &quot;known-key&quot;</span><span>
+</span><a name="line-101"></a><span>  </span><span class="hs-identifier">tycon_kk_names</span><span> </span><span class="hs-glyph">::</span><span> </span><a href="TyCon.html#TyCon"><span class="hs-identifier hs-type">TyCon</span></a><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-special">[</span><a href="Name.html#Name"><span class="hs-identifier hs-type">Name</span></a><span class="hs-special">]</span><span>
+</span><a name="line-102"></a><span>  </span><a name="local-1627959375"><a href="#local-1627959375"><span class="hs-identifier">tycon_kk_names</span></a></a><span> </span><a name="local-1627959379"><a href="#local-1627959379"><span class="hs-identifier">tc</span></a></a><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-identifier">tyConName</span><span> </span><a href="#local-1627959379"><span class="hs-identifier hs-var">tc</span></a><span> </span><span class="hs-glyph">:</span><span> </span><span class="hs-special">(</span><a href="#local-1627959378"><span class="hs-identifier hs-var">rep_names</span></a><span> </span><a href="#local-1627959379"><span class="hs-identifier hs-var">tc</span></a><span> </span><a href="../base-4.9.0.0/src/%{MODULE/./-}.html#%{NAME}/GHC.Base.html#%2B%2B"><span class="hs-operator hs-var">++</span></a><span> </span><a href="../base-4.9.0.0/src/%{MODULE/./-}.html#%{NAME}/Data.Foldable.html#concatMap"><span class="hs-identifier hs-var">concatMap</span></a><span> </span><a href="#local-1627959377"><span class="hs-identifier hs-var">thing_kk_names</span></a><span> </span><span class="hs-special">(</span><a href="HscTypes.html#implicitTyConThings"><span class="hs-identifier hs-var">implicitTyConThings</span></a><span> </span><a href="#local-1627959379"><span class="hs-identifier hs-var">tc</span></a><span class="hs-special">)</span><span class="hs-special">)</span><span>
+</span><a name="line-103"></a><span>
+</span><a name="line-104"></a><span>  </span><a name="local-1627959376"><a href="#local-1627959376"><span class="hs-identifier">datacon_kk_names</span></a></a><span> </span><a name="local-1627959380"><a href="#local-1627959380"><span class="hs-identifier">dc</span></a></a><span>
+</span><a name="line-105"></a><span>   </span><span class="hs-glyph">=</span><span> </span><a href="DataCon.html#dataConName"><span class="hs-identifier hs-var">dataConName</span></a><span> </span><a href="#local-1627959380"><span class="hs-identifier hs-var">dc</span></a><span> </span><span class="hs-glyph">:</span><span> </span><a href="#local-1627959378"><span class="hs-identifier hs-var">rep_names</span></a><span> </span><span class="hs-special">(</span><a href="DataCon.html#promoteDataCon"><span class="hs-identifier hs-var">promoteDataCon</span></a><span> </span><a href="#local-1627959380"><span class="hs-identifier hs-var">dc</span></a><span class="hs-special">)</span><span>
+</span><a name="line-106"></a><span>
+</span><a name="line-107"></a><span>  </span><span class="hs-identifier">thing_kk_names</span><span> </span><span class="hs-glyph">::</span><span> </span><a href="TyCoRep.html#TyThing"><span class="hs-identifier hs-type">TyThing</span></a><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-special">[</span><a href="Name.html#Name"><span class="hs-identifier hs-type">Name</span></a><span class="hs-special">]</span><span>
+</span><a name="line-108"></a><span>  </span><a name="local-1627959377"><a href="#local-1627959377"><span class="hs-identifier">thing_kk_names</span></a></a><span> </span><span class="hs-special">(</span><a href="TyCoRep.html#ATyCon"><span class="hs-identifier hs-var">ATyCon</span></a><span> </span><a name="local-1627959381"><a href="#local-1627959381"><span class="hs-identifier">tc</span></a></a><span class="hs-special">)</span><span>                 </span><span class="hs-glyph">=</span><span> </span><a href="#local-1627959375"><span class="hs-identifier hs-var">tycon_kk_names</span></a><span> </span><a href="#local-1627959381"><span class="hs-identifier hs-var">tc</span></a><span>
+</span><a name="line-109"></a><span>  </span><span class="hs-identifier">thing_kk_names</span><span> </span><span class="hs-special">(</span><a href="TyCoRep.html#AConLike"><span class="hs-identifier hs-var">AConLike</span></a><span> </span><span class="hs-special">(</span><a href="ConLike.html#RealDataCon"><span class="hs-identifier hs-var">RealDataCon</span></a><span> </span><a name="local-1627959382"><a href="#local-1627959382"><span class="hs-identifier">dc</span></a></a><span class="hs-special">)</span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=</span><span> </span><a href="#local-1627959376"><span class="hs-identifier hs-var">datacon_kk_names</span></a><span> </span><a href="#local-1627959382"><span class="hs-identifier hs-var">dc</span></a><span>
+</span><a name="line-110"></a><span>  </span><span class="hs-identifier">thing_kk_names</span><span> </span><a name="local-1627959383"><a href="#local-1627959383"><span class="hs-identifier">thing</span></a></a><span>                       </span><span class="hs-glyph">=</span><span> </span><span class="hs-special">[</span><a href="Name.html#getName"><span class="hs-identifier hs-var">getName</span></a><span> </span><a href="#local-1627959383"><span class="hs-identifier hs-var">thing</span></a><span class="hs-special">]</span><span>
+</span><a name="line-111"></a><span>
+</span><a name="line-112"></a><span>  </span><span class="hs-comment">-- The TyConRepName for a known-key TyCon has a known key,</span><span>
+</span><a name="line-113"></a><span>  </span><span class="hs-comment">-- but isn't itself an implicit thing.  Yurgh.</span><span>
+</span><a name="line-114"></a><span>  </span><span class="hs-comment">-- NB: if any of the wired-in TyCons had record fields, the record</span><span>
+</span><a name="line-115"></a><span>  </span><span class="hs-comment">--     field names would be in a similar situation.  Ditto class ops.</span><span>
+</span><a name="line-116"></a><span>  </span><span class="hs-comment">--     But it happens that there aren't any</span><span>
+</span><a name="line-117"></a><span>  </span><a name="local-1627959378"><a href="#local-1627959378"><span class="hs-identifier">rep_names</span></a></a><span> </span><a name="local-1627959384"><a href="#local-1627959384"><span class="hs-identifier">tc</span></a></a><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-keyword">case</span><span> </span><a href="TyCon.html#tyConRepName_maybe"><span class="hs-identifier hs-var">tyConRepName_maybe</span></a><span> </span><a href="#local-1627959384"><span class="hs-identifier hs-var">tc</span></a><span> </span><span class="hs-keyword">of</span><span>
+</span><a name="line-118"></a><span>                       </span><a href="../base-4.9.0.0/src/%{MODULE/./-}.html#%{NAME}/GHC.Base.html#Just"><span class="hs-identifier hs-var">Just</span></a><span> </span><a name="local-1627959385"><a href="#local-1627959385"><span class="hs-identifier">n</span></a></a><span>  </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-special">[</span><a href="#local-1627959385"><span class="hs-identifier hs-var">n</span></a><span class="hs-special">]</span><span>
+</span><a name="line-119"></a><span>                       </span><a href="../base-4.9.0.0/src/%{MODULE/./-}.html#%{NAME}/GHC.Base.html#Nothing"><span class="hs-identifier hs-var">Nothing</span></a><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-special">[</span><span class="hs-special">]</span><span>
+</span><a name="line-120"></a><span>
+</span><a name="line-121"></a><span class="hs-comment">{-
+We let a lot of &quot;non-standard&quot; values be visible, so that we can make
+sense of them in interface pragmas. It's cool, though they all have
+&quot;non-standard&quot; names, so they won't get past the parser in user code.
+
+************************************************************************
+*                                                                      *
+                PrimOpIds
+*                                                                      *
+************************************************************************
+-}</span><span>
+</span><a name="line-132"></a><span>
+</span><a name="line-133"></a><span class="hs-identifier">primOpIds</span><span> </span><span class="hs-glyph">::</span><span> </span><a href="../base-4.9.0.0/src/%{MODULE/./-}.html#%{NAME}/GHC.Arr.html#Array"><span class="hs-identifier hs-type">Array</span></a><span> </span><span class="hs-identifier hs-type">Int</span><span> </span><a href="Var.html#Id"><span class="hs-identifier hs-type">Id</span></a><span>
+</span><a name="line-134"></a><span class="hs-comment">-- A cache of the PrimOp Ids, indexed by PrimOp tag</span><span>
+</span><a name="line-135"></a><a name="primOpIds"><a href="PrelInfo.html#primOpIds"><span class="hs-identifier">primOpIds</span></a></a><span> </span><span class="hs-glyph">=</span><span> </span><a href="../base-4.9.0.0/src/%{MODULE/./-}.html#%{NAME}/GHC.Arr.html#array"><span class="hs-identifier hs-var">array</span></a><span> </span><span class="hs-special">(</span><span class="hs-number">1</span><span class="hs-special">,</span><a href="PrimOp.html#maxPrimOpTag"><span class="hs-identifier hs-var">maxPrimOpTag</span></a><span class="hs-special">)</span><span> </span><span class="hs-special">[</span><span> </span><span class="hs-special">(</span><a href="PrimOp.html#primOpTag"><span class="hs-identifier hs-var">primOpTag</span></a><span> </span><a href="#local-1627959386"><span class="hs-identifier hs-var">op</span></a><span class="hs-special">,</span><span> </span><a href="MkId.html#mkPrimOpId"><span class="hs-identifier hs-var">mkPrimOpId</span></a><span> </span><a href="#local-1627959386"><span class="hs-identifier hs-var">op</span></a><span class="hs-special">)</span><span>
+</span><a name="line-136"></a><span>                                   </span><span class="hs-glyph">|</span><span> </span><a name="local-1627959386"><a href="#local-1627959386"><span class="hs-identifier">op</span></a></a><span> </span><span class="hs-glyph">&lt;-</span><span> </span><a href="PrimOp.html#allThePrimOps"><span class="hs-identifier hs-var">allThePrimOps</span></a><span> </span><span class="hs-special">]</span><span>
+</span><a name="line-137"></a><span>
+</span><a name="line-138"></a><span class="hs-identifier">primOpId</span><span> </span><span class="hs-glyph">::</span><span> </span><a href="PrimOp.html#PrimOp"><span class="hs-identifier hs-type">PrimOp</span></a><span> </span><span class="hs-glyph">-&gt;</span><span> </span><a href="Var.html#Id"><span class="hs-identifier hs-type">Id</span></a><span>
+</span><a name="line-139"></a><a name="primOpId"><a href="PrelInfo.html#primOpId"><span class="hs-identifier">primOpId</span></a></a><span> </span><a name="local-1627959387"><a href="#local-1627959387"><span class="hs-identifier">op</span></a></a><span> </span><span class="hs-glyph">=</span><span> </span><a href="PrelInfo.html#primOpIds"><span class="hs-identifier hs-var">primOpIds</span></a><span> </span><span class="hs-glyph">!</span><span> </span><a href="PrimOp.html#primOpTag"><span class="hs-identifier hs-var">primOpTag</span></a><span> </span><a href="#local-1627959387"><span class="hs-identifier hs-var">op</span></a><span>
+</span><a name="line-140"></a><span>
+</span><a name="line-141"></a><span class="hs-comment">{-
+************************************************************************
+*                                                                      *
+\subsection{Export lists for pseudo-modules (GHC.Prim)}
+*                                                                      *
+************************************************************************
+
+GHC.Prim &quot;exports&quot; all the primops and primitive types, some
+wired-in Ids.
+-}</span><span>
+</span><a name="line-151"></a><span>
+</span><a name="line-152"></a><span class="hs-identifier">ghcPrimExports</span><span> </span><span class="hs-glyph">::</span><span> </span><span class="hs-special">[</span><a href="HscTypes.html#IfaceExport"><span class="hs-identifier hs-type">IfaceExport</span></a><span class="hs-special">]</span><span>
+</span><a name="line-153"></a><a name="ghcPrimExports"><a href="PrelInfo.html#ghcPrimExports"><span class="hs-identifier">ghcPrimExports</span></a></a><span>
+</span><a name="line-154"></a><span> </span><span class="hs-glyph">=</span><span> </span><a href="../base-4.9.0.0/src/%{MODULE/./-}.html#%{NAME}/GHC.Base.html#map"><span class="hs-identifier hs-var">map</span></a><span> </span><span class="hs-special">(</span><a href="Avail.html#avail"><span class="hs-identifier hs-var">avail</span></a><span> </span><a href="../base-4.9.0.0/src/%{MODULE/./-}.html#%{NAME}/GHC.Base.html#."><span class="hs-operator hs-var">.</span></a><span> </span><a href="Id.html#idName"><span class="hs-identifier hs-var">idName</span></a><span class="hs-special">)</span><span> </span><a href="MkId.html#ghcPrimIds"><span class="hs-identifier hs-var">ghcPrimIds</span></a><span> </span><a href="../base-4.9.0.0/src/%{MODULE/./-}.html#%{NAME}/GHC.Base.html#%2B%2B"><span class="hs-operator hs-var">++</span></a><span>
+</span><a name="line-155"></a><span>   </span><a href="../base-4.9.0.0/src/%{MODULE/./-}.html#%{NAME}/GHC.Base.html#map"><span class="hs-identifier hs-var">map</span></a><span> </span><span class="hs-special">(</span><a href="Avail.html#avail"><span class="hs-identifier hs-var">avail</span></a><span> </span><a href="../base-4.9.0.0/src/%{MODULE/./-}.html#%{NAME}/GHC.Base.html#."><span class="hs-operator hs-var">.</span></a><span> </span><a href="Id.html#idName"><span class="hs-identifier hs-var">idName</span></a><span> </span><a href="../base-4.9.0.0/src/%{MODULE/./-}.html#%{NAME}/GHC.Base.html#."><span class="hs-operator hs-var">.</span></a><span> </span><a href="PrelInfo.html#primOpId"><span class="hs-identifier hs-var">primOpId</span></a><span class="hs-special">)</span><span> </span><a href="PrimOp.html#allThePrimOps"><span class="hs-identifier hs-var">allThePrimOps</span></a><span> </span><a href="../base-4.9.0.0/src/%{MODULE/./-}.html#%{NAME}/GHC.Base.html#%2B%2B"><span class="hs-operator hs-var">++</span></a><span>
+</span><a name="line-156"></a><span>   </span><span class="hs-special">[</span><span> </span><a href="Avail.html#AvailTC"><span class="hs-identifier hs-var">AvailTC</span></a><span> </span><a href="#local-1627959389"><span class="hs-identifier hs-var">n</span></a><span> </span><span class="hs-special">[</span><a href="#local-1627959389"><span class="hs-identifier hs-var">n</span></a><span class="hs-special">]</span><span> </span><span class="hs-special">[</span><span class="hs-special">]</span><span>
+</span><a name="line-157"></a><span>   </span><span class="hs-glyph">|</span><span> </span><a name="local-1627959388"><a href="#local-1627959388"><span class="hs-identifier">tc</span></a></a><span> </span><span class="hs-glyph">&lt;-</span><span> </span><a href="TysPrim.html#funTyCon"><span class="hs-identifier hs-var">funTyCon</span></a><span> </span><span class="hs-glyph">:</span><span> </span><a href="TysPrim.html#primTyCons"><span class="hs-identifier hs-var">primTyCons</span></a><span class="hs-special">,</span><span> </span><span class="hs-keyword">let</span><span> </span><a name="local-1627959389"><a href="#local-1627959389"><span class="hs-identifier">n</span></a></a><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-identifier">tyConName</span><span> </span><a href="#local-1627959388"><span class="hs-identifier hs-var">tc</span></a><span>  </span><span class="hs-special">]</span><span>
+</span><a name="line-158"></a><span>
+</span><a name="line-159"></a><span class="hs-comment">{-
+************************************************************************
+*                                                                      *
+\subsection{Built-in keys}
+*                                                                      *
+************************************************************************
+
+ToDo: make it do the ``like'' part properly (as in 0.26 and before).
+-}</span><span>
+</span><a name="line-168"></a><span>
+</span><a name="line-169"></a><span class="hs-identifier">maybeCharLikeCon</span><span class="hs-special">,</span><span> </span><span class="hs-identifier">maybeIntLikeCon</span><span> </span><span class="hs-glyph">::</span><span> </span><a href="DataCon.html#DataCon"><span class="hs-identifier hs-type">DataCon</span></a><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-identifier hs-type">Bool</span><span>
+</span><a name="line-170"></a><a name="maybeCharLikeCon"><a href="PrelInfo.html#maybeCharLikeCon"><span class="hs-identifier">maybeCharLikeCon</span></a></a><span> </span><a name="local-1627959390"><a href="#local-1627959390"><span class="hs-identifier">con</span></a></a><span> </span><span class="hs-glyph">=</span><span> </span><a href="#local-1627959390"><span class="hs-identifier hs-var">con</span></a><span> </span><span class="hs-special">`</span><a href="Unique.html#hasKey"><span class="hs-identifier hs-var">hasKey</span></a><span class="hs-special">`</span><span> </span><a href="PrelNames.html#charDataConKey"><span class="hs-identifier hs-var">charDataConKey</span></a><span>
+</span><a name="line-171"></a><a name="maybeIntLikeCon"><a href="PrelInfo.html#maybeIntLikeCon"><span class="hs-identifier">maybeIntLikeCon</span></a></a><span>  </span><a name="local-1627959391"><a href="#local-1627959391"><span class="hs-identifier">con</span></a></a><span> </span><span class="hs-glyph">=</span><span> </span><a href="#local-1627959391"><span class="hs-identifier hs-var">con</span></a><span> </span><span class="hs-special">`</span><a href="Unique.html#hasKey"><span class="hs-identifier hs-var">hasKey</span></a><span class="hs-special">`</span><span> </span><a href="PrelNames.html#intDataConKey"><span class="hs-identifier hs-var">intDataConKey</span></a><span>
+</span><a name="line-172"></a><span>
+</span><a name="line-173"></a><span class="hs-comment">{-
+************************************************************************
+*                                                                      *
+\subsection{Class predicates}
+*                                                                      *
+************************************************************************
+-}</span><span>
+</span><a name="line-180"></a><span>
+</span><a name="line-181"></a><span class="hs-identifier">isNumericClass</span><span class="hs-special">,</span><span> </span><span class="hs-identifier">isStandardClass</span><span> </span><span class="hs-glyph">::</span><span> </span><a href="Class.html#Class"><span class="hs-identifier hs-type">Class</span></a><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-identifier hs-type">Bool</span><span>
+</span><a name="line-182"></a><span>
+</span><a name="line-183"></a><a name="isNumericClass"><a href="PrelInfo.html#isNumericClass"><span class="hs-identifier">isNumericClass</span></a></a><span>     </span><a name="local-1627959392"><a href="#local-1627959392"><span class="hs-identifier">clas</span></a></a><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-identifier">classKey</span><span> </span><a href="#local-1627959392"><span class="hs-identifier hs-var">clas</span></a><span> </span><span class="hs-special">`</span><a href="PrelInfo.html#is_elem"><span class="hs-identifier hs-var">is_elem</span></a><span class="hs-special">`</span><span> </span><a href="PrelNames.html#numericClassKeys"><span class="hs-identifier hs-var">numericClassKeys</span></a><span>
+</span><a name="line-184"></a><a name="isStandardClass"><a href="PrelInfo.html#isStandardClass"><span class="hs-identifier">isStandardClass</span></a></a><span>    </span><a name="local-1627959393"><a href="#local-1627959393"><span class="hs-identifier">clas</span></a></a><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-identifier">classKey</span><span> </span><a href="#local-1627959393"><span class="hs-identifier hs-var">clas</span></a><span> </span><span class="hs-special">`</span><a href="PrelInfo.html#is_elem"><span class="hs-identifier hs-var">is_elem</span></a><span class="hs-special">`</span><span> </span><a href="PrelNames.html#standardClassKeys"><span class="hs-identifier hs-var">standardClassKeys</span></a><span>
+</span><a name="line-185"></a><span>
+</span><a name="line-186"></a><span class="hs-identifier">is_elem</span><span> </span><span class="hs-glyph">::</span><span> </span><span class="hs-identifier hs-type">Eq</span><span> </span><a href="#local-1627959374"><span class="hs-identifier hs-type">a</span></a><span> </span><span class="hs-glyph">=&gt;</span><span> </span><a href="#local-1627959374"><span class="hs-identifier hs-type">a</span></a><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-special">[</span><a href="#local-1627959374"><span class="hs-identifier hs-type">a</span></a><span class="hs-special">]</span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-identifier hs-type">Bool</span><span>
+</span><a name="line-187"></a><a name="is_elem"><a href="PrelInfo.html#is_elem"><span class="hs-identifier">is_elem</span></a></a><span> </span><span class="hs-glyph">=</span><span> </span><a href="Util.html#isIn"><span class="hs-identifier hs-var">isIn</span></a><span> </span><span class="hs-string">&quot;is_X_Class&quot;</span><span>
+</span><a name="line-188"></a></pre></body></html>
