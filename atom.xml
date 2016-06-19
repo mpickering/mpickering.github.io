@@ -41,44 +41,44 @@ pattern <span class="dt">Unsat</span> <span class="fu">=</span> <span class="dv"
 <p>This wasn’t obvious to me, which is why it is now written down. Pattern synonym signatures are surprisingly tricky.</p>
 <h1 id="addendum">Addendum</h1>
 <p>David Feuer and Edward Yang conspired to show that using <code>unsafeCoerce</code> it was possible to provide additional type equalities. The key to the approach is to use a dummy GADT which is used to actually do the refining. Our more efficient representation is upcasted to this GADT, then by matching on the constructor, we cause refinement. Here is Edward’s code:</p>
-<pre><code>{-# LANGUAGE KindSignatures #-}
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE PatternSynonyms #-}
-{-# LANGUAGE ViewPatterns #-}
-{-# LANGUAGE TypeOperators #-}
-{-# LANGUAGE GADTs #-}
-{-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
-module GhostBuster where
+<div class="sourceCode"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="ot">{-# LANGUAGE KindSignatures #-}</span>
+<span class="ot">{-# LANGUAGE DataKinds #-}</span>
+<span class="ot">{-# LANGUAGE PatternSynonyms #-}</span>
+<span class="ot">{-# LANGUAGE ViewPatterns #-}</span>
+<span class="ot">{-# LANGUAGE TypeOperators #-}</span>
+<span class="ot">{-# LANGUAGE GADTs #-}</span>
+<span class="ot">{-# OPTIONS_GHC -fwarn-incomplete-patterns #-}</span>
+<span class="kw">module</span> <span class="dt">GhostBuster</span> <span class="kw">where</span>
 
-import GHC.TypeLits
-import Unsafe.Coerce
+<span class="kw">import </span><span class="dt">GHC.TypeLits</span>
+<span class="kw">import </span><span class="dt">Unsafe.Coerce</span>
 
-newtype Vec a (n :: Nat) = Vec { unVec :: [a] }
+<span class="kw">newtype</span> <span class="dt">Vec</span> a (<span class="ot">n ::</span> <span class="dt">Nat</span>) <span class="fu">=</span> <span class="dt">Vec</span> {<span class="ot"> unVec ::</span> [a] }
 
--- &quot;Almost&quot; Vec GADT, but the inside is a Vec
--- (so only the top-level is unfolded.)
-data Vec&#39; a (n :: Nat) where
-    VNil&#39;  :: Vec&#39; a 0
-    VCons&#39; :: a -&gt; Vec a n -&gt; Vec&#39; a (n + 1)
+<span class="co">-- &quot;Almost&quot; Vec GADT, but the inside is a Vec</span>
+<span class="co">-- (so only the top-level is unfolded.)</span>
+<span class="kw">data</span> <span class="dt">Vec&#39;</span> a (<span class="ot">n ::</span> <span class="dt">Nat</span>) <span class="kw">where</span>
+    <span class="dt">VNil&#39;</span><span class="ot">  ::</span> <span class="dt">Vec&#39;</span> a <span class="dv">0</span>
+    <span class="dt">VCons&#39;</span><span class="ot"> ::</span> a <span class="ot">-&gt;</span> <span class="dt">Vec</span> a n <span class="ot">-&gt;</span> <span class="dt">Vec&#39;</span> a (n <span class="fu">+</span> <span class="dv">1</span>)
 
-upVec :: Vec a n -&gt; Vec&#39; a n
-upVec (Vec [])     = unsafeCoerce VNil&#39;
-upVec (Vec (x:xs)) = unsafeCoerce (VCons&#39; x (Vec xs))
+<span class="ot">upVec ::</span> <span class="dt">Vec</span> a n <span class="ot">-&gt;</span> <span class="dt">Vec&#39;</span> a n
+upVec (<span class="dt">Vec</span> [])     <span class="fu">=</span> unsafeCoerce <span class="dt">VNil&#39;</span>
+upVec (<span class="dt">Vec</span> (x<span class="fu">:</span>xs)) <span class="fu">=</span> unsafeCoerce (<span class="dt">VCons&#39;</span> x (<span class="dt">Vec</span> xs))
 
-pattern VNil :: () =&gt; (n ~ 0) =&gt; Vec a n
-pattern VNil &lt;- (upVec -&gt; VNil&#39;) where
-    VNil = Vec []
+pattern <span class="dt">VNil</span><span class="ot"> ::</span> () <span class="ot">=&gt;</span> (n <span class="fu">~</span> <span class="dv">0</span>) <span class="ot">=&gt;</span> <span class="dt">Vec</span> a n
+pattern <span class="dt">VNil</span> <span class="ot">&lt;-</span> (upVec <span class="ot">-&gt;</span> <span class="dt">VNil&#39;</span>) <span class="kw">where</span>
+    <span class="dt">VNil</span> <span class="fu">=</span> <span class="dt">Vec</span> []
 
-pattern VCons :: () =&gt; ((n + 1) ~ n&#39;) =&gt; a -&gt; Vec a n -&gt; Vec a n&#39;
-pattern VCons x xs &lt;- (upVec -&gt; VCons&#39; x xs) where
-    VCons x (Vec xs) = Vec (x : xs)
+pattern <span class="dt">VCons</span><span class="ot"> ::</span> () <span class="ot">=&gt;</span> ((n <span class="fu">+</span> <span class="dv">1</span>) <span class="fu">~</span> n&#39;) <span class="ot">=&gt;</span> a <span class="ot">-&gt;</span> <span class="dt">Vec</span> a n <span class="ot">-&gt;</span> <span class="dt">Vec</span> a n&#39;
+pattern <span class="dt">VCons</span> x xs <span class="ot">&lt;-</span> (upVec <span class="ot">-&gt;</span> <span class="dt">VCons&#39;</span> x xs) <span class="kw">where</span>
+    <span class="dt">VCons</span> x (<span class="dt">Vec</span> xs) <span class="fu">=</span> <span class="dt">Vec</span> (x <span class="fu">:</span> xs)
 
-headVec :: Vec a (n + 1) -&gt; a
-headVec (VCons x _) = x
+<span class="ot">headVec ::</span> <span class="dt">Vec</span> a (n <span class="fu">+</span> <span class="dv">1</span>) <span class="ot">-&gt;</span> a
+headVec (<span class="dt">VCons</span> x _) <span class="fu">=</span> x
 
-mapVec :: (a -&gt; b) -&gt; Vec a n -&gt; Vec b n
-mapVec f VNil = VNil
-mapVec f (VCons x xs) = VCons (f x) (mapVec f xs)</code></pre>
+<span class="ot">mapVec ::</span> (a <span class="ot">-&gt;</span> b) <span class="ot">-&gt;</span> <span class="dt">Vec</span> a n <span class="ot">-&gt;</span> <span class="dt">Vec</span> b n
+mapVec f <span class="dt">VNil</span> <span class="fu">=</span> <span class="dt">VNil</span>
+mapVec f (<span class="dt">VCons</span> x xs) <span class="fu">=</span> <span class="dt">VCons</span> (f x) (mapVec f xs)</code></pre></div>
 <p>If we were to change the definition of the nil case of <code>mapVec</code> to use <code>VCons</code> instead then it wouldn’t type check.</p>
 <div id="refs" class="references">
 
