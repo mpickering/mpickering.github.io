@@ -8,8 +8,41 @@
         <name>Matthew Pickering</name>
         <email>matthewtpickering@gmail.com</email>
     </author>
-    <updated>2015-12-12T00:00:00Z</updated>
+    <updated>2016-06-18T00:00:00Z</updated>
     <entry>
+    <title>Why do pattern synonyms not cause type refinement?</title>
+    <link href="http://mpickering.github.io/posts/2016-06-18-why-no-refinement.html" />
+    <id>http://mpickering.github.io/posts/2016-06-18-why-no-refinement.html</id>
+    <published>2016-06-18T00:00:00Z</published>
+    <updated>2016-06-18T00:00:00Z</updated>
+    <summary type="html"><![CDATA[<h2 class="post"> Why do pattern synonyms not cause type refinement? </h2>
+<div class="info">
+    Posted on June 18, 2016
+    
+</div>
+
+<p>The defining feature of GADTs is that the constructors can bind dictionaries for constraints.</p>
+<pre><code>data CaptureShow a where
+  CaptureShow :: Show a =&gt; CaptureShow a</code></pre>
+<p>When the constructor is matched upon, the constraints are <em>provided</em> to the local environment.</p>
+<p>When the constraints are equality constraints, this causes type refinement. We learn more about the result type from performing the match.</p>
+<p>We can use pattern synonyms to abstract GADTs. The second set of constraints is the set of provided constraints.</p>
+<pre><code>pattern MyCaptureShow :: () =&gt; Show a =&gt; CaptureShow a
+pattern MyCaptureShow = CaptureShow</code></pre>
+<p>But, the set of provided constraints must be exactly those constraints which the underlying constructor provides. This is different to <em>required</em> constraints which can be more specific than needed.</p>
+<p>Why is this the case? One might expect that if additional constraints were specified then the pattern synonym could bind the needed dictionaries when building and release them when matching. However, <strong>not all values which can be destructed with a pattern synonym must be constructed with a pattern synonym</strong>.</p>
+<p>For example, we would be able to specify an unsatisfiable constraint in the provided context.</p>
+<pre><code>pattern Unsat :: () =&gt; (&#39;True ~ &#39;False) =&gt; Int
+pattern Unsat = 0</code></pre>
+<p>If we did the same in a GADT it would be impossible to construct such a value, similary here we can’t use <code>Unsat</code> to construct an <code>Int</code> as we will never be able to satisfy the equality constraint. However, if it were possible to define such a pattern synonym we would be able to use it to match on <code>0</code>. Doing so would provide the bogus constraint.</p>
+<p>There is a more immediate reason why this will never work. For type class constraints, the dictionaries must be bound when the constructor is used to construct values. If the pattern synonym is not used to construct the value then we can’t conjure it up out of thin air when we need it.</p>
+<p>This wasn’t obvious to me, which is why it is now written down. Pattern synonym signatures are surprisingly tricky.</p>
+<div id="refs" class="references">
+
+</div>
+]]></summary>
+</entry>
+<entry>
     <title>Pattern Synonyms in GHC 8.0</title>
     <link href="http://mpickering.github.io/posts/2015-12-12-pattern-synonyms-8.html" />
     <id>http://mpickering.github.io/posts/2015-12-12-pattern-synonyms-8.html</id>
