@@ -51,10 +51,10 @@ cata f <span class="fu">=</span> f <span class="fu">.</span> fmap (cata f) <span
 <h1 id="real-world-haskell">Real-World Haskell</h1>
 <p>Languages such as Haskell allow users to define data types in a more ad-hoc fashion by specifying the recursive structure themselves rather than in terms of a base functor.</p>
 <div class="sourceCode"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="kw">data</span> <span class="dt">List</span> a <span class="fu">=</span> <span class="dt">Nil</span> <span class="fu">|</span> <span class="dt">Cons</span> a (<span class="dt">List</span> a)</code></pre></div>
-<p>It can be easily seen that <code>Mu (ListF a) ~= List a</code> and thus we can exploit the university of the fold function and define a canonical fold function specialised to our newly defined data type.</p>
+<p>It can be easily seen that <code>Mu (ListF a) ~= List a</code> and thus we can exploit the the uniqueness of the fold function and define a canonical fold function specialised to our newly defined data type.</p>
 <div class="sourceCode"><pre class="sourceCode haskell"><code class="sourceCode haskell">foldr<span class="ot"> ::</span> (a <span class="ot">-&gt;</span> b <span class="ot">-&gt;</span> b) <span class="ot">-&gt;</span> b <span class="ot">-&gt;</span> <span class="dt">List</span> a <span class="ot">-&gt;</span> b</code></pre></div>
 <p><code>foldr</code> is a specialisation of <code>cata</code> to lists. It is perhaps clearer to see the correspondence if we rewrite the function to explicitly take a list algebra as it’s first argument.</p>
-<div class="sourceCode"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="kw">data</span> <span class="dt">ListAlg</span> a b <span class="fu">=</span> <span class="dt">ListAlg</span> (<span class="ot"> z ::</span> () <span class="ot">-&gt;</span> b ,<span class="ot"> cons ::</span> (a, b) <span class="ot">-&gt;</span> b }
+<div class="sourceCode"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="kw">data</span> <span class="dt">ListAlg</span> a b <span class="fu">=</span> <span class="dt">ListAlg</span> {<span class="ot"> z ::</span> () <span class="ot">-&gt;</span> b ,<span class="ot"> cons ::</span> (a, b) <span class="ot">-&gt;</span> b }
 
 foldr<span class="ot"> ::</span> <span class="dt">ListAlg</span> a b <span class="ot">-&gt;</span> <span class="dt">List</span> a <span class="ot">-&gt;</span> b</code></pre></div>
 <p>Specifying a function <code>ListF a b -&gt; b</code> is precisely the same as specifying <code>ListAlg a b</code> as it amounts to specifying functions <span class="math inline">\(1 \to b\)</span> and <span class="math inline">\(a \times b \to b\)</span>.</p>
@@ -69,8 +69,11 @@ foldr<span class="ot"> ::</span> <span class="dt">ListAlg</span> a b <span class
 <div class="sourceCode"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="kw">instance</span> <span class="dt">Foldable</span> [] <span class="kw">where</span>
   foldr _ z [] <span class="fu">=</span> z
   foldr f _ (x<span class="fu">:</span>xs) <span class="fu">=</span> f x (foldr f xs)</code></pre></div>
-<p>As another example, we consider writing an instance for binary trees which only contain values at leaves. It is less obvious then how to implement this interface as the usual fold has a different type signature. We can do so by cleverly instantiating the result type <code>b</code> when performing the recursive calls.</p>
-<div class="sourceCode"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="ot">foldTree ::</span> (b <span class="ot">-&gt;</span> b <span class="ot">-&gt;</span> b) <span class="ot">-&gt;</span> (a <span class="ot">-&gt;</span> b) <span class="ot">-&gt;</span> <span class="dt">Tree</span> a <span class="ot">-&gt;</span> b</code></pre></div>
+<p>As another example, we consider writing an instance for binary trees which only contain values in the leaves. It is less obvious then how to implement <code>foldr</code> as the usual fold (<code>foldTree</code> below) has a different type signature.</p>
+<div class="sourceCode"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="kw">data</span> <span class="dt">Tree</span> a <span class="fu">=</span> <span class="dt">Branch</span> (<span class="dt">Leaf</span> a) (<span class="dt">Leaf</span> a) <span class="fu">|</span> <span class="dt">Leaf</span> a
+
+<span class="ot">foldTree ::</span> (b <span class="ot">-&gt;</span> b <span class="ot">-&gt;</span> b) <span class="ot">-&gt;</span> (a <span class="ot">-&gt;</span> b) <span class="ot">-&gt;</span> <span class="dt">Tree</span> a <span class="ot">-&gt;</span> b</code></pre></div>
+<p>We can do so by cleverly instantiating the result type <code>b</code> when performing the recursive calls.</p>
 <div class="sourceCode"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="kw">instance</span> <span class="dt">Foldable</span> <span class="dt">Tree</span> <span class="kw">where</span>
 <span class="ot">  foldr ::</span> (a <span class="ot">-&gt;</span> b <span class="ot">-&gt;</span> b) <span class="ot">-&gt;</span> b <span class="ot">-&gt;</span> <span class="dt">Tree</span> a <span class="ot">-&gt;</span> b
   foldr f z t <span class="fu">=</span>
@@ -83,7 +86,18 @@ foldr<span class="ot"> ::</span> <span class="dt">ListAlg</span> a b <span class
 <div class="sourceCode"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="ot">foldMapTree ::</span> <span class="dt">Monoid</span> m <span class="ot">=&gt;</span> (a <span class="ot">-&gt;</span> m) <span class="ot">-&gt;</span> <span class="dt">Tree</span> a <span class="ot">-&gt;</span> m
 foldMapTree f (<span class="dt">Leaf</span> a) <span class="fu">=</span> f a
 foldMapTree f (<span class="dt">Branch</span> l r) <span class="fu">=</span> foldMapTree f l <span class="fu">&lt;&gt;</span> foldMapTree f r</code></pre></div>
-<p>For inductive types the intuitive way to define instances coincides with the canonical definition given by initiality. Class instances defined in this way are clearly well-motivated.</p>
+<p>However, instances for inductive types defined in this uniform manner are less powerful than folds induced by an <span class="math inline">\(F\)</span>-algebra. The problem comes from the fact that all the recursive holes much be combined in a uniform fashion.</p>
+<p>The question I have, is it possible to define <code>middle</code> using the <code>Foldable</code> interface?</p>
+<pre><code>data Tree3F a r = Leaf a | Branch r r r
+
+type Tree3 a = Mu (Tree3F a)
+
+middleFold :: Tree3F a a -&gt; a
+middleFold (Leaf a) = a
+middleFold (Branch _ m _) = m
+
+middle :: Tree3 a -&gt; a
+middle = cata middleFold</code></pre>
 <h1 id="conclusion">Conclusion</h1>
 <p>The definition of <code>Foldable</code> is motivated by the well-understood theory of inductive data types. The pragmatics of Haskell lead us to the seemingly quite ad-hoc class definition which has generated much discussion in recent years. The goal of this post was to argue that the class is better founded than people think and to explain some of the reasons that it leads to some uncomfort.</p>
 <p>My argument is not about deciding whether an ad-hoc definition is lawful, it is explaining the motivation for the class in a way which also explains the lawlessness. The class definition is a compromise because of the practicalities of Haskell. The only way in which we can know a definition is sensible or not is by inspecting whether the ad-hoc definition agrees with the canonical definition given by <code>cata</code>.</p>
