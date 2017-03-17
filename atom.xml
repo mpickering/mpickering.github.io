@@ -10,12 +10,12 @@
     </author>
     <updated>2017-03-16T00:00:00Z</updated>
     <entry>
-    <title>Controlling Inlining and Specialisation</title>
+    <title>2017-03-16-inlining-and-specialisation</title>
     <link href="http://mpickering.github.io/posts/2017-03-16-inlining-and-specialisation.html" />
     <id>http://mpickering.github.io/posts/2017-03-16-inlining-and-specialisation.html</id>
     <published>2017-03-16T00:00:00Z</published>
     <updated>2017-03-16T00:00:00Z</updated>
-    <summary type="html"><![CDATA[<h2 class="post"> Controlling Inlining and Specialisation </h2>
+    <summary type="html"><![CDATA[<h2 class="post"> 2017-03-16-inlining-and-specialisation </h2>
 <div class="info">
     Posted on March 16, 2017
     
@@ -23,7 +23,7 @@
 
 <p>The inliner and specialiser are the two parts of the optimiser which are crucial to writing performant functional programs. They ensure that we can write programs at a high-level of abstraction which are simplified when eventually used with concrete arguments.</p>
 <p>The inliner’s job is to replace a function with its definition. This removes one layer of indirection and most importantly allows other optimisations to fire. The specialiser is important for optimising code which uses type classes. Type classes are desugared into dictionary passing style but the specialiser removes a layer of indirection by creating new functions with the relevant dictionaries already supplied.</p>
-<p>This document is intended to simply explain the user-facing options which can be used to influence these two parts of the optimiser.</p>
+<p>This document will explain the user-facing options which are used to influence these two parts of the optimiser.</p>
 <!--more-->
 <h1 id="what-does-the-inlinable-pragma-do">What does the <code>INLINABLE</code> pragma do?</h1>
 <p>Top-level definitions can be marked <code>INLINABLE</code>. This causes exactly two things to happens.</p>
@@ -35,16 +35,17 @@
 <h1 id="what-does-the-inline-pragma-do">What does the <code>INLINE</code> pragma do?</h1>
 <p>The <code>INLINE</code> pragma can be applied to top-level definitions. It behaves like the <code>INLINABLE</code> pragma but makes GHC very keen to inline the function. It is a sledgehammer and without care you can make the compiler take a long time and produce a lot of code. Most “ticks exhausted” panics are due to library authors misusing <code>INLINE</code> pragmas.</p>
 <p>Liberally sprinkling all your definitions with <code>INLINE</code> is likely make the compiler take a very long time to compile your program. It is not beneficial to inline every function, inlining a function which is not optimised further only increases overall code size without improving performance.</p>
-<p>Note: Do not apply <code>INLINE</code> pragmas to loop-breakers, GHC will never inline a loop breaker regardless of which pragma you attach. In fact, with a debugging compiler, core lint will warn about using an <code>INLINE</code> pragma on a loopbreaker.</p>
+<p>One situation where it is useful to use an <code>INLINE</code> pragma is when the definition of the function contains functions which are mentioned in <code>RULES</code>. In this case, it is essential that the optimiser is quite aggressive so that the <code>RULES</code> can fire.</p>
 <h1 id="what-is-specialisation">What is specialisation?</h1>
 <p>Specialisation is the process of removing typeclass dictionary arguments by creating a new type-specialised definition for an overloaded function. Once specialised, dictionary methods can be easily inlined which usually creates more efficient code.</p>
 <p>For example, if we define <code>foo</code> then by default this will produce</p>
 <div class="sourceCode"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="ot">foo ::</span> <span class="dt">Show</span> a <span class="ot">=&gt;</span> a <span class="ot">-&gt;</span> a <span class="ot">-&gt;</span> <span class="dt">Bool</span>
 foo x y <span class="fu">=</span> show x <span class="fu">==</span> show y</code></pre></div>
 <p>which produces the core</p>
-<div class="sourceCode"><pre class="sourceCode haskell"><code class="sourceCode haskell">foo <span class="fu">=</span> \ <span class="fu">@</span>a_a1DE <span class="fu">$</span>dShow_a1DF x_aHy y_aHz <span class="ot">-&gt;</span>
-    eqString (show <span class="fu">$</span>dShow_a1DF x_aHy) (show <span class="fu">$</span>dShow_a1DF y_aHz)</code></pre></div>
-<p>so the class constraint is translated into a dictionary. Each time a class method is used, we must dynamically lookup which definition to use in the supplied class dictionary.</p>
+<div class="sourceCode"><pre class="sourceCode haskell"><code class="sourceCode haskell">foo <span class="fu">=</span> \ <span class="fu">@</span>a <span class="fu">$</span>dShow x y <span class="ot">-&gt;</span>
+    eqString (show <span class="fu">$</span>dShow x) (show <span class="fu">$</span>dShow y)</code></pre></div>
+<p>There are now 4 parameters to <code>foo</code>, the first argument is a type (denoted by <code>@</code>), the second argument is the dictionary for <code>Show</code> (denoted by the <code>$d</code> prefix) and the last two are the arguments <code>x</code> and <code>y</code> of the original definition.</p>
+<p>The class constraint is translated into a dictionary. Each time a class method is used, we must dynamically lookup which definition to use in the supplied class dictionary.</p>
 <p>If we know which type <code>a</code> is instantiated with, we can specialise the definition of <code>foo</code> and produce much better code.</p>
 <div class="sourceCode"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="ot">qux ::</span> <span class="dt">Bool</span> <span class="ot">-&gt;</span> <span class="dt">Bool</span> <span class="ot">-&gt;</span> <span class="dt">Bool</span>
 qux <span class="fu">=</span> foo <span class="fu">@</span><span class="dt">Bool</span></code></pre></div>
@@ -53,15 +54,15 @@ qux <span class="fu">=</span> foo <span class="fu">@</span><span class="dt">Bool
 foo_<span class="fu">$</span>sfoo <span class="fu">=</span> foo <span class="fu">@</span><span class="dt">Bool</span> <span class="fu">$</span>fShowBool</code></pre></div>
 <p>further optimisations then inline <code>foo</code> and then the dictionary selector <code>show</code> which produces the following more direct program.</p>
 <div class="sourceCode"><pre class="sourceCode haskell"><code class="sourceCode haskell">foo_<span class="fu">$</span>sfoo <span class="fu">=</span>
-  \ x_aHx y_aHy <span class="ot">-&gt;</span>
-    <span class="kw">case</span> x_aHx <span class="kw">of</span> _ {
+  \ x y <span class="ot">-&gt;</span>
+    <span class="kw">case</span> x <span class="kw">of</span> {
       <span class="dt">False</span> <span class="ot">-&gt;</span>
-        <span class="kw">case</span> y_aHy <span class="kw">of</span> _ {
+        <span class="kw">case</span> y <span class="kw">of</span> {
           <span class="dt">False</span> <span class="ot">-&gt;</span> foo4;
           <span class="dt">True</span> <span class="ot">-&gt;</span> foo3
         };
       <span class="dt">True</span> <span class="ot">-&gt;</span>
-        <span class="kw">case</span> y_aHy <span class="kw">of</span> _ {
+        <span class="kw">case</span> y <span class="kw">of</span> _ {
           <span class="dt">False</span> <span class="ot">-&gt;</span> foo2;
           <span class="dt">True</span> <span class="ot">-&gt;</span> foo1
         }
@@ -82,7 +83,7 @@ foo_<span class="fu">$</span>sfoo <span class="fu">=</span> foo <span class="fu"
 
 <span class="ot">foo ::</span> <span class="dt">C</span> a <span class="ot">=&gt;</span> a <span class="ot">-&gt;</span> a
 
-<span class="ot">{-# SPECIALISE foo :: Text -&gt; Text #-}</span></code></pre></div>
+<span class="ot">{-# SPECIALISE foo :: Text -&gt; Text #-}</span></code></pre></div>
 <p>This example will create a new function, <code>foo_$sfoo :: Text -&gt; Text</code> which will be used whenever <code>foo</code> is applied to a <code>Text</code> value even in modules which import <code>A</code>.</p>
 <p>This is useful to prevent GHC creating many copies of the same specialised function if you have a very flat module structure.</p>
 <h1 id="optimised-vs-unoptimised-unfoldings">Optimised vs unoptimised unfoldings</h1>
@@ -91,7 +92,10 @@ foo_<span class="fu">$</span>sfoo <span class="fu">=</span> foo <span class="fu"
 <p>An interface file stores all information about a module which is needed by other modules. The extension for interface files is <code>.hi</code>, you can see what’s in an interface file by using the <code>--show-iface</code> flag.</p>
 <h1 id="what-is-a-loop-breaker">What is a loop-breaker?</h1>
 <p>In general, if we were to inline recursive definitions without care we could easily cause the simplifier to diverge. However, we still want to inline as many functions which appear in mutually recursive blocks as possible. GHC statically analyses each recursive groups of bindings and chooses one of them as the <em>loop-breaker</em>. Any function which is marked as a loop-breaker will never be inlined. Other functions in the recursive group are free to be inlined as eventually a loop-breaker will be reached and the inliner will stop.</p>
+<p>Note: Do not apply <code>INLINE</code> pragmas to loop-breakers, GHC will never inline a loop breaker regardless of which pragma you attach. In fact, with a debugging compiler, core lint will warn about using an <code>INLINE</code> pragma on a loopbreaker.</p>
 <p>Loop-breakers are discussed in detail in section 4 of <a href="https://www.microsoft.com/en-us/research/wp-content/uploads/2002/07/inline.pdf">Secrets of the Glasgow Haskell Compiler inliner</a>.</p>
+<h1 id="how-does-ghc-choose-a-loop-breaker">How does GHC choose a loop-breaker?</h1>
+<p>GHC uses a heuristic to decide which definitions it would be least beneficial to inline and to choose those as loop breakers. For example, it is very beneficial to inline simple expressions and dictionary selector functions so they are given high scores. Discounts are also availible if an unfolding is availible thus marking a definition as <code>INLINABLE</code> or <code>INLINE</code> will usually cause GHC to not choose it.</p>
 <h1 id="which-flags-can-i-use-to-control-the-simplifier-and-inliner">Which flags can I use to control the simplifier and inliner?</h1>
 <p><code>-fspecialise-aggressively</code> removes the restrictions about which functions are specialisable. Any overloaded function will be specialised with this flag. This can potentially create lots of additional code.</p>
 <p><code>-fexpose-all-unfoldings</code> will include the (optimised) unfoldings of all functions in interface files so that they can be inlined across modules.</p>
