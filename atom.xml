@@ -26,22 +26,48 @@
 <p>This document will explain the user-facing options which are used to influence these two parts of the optimiser.</p>
 <!--more-->
 <h1 id="what-does-the-inlinable-pragma-do">What does the <code>INLINABLE</code> pragma do?</h1>
-<p>Top-level definitions can be marked <code>INLINABLE</code>. This causes exactly two things to happens.</p>
+<p>Top-level definitions can be marked <code>INLINABLE</code>.</p>
+<div class="sourceCode"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="ot">myComplicatedFunction ::</span> (<span class="dt">Show</span> a, <span class="dt">Num</span> a) <span class="ot">=&gt;</span> <span class="fu">...</span>
+myComplicatedFunction <span class="fu">=</span> <span class="fu">...</span>
+
+<span class="ot">{-# INLINABLE myComplicatedFunction #-}</span></code></pre></div>
+<p>This causes exactly two things to happens.</p>
 <ol style="list-style-type: decimal">
 <li>The function’s (exact) definition is included in the interface file for the module.</li>
 <li>The function will be specialised at use sites – even across modules.</li>
 </ol>
 <p>Note that GHC is no more keen to inline an <code>INLINABLE</code> function than any other.</p>
 <h1 id="what-does-the-inline-pragma-do">What does the <code>INLINE</code> pragma do?</h1>
-<p>The <code>INLINE</code> pragma can be applied to top-level definitions. It behaves like the <code>INLINABLE</code> pragma but makes GHC very keen to inline the function. It is a sledgehammer and without care you can make the compiler take a long time and produce a lot of code. Most “ticks exhausted” panics are due to library authors misusing <code>INLINE</code> pragmas.</p>
+<p>The <code>INLINE</code> pragma can be applied to top-level definitions. It behaves like the <code>INLINABLE</code> pragma but makes GHC very keen to inline the function.</p>
+<div class="sourceCode"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="ot">mySimpleFunction ::</span> <span class="fu">...</span>
+mySimpleFunction <span class="fu">=</span> <span class="fu">...</span>
+
+<span class="ot">{-# INLINE mySimpleFunction #-}</span></code></pre></div>
+<p>It is a sledgehammer and without care you can make the compiler take a long time and produce a lot of code. Most “ticks exhausted” panics are due to library authors misusing <code>INLINE</code> pragmas.</p>
 <p>Liberally sprinkling all your definitions with <code>INLINE</code> is likely make the compiler take a very long time to compile your program. It is not beneficial to inline every function, inlining a function which is not optimised further only increases overall code size without improving performance.</p>
 <p>One situation where it is useful to use an <code>INLINE</code> pragma is when the definition of the function contains functions which are mentioned in <code>RULES</code>. In this case, it is essential that the optimiser is quite aggressive so that the <code>RULES</code> can fire.</p>
+<h1 id="optimised-vs-unoptimised-unfoldings">Optimised vs unoptimised unfoldings</h1>
+<p>GHC will decide to include some small unfoldings in interface files. When it does this, it first optimises the definitions so that they are not repeatedly optimised at each use site after being inlined. Unfoldings included by <code>INLINE</code> or <code>INLINABLE</code> are unoptimised so that they interact better with <code>RULES</code>.</p>
+<h1 id="what-is-an-interface-file">What is an interface file?</h1>
+<p>An interface file stores all information about a module which is needed by other modules.</p>
+<p>The key to cross-module inlining and specialisation is making sure that we have the definitions of functions we want to inline at hand. Information is only passed between modules by interface files, therefore we must include the unfoldings of definitions in interface files if we want to inline them across modules.</p>
+<p>The extension for interface files is <code>.hi</code>, you can see what’s in an interface file by using the <code>--show-iface</code> flag.</p>
+<h1 id="what-is-an-unfolding">What is an unfolding?</h1>
+<p>The <em>unfolding</em> of a function <code>f</code> is what <code>f</code> is replaced by when it is inlined. This is usually the definition of <code>f</code>.</p>
+<h1 id="when-are-unfoldings-included-in-interface-files">When are unfoldings included in interface files?</h1>
+<p>Not all definitions are included in interface files by default, doing so might create quite large files. There’s no point including an unfolding of very large definitions which we will never inline in other modules.</p>
+<p>Unfoldings end up in interface files in three ways:</p>
+<ol style="list-style-type: decimal">
+<li>GHC decides to include unfoldings of small functions by default which it knows it will inline later.</li>
+<li>Functions marked as <code>INLINE</code> or <code>INLINABLE</code> are included in interface files.</li>
+<li>Compiler flags such as <code>-fexpose-all-unfoldings</code> include all unfoldings of all definitions in a module unless they are marked as <code>NOINLINE</code>.</li>
+</ol>
 <h1 id="what-is-specialisation">What is specialisation?</h1>
 <p>Specialisation is the process of removing typeclass dictionary arguments by creating a new type-specialised definition for an overloaded function. Once specialised, dictionary methods can be easily inlined which usually creates more efficient code.</p>
-<p>For example, if we define <code>foo</code> then by default this will produce</p>
+<p>For example, if we define the overloaded function <code>foo</code></p>
 <div class="sourceCode"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="ot">foo ::</span> <span class="dt">Show</span> a <span class="ot">=&gt;</span> a <span class="ot">-&gt;</span> a <span class="ot">-&gt;</span> <span class="dt">Bool</span>
 foo x y <span class="fu">=</span> show x <span class="fu">==</span> show y</code></pre></div>
-<p>which produces the core</p>
+<p>the following core definition will be produced:</p>
 <div class="sourceCode"><pre class="sourceCode haskell"><code class="sourceCode haskell">foo <span class="fu">=</span> \ <span class="fu">@</span>a <span class="fu">$</span>dShow x y <span class="ot">-&gt;</span>
     eqString (show <span class="fu">$</span>dShow x) (show <span class="fu">$</span>dShow y)</code></pre></div>
 <p>There are now 4 parameters to <code>foo</code>, the first argument is a type (denoted by <code>@</code>), the second argument is the dictionary for <code>Show</code> (denoted by the <code>$d</code> prefix) and the last two are the arguments <code>x</code> and <code>y</code> of the original definition.</p>
@@ -49,10 +75,10 @@ foo x y <span class="fu">=</span> show x <span class="fu">==</span> show y</code
 <p>If we know which type <code>a</code> is instantiated with, we can specialise the definition of <code>foo</code> and produce much better code.</p>
 <div class="sourceCode"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="ot">qux ::</span> <span class="dt">Bool</span> <span class="ot">-&gt;</span> <span class="dt">Bool</span> <span class="ot">-&gt;</span> <span class="dt">Bool</span>
 qux <span class="fu">=</span> foo <span class="fu">@</span><span class="dt">Bool</span></code></pre></div>
-<p>Using <code>foo</code> at a specific type produces a new definition <code>foo_$sfoo</code> which is defined as</p>
+<p>Using <code>foo</code> at a specific type produces a new definition <code>foo_$sfoo</code> which is defined as:</p>
 <div class="sourceCode"><pre class="sourceCode haskell"><code class="sourceCode haskell">foo_<span class="fu">$</span><span class="ot">sfoo ::</span> <span class="dt">Bool</span> <span class="ot">-&gt;</span> <span class="dt">Bool</span> <span class="ot">-&gt;</span> <span class="dt">Bool</span>
 foo_<span class="fu">$</span>sfoo <span class="fu">=</span> foo <span class="fu">@</span><span class="dt">Bool</span> <span class="fu">$</span>fShowBool</code></pre></div>
-<p>further optimisations then inline <code>foo</code> and then the dictionary selector <code>show</code> which produces the following more direct program.</p>
+<p>Further optimisations then inline <code>foo</code> and then the dictionary selector <code>show</code> which produces the following more direct program.</p>
 <div class="sourceCode"><pre class="sourceCode haskell"><code class="sourceCode haskell">foo_<span class="fu">$</span>sfoo <span class="fu">=</span>
   \ x y <span class="ot">-&gt;</span>
     <span class="kw">case</span> x <span class="kw">of</span> {
@@ -68,13 +94,15 @@ foo_<span class="fu">$</span>sfoo <span class="fu">=</span> foo <span class="fu"
         }
     }</code></pre></div>
 <h2 id="when-does-specialisation-occur">When does specialisation occur?</h2>
-<p>Specialisation occurs when an overloaded function is used at a specific type. The new definition is placed in the module where the use happens but also exported so that it can be reused if there is another upstream call-site where specialisation would take place.</p>
+<p>Specialisation occurs when an overloaded function is called at a specific type. The specialised definition is placed in the module where the call happens but also exported so that it can be reused if there is another upstream call-site where specialisation would take place.</p>
 <p>By default, functions are not specialised across modules.</p>
 <p>There are two ways to make functions specialise across modules:</p>
 <ol style="list-style-type: decimal">
 <li>Marking a function as <code>INLINABLE</code> or <code>INLINE</code>.</li>
-<li>Using the flag <code>-fspecialise-aggressively</code>.</li>
+<li>Using the flag <code>-fspecialise-aggressively</code> when compiling the client module. An unfolding must still be available to perform specialisation.</li>
 </ol>
+<p>Further to this, observe that for specialisation to occur across modules, the unfolding must be made available in interface files.</p>
+<p>Notice this subtle point, the <code>INLINABLE</code> pragma guarantees the precise conditions for a function to be specialised across modules.</p>
 <h1 id="how-do-i-use-the-specialise-pragma">How do I use the <code>SPECIALISE</code> pragma?</h1>
 <p>The <code>SPECIALISE</code> pragma is used to create a specialised copy of an overloaded function even if it is not used with that type in the module.</p>
 <div class="sourceCode"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="kw">module</span> <span class="dt">A</span> <span class="kw">where</span>
@@ -86,19 +114,16 @@ foo_<span class="fu">$</span>sfoo <span class="fu">=</span> foo <span class="fu"
 <span class="ot">{-# SPECIALISE foo :: Text -&gt; Text #-}</span></code></pre></div>
 <p>This example will create a new function, <code>foo_$sfoo :: Text -&gt; Text</code> which will be used whenever <code>foo</code> is applied to a <code>Text</code> value even in modules which import <code>A</code>.</p>
 <p>This is useful to prevent GHC creating many copies of the same specialised function if you have a very flat module structure.</p>
-<h1 id="optimised-vs-unoptimised-unfoldings">Optimised vs unoptimised unfoldings</h1>
-<p>GHC will decide to include some small unfoldings in interface files. When it does this, it first optimises the definitions so that they are not repeatedly optimised at each use site after being inlined. Unfoldings included by <code>INLINE</code> or <code>INLINABLE</code> are unoptimised. This is so that they interact better with <code>RULES</code>.</p>
-<h1 id="what-is-an-interface-file">What is an interface file?</h1>
-<p>An interface file stores all information about a module which is needed by other modules. The extension for interface files is <code>.hi</code>, you can see what’s in an interface file by using the <code>--show-iface</code> flag.</p>
 <h1 id="what-is-a-loop-breaker">What is a loop-breaker?</h1>
 <p>In general, if we were to inline recursive definitions without care we could easily cause the simplifier to diverge. However, we still want to inline as many functions which appear in mutually recursive blocks as possible. GHC statically analyses each recursive groups of bindings and chooses one of them as the <em>loop-breaker</em>. Any function which is marked as a loop-breaker will never be inlined. Other functions in the recursive group are free to be inlined as eventually a loop-breaker will be reached and the inliner will stop.</p>
 <p>Note: Do not apply <code>INLINE</code> pragmas to loop-breakers, GHC will never inline a loop breaker regardless of which pragma you attach. In fact, with a debugging compiler, core lint will warn about using an <code>INLINE</code> pragma on a loopbreaker.</p>
 <p>Loop-breakers are discussed in detail in section 4 of <a href="https://www.microsoft.com/en-us/research/wp-content/uploads/2002/07/inline.pdf">Secrets of the Glasgow Haskell Compiler inliner</a>.</p>
 <h1 id="how-does-ghc-choose-a-loop-breaker">How does GHC choose a loop-breaker?</h1>
-<p>GHC uses a heuristic to decide which definitions it would be least beneficial to inline and to choose those as loop breakers. For example, it is very beneficial to inline simple expressions and dictionary selector functions so they are given high scores. Discounts are also availible if an unfolding is availible thus marking a definition as <code>INLINABLE</code> or <code>INLINE</code> will usually cause GHC to not choose it.</p>
+<p>GHC uses a heuristic to decide which definitions it would be least beneficial to inline and to choose those as loop breakers. For example, it is very beneficial to inline simple expressions and dictionary selector functions so they are given high scores. Discounts are also available if an unfolding is available thus marking a definition as <code>INLINABLE</code> or <code>INLINE</code> will usually cause GHC to not choose it.</p>
 <h1 id="which-flags-can-i-use-to-control-the-simplifier-and-inliner">Which flags can I use to control the simplifier and inliner?</h1>
 <p><code>-fspecialise-aggressively</code> removes the restrictions about which functions are specialisable. Any overloaded function will be specialised with this flag. This can potentially create lots of additional code.</p>
-<p><code>-fexpose-all-unfoldings</code> will include the (optimised) unfoldings of all functions in interface files so that they can be inlined across modules.</p>
+<p><code>-fexpose-all-unfoldings</code> will include the (optimised) unfoldings of all functions in interface files so that they can be inlined and specialised across modules.</p>
+<p>Using these two flags in conjunction will have nearly the same effect as marking every definition as <code>INLINABLE</code> apart from the fact that the unfoldings for <code>INLINABLE</code> definitions are <em>not</em> optimised.</p>
 <h1 id="will-ghc-ever-inline-recursive-definitions-with-static-arguments">Will GHC ever inline recursive definitions with static arguments?</h1>
 <p>Sometimes people ask if GHC is smart enough to unroll a recursive definition when given a static argument. For example, if we could define <code>sum</code> using direct recursion:</p>
 <div class="sourceCode"><pre class="sourceCode haskell"><code class="sourceCode haskell">sum<span class="ot"> ::</span> [<span class="dt">Int</span>] <span class="ot">-&gt;</span> <span class="dt">Int</span>
@@ -132,6 +157,7 @@ sum (x<span class="fu">:</span>xs) <span class="fu">=</span> x <span class="fu">
   sum _ <span class="fu">=</span> natVal (<span class="dt">Proxy</span> <span class="fu">@</span>x) <span class="fu">+</span> sum (<span class="dt">Proxy</span> <span class="fu">@</span>xs)
 
 main <span class="fu">=</span> sum (<span class="dt">Proxy</span> <span class="fu">@</span><span class="ch">&#39;[1,2,3])</span></code></pre></div>
+<p>Inspecting the core we find that the definition of <code>main</code> is simplified to the constant value <code>6</code>.</p>
 <p>Note that this is slightly different to the <a href="http://blog.johantibell.com/2010/09/static-argument-transformation.html">static argument transformation</a> which applies to a multi-parameter recursive functions where one of the arguments is the same for each recursive call. In this case, there are no arguments which remain constant across recursive calls.</p>
 <p>This technique is due to Andres Löh.</p>
 <h1 id="more-links">More Links</h1>
@@ -140,6 +166,8 @@ main <span class="fu">=</span> sum (<span class="dt">Proxy</span> <span class="f
 <li><a href="https://dl.acm.org/authorize?297115">Optimizing Generics Is Easy!</a></li>
 <li><a href="https://downloads.haskell.org/~ghc/latest/docs/html/users_guide/">GHC Users Guide</a></li>
 </ul>
+<h1 id="acknowledgements">Acknowledgements</h1>
+<p>Thanks to Reid Barton, Ashok Menon and Csongor Kiss for useful comments on a draft.</p>
 ]]></summary>
 </entry>
 <entry>
