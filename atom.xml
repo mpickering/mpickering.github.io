@@ -8,8 +8,115 @@
         <name>Matthew Pickering</name>
         <email>matthewtpickering@gmail.com</email>
     </author>
-    <updated>2017-03-20T00:00:00Z</updated>
+    <updated>2017-04-10T00:00:00Z</updated>
     <entry>
+    <title>Indexed Optics</title>
+    <link href="http://mpickering.github.io/posts/2017-04-10-indexed-optics.html" />
+    <id>http://mpickering.github.io/posts/2017-04-10-indexed-optics.html</id>
+    <published>2017-04-10T00:00:00Z</published>
+    <updated>2017-04-10T00:00:00Z</updated>
+    <summary type="html"><![CDATA[<h2 class="post"> Indexed Optics </h2>
+<div class="info">
+    Posted on April 10, 2017
+    
+</div>
+
+<p>What is an indexed optic? It is an optic which gives you access to an index whilst performing updates.</p>
+<p>It is a simple clear generalisation of a lens but the implementation looks quite complicated. This is due to the desire to reuse the same combinators for both non-indexed and indexed variants. We we will start by explaining a simplified implementation of indexed optics before the technique used in order to reuse the same combinators as ordinary optics.</p>
+<!--more-->
+<h1 id="simple-implementation">Simple Implementation</h1>
+<p>As a first approximation, we will augment the updating function with an additional index which we will then subsequently refine.</p>
+<div class="sourceCode"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="kw">type</span> <span class="dt">PrimitiveIndexedTraversal</span> i s t a b
+  <span class="fu">=</span> forall f <span class="fu">.</span> <span class="dt">Applicative</span> f <span class="ot">=&gt;</span> (i <span class="ot">-&gt;</span> a <span class="ot">-&gt;</span> f b) <span class="ot">-&gt;</span> (s <span class="ot">-&gt;</span> f t)</code></pre></div>
+<p>Implementing optics by hand gives a good intuition for the types involved.</p>
+<div class="sourceCode"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="ot">pair ::</span> <span class="dt">PrimitiveIndexedTraversal</span> <span class="dt">Int</span> (a, a) (b, b) a b
+pair iafb (a0, a1) <span class="fu">=</span> (,) <span class="fu">&lt;$&gt;</span> iafb <span class="dv">0</span> a0 <span class="fu">&lt;*&gt;</span> iafb <span class="dv">1</span> a1</code></pre></div>
+<p>The implementation is exactly the same as a normal traversals apart from we also pass an index to each call of the worker function. Note that we have a lot of choice about which indices we choose. We could have indexed each field with a boolean or in the opposite order. For lists, we need to use a helper function which passes an index to each recursive call.</p>
+<div class="sourceCode"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="ot">list ::</span> <span class="dt">PrimitiveIndexedTraversal</span> <span class="dt">Int</span> [a] [b] a b
+list iafb xs <span class="fu">=</span> go xs <span class="dv">0</span>
+  <span class="kw">where</span>
+    go [] _ <span class="fu">=</span> pure []
+    go (x<span class="fu">:</span>xs) n <span class="fu">=</span> (<span class="fu">:</span>) <span class="fu">&lt;$&gt;</span> iafb n x <span class="fu">&lt;*&gt;</span> go xs (n<span class="fu">+</span><span class="dv">1</span>)</code></pre></div>
+<p>There are all the usual combinators to work with indexed traversals as normal traversals but one of the most useful ones to see what is going on is <code>itoListOf</code> which converts an indexed traversal into a list of index-value pairs.</p>
+<div class="sourceCode"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="ot">itoListOf ::</span> ((i <span class="ot">-&gt;</span> a <span class="ot">-&gt;</span> <span class="dt">Const</span> [(i, a)] b) <span class="ot">-&gt;</span> s <span class="ot">-&gt;</span> (<span class="dt">Const</span> [(i, a)] t))
+          <span class="ot">-&gt;</span> s <span class="ot">-&gt;</span> [(i, a)]
+itoListOf t s <span class="fu">=</span> getConst <span class="fu">$</span> t (\i a <span class="ot">-&gt;</span> <span class="dt">Const</span> [(i, a)]) s
+
+<span class="fu">&gt;</span> itoListOf pair (<span class="dt">True</span>, <span class="dt">False</span>)
+[(<span class="dv">0</span>, <span class="dt">True</span>), (<span class="dv">1</span>, <span class="dt">False</span>)]</code></pre></div>
+<p>We monomorphise the argument so that we we don’t have to use a variant of <code>cloneTraversal</code> in order to work around impredicative types.</p>
+<p>We can also turn an ordinary traversal into an indexed traversal by labeling each element with the order in which we traverse it. In order to do so we need to define an applicative functor which when traversed with will perform the labelling ultimately returning an indexed traversal.</p>
+<div class="sourceCode"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="kw">newtype</span> <span class="dt">Indexing</span> f s <span class="fu">=</span> <span class="dt">Indexing</span> {<span class="ot"> runIndexing ::</span> (<span class="dt">Int</span> <span class="ot">-&gt;</span> (<span class="dt">Int</span>, f s))}
+
+<span class="kw">instance</span> <span class="dt">Functor</span> f <span class="ot">=&gt;</span> <span class="dt">Functor</span> (<span class="dt">Indexing</span> f) <span class="kw">where</span>
+  fmap f (<span class="dt">Indexing</span> fn) <span class="fu">=</span> <span class="dt">Indexing</span> (over (_2 <span class="fu">.</span> mapped) f <span class="fu">.</span> fn)
+
+<span class="kw">instance</span> <span class="dt">Applicative</span> f <span class="ot">=&gt;</span> <span class="dt">Applicative</span> (<span class="dt">Indexing</span> f) <span class="kw">where</span>
+  pure x <span class="fu">=</span> <span class="dt">Indexing</span> (\i <span class="ot">-&gt;</span> (i, pure x))
+  (<span class="dt">Indexing</span> fab) <span class="fu">&lt;*&gt;</span> (<span class="dt">Indexing</span> fa)
+    <span class="fu">=</span> <span class="dt">Indexing</span> (\i <span class="ot">-&gt;</span>
+        <span class="kw">let</span> (i&#39;, ab) <span class="fu">=</span> fab i
+            (i&#39;&#39;, a) <span class="fu">=</span> fa i&#39;
+        <span class="kw">in</span> (i&#39;&#39;, ab <span class="fu">&lt;*&gt;</span> a))</code></pre></div>
+<p>Then traversing with this applicative functor supplies the index to each function call which we can pass to our indexed updating function.</p>
+<div class="sourceCode"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="ot">indexing ::</span> <span class="dt">Traversal</span> s t a b <span class="ot">-&gt;</span> <span class="dt">PrimitiveIndexedTraversal</span> <span class="dt">Int</span> s t a b
+indexing t p s <span class="fu">=</span> snd <span class="fu">$</span> runIndexing
+  (t (\a <span class="ot">-&gt;</span> <span class="dt">Indexing</span> (\i <span class="ot">-&gt;</span> (i <span class="fu">+</span> <span class="dv">1</span>, p i a) )) s) <span class="dv">0</span></code></pre></div>
+<p>A common pattern is to use <code>indexing</code> and <code>traverse</code> together to create indexed traversals for <code>Traversable</code> functors. It is so common that it is given a special name <code>traversed</code>.</p>
+<div class="sourceCode"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="ot">traversed ::</span> <span class="dt">Traversable</span> t <span class="ot">=&gt;</span> <span class="dt">PrimitiveIndexedTraversal</span> (t a) (t b) a b
+traversed <span class="fu">=</span> indexing traverse
+
+<span class="fu">&gt;</span> itoListOf traversed (<span class="dt">Just</span> <span class="dv">5</span>)
+[(<span class="dv">0</span>, <span class="dv">5</span>)]</code></pre></div>
+<p>However, there are two problems with this representation.</p>
+<ol style="list-style-type: decimal">
+<li>Indexed optics do not compose with ordinary optics.</li>
+<li>We need a different composition operator other than (<code>.</code>) in order to compose indexed optics together.</li>
+</ol>
+<h1 id="composing-indexed-and-ordinary-optics">Composing indexed and ordinary optics</h1>
+<p>Considering the first problem, in order to compose an indexed optic with an ordinary optic using function composition we would need to be able to unify <code>i -&gt; a -&gt; b</code> with <code>s -&gt; t</code>.</p>
+<p>Given an ordinary optic <code>op</code> and an indexed optic <code>iop</code> with the following types:</p>
+<div class="sourceCode"><pre class="sourceCode haskell"><code class="sourceCode haskell">op <span class="fu">:</span> (a <span class="ot">-&gt;</span> f b) <span class="ot">-&gt;</span> (s <span class="ot">-&gt;</span> f t)
+iop <span class="fu">:</span> (i <span class="ot">-&gt;</span> c <span class="ot">-&gt;</span> f d) <span class="ot">-&gt;</span> (u <span class="ot">-&gt;</span> f v)</code></pre></div>
+<p><code>op . iop</code> is the only composition which type checks. It yields an indexed traversal which keeps track of the index of the inner component.</p>
+<div class="sourceCode"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="fu">&gt;</span> itoListOf (traverse <span class="fu">.</span> list) (<span class="dt">True</span>, [<span class="dv">1</span>,<span class="dv">2</span>,<span class="dv">3</span>])
+[(<span class="dv">0</span>, <span class="dv">1</span>), (<span class="dv">1</span>, <span class="dv">2</span>), (<span class="dv">2</span>, <span class="dv">3</span>)]</code></pre></div>
+<p>However, composition the other way around doesn’t work and further with this representation indexed optics do not compose together with <code>.</code>. In order to compose indexed optics together with <code>.</code> we need to be able to unify the argument and result type of the lens together. In order to do this, we abstract away from the the indexed argument of the updating function for any <code>Indexable</code> profunctor.</p>
+<div class="sourceCode"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="kw">class</span> <span class="dt">Indexable</span> i p <span class="kw">where</span>
+<span class="ot">  index ::</span> p a b <span class="ot">-&gt;</span> i <span class="ot">-&gt;</span> a <span class="ot">-&gt;</span> b</code></pre></div>
+<p>Using this class, the type for indexed traversals becomes:</p>
+<div class="sourceCode"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="kw">type</span> <span class="dt">IndexedTraversal</span> i s t a b <span class="fu">=</span>
+  forall f p <span class="fu">.</span> (<span class="dt">Applicative</span> f, <span class="dt">Indexable</span> i p) <span class="ot">=&gt;</span> p a (f b) <span class="ot">-&gt;</span> s <span class="ot">-&gt;</span> f t</code></pre></div>
+<p>There are instances for the newtype wrapped indexed functions which we were using before</p>
+<div class="sourceCode"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="kw">newtype</span> <span class="dt">Indexed</span> i a b <span class="fu">=</span> <span class="dt">Indexed</span> {<span class="ot"> runIndexed ::</span> i <span class="ot">-&gt;</span> a <span class="ot">-&gt;</span> b }
+
+<span class="kw">instance</span> (<span class="dt">Indexable</span> i (<span class="dt">Indexed</span> i)) <span class="kw">where</span>
+  index (<span class="dt">Indexed</span> p) <span class="fu">=</span> p</code></pre></div>
+<p>but also for <code>(-&gt;)</code> which ignores the index. This means that we can seamlessly use optics with or without the index by instantiating <code>p</code> with either <code>Indexed</code> or <code>-&gt;</code>.</p>
+<div class="sourceCode"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="kw">instance</span> (<span class="dt">Indexable</span> i (<span class="ot">-&gt;</span>)) <span class="kw">where</span>
+  index f _ <span class="fu">=</span> f</code></pre></div>
+<p>Now <code>op . iop</code> yields an indexed traversal, <code>iop . op</code> forces us to instantiate <code>p = (-&gt;)</code> and so yields a traversal which has forgotten the index. Perhaps most surprisingly, the composition <code>iop . iop</code> type-checks as well, but again we loose information as we are forced to instantiate <code>p = (-&gt;)</code> and thus forget about the indexing of the outer traversal.</p>
+<p>This is a double edged sword. Composing using <code>.</code> leads to more code reuse as the same combinators can be used for both indexed and non-indexed optics. On the other hand, composing indexed optics using <code>.</code> is nearly always the wrong thing if you care about the indicies.</p>
+<h1 id="a-different-composition-operator">A different composition operator</h1>
+<p>Composing together indexed optics with the normal lens composition operator <code>.</code> leads to unexpected results as the indices are not combined appropiately. The index of the inner-most optic of the composition is preserved whilst the outer indexing is thrown away. It would be more desirable to combine the indicies together in order to retain as much information as possible.</p>
+<p>To that end we define <code>&lt;.&gt;</code> which can compose indexed optics together whilst suitably combining their indices.</p>
+<div class="sourceCode"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="ot">(&lt;.&gt;) ::</span> <span class="dt">Indexable</span> (i, j) p
+      <span class="ot">=&gt;</span> (<span class="dt">Indexed</span> i s t <span class="ot">-&gt;</span> r)
+      <span class="ot">-&gt;</span> (<span class="dt">Indexed</span> j a b <span class="ot">-&gt;</span> s <span class="ot">-&gt;</span> t)
+      <span class="ot">-&gt;</span> p a b <span class="ot">-&gt;</span> r
+(istr <span class="fu">&lt;.&gt;</span> jabst) p
+  <span class="fu">=</span> istr (<span class="dt">Indexed</span> (\i s <span class="ot">-&gt;</span>
+      jabst (<span class="dt">Indexed</span> (\j a <span class="ot">-&gt;</span>
+        indexed p (i, j) a)) s))</code></pre></div>
+<p>The definition monomorphises the argument again in order to avoid inpredicativity problems.</p>
+<div class="sourceCode"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="fu">&gt;</span> itoListOf (list <span class="fu">&lt;.&gt;</span> pair) [(<span class="dv">1</span>,<span class="dv">2</span>), (<span class="dv">2</span>, <span class="dv">3</span>)]
+[((<span class="dv">0</span>,<span class="dv">0</span>),<span class="dv">1</span>),((<span class="dv">0</span>,<span class="dv">1</span>),<span class="dv">2</span>),((<span class="dv">1</span>,<span class="dv">0</span>),<span class="dv">2</span>),((<span class="dv">1</span>,<span class="dv">1</span>),<span class="dv">3</span>)]</code></pre></div>
+<p>Generalisations are possible which combine indicies in other ways but this simple combination function highlights the essence of the approach.</p>
+<h1 id="what-are-indexed-optics-useful-for">What are indexed optics useful for?</h1>
+<p>Now that is a question which I will have to defer to reddit comments. I couldn’t find many libraries which were using the indexing in interesting ways.</p>
+]]></summary>
+</entry>
+<entry>
     <title>Inlining and Specialisation</title>
     <link href="http://mpickering.github.io/posts/2017-03-20-inlining-and-specialisation.html" />
     <id>http://mpickering.github.io/posts/2017-03-20-inlining-and-specialisation.html</id>
