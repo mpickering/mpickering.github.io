@@ -1,0 +1,104 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+    <head>
+        <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+        <title>mpickering - INLIN(E)ing: A case study</title>
+        <link rel="stylesheet" type="text/css" href="../css/default.css" />
+        <link href="http://fonts.googleapis.com/css?family=Vollkorn" rel="stylesheet" type="text/css">
+        <script type="text/javascript" src="http://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML"></script>
+    </head>
+    <body>
+        <div id="sidebar">
+            <div id="navigation">
+              <a href="../">Home</a> <br>
+              <a href="../about.html">About</a> <br>
+              <a href="../archive.html">Archive</a> <br>
+            </div>
+        </div>
+
+        <div id="content">
+            <h2 class="post"> INLIN(E)ing: A case study </h2>
+<div class="info">
+    Posted on May 17, 2017
+    
+</div>
+
+<p>Ollie Charles recently popped onto #ghc to ask about a small program which was taking a long time to compile. In fact, the compiler was taking so long in the simplifier so he had to increase the tick factor (a measure of how much work the simplifier is allowed to do) to get compilation to finish. Oleg and I quickly set to work working out what was going on in his program.</p>
+<!--more-->
+<p>When a lot of time is spent in the simplifier it is usually because the core programs have grown quite large. Core programs can grow large for a number of reasons but one of primary reasons is due to excessive inlining caused by <code>INLINE</code> pragmas.</p>
+<p>The first tool we have at our disposal is <code>-ddump-simpl-stats</code> which outputs a summary of each step the simplifier takes. Looking at this summary is a good way to work out roughly where the problem lies.</p>
+<p>In this case, the statistics file was quite <a href="https://gist.github.com/ocharles/8d69c518b5d3169e8254b24205e03f65">large</a>. The first bit I always check is the “UnfoldingDone” section which details how many times each definition has been inlined. Here is the relevant snippet from the top of that section.</p>
+<pre><code>  14620 UnfoldingDone
+    596 $
+    574 contramapF
+    546 $fNumInt_$c+
+    485 $fStorableWord8_$cpoke
+    485 castPtr
+    485 $fStorableWord8_$calignment
+    485 word8
+    485 $s&gt;$&lt;
+    485 castPtr1
+    484 thenIO
+    484 thenIO1
+    484 ord
+    484 $fBitsInt_$c.&amp;.
+    484 plusPtr
+    484 $fStorableWord19
+    463 char7
+    331 $s&gt;*&lt;1
+    331 pairF
+    220 returnIO
+    220 returnIO1
+    220 $s&gt;$&lt;
+    220 contramapB</code></pre>
+<p>The first thing to notice about these numbers it that there are groups of definitions which have all been inlined the same number of times. This is indicative of a misplaced <code>INLINE</code> pragma as a large unoptimised definition will be inlined many times and then simplified individually at each call site rather than once at the definition site. Of particular suspicion is the large block of definitions which are each inlined exactly 484 times.</p>
+<p>By looking at the definitions of each of the identifiers in this list, we can then work out what is going on. To cut to the chase, inspecting the definition of <code>char7</code> from the <code>Data.ByteString.Builder.Prim.ASCII</code> module we can see where all the work is coming from.</p>
+<pre><code>-- | Encode the least 7-bits of a 'Char' using the ASCII encoding.
+{-# INLINE char7 #-}
+char7 :: FixedPrim Char
+char7 = (\c -&gt; fromIntegral $ ord c .&amp;. 0x7f) &gt;$&lt; word8</code></pre>
+<p>The definition of <code>char7</code> is concise but composed of combinators which will be keen to get inlined later on. The definitions of <code>ord</code>, <code>.&amp;.</code> and <code>&gt;$&lt;</code> are all small.</p>
+<p>By using an <code>INLINE</code> pragma, the unoptimised unfolding is included in the interface file so this complex definition will be inline verbatim into each call site. We can inspect the unfolding by using the <code>--show-iface</code> flag on the <code>.hi</code> file for the module.</p>
+<pre><code>8334ad079da5b638008c6f8feefdfa4a
+   char7 :: FixedPrim Char
+   {- HasNoCafRefs, Strictness: m, Inline: INLINE (sat-args=0),
+      Unfolding: InlineRule (0, False, False)
+                 ($s&gt;$&lt;
+                    @ Char
+                    @ Word8
+                    (\ (c :: Char) -&gt;
+                     $ @ 'PtrRepLifted
+                       @ Int
+                       @ Word8
+                       (\ (x :: Int) -&gt;
+                        case x of wild { I# x# -&gt; W8# (narrow8Word# (int2Word# x#)) })
+                       ($fBitsInt_$c.&amp;. (ord c) (I# 127#)))
+                   word8) -}</code></pre>
+<p>Which very closely resembles the source definition.</p>
+<p>Removing the <code>INLINE</code> pragma we get a nice, small optimised definition which crucially is still small enough that GHC inlines it at call sites.</p>
+<pre><code>5e7820a4ab4b18cf2032517105d2cc56
+  char7 :: FixedPrim Char
+  {- HasNoCafRefs, Strictness: m,
+     Unfolding: (FP
+                   @ Char
+                   1#
+                   char1
+                     `cast`
+                   (&lt;Char&gt;_R -&gt;_R &lt;Ptr Word8&gt;_R -&gt;_R Sym (N:IO[0] &lt;()&gt;_R)))      -}</code></pre>
+<p>Look! No calls to <code>&gt;$&lt;</code>, <code>.&amp;.</code>, <code>ord</code> or any other complicated functions. We have optimised the definition <em>once</em> at the definition site so that we don’t have to repeatedly do so at each call site. We didn’t even need to look at the program to spot the problem.</p>
+<h1 id="discussion">Discussion</h1>
+<p>This is currently a problem because <code>INLINE</code> is used for two different reasons.</p>
+<ol style="list-style-type: decimal">
+<li>By library authors who use <code>RULES</code> where it is important to inline the literal rhs of a definition so that the rules reliably fire.</li>
+<li>By library authors who want to inline definitions so that GHC’s simplifier can work better across modules.</li>
+</ol>
+<p>For the first case, the unoptimised unfoldings are important but for the second this leads to a lot of duplicated work.</p>
+<p>It would be good to add a new pragma which instructs GHC to inline an <em>optimised</em> unfolding across modules rather than the unoptimised version.</p>
+
+        <div id="footer">
+          <a href="../atom.xml">Feed</a>
+        </div>
+        </div>
+    </body>
+</html>
