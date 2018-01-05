@@ -27,61 +27,61 @@
 <p>Pattern synonyms can’t (safely) cause any additional type refinement than their definition dictates. This means that they can’t be used to provide a GADT-like interface when the underlying representation is not a GADT. The purpose of this note is to explain this restriction.</p>
 <!--more-->
 <p>The defining feature of GADTs is that the constructors can bind dictionaries for constraints.</p>
-<div class="sourceCode"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="kw">data</span> <span class="dt">CaptureShow</span> a <span class="kw">where</span>
-  <span class="dt">CaptureShow</span><span class="ot"> ::</span> <span class="dt">Show</span> a <span class="ot">=&gt;</span> <span class="dt">CaptureShow</span> a</code></pre></div>
+<div class="sourceCode" id="cb1"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb1-1" data-line-number="1"><span class="kw">data</span> <span class="dt">CaptureShow</span> a <span class="kw">where</span></a>
+<a class="sourceLine" id="cb1-2" data-line-number="2">  <span class="dt">CaptureShow</span><span class="ot"> ::</span> <span class="dt">Show</span> a <span class="ot">=&gt;</span> <span class="dt">CaptureShow</span> a</a></code></pre></div>
 <p>When the constructor is matched upon, the constraints are <em>provided</em> to the local environment.</p>
 <p>When the constraints are equality constraints, this causes type refinement. We learn more about the result type from performing the match.</p>
 <p>We can use pattern synonyms to abstract GADTs. The second set of constraints is the set of provided constraints.</p>
-<div class="sourceCode"><pre class="sourceCode haskell"><code class="sourceCode haskell">pattern <span class="dt">MyCaptureShow</span><span class="ot"> ::</span> () <span class="ot">=&gt;</span> <span class="dt">Show</span> a <span class="ot">=&gt;</span> <span class="dt">CaptureShow</span> a
-pattern <span class="dt">MyCaptureShow</span> <span class="fu">=</span> <span class="dt">CaptureShow</span></code></pre></div>
+<div class="sourceCode" id="cb2"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb2-1" data-line-number="1">pattern <span class="dt">MyCaptureShow</span><span class="ot"> ::</span> () <span class="ot">=&gt;</span> <span class="dt">Show</span> a <span class="ot">=&gt;</span> <span class="dt">CaptureShow</span> a</a>
+<a class="sourceLine" id="cb2-2" data-line-number="2">pattern <span class="dt">MyCaptureShow</span> <span class="fu">=</span> <span class="dt">CaptureShow</span></a></code></pre></div>
 <p>But, the set of provided constraints must be exactly those constraints which the underlying constructor provides. This is different to <em>required</em> constraints which can be more specific than needed.</p>
 <p>Why is this the case? One might expect that if additional constraints were specified then the pattern synonym could bind the needed dictionaries when building and release them when matching. However, <strong>not all values which can be destructed with a pattern synonym must be constructed with a pattern synonym</strong>.</p>
 <p>For example, we would be able to specify an unsatisfiable constraint in the provided context.</p>
-<div class="sourceCode"><pre class="sourceCode haskell"><code class="sourceCode haskell">pattern <span class="dt">Unsat</span><span class="ot"> ::</span> () <span class="ot">=&gt;</span> (<span class="ch">'True ~ '</span><span class="dt">False</span>) <span class="ot">=&gt;</span> <span class="dt">Int</span>
-pattern <span class="dt">Unsat</span> <span class="fu">=</span> <span class="dv">0</span></code></pre></div>
+<div class="sourceCode" id="cb3"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb3-1" data-line-number="1">pattern <span class="dt">Unsat</span><span class="ot"> ::</span> () <span class="ot">=&gt;</span> (<span class="ch">'True ~ '</span><span class="dt">False</span>) <span class="ot">=&gt;</span> <span class="dt">Int</span></a>
+<a class="sourceLine" id="cb3-2" data-line-number="2">pattern <span class="dt">Unsat</span> <span class="fu">=</span> <span class="dv">0</span></a></code></pre></div>
 <p>If we did the same in a GADT it would be impossible to construct such a value, similary here we can’t use <code>Unsat</code> to construct an <code>Int</code> as we will never be able to satisfy the equality constraint. However, if it were possible to define such a pattern synonym we would be able to use it to match on <code>0</code>. Doing so would provide the bogus constraint.</p>
 <p>There is a more immediate reason why this will never work. For type class constraints, the dictionaries must be bound when the constructor is used to construct values. If the pattern synonym is not used to construct the value then we can’t conjure it up out of thin air when we need it.</p>
 <p>This wasn’t obvious to me, which is why it is now written down. Pattern synonym signatures are surprisingly tricky.</p>
 <h1 id="addendum">Addendum</h1>
 <p>David Feuer and Edward Yang conspired to show that using <code>unsafeCoerce</code> it was possible to provide additional type equalities. The key to the approach is to use a dummy GADT which is used to actually do the refining. Our more efficient representation is upcasted to this GADT, then by matching on the constructor, we cause refinement. Here is Edward’s code:</p>
-<div class="sourceCode"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="ot">{-# LANGUAGE KindSignatures #-}</span>
-<span class="ot">{-# LANGUAGE DataKinds #-}</span>
-<span class="ot">{-# LANGUAGE PatternSynonyms #-}</span>
-<span class="ot">{-# LANGUAGE ViewPatterns #-}</span>
-<span class="ot">{-# LANGUAGE TypeOperators #-}</span>
-<span class="ot">{-# LANGUAGE GADTs #-}</span>
-<span class="ot">{-# OPTIONS_GHC -fwarn-incomplete-patterns #-}</span>
-<span class="kw">module</span> <span class="dt">GhostBuster</span> <span class="kw">where</span>
-
-<span class="kw">import </span><span class="dt">GHC.TypeLits</span>
-<span class="kw">import </span><span class="dt">Unsafe.Coerce</span>
-
-<span class="kw">newtype</span> <span class="dt">Vec</span> a (<span class="ot">n ::</span> <span class="dt">Nat</span>) <span class="fu">=</span> <span class="dt">Vec</span> {<span class="ot"> unVec ::</span> [a] }
-
-<span class="co">-- &quot;Almost&quot; Vec GADT, but the inside is a Vec</span>
-<span class="co">-- (so only the top-level is unfolded.)</span>
-<span class="kw">data</span> <span class="dt">Vec'</span> a (<span class="ot">n ::</span> <span class="dt">Nat</span>) <span class="kw">where</span>
-    <span class="dt">VNil'</span><span class="ot">  ::</span> <span class="dt">Vec'</span> a <span class="dv">0</span>
-    <span class="dt">VCons'</span><span class="ot"> ::</span> a <span class="ot">-&gt;</span> <span class="dt">Vec</span> a n <span class="ot">-&gt;</span> <span class="dt">Vec'</span> a (n <span class="fu">+</span> <span class="dv">1</span>)
-
-<span class="ot">upVec ::</span> <span class="dt">Vec</span> a n <span class="ot">-&gt;</span> <span class="dt">Vec'</span> a n
-upVec (<span class="dt">Vec</span> [])     <span class="fu">=</span> unsafeCoerce <span class="dt">VNil'</span>
-upVec (<span class="dt">Vec</span> (x<span class="fu">:</span>xs)) <span class="fu">=</span> unsafeCoerce (<span class="dt">VCons'</span> x (<span class="dt">Vec</span> xs))
-
-pattern <span class="dt">VNil</span><span class="ot"> ::</span> () <span class="ot">=&gt;</span> (n <span class="fu">~</span> <span class="dv">0</span>) <span class="ot">=&gt;</span> <span class="dt">Vec</span> a n
-pattern <span class="dt">VNil</span> <span class="ot">&lt;-</span> (upVec <span class="ot">-&gt;</span> <span class="dt">VNil'</span>) <span class="kw">where</span>
-    <span class="dt">VNil</span> <span class="fu">=</span> <span class="dt">Vec</span> []
-
-pattern <span class="dt">VCons</span><span class="ot"> ::</span> () <span class="ot">=&gt;</span> ((n <span class="fu">+</span> <span class="dv">1</span>) <span class="fu">~</span> n') <span class="ot">=&gt;</span> a <span class="ot">-&gt;</span> <span class="dt">Vec</span> a n <span class="ot">-&gt;</span> <span class="dt">Vec</span> a n'
-pattern <span class="dt">VCons</span> x xs <span class="ot">&lt;-</span> (upVec <span class="ot">-&gt;</span> <span class="dt">VCons'</span> x xs) <span class="kw">where</span>
-    <span class="dt">VCons</span> x (<span class="dt">Vec</span> xs) <span class="fu">=</span> <span class="dt">Vec</span> (x <span class="fu">:</span> xs)
-
-<span class="ot">headVec ::</span> <span class="dt">Vec</span> a (n <span class="fu">+</span> <span class="dv">1</span>) <span class="ot">-&gt;</span> a
-headVec (<span class="dt">VCons</span> x _) <span class="fu">=</span> x
-
-<span class="ot">mapVec ::</span> (a <span class="ot">-&gt;</span> b) <span class="ot">-&gt;</span> <span class="dt">Vec</span> a n <span class="ot">-&gt;</span> <span class="dt">Vec</span> b n
-mapVec f <span class="dt">VNil</span> <span class="fu">=</span> <span class="dt">VNil</span>
-mapVec f (<span class="dt">VCons</span> x xs) <span class="fu">=</span> <span class="dt">VCons</span> (f x) (mapVec f xs)</code></pre></div>
+<div class="sourceCode" id="cb4"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb4-1" data-line-number="1"><span class="ot">{-# LANGUAGE KindSignatures #-}</span></a>
+<a class="sourceLine" id="cb4-2" data-line-number="2"><span class="ot">{-# LANGUAGE DataKinds #-}</span></a>
+<a class="sourceLine" id="cb4-3" data-line-number="3"><span class="ot">{-# LANGUAGE PatternSynonyms #-}</span></a>
+<a class="sourceLine" id="cb4-4" data-line-number="4"><span class="ot">{-# LANGUAGE ViewPatterns #-}</span></a>
+<a class="sourceLine" id="cb4-5" data-line-number="5"><span class="ot">{-# LANGUAGE TypeOperators #-}</span></a>
+<a class="sourceLine" id="cb4-6" data-line-number="6"><span class="ot">{-# LANGUAGE GADTs #-}</span></a>
+<a class="sourceLine" id="cb4-7" data-line-number="7"><span class="ot">{-# OPTIONS_GHC -fwarn-incomplete-patterns #-}</span></a>
+<a class="sourceLine" id="cb4-8" data-line-number="8"><span class="kw">module</span> <span class="dt">GhostBuster</span> <span class="kw">where</span></a>
+<a class="sourceLine" id="cb4-9" data-line-number="9"></a>
+<a class="sourceLine" id="cb4-10" data-line-number="10"><span class="kw">import</span> <span class="dt">GHC.TypeLits</span></a>
+<a class="sourceLine" id="cb4-11" data-line-number="11"><span class="kw">import</span> <span class="dt">Unsafe.Coerce</span></a>
+<a class="sourceLine" id="cb4-12" data-line-number="12"></a>
+<a class="sourceLine" id="cb4-13" data-line-number="13"><span class="kw">newtype</span> <span class="dt">Vec</span> a (<span class="ot">n ::</span> <span class="dt">Nat</span>) <span class="fu">=</span> <span class="dt">Vec</span> {<span class="ot"> unVec ::</span> [a] }</a>
+<a class="sourceLine" id="cb4-14" data-line-number="14"></a>
+<a class="sourceLine" id="cb4-15" data-line-number="15"><span class="co">-- &quot;Almost&quot; Vec GADT, but the inside is a Vec</span></a>
+<a class="sourceLine" id="cb4-16" data-line-number="16"><span class="co">-- (so only the top-level is unfolded.)</span></a>
+<a class="sourceLine" id="cb4-17" data-line-number="17"><span class="kw">data</span> <span class="dt">Vec'</span> a (<span class="ot">n ::</span> <span class="dt">Nat</span>) <span class="kw">where</span></a>
+<a class="sourceLine" id="cb4-18" data-line-number="18">    <span class="dt">VNil'</span><span class="ot">  ::</span> <span class="dt">Vec'</span> a <span class="dv">0</span></a>
+<a class="sourceLine" id="cb4-19" data-line-number="19">    <span class="dt">VCons'</span><span class="ot"> ::</span> a <span class="ot">-&gt;</span> <span class="dt">Vec</span> a n <span class="ot">-&gt;</span> <span class="dt">Vec'</span> a (n <span class="fu">+</span> <span class="dv">1</span>)</a>
+<a class="sourceLine" id="cb4-20" data-line-number="20"></a>
+<a class="sourceLine" id="cb4-21" data-line-number="21"><span class="ot">upVec ::</span> <span class="dt">Vec</span> a n <span class="ot">-&gt;</span> <span class="dt">Vec'</span> a n</a>
+<a class="sourceLine" id="cb4-22" data-line-number="22">upVec (<span class="dt">Vec</span> [])     <span class="fu">=</span> unsafeCoerce <span class="dt">VNil'</span></a>
+<a class="sourceLine" id="cb4-23" data-line-number="23">upVec (<span class="dt">Vec</span> (x<span class="fu">:</span>xs)) <span class="fu">=</span> unsafeCoerce (<span class="dt">VCons'</span> x (<span class="dt">Vec</span> xs))</a>
+<a class="sourceLine" id="cb4-24" data-line-number="24"></a>
+<a class="sourceLine" id="cb4-25" data-line-number="25">pattern <span class="dt">VNil</span><span class="ot"> ::</span> () <span class="ot">=&gt;</span> (n <span class="fu">~</span> <span class="dv">0</span>) <span class="ot">=&gt;</span> <span class="dt">Vec</span> a n</a>
+<a class="sourceLine" id="cb4-26" data-line-number="26">pattern <span class="dt">VNil</span> <span class="ot">&lt;-</span> (upVec <span class="ot">-&gt;</span> <span class="dt">VNil'</span>) <span class="kw">where</span></a>
+<a class="sourceLine" id="cb4-27" data-line-number="27">    <span class="dt">VNil</span> <span class="fu">=</span> <span class="dt">Vec</span> []</a>
+<a class="sourceLine" id="cb4-28" data-line-number="28"></a>
+<a class="sourceLine" id="cb4-29" data-line-number="29">pattern <span class="dt">VCons</span><span class="ot"> ::</span> () <span class="ot">=&gt;</span> ((n <span class="fu">+</span> <span class="dv">1</span>) <span class="fu">~</span> n') <span class="ot">=&gt;</span> a <span class="ot">-&gt;</span> <span class="dt">Vec</span> a n <span class="ot">-&gt;</span> <span class="dt">Vec</span> a n'</a>
+<a class="sourceLine" id="cb4-30" data-line-number="30">pattern <span class="dt">VCons</span> x xs <span class="ot">&lt;-</span> (upVec <span class="ot">-&gt;</span> <span class="dt">VCons'</span> x xs) <span class="kw">where</span></a>
+<a class="sourceLine" id="cb4-31" data-line-number="31">    <span class="dt">VCons</span> x (<span class="dt">Vec</span> xs) <span class="fu">=</span> <span class="dt">Vec</span> (x <span class="fu">:</span> xs)</a>
+<a class="sourceLine" id="cb4-32" data-line-number="32"></a>
+<a class="sourceLine" id="cb4-33" data-line-number="33"><span class="ot">headVec ::</span> <span class="dt">Vec</span> a (n <span class="fu">+</span> <span class="dv">1</span>) <span class="ot">-&gt;</span> a</a>
+<a class="sourceLine" id="cb4-34" data-line-number="34">headVec (<span class="dt">VCons</span> x _) <span class="fu">=</span> x</a>
+<a class="sourceLine" id="cb4-35" data-line-number="35"></a>
+<a class="sourceLine" id="cb4-36" data-line-number="36"><span class="ot">mapVec ::</span> (a <span class="ot">-&gt;</span> b) <span class="ot">-&gt;</span> <span class="dt">Vec</span> a n <span class="ot">-&gt;</span> <span class="dt">Vec</span> b n</a>
+<a class="sourceLine" id="cb4-37" data-line-number="37">mapVec f <span class="dt">VNil</span> <span class="fu">=</span> <span class="dt">VNil</span></a>
+<a class="sourceLine" id="cb4-38" data-line-number="38">mapVec f (<span class="dt">VCons</span> x xs) <span class="fu">=</span> <span class="dt">VCons</span> (f x) (mapVec f xs)</a></code></pre></div>
 <p>If we were to change the definition of the nil case of <code>mapVec</code> to use <code>VCons</code> instead then it wouldn’t type check.</p>
 
         <div id="footer">

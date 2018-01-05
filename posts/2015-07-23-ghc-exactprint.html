@@ -33,37 +33,37 @@
 <p>When deciding on a representation, you have to take into account more complicated transformations such as renamings, insertions and deletions which are made much easier by manipulating an AST. Most current source manipulations are based on <code>haskell-src-exts</code> which provides a separate parser and as a result lacks support for many modern language extensions. We instead chose to base <code>ghc-exactprint</code> directly on the GHC parser so that we don’t have to worry (much) about adding support for future language extensions and secondly, working with the GHC AST directly is essential if you want to perform <em>type-aware</em> refactorings.</p>
 <p>We work in two stages.</p>
 <p>After receiving the output of the GHC parser, the first stage converts all the absolute source positions into relative positions.</p>
-<div class="sourceCode"><pre class="sourceCode haskell"><code class="sourceCode haskell">not <span class="dt">True</span> <span class="fu">=</span> <span class="dt">False</span></code></pre></div>
+<div class="sourceCode" id="cb1"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb1-1" data-line-number="1">not <span class="dt">True</span> <span class="fu">=</span> <span class="dt">False</span></a></code></pre></div>
 <p>For example, in the preceding declaration, using absolute source positions we might describe the the declaration starts at <code>(0,0)</code>, the first argument starts at <code>(0,4)</code> and the RHS of the definition starts at <code>(0,12)</code>. Using relative positioning like in the library, we instead describe the position of each element relative to the position of the previous element. For example, <code>True</code> is 0 lines and 1 column further than <code>not</code> and <code>False</code> is 0 lines and 1 column further than <code>=</code>.</p>
 <p>To keep track of this information we introduce a separate data structure which we call <em>annotations</em>. This data structure keeps track of the relative positions of all AST elements and keywords as well as any necessary information which is not included in the AST in order to exactly reproduce the original source file.</p>
 <p>We hope this approach will make it easy to perform transformations without worrying too much about where exactly everything will end up. With this style, replacing expressions is easy as we don’t have to worry about updating anything at all, just by replacing the expression in the AST produces the correct output.</p>
 <p>Secondly, we perform the reverse of this transformation and produce a source file given an AST and the previously worked out relative positions. Thus a refactoring becomes two things:</p>
-<ol style="list-style-type: decimal">
+<ol type="1">
 <li>A direct modification of the AST.</li>
 <li>A modification of the associated annotations.</li>
 </ol>
 <h1 id="results">Results</h1>
 <p>Much of the last 10 months was spent modifying GHC and <code>ghc-exactprint</code> in order to be able roundtrip any source file successfully. The library has been through many iterations with varying levels of success but finally has reached an understandable and usable core. After testing the program on around 50,000 source files from Hackage, we can say with confidence that at least the foundations are in place for further tooling to be built.</p>
 <p>A glance at the <a href="https://github.com/alanz/ghc-exactprint/tree/master/tests/examples">test suite</a> will show some particularly tricky examples. The IOHCC also provided a good source of test material..</p>
-<div class="sourceCode"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="kw">import </span><span class="dt">Data.Char</span>
-e<span class="fu">=</span><span class="dv">181021504832735228091659724090293195791121747536890433</span>
-
-u(f,m)x<span class="fu">=</span>i(m(x),       [],<span class="kw">let</span>(a,b)<span class="fu">=</span>f(x)       <span class="kw">in</span>(a<span class="fu">:</span>u(f,m)b))
-(v,h)<span class="fu">=</span>(foldr(\x(y    )<span class="ot">-&gt;</span><span class="dv">00</span><span class="fu">+</span><span class="dv">128</span><span class="fu">*</span>y<span class="fu">+</span>x)<span class="dv">0</span>,u(     sp(<span class="dv">25</span>),((<span class="fu">==</span>)<span class="st">&quot;&quot;</span>)))
-<span class="ot">p::</span>(<span class="dt">Integer</span>,<span class="dt">Integer</span> )<span class="ot">-&gt;</span><span class="dt">Integer</span>      <span class="ot">-&gt;</span>     <span class="dt">Integer</span>    <span class="co">--NotInt</span>
-p(n,m)x     <span class="fu">=</span>i(n<span class="fu">==</span><span class="dv">0</span> ,<span class="dv">1</span>,i(z n             ,q(n,m)x,    r(n,m)x))
-i(n,e,d     )<span class="fu">=</span><span class="kw">if</span>(n) <span class="kw">then</span>(e)              <span class="kw">else</span>  (d)    <span class="co">--23+3d4f</span>
-(g,main     ,s,un)<span class="fu">=</span> (\x<span class="ot">-&gt;</span>x,             y(j),\x<span class="ot">-&gt;</span>x<span class="fu">*</span>x,unlines)<span class="co">--)</span>
-j(o)<span class="fu">=</span>i(take(<span class="dv">2</span>)o<span class="fu">==</span>   <span class="st">&quot;e=&quot;</span>,<span class="st">&quot;e=&quot;</span><span class="fu">++</span>t        (drop(<span class="dv">4</span><span class="fu">-</span><span class="dv">2</span>)o),i(d<span class="fu">&gt;</span>e,k,l)o)
-l<span class="fu">=</span>un<span class="fu">.</span>map (show<span class="fu">.</span>p      (e,n)<span class="fu">.</span>v<span class="fu">.</span>map(      fromIntegral<span class="co">{-g-}</span><span class="fu">.</span>ord))<span class="fu">.</span>h
-k<span class="fu">=</span>co<span class="fu">.</span>map(map(chr       <span class="fu">.</span>fromIntegral    )<span class="fu">.</span>w<span class="fu">.</span>p(d,n)<span class="fu">.</span>   read)<span class="fu">.</span>lines
-(t,y)<span class="fu">=</span>(\ (o<span class="fu">:</span>q)<span class="ot">-&gt;</span>              i(o<span class="fu">==</span><span class="ch">'-'</span>  ,<span class="ch">'1'</span>,<span class="ch">'-'</span> )<span class="fu">:</span>   q,interact)
-q(n,m)x<span class="fu">=</span>   mod(s(    p(        div(n)<span class="dv">2</span>, m<span class="co">{-jl-}</span>)x)    )m<span class="co">--hd&amp;&amp;gdb</span>
-(r,z,co)    <span class="fu">=</span>(\(n,   m)x<span class="ot">-&gt;</span>mod(x<span class="fu">*</span>p(n<span class="fu">-</span><span class="dv">1</span>,  m)x)m,even    ,concat)<span class="co">--6</span>
-(w,sp)<span class="fu">=</span>(    u(\x<span class="ot">-&gt;</span>(   mod(x)<span class="dv">128</span>,div(x   )<span class="dv">128</span>),(<span class="fu">==</span><span class="dv">0</span>    )),splitAt)
-
-d<span class="fu">=</span><span class="dv">563347325936</span><span class="fu">+</span><span class="dv">1197371806136556985877790097</span><span class="fu">-</span><span class="dv">563347325936</span>
-n<span class="fu">=</span><span class="dv">351189532146914946493104395525009571831256157560461451</span></code></pre></div>
+<div class="sourceCode" id="cb2"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb2-1" data-line-number="1"><span class="kw">import</span> <span class="dt">Data.Char</span></a>
+<a class="sourceLine" id="cb2-2" data-line-number="2">e<span class="fu">=</span><span class="dv">181021504832735228091659724090293195791121747536890433</span></a>
+<a class="sourceLine" id="cb2-3" data-line-number="3"></a>
+<a class="sourceLine" id="cb2-4" data-line-number="4">u(f,m)x<span class="fu">=</span>i(m(x),       [],<span class="kw">let</span>(a,b)<span class="fu">=</span>f(x)       <span class="kw">in</span>(a<span class="fu">:</span>u(f,m)b))</a>
+<a class="sourceLine" id="cb2-5" data-line-number="5">(v,h)<span class="fu">=</span>(foldr(\x(y    )<span class="ot">-&gt;</span><span class="dv">00</span><span class="fu">+</span><span class="dv">128</span><span class="fu">*</span>y<span class="fu">+</span>x)<span class="dv">0</span>,u(     sp(<span class="dv">25</span>),((<span class="fu">==</span>)<span class="st">&quot;&quot;</span>)))</a>
+<a class="sourceLine" id="cb2-6" data-line-number="6"><span class="ot">p::</span>(<span class="dt">Integer</span>,<span class="dt">Integer</span> )<span class="ot">-&gt;</span><span class="dt">Integer</span>      <span class="ot">-&gt;</span>     <span class="dt">Integer</span>    <span class="co">--NotInt</span></a>
+<a class="sourceLine" id="cb2-7" data-line-number="7">p(n,m)x     <span class="fu">=</span>i(n<span class="fu">==</span><span class="dv">0</span> ,<span class="dv">1</span>,i(z n             ,q(n,m)x,    r(n,m)x))</a>
+<a class="sourceLine" id="cb2-8" data-line-number="8">i(n,e,d     )<span class="fu">=</span><span class="kw">if</span>(n) <span class="kw">then</span>(e)              <span class="kw">else</span>  (d)    <span class="co">--23+3d4f</span></a>
+<a class="sourceLine" id="cb2-9" data-line-number="9">(g,main     ,s,un)<span class="fu">=</span> (\x<span class="ot">-&gt;</span>x,             y(j),\x<span class="ot">-&gt;</span>x<span class="fu">*</span>x,unlines)<span class="co">--)</span></a>
+<a class="sourceLine" id="cb2-10" data-line-number="10">j(o)<span class="fu">=</span>i(take(<span class="dv">2</span>)o<span class="fu">==</span>   <span class="st">&quot;e=&quot;</span>,<span class="st">&quot;e=&quot;</span><span class="fu">++</span>t        (drop(<span class="dv">4</span><span class="fu">-</span><span class="dv">2</span>)o),i(d<span class="fu">&gt;</span>e,k,l)o)</a>
+<a class="sourceLine" id="cb2-11" data-line-number="11">l<span class="fu">=</span>un<span class="fu">.</span>map (show<span class="fu">.</span>p      (e,n)<span class="fu">.</span>v<span class="fu">.</span>map(      fromIntegral<span class="co">{-g-}</span><span class="fu">.</span>ord))<span class="fu">.</span>h</a>
+<a class="sourceLine" id="cb2-12" data-line-number="12">k<span class="fu">=</span>co<span class="fu">.</span>map(map(chr       <span class="fu">.</span>fromIntegral    )<span class="fu">.</span>w<span class="fu">.</span>p(d,n)<span class="fu">.</span>   read)<span class="fu">.</span>lines</a>
+<a class="sourceLine" id="cb2-13" data-line-number="13">(t,y)<span class="fu">=</span>(\ (o<span class="fu">:</span>q)<span class="ot">-&gt;</span>              i(o<span class="fu">==</span><span class="ch">'-'</span>  ,<span class="ch">'1'</span>,<span class="ch">'-'</span> )<span class="fu">:</span>   q,interact)</a>
+<a class="sourceLine" id="cb2-14" data-line-number="14">q(n,m)x<span class="fu">=</span>   mod(s(    p(        div(n)<span class="dv">2</span>, m<span class="co">{-jl-}</span>)x)    )m<span class="co">--hd&amp;&amp;gdb</span></a>
+<a class="sourceLine" id="cb2-15" data-line-number="15">(r,z,co)    <span class="fu">=</span>(\(n,   m)x<span class="ot">-&gt;</span>mod(x<span class="fu">*</span>p(n<span class="fu">-</span><span class="dv">1</span>,  m)x)m,even    ,concat)<span class="co">--6</span></a>
+<a class="sourceLine" id="cb2-16" data-line-number="16">(w,sp)<span class="fu">=</span>(    u(\x<span class="ot">-&gt;</span>(   mod(x)<span class="dv">128</span>,div(x   )<span class="dv">128</span>),(<span class="fu">==</span><span class="dv">0</span>    )),splitAt)</a>
+<a class="sourceLine" id="cb2-17" data-line-number="17"></a>
+<a class="sourceLine" id="cb2-18" data-line-number="18">d<span class="fu">=</span><span class="dv">563347325936</span><span class="fu">+</span><span class="dv">1197371806136556985877790097</span><span class="fu">-</span><span class="dv">563347325936</span></a>
+<a class="sourceLine" id="cb2-19" data-line-number="19">n<span class="fu">=</span><span class="dv">351189532146914946493104395525009571831256157560461451</span></a></code></pre></div>
 <p>Replacements, deletions and rearrangements are very easy using this framework. Most of the time they can be specified by generic traversals (with any generics library) The last piece of the puzzle is to make it just as easy to add new items into the AST. A challenge that I and Alan Zimmerman will now begin to work on.</p>
 <h2 id="future-work">Future Work</h2>
 <ul>
@@ -82,79 +82,79 @@ n<span class="fu">=</span><span class="dv">3511895321469149464931043955250095718
 <h2 id="a-simple-insertion">A simple insertion</h2>
 <p>This simple example inserts a type signature making sure to move comments to the right place. We hope to build a higher level interface on top of this low level manipulation.</p>
 <p>Along with the changes that Alan made to GHC to keep track of all the locations of keywords during parsing there have been two other improvements to enable this work.</p>
-<ol style="list-style-type: decimal">
+<ol type="1">
 <li>Andrew Gibiansky added some more parser entry points which have proved invaluable.</li>
 <li>All the datatypes in the GHC AST now derive Data and Typeable instances which enables generic traversals.</li>
 </ol>
 <p>The following example takes advantage of the former of these two additions.</p>
 <h3 id="input">Input</h3>
-<div class="sourceCode"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="co">-- test.hs</span>
-<span class="kw">module</span> <span class="dt">Foo</span> <span class="kw">where</span>
-
-baz <span class="st">&quot;one&quot;</span> <span class="fu">=</span> <span class="dv">1</span>
-baz <span class="st">&quot;two&quot;</span> <span class="fu">=</span> <span class="dv">2</span></code></pre></div>
+<div class="sourceCode" id="cb3"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb3-1" data-line-number="1"><span class="co">-- test.hs</span></a>
+<a class="sourceLine" id="cb3-2" data-line-number="2"><span class="kw">module</span> <span class="dt">Foo</span> <span class="kw">where</span></a>
+<a class="sourceLine" id="cb3-3" data-line-number="3"></a>
+<a class="sourceLine" id="cb3-4" data-line-number="4">baz <span class="st">&quot;one&quot;</span> <span class="fu">=</span> <span class="dv">1</span></a>
+<a class="sourceLine" id="cb3-5" data-line-number="5">baz <span class="st">&quot;two&quot;</span> <span class="fu">=</span> <span class="dv">2</span></a></code></pre></div>
 <h3 id="program">Program</h3>
-<div class="sourceCode"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="ot">{-# LANGUAGE NamedFieldPuns #-}</span>
-<span class="kw">module</span> <span class="dt">InsertSignature</span> <span class="kw">where</span>
-
-<span class="kw">import </span><span class="dt">Language.Haskell.GHC.ExactPrint</span>
-<span class="kw">import </span><span class="dt">Language.Haskell.GHC.ExactPrint.Parsers</span>
-<span class="kw">import </span><span class="dt">Language.Haskell.GHC.ExactPrint.Types</span>
-<span class="kw">import </span><span class="dt">Language.Haskell.GHC.ExactPrint.Utils</span>
-
-<span class="kw">import qualified</span> <span class="dt">Data.Map</span> <span class="kw">as</span> <span class="dt">Map</span>
-
-<span class="kw">import qualified</span> <span class="dt">HsSyn</span> <span class="kw">as</span> <span class="dt">GHC</span>
-<span class="kw">import qualified</span> <span class="dt">RdrName</span> <span class="kw">as</span> <span class="dt">GHC</span>
-<span class="kw">import qualified</span> <span class="dt">SrcLoc</span> <span class="kw">as</span> <span class="dt">GHC</span>
-
-<span class="kw">type</span> <span class="dt">Module</span> <span class="fu">=</span> <span class="dt">GHC.Located</span> (<span class="dt">GHC.HsModule</span> <span class="dt">GHC.RdrName</span>)
-
-<span class="ot">main ::</span> <span class="dt">IO</span> ()
-main <span class="fu">=</span> <span class="kw">do</span>
-  <span class="dt">Right</span> (as, m) <span class="ot">&lt;-</span> parseModule <span class="st">&quot;test.hs&quot;</span>
-  (finalAs, finalM) <span class="ot">&lt;-</span> addSignature <span class="st">&quot;baz&quot;</span> <span class="st">&quot;baz :: String -&gt; Int&quot;</span> as m
-  putStrLn <span class="fu">$</span> exactPrintWithAnns finalM finalAs
-
-
-<span class="ot">addSignature ::</span> <span class="dt">String</span> <span class="co">-- ^ Function to add a signature for</span>
-             <span class="ot">-&gt;</span> <span class="dt">String</span> <span class="co">-- ^ Type signature</span>
-             <span class="ot">-&gt;</span> <span class="dt">Anns</span>
-             <span class="ot">-&gt;</span> <span class="dt">Module</span>
-             <span class="ot">-&gt;</span> <span class="dt">IO</span> (<span class="dt">Anns</span>, <span class="dt">Module</span>)
-addSignature funid tsig as (<span class="dt">GHC.L</span> l m) <span class="fu">=</span> <span class="kw">do</span>
-  <span class="co">-- Parse new AST element</span>
-  <span class="dt">Right</span> (sigAnns, sig) <span class="ot">&lt;-</span> withDynFlags (\d <span class="ot">-&gt;</span> parseDecl d <span class="st">&quot;template&quot;</span> tsig)
-  <span class="kw">let</span> (before, (bind<span class="fu">:</span> after)) <span class="fu">=</span> break findFunBind (GHC.hsmodDecls m)
-      <span class="co">-- Add new annotations to the map</span>
-      newAs <span class="fu">=</span> Map.union as sigAnns
-      <span class="co">-- Modify the annotations to</span>
-      <span class="co">-- 1. Retain the original spacing</span>
-      <span class="co">-- 2. Make sure that comments are placed correctly.</span>
-      <span class="dt">Just</span> <span class="dt">Ann</span>{annEntryDelta, annPriorComments} <span class="fu">=</span> Map.lookup (mkAnnKey bind) newAs
-      finalAnns <span class="fu">=</span> Map.adjust (\sigAnn <span class="ot">-&gt;</span> sigAnn { annEntryDelta <span class="fu">=</span> annEntryDelta
-                                                , annPriorComments <span class="fu">=</span> annPriorComments })
-                             (mkAnnKey sig)
-                  <span class="fu">.</span> Map.adjust (\bindAnn <span class="ot">-&gt;</span> bindAnn { annEntryDelta <span class="fu">=</span> <span class="dt">DP</span> (<span class="dv">1</span>, <span class="dv">0</span>)
-                                                    , annPriorComments <span class="fu">=</span> [] })
-                               (mkAnnKey bind) <span class="fu">$</span> newAs
-
-      finalMod <span class="fu">=</span> m { GHC.hsmodDecls <span class="fu">=</span> before <span class="fu">++</span> [sig, bind] <span class="fu">++</span> after }
-
-  return (finalAnns, <span class="dt">GHC.L</span> l finalMod)
-
-
-  <span class="kw">where</span>
-<span class="ot">    findFunBind ::</span> <span class="dt">GHC.LHsDecl</span> <span class="dt">GHC.RdrName</span> <span class="ot">-&gt;</span> <span class="dt">Bool</span>
-    findFunBind (<span class="dt">GHC.L</span> _ (<span class="dt">GHC.ValD</span> b<span class="fu">@</span>(<span class="dt">GHC.FunBind</span> {})))
-      <span class="fu">|</span> showGhc (GHC.unLoc (GHC.fun_id  b)) <span class="fu">==</span> funid <span class="fu">=</span> <span class="dt">True</span>
-    findFunBind _ <span class="fu">=</span> <span class="dt">False</span></code></pre></div>
+<div class="sourceCode" id="cb4"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb4-1" data-line-number="1"><span class="ot">{-# LANGUAGE NamedFieldPuns #-}</span></a>
+<a class="sourceLine" id="cb4-2" data-line-number="2"><span class="kw">module</span> <span class="dt">InsertSignature</span> <span class="kw">where</span></a>
+<a class="sourceLine" id="cb4-3" data-line-number="3"></a>
+<a class="sourceLine" id="cb4-4" data-line-number="4"><span class="kw">import</span> <span class="dt">Language.Haskell.GHC.ExactPrint</span></a>
+<a class="sourceLine" id="cb4-5" data-line-number="5"><span class="kw">import</span> <span class="dt">Language.Haskell.GHC.ExactPrint.Parsers</span></a>
+<a class="sourceLine" id="cb4-6" data-line-number="6"><span class="kw">import</span> <span class="dt">Language.Haskell.GHC.ExactPrint.Types</span></a>
+<a class="sourceLine" id="cb4-7" data-line-number="7"><span class="kw">import</span> <span class="dt">Language.Haskell.GHC.ExactPrint.Utils</span></a>
+<a class="sourceLine" id="cb4-8" data-line-number="8"></a>
+<a class="sourceLine" id="cb4-9" data-line-number="9"><span class="kw">import</span> <span class="kw">qualified</span> <span class="dt">Data.Map</span> <span class="kw">as</span> <span class="dt">Map</span></a>
+<a class="sourceLine" id="cb4-10" data-line-number="10"></a>
+<a class="sourceLine" id="cb4-11" data-line-number="11"><span class="kw">import</span> <span class="kw">qualified</span> <span class="dt">HsSyn</span> <span class="kw">as</span> <span class="dt">GHC</span></a>
+<a class="sourceLine" id="cb4-12" data-line-number="12"><span class="kw">import</span> <span class="kw">qualified</span> <span class="dt">RdrName</span> <span class="kw">as</span> <span class="dt">GHC</span></a>
+<a class="sourceLine" id="cb4-13" data-line-number="13"><span class="kw">import</span> <span class="kw">qualified</span> <span class="dt">SrcLoc</span> <span class="kw">as</span> <span class="dt">GHC</span></a>
+<a class="sourceLine" id="cb4-14" data-line-number="14"></a>
+<a class="sourceLine" id="cb4-15" data-line-number="15"><span class="kw">type</span> <span class="dt">Module</span> <span class="fu">=</span> <span class="dt">GHC.Located</span> (<span class="dt">GHC.HsModule</span> <span class="dt">GHC.RdrName</span>)</a>
+<a class="sourceLine" id="cb4-16" data-line-number="16"></a>
+<a class="sourceLine" id="cb4-17" data-line-number="17"><span class="ot">main ::</span> <span class="dt">IO</span> ()</a>
+<a class="sourceLine" id="cb4-18" data-line-number="18">main <span class="fu">=</span> <span class="kw">do</span></a>
+<a class="sourceLine" id="cb4-19" data-line-number="19">  <span class="dt">Right</span> (as, m) <span class="ot">&lt;-</span> parseModule <span class="st">&quot;test.hs&quot;</span></a>
+<a class="sourceLine" id="cb4-20" data-line-number="20">  (finalAs, finalM) <span class="ot">&lt;-</span> addSignature <span class="st">&quot;baz&quot;</span> <span class="st">&quot;baz :: String -&gt; Int&quot;</span> as m</a>
+<a class="sourceLine" id="cb4-21" data-line-number="21">  putStrLn <span class="fu">$</span> exactPrintWithAnns finalM finalAs</a>
+<a class="sourceLine" id="cb4-22" data-line-number="22"></a>
+<a class="sourceLine" id="cb4-23" data-line-number="23"></a>
+<a class="sourceLine" id="cb4-24" data-line-number="24"><span class="ot">addSignature ::</span> <span class="dt">String</span> <span class="co">-- ^ Function to add a signature for</span></a>
+<a class="sourceLine" id="cb4-25" data-line-number="25">             <span class="ot">-&gt;</span> <span class="dt">String</span> <span class="co">-- ^ Type signature</span></a>
+<a class="sourceLine" id="cb4-26" data-line-number="26">             <span class="ot">-&gt;</span> <span class="dt">Anns</span></a>
+<a class="sourceLine" id="cb4-27" data-line-number="27">             <span class="ot">-&gt;</span> <span class="dt">Module</span></a>
+<a class="sourceLine" id="cb4-28" data-line-number="28">             <span class="ot">-&gt;</span> <span class="dt">IO</span> (<span class="dt">Anns</span>, <span class="dt">Module</span>)</a>
+<a class="sourceLine" id="cb4-29" data-line-number="29">addSignature funid tsig as (<span class="dt">GHC.L</span> l m) <span class="fu">=</span> <span class="kw">do</span></a>
+<a class="sourceLine" id="cb4-30" data-line-number="30">  <span class="co">-- Parse new AST element</span></a>
+<a class="sourceLine" id="cb4-31" data-line-number="31">  <span class="dt">Right</span> (sigAnns, sig) <span class="ot">&lt;-</span> withDynFlags (\d <span class="ot">-&gt;</span> parseDecl d <span class="st">&quot;template&quot;</span> tsig)</a>
+<a class="sourceLine" id="cb4-32" data-line-number="32">  <span class="kw">let</span> (before, (bind<span class="fu">:</span> after)) <span class="fu">=</span> break findFunBind (GHC.hsmodDecls m)</a>
+<a class="sourceLine" id="cb4-33" data-line-number="33">      <span class="co">-- Add new annotations to the map</span></a>
+<a class="sourceLine" id="cb4-34" data-line-number="34">      newAs <span class="fu">=</span> Map.union as sigAnns</a>
+<a class="sourceLine" id="cb4-35" data-line-number="35">      <span class="co">-- Modify the annotations to</span></a>
+<a class="sourceLine" id="cb4-36" data-line-number="36">      <span class="co">-- 1. Retain the original spacing</span></a>
+<a class="sourceLine" id="cb4-37" data-line-number="37">      <span class="co">-- 2. Make sure that comments are placed correctly.</span></a>
+<a class="sourceLine" id="cb4-38" data-line-number="38">      <span class="dt">Just</span> <span class="dt">Ann</span>{annEntryDelta, annPriorComments} <span class="fu">=</span> Map.lookup (mkAnnKey bind) newAs</a>
+<a class="sourceLine" id="cb4-39" data-line-number="39">      finalAnns <span class="fu">=</span> Map.adjust (\sigAnn <span class="ot">-&gt;</span> sigAnn { annEntryDelta <span class="fu">=</span> annEntryDelta</a>
+<a class="sourceLine" id="cb4-40" data-line-number="40">                                                , annPriorComments <span class="fu">=</span> annPriorComments })</a>
+<a class="sourceLine" id="cb4-41" data-line-number="41">                             (mkAnnKey sig)</a>
+<a class="sourceLine" id="cb4-42" data-line-number="42">                  <span class="fu">.</span> Map.adjust (\bindAnn <span class="ot">-&gt;</span> bindAnn { annEntryDelta <span class="fu">=</span> <span class="dt">DP</span> (<span class="dv">1</span>, <span class="dv">0</span>)</a>
+<a class="sourceLine" id="cb4-43" data-line-number="43">                                                    , annPriorComments <span class="fu">=</span> [] })</a>
+<a class="sourceLine" id="cb4-44" data-line-number="44">                               (mkAnnKey bind) <span class="fu">$</span> newAs</a>
+<a class="sourceLine" id="cb4-45" data-line-number="45"></a>
+<a class="sourceLine" id="cb4-46" data-line-number="46">      finalMod <span class="fu">=</span> m { GHC.hsmodDecls <span class="fu">=</span> before <span class="fu">++</span> [sig, bind] <span class="fu">++</span> after }</a>
+<a class="sourceLine" id="cb4-47" data-line-number="47"></a>
+<a class="sourceLine" id="cb4-48" data-line-number="48">  return (finalAnns, <span class="dt">GHC.L</span> l finalMod)</a>
+<a class="sourceLine" id="cb4-49" data-line-number="49"></a>
+<a class="sourceLine" id="cb4-50" data-line-number="50"></a>
+<a class="sourceLine" id="cb4-51" data-line-number="51">  <span class="kw">where</span></a>
+<a class="sourceLine" id="cb4-52" data-line-number="52"><span class="ot">    findFunBind ::</span> <span class="dt">GHC.LHsDecl</span> <span class="dt">GHC.RdrName</span> <span class="ot">-&gt;</span> <span class="dt">Bool</span></a>
+<a class="sourceLine" id="cb4-53" data-line-number="53">    findFunBind (<span class="dt">GHC.L</span> _ (<span class="dt">GHC.ValD</span> b<span class="fu">@</span>(<span class="dt">GHC.FunBind</span> {})))</a>
+<a class="sourceLine" id="cb4-54" data-line-number="54">      <span class="fu">|</span> showGhc (GHC.unLoc (GHC.fun_id  b)) <span class="fu">==</span> funid <span class="fu">=</span> <span class="dt">True</span></a>
+<a class="sourceLine" id="cb4-55" data-line-number="55">    findFunBind _ <span class="fu">=</span> <span class="dt">False</span></a></code></pre></div>
 <h3 id="result">Result</h3>
-<div class="sourceCode"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="kw">module</span> <span class="dt">Foo</span> <span class="kw">where</span>
-
-<span class="ot">baz ::</span> <span class="dt">String</span> <span class="ot">-&gt;</span> <span class="dt">Int</span>
-baz <span class="st">&quot;one&quot;</span> <span class="fu">=</span> <span class="dv">1</span>
-baz <span class="st">&quot;two&quot;</span> <span class="fu">=</span> <span class="dv">2</span></code></pre></div>
+<div class="sourceCode" id="cb5"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb5-1" data-line-number="1"><span class="kw">module</span> <span class="dt">Foo</span> <span class="kw">where</span></a>
+<a class="sourceLine" id="cb5-2" data-line-number="2"></a>
+<a class="sourceLine" id="cb5-3" data-line-number="3"><span class="ot">baz ::</span> <span class="dt">String</span> <span class="ot">-&gt;</span> <span class="dt">Int</span></a>
+<a class="sourceLine" id="cb5-4" data-line-number="4">baz <span class="st">&quot;one&quot;</span> <span class="fu">=</span> <span class="dv">1</span></a>
+<a class="sourceLine" id="cb5-5" data-line-number="5">baz <span class="st">&quot;two&quot;</span> <span class="fu">=</span> <span class="dv">2</span></a></code></pre></div>
 
         <div id="footer">
           <a href="../atom.xml">Feed</a>
