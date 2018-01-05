@@ -8,8 +8,249 @@
         <name>Matthew Pickering</name>
         <email>matthewtpickering@gmail.com</email>
     </author>
-    <updated>2017-05-17T00:00:00Z</updated>
+    <updated>2018-01-05T00:00:00Z</updated>
     <entry>
+    <title>Using a development version of GHC with nix</title>
+    <link href="http://mpickering.github.io/posts/2018-01-05-ghchead-nix.html" />
+    <id>http://mpickering.github.io/posts/2018-01-05-ghchead-nix.html</id>
+    <published>2018-01-05T00:00:00Z</published>
+    <updated>2018-01-05T00:00:00Z</updated>
+    <summary type="html"><![CDATA[<h2 class="post"> Using a development version of GHC with nix </h2>
+<div class="info">
+    Posted on January  5, 2018
+    
+</div>
+
+<p>Most documentation for using nix with Haskell concentrates on quite simple use cases such as how to modify or add new dependencies. What about when you want to do something more complicated? In this post we look at combining modifications from different sources. The goal is to create a package set which can be used to compile packages with HEAD.</p>
+<!--more-->
+<p>The main problem which we are going to solve is that many packages need modifying in order to compile with HEAD. There is already a nix package which builds a development version of the compiler and a corresponding package set but the utility is limited as many packages will fail to compile.</p>
+<p>For example, at the time of writing this post, if we try and build the <code>primitive</code> package, the build fails due to a missing <code>Semigroup</code> instance.</p>
+<p>If you are impatient, here is the <a href="https://gist.github.com/mpickering/209354a6affe2883ca07ffc4f4084af6">complete example</a> we are going to up with. We create a new top-level attribute <code>new-ghcHEAD</code> which we can use to build packages with <code>ghcHEAD</code>.</p>
+<div class="sourceCode"><pre class="sourceCode nix"><code class="sourceCode bash"><span class="bu">let</span>
+  <span class="ex">nixpkgs</span> = import <span class="op">&lt;</span>nixpkgs<span class="op">&gt;</span> <span class="dt">{}</span><span class="kw">;</span>
+  <span class="ex">patchRepo</span> =
+    <span class="ex">nixpkgs.fetchFromGitHub</span> {
+      <span class="ex">owner</span> = <span class="st">&quot;mpickering&quot;</span><span class="kw">;</span>
+      <span class="ex">repo</span> = <span class="st">&quot;head.hackage&quot;</span><span class="kw">;</span>
+      <span class="fu">rev</span> = <span class="st">&quot;767dcf11b367ccff4a9fcd55df9c2432cd485fbe&quot;</span><span class="kw">;</span>
+      <span class="ex">sha256</span> = <span class="st">&quot;1cdrcw7grpc2dyxnb7a5bg9mi1h7qnblcibi91s348034zf7a0vj&quot;</span><span class="kw">;</span>};
+
+  <span class="ex">patchDir</span> = <span class="st">&quot;</span><span class="va">${patchRepo}</span><span class="st">/patches&quot;</span><span class="kw">;</span>
+  <span class="ex">patchScript</span> = <span class="st">&quot;</span><span class="va">${patchRepo}</span><span class="st">/scripts/overrides.nix&quot;</span><span class="kw">;</span>
+<span class="kw">in</span>
+<span class="ex">self</span>: super:
+<span class="kw">{</span>
+  <span class="ex">patches</span> = super.callPackage patchScript
+              <span class="kw">{</span> <span class="ex">patches</span> = patchDir<span class="kw">;</span> <span class="kw">}</span>;
+
+  <span class="ex">new-ghcHEAD</span> =
+    <span class="bu">let</span> ghcPackageOverrides = super.callPackage self.patches <span class="dt">{}</span><span class="kw">;</span>
+        <span class="ex">localOverrides</span>      =
+          <span class="ex">sel</span>: sup: { haskell-src-exts
+                        = <span class="ex">sel.callHackage</span> <span class="st">&quot;haskell-src-exts&quot;</span> <span class="st">&quot;1.20.1&quot;</span> <span class="dt">{}</span><span class="kw">;</span>
+                      <span class="ex">mkDerivation</span>
+                        = <span class="ex">drv</span>: sup.mkDerivation (drv //
+                             <span class="kw">{</span> <span class="ex">jailbreak</span> = true<span class="kw">;</span> <span class="ex">doHaddock</span> = false<span class="kw">;}</span>);
+                     <span class="kw">}</span>;
+
+    <span class="kw">in</span> <span class="ex">super.haskell.packages.ghcHEAD.extend</span>
+         <span class="kw">(</span><span class="ex">self.lib.composeExtensions</span> localOverrides ghcPackageOverrides<span class="kw">)</span>;
+}</code></pre></div>
+<h1 id="step-by-step">Step-by-step</h1>
+<p>We are going to use an overlay in order to define the new package set. An overlay is the idiomatic way to extend and change the top-level nixpkgs set. It is a function which takes two arguments, the result of performing the modification and the old unmodified package.</p>
+<div class="sourceCode"><pre class="sourceCode nix"><code class="sourceCode bash"><span class="ex">self</span>: super: {
+  <span class="ex">my-cool-new-attribute</span> = ...<span class="kw">;</span>
+}</code></pre></div>
+<p>As such, <code>super</code> will not contain <code>my-cool-new-attribute</code> but <code>self</code> will.</p>
+<p>There are two ways to easily use an overlay.</p>
+<ol style="list-style-type: decimal">
+<li>Pass it as an argument when importing nixpkgs.<br />
+<code>let pkgs = import &lt;nixpkgs&gt; {overlays = [overlay1 overlay2 ..]};    in ...</code></li>
+<li>Place the overlay in <code>~/.config/nixpkgs/overlays/</code></li>
+</ol>
+<p>More details about using overlays can be found in the <a href="https://nixos.org/nixpkgs/manual/#sec-overlays-install">user manual</a>.</p>
+<h1 id="extending-a-package-set">Extending a package set</h1>
+<p>We’ll start from a simple template which demonstrates the concept of extending a Haskell package set like you might find in other documentation. We start from the <code>ghcHEAD</code> package set (<code>haskell.packages.ghcHEAD</code>) and then call the <code>extend</code> attribute with the extension function.</p>
+<p>The extension function takes two arguments, the extended haskell package set and the original haskell package set much like an overlay.</p>
+<div class="sourceCode"><pre class="sourceCode nix"><code class="sourceCode bash"><span class="ex">self</span>: super: {
+  <span class="ex">new-ghcHEAD</span> =
+    <span class="bu">let</span> ghcPackageOverrides = sel: sup: <span class="dt">{}</span><span class="kw">;</span>
+    <span class="kw">in</span> <span class="ex">super.haskell.packages.ghcHEAD.extend</span> ghcPackageOverrides <span class="kw">;</span>
+}</code></pre></div>
+<p>If we then want to fix a specific version of a package we can modify <code>ghcPackageOverrides</code> like so:</p>
+<div class="sourceCode"><pre class="sourceCode nix"><code class="sourceCode bash"><span class="ex">super</span>: self: {
+  <span class="ex">new-ghcHEAD</span> =
+    <span class="bu">let</span> ghcPackageOverrides =
+          <span class="ex">sel</span>: sup: {
+            <span class="ex">haskell-src-exts</span> =
+              <span class="ex">sup.callHackage</span> <span class="st">&quot;haskell-src-exts&quot;</span> <span class="st">&quot;1.20.1&quot;</span> <span class="dt">{}</span><span class="kw">;</span>
+          };
+    <span class="kw">in</span> <span class="ex">super.haskell.packages.ghcHEAD.extend</span> ghcPackageOverrides<span class="kw">;</span>
+}</code></pre></div>
+<p>When using the <code>new-ghcHEAD</code> package set, we will now install <code>haskell-src-exts-1.20.1</code> rather than <code>haskell-src-exts-1.19.1</code> if it is needed as a dependency.</p>
+<h2 id="more-extensions">More extensions</h2>
+<p>Manually redefining each package to get it to build is tedious. Instead, we’re going to use the patches from <a href="https://github.com/hvr/head.hackage"><code>head.hackage</code></a> in order to generate a lot of modifications automatically. What we need are the patches in <code>head.hackage/patches</code> which enable packages to build with the bleeding edge version of the compiler.</p>
+<p>In <code>head.hackage/scripts</code> there are the necessary files in order to use the patches with nix. <code>overrides.nix</code> is a wrapper which runs a haskell executable in order to generate a nix expression explaining the package modifications. The result of the derivation is a file which we can then import into our overlay directly.</p>
+<h3 id="using-a-local-copy-of-head.hackage">Using a local copy of <code>head.hackage</code></h3>
+<p>You will probably want to clone <code>head.hackage</code> locally so that you can add and modify patches as necessary to get your project to compile.</p>
+<p>In that case, instead of specifying a url, we just specify the correct paths for the packaging script and patch directory.</p>
+<p>For example:</p>
+<div class="sourceCode"><pre class="sourceCode nix"><code class="sourceCode bash"><span class="ex">self</span>: super: {
+  <span class="ex">patches</span> = super.callPackage <span class="op">&lt;</span>path-to-overrides.nix<span class="op">&gt;</span>
+              <span class="kw">{</span> <span class="ex">patches</span> = <span class="op">&lt;</span>path-to-patch-dir<span class="op">&gt;</span><span class="kw">;</span> <span class="kw">}</span>;
+
+  <span class="ex">new-ghcHEAD</span> =
+    <span class="bu">let</span> ghcPackageOverrides = super.callPackage self.patches <span class="dt">{}</span><span class="kw">;</span>
+    <span class="kw">in</span> <span class="ex">super.haskell.packages.ghcHEAD.extend</span> ghcPackageOverrides<span class="kw">;</span>
+}</code></pre></div>
+<h3 id="using-a-remote-copy-of-head.hackage">Using a remote copy of <code>head.hackage</code></h3>
+<p>If you don’t want to maintain a local clone of the repo then you can also fetch it from wherever you like. For example, here I fetch a specific branch from my clone of the repo which contains some nix specific patches.</p>
+<div class="sourceCode"><pre class="sourceCode nix"><code class="sourceCode bash"><span class="bu">let</span>
+  <span class="ex">nixpkgs</span> = import <span class="op">&lt;</span>nixpkgs<span class="op">&gt;</span> <span class="dt">{}</span><span class="kw">;</span>
+  <span class="ex">patchRepo</span> = nixpkgs.fetchFromGitHub {
+    <span class="ex">owner</span> = <span class="st">&quot;mpickering&quot;</span><span class="kw">;</span>
+    <span class="ex">repo</span> = <span class="st">&quot;head.hackage&quot;</span><span class="kw">;</span>
+    <span class="fu">rev</span> = <span class="st">&quot;767dcf11b367ccff4a9fcd55df9c2432cd485fbe&quot;</span><span class="kw">;</span>
+    <span class="ex">sha256</span> = <span class="st">&quot;1cdrcw7grpc2dyxnb7a5bg9mi1h7qnblcibi91s348034zf7a0vj&quot;</span><span class="kw">;</span>};
+
+  <span class="ex">patchDir</span> = <span class="st">&quot;</span><span class="va">${patchRepo}</span><span class="st">/patches&quot;</span><span class="kw">;</span>
+  <span class="ex">patchScript</span> = <span class="st">&quot;</span><span class="va">${patchRepo}</span><span class="st">/scripts/overrides.nix&quot;</span><span class="kw">;</span>
+<span class="kw">in</span>
+<span class="ex">self</span>: super:
+  <span class="kw">{</span>
+  <span class="ex">patches</span> = super.callPackage patchScript
+              <span class="kw">{</span> <span class="ex">patches</span> = patchDir<span class="kw">;</span> <span class="kw">}</span>;
+
+  <span class="ex">new-ghcHEAD</span> =
+    <span class="bu">let</span> ghcPackageOverrides = super.callPackage self.patches <span class="dt">{}</span><span class="kw">;</span>
+    <span class="kw">in</span> <span class="ex">super.haskell.packages.ghcHEAD.extend</span> ghcPackageOverrides<span class="kw">;</span>
+<span class="kw">}</span></code></pre></div>
+<h2 id="combining-head.hackage-modifications-with-local-modifications">Combining <code>head.hackage</code> modifications with local modifications</h2>
+<p>Unfortunately, this is not quite enough as it is sometimes necessary to further modify packages in order to get them to compile. The most obvious way is that a lot of packages have restrictive version bounds but compile fine with newer versions of libraries. So, in order to get around this we preemptively need to jailbreak all packages.</p>
+<p>Jailbreaking is a process which removes all version bounds from a package. This is safe to do as each package set only contains one version of each dependency anyway.</p>
+<p>We introduce a new extension function <code>localOverrides</code> which will contain our specific modifications which we don’t want to include in <code>head.hackage</code>. We will first only contain one specific modification which chooses a new version of <code>haskell-src-exts</code>.</p>
+<div class="sourceCode"><pre class="sourceCode nix"><code class="sourceCode bash"><span class="ex">self</span>: super: {
+  <span class="ex">patches</span> = super.callPackage <span class="op">&lt;</span>path-to-overrides.nix<span class="op">&gt;</span>
+              <span class="kw">{</span> <span class="ex">patches</span> = <span class="op">&lt;</span>path-to-patch-dir<span class="op">&gt;</span><span class="kw">;</span> <span class="kw">}</span>;
+
+  <span class="ex">new-ghcHEAD</span> =
+    <span class="bu">let</span> ghcPackageOverrides = super.callPackage self.patches <span class="dt">{}</span><span class="kw">;</span>
+        <span class="ex">localOverrides</span>      =
+          <span class="ex">sel</span>: sup:
+            <span class="kw">{</span> <span class="ex">haskell-src-exts</span>
+                = <span class="ex">sel.callHackage</span> <span class="st">&quot;haskell-src-exts&quot;</span> <span class="st">&quot;1.20.1&quot;</span> <span class="dt">{}</span><span class="kw">;</span>
+            <span class="kw">}</span>;
+    <span class="kw">in</span> <span class="ex">super.haskell.packages.ghcHEAD.extend</span>
+        <span class="kw">(</span><span class="ex">self.lib.composeExtensions</span> localOverrides ghcPackageOverrides<span class="kw">)</span>;
+}</code></pre></div>
+<p>We need to use <code>composeExtensions</code> so that the attributes we locally modify are then also modified by <code>head.hackage</code> incrementally.</p>
+<h3 id="modifying-mkderivation">Modifying <code>mkDerivation</code></h3>
+<p>Finally, we will modify <code>mkDerivation</code> in order to jailbreak packages and not run <code>haddock</code> in order to speed up the builds.</p>
+<div class="sourceCode"><pre class="sourceCode nix"><code class="sourceCode bash"><span class="ex">self</span>: super: {
+  <span class="ex">patches</span> = super.callPackage <span class="op">&lt;</span>path-to-overrides.nix<span class="op">&gt;</span>
+              <span class="kw">{</span> <span class="ex">patches</span> = <span class="op">&lt;</span>path-to-patch-dir<span class="op">&gt;</span><span class="kw">;</span> <span class="kw">}</span>;
+
+  <span class="ex">new-ghcHEAD</span> =
+    <span class="bu">let</span> ghcPackageOverrides = super.callPackage self.patches <span class="dt">{}</span><span class="kw">;</span>
+        <span class="ex">localOverrides</span>      =
+          <span class="ex">sel</span>: sup: {
+            <span class="ex">haskell-src-exts</span>
+              = <span class="ex">sel.callHackage</span> <span class="st">&quot;haskell-src-exts&quot;</span> <span class="st">&quot;1.20.1&quot;</span> <span class="dt">{}</span>
+            <span class="ex">mkDerivation</span>
+              = <span class="ex">drv</span>: sup.mkDerivation (drv //
+                  <span class="kw">{</span> <span class="ex">jailbreak</span> = true<span class="kw">;</span> <span class="ex">doHaddock</span> = false<span class="kw">;}</span>);
+          };
+
+    <span class="kw">in</span> <span class="ex">super.haskell.packages.ghcHEAD.extend</span>
+        <span class="kw">(</span><span class="ex">self.lib.composeExtensions</span> localOverrides ghcPackageOverrides<span class="kw">)</span>;
+}</code></pre></div>
+<h2 id="testing">Testing</h2>
+<p>We can now test our new attribute using <code>nix-shell</code>. For example, let’s try to provision a version of the compiler with <code>primitive</code> available.</p>
+<pre><code>&gt; nix-shell -p &quot;new-ghcHEAD.ghcWithPackages (ps: [ps.primitive])&quot;
+...</code></pre>
+<p>Success!</p>
+<hr />
+<h1 id="appendix">Appendix</h1>
+<h2 id="addendum-what-do-i-do-if-a-patch-from-head.hackage-doesnt-apply">Addendum: What do I do if a patch from <code>head.hackage</code> doesn’t apply?</h2>
+<p>There are some situations where patches from <code>head.hackage</code> fail to apply properly. The usual cause is that patches in the <code>head.hackage</code> repo apply to unmodified tarballs but the nix build process tries to apply patches after patching the cabal file to take into account package revisions.</p>
+<p>The workaround for this is to just create a new nix-specific patch in your local directory. :)</p>
+<h2 id="addendum-how-do-i-make-a-patch-to-contribute-to-head.hackage">Addendum: How do I make a patch to contribute to <code>head.hackage</code>?</h2>
+<pre><code>cabal get haskell-src-exts-1.20.1 &lt;--pristine&gt;
+cd haskell-src-exts-1.20.1
+git init
+git add .
+&lt;Make the simple change&gt;
+git diff &gt; &lt;patchDir&gt;/haskell-src-exts-1.20.1.patch</code></pre>
+<p>Use the <code>--pristine</code> flag if you intend to contribute the patch upstream! This will fetch the package without applying cabal file revisions.</p>
+<h2 id="addendum-how-does-overrides.nix-work">Addendum: How does <code>overrides.nix</code> work?</h2>
+<p><code>overrides.nix</code> is a simple derivation which packages a single haskell script. The haskell script scans a directory and generates the correct overrides for the given patches. The wrapper script then stores the overrides and copies the patch files into the nix store.</p>
+<div class="sourceCode"><pre class="sourceCode nix"><code class="sourceCode bash"><span class="kw">{</span> <span class="ex">stdenv</span>
+  , <span class="ex">haskell</span>
+  , <span class="ex">patches</span>  # A directory containing patch files used to build packages
+             <span class="co"># it can either be a local directory or fetched from the web</span>
+<span class="kw">}</span>:
+<span class="bu">let</span>
+  <span class="ex">ghc</span> = haskell.packages.ghc822.ghcWithPackages (ps: with ps<span class="kw">;</span>
+          [ ]);
+<span class="kw">in</span>
+
+<span class="ex">stdenv.mkDerivation</span> {
+
+  <span class="ex">name</span> = <span class="st">&quot;hs-generate-overrides-0.1&quot;</span><span class="kw">;</span>
+
+  <span class="ex">src</span> = ./generate-nix-overrides.hs<span class="kw">;</span>
+
+  <span class="ex">preUnpack</span> = <span class="st">&#39;&#39;</span>mkdir hs-generate-overrides<span class="st">&#39;&#39;</span><span class="kw">;</span>
+  <span class="ex">buildInputs</span> = [ ghc ]<span class="kw">;</span>
+
+  <span class="ex">unpackCmd</span> = <span class="st">&#39;&#39;</span>
+    <span class="fu">cp</span> <span class="va">$curSrc</span> ./hs-generate-overrides
+    <span class="fu">cp</span> -r <span class="va">${patches}</span> ./hs-generate-overrides/patches
+    <span class="va">sourceRoot=</span>hs-generate-overrides;
+  <span class="st">&#39;&#39;</span>;
+
+  <span class="ex">buildPhase</span> = <span class="st">&#39;&#39;</span>
+    <span class="ex">ghc</span> <span class="va">$src</span> -o generate
+    <span class="ex">./generate</span> <span class="va">$script</span>/patches patches <span class="op">&gt;</span> patches.nix
+  <span class="st">&#39;&#39;</span>;
+
+  <span class="ex">outputs</span> = [<span class="st">&quot;out&quot;</span> <span class="st">&quot;script&quot;</span>]<span class="kw">;</span>
+
+  <span class="ex">installPhase</span> = <span class="st">&#39;&#39;</span>
+    <span class="fu">cp</span> patches.nix <span class="va">$out</span>
+    <span class="ex">ensureDir</span> <span class="va">$script</span>/patches
+    <span class="fu">cp</span> -r patches <span class="va">$script</span>/patches
+  <span class="st">&#39;&#39;</span>;
+
+}</code></pre></div>
+<h2 id="addendum-how-is-jailbreaking-different-to-cabals---allow-newer">Addendum: How is jailbreaking different to cabal’s <code>--allow-newer</code>?</h2>
+<p>The goal of jailbreaking and <code>--allow-newer</code> are the same, to remove restrictive bounds on packages.</p>
+<p>Jailbreaking achieves this by parsing and rewriting the cabal file to remove nearly all bounds. This fits better into the nix ecosystem where there is exactly one version of each package anyway so additional version bounds are irrelevant.</p>
+<p><code>--allow-newer</code> influences the solver in order to pick a package set as if the package didn’t have any upper bounds.</p>
+<h2 id="addendum-why-are-you-using-extend-rather-than-override.">Addendum: Why are you using <code>extend</code> rather than <code>override</code>.</h2>
+<p><code>override</code> is a general nix mechanism to override arguments to a function. In the haskell package set case, one of the arguments to the package set is called <code>overrides</code>, which is a function explaining how we want to modify the package set further.</p>
+<p>However, there is one big downside to using this mechanism, it is not possible to repeatedly override the package set with more and more extensions as each time you call <code>override</code> you <em>replace</em> the argument.</p>
+<p>For more explanation of the difference see <a href="https://github.com/NixOS/nixpkgs/issues/25887">this issue</a> on the nixpkgs issue tracker.</p>
+<h2 id="addendum-what-to-do-if-callhackage-doesnt-find-the-latest-version-of-a-package">Addendum: What to do if <code>callHackage</code> doesn’t find the latest version of a package</h2>
+<p>If <code>callHackage</code> doesn’t find a package which you know is on hackage then it is because the <code>all-cabal-hashes</code> attribute is too old. In order to override it, you can simply add a new line to your overlay with an updated copy.</p>
+<p>For example, this version is from <code>2018-01-05</code>:</p>
+<pre><code>all-cabal-hashes = super.fetchurl {
+  url    = &quot;https://github.com/commercialhaskell/all-cabal-hashes/archive/e1089e56e666c2a0fe82f840d3cc7f49b9c9fe9b.tar.gz&quot;;
+  sha256 = &quot;0qbzdngm4q8cmwydnrg7jvipw39nb1mjxw95vw6f789874002kn1&quot;;
+};</code></pre>
+<h2 id="addendum-how-to-update-the-ghchead-derivation">Addendum: How to update the ghcHEAD derivation</h2>
+<p>If you want to use a more recent version of HEAD then you have to update the ghcHEAD derivation. It can be found at <code>development/compilers/ghc/head.nix</code>.</p>
+<p>You then need to modify three things.</p>
+<ol style="list-style-type: decimal">
+<li>Correct the version of the compiler by modifying the <code>version</code> argument.</li>
+<li>Set <code>rev</code> to the git commit identifier of the revision you want to build.</li>
+<li><p>Correct the <code>sha256</code> attribute by running <code>nix-prefetch-git</code> and copying the resulting hash.</p>
+<pre><code>nix-shell -p nix-prefetch-git
+ --run &quot;nix-prefetch-git --fetch-submodules git://git.haskell.org/ghc.git &lt;rev&gt;&quot;</code></pre></li>
+</ol>
+]]></summary>
+</entry>
+<entry>
     <title>INLIN(E)ing: A case study</title>
     <link href="http://mpickering.github.io/posts/2017-05-17-inlining-case-study.html" />
     <id>http://mpickering.github.io/posts/2017-05-17-inlining-case-study.html</id>
@@ -1013,123 +1254,6 @@ lit2 <span class="fu">=</span> lit <span class="dv">2</span>
 <ol>
 <li id="fn1"><p>For instance <code>a :&lt;: (a :+: b) :+: c</code> would not typecheck.<a href="#fnref1">↩</a></p></li>
 <li id="fn2"><p>In fact, it is possible to promote simple functions using the <a href="http://hackage.haskell.org/package/singletons">singletons</a> package by Richard Eisenberg.<a href="#fnref2">↩</a></p></li>
-</ol>
-</div>
-]]></summary>
-</entry>
-<entry>
-    <title>Pain Free Unfix with Pattern Synonyms</title>
-    <link href="http://mpickering.github.io/posts/2014-11-27-pain-free.html" />
-    <id>http://mpickering.github.io/posts/2014-11-27-pain-free.html</id>
-    <published>2014-11-27T00:00:00Z</published>
-    <updated>2014-11-27T00:00:00Z</updated>
-    <summary type="html"><![CDATA[<h2 class="post"> Pain Free Unfix with Pattern Synonyms </h2>
-<div class="info">
-    Posted on November 27, 2014
-    
-</div>
-
-<p>Pattern synonyms are a great feature.</p>
-<p>It is common to define closed data types. Later if one wants to annotate their syntax tree or pass along any other additional information this can cause significant problems. A clean solution is to redefine the data type using open recursion and then taking the fixed point.<a href="#fn1" class="footnoteRef" id="fnref1"><sup>1</sup></a> This approach allows great flexibility and access to uniform <a href="http://hackage.haskell.org/package/recursion-schemes">recursion schemes</a> but used to come at a cost. If the library writer had exposed the constructors, all existing user code would break with these changes. Since GHC 7.10, patterns allow us to completely swap out the underlying data type whilst maintaining the original interface.</p>
-<!--more-->
-<p>Here’s how. Consider Hutton’s Razor.</p>
-<div class="sourceCode"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="kw">data</span> <span class="dt">Hutton</span> <span class="fu">=</span> <span class="dt">Int</span> <span class="dt">Int</span> <span class="fu">|</span> <span class="dt">Add</span> <span class="dt">Hutton</span> <span class="dt">Hutton</span></code></pre></div>
-<p>Typically there will be many different operations defined as traversals of the syntax tree. One might typically be an evaluator.</p>
-<div class="sourceCode"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="ot">eval ::</span> <span class="dt">Hutton</span> <span class="ot">-&gt;</span> <span class="dt">Int</span>
-eval (<span class="dt">Int</span> n) <span class="fu">=</span> n
-eval (<span class="dt">Add</span> n m) <span class="fu">=</span> eval n <span class="fu">+</span> eval m</code></pre></div>
-<p>Later, we might want to define the unfixed version of <code>Hutton</code>.</p>
-<div class="sourceCode"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="kw">data</span> <span class="dt">HuttonF</span> a <span class="fu">=</span> <span class="dt">IntF</span> <span class="dt">Int</span> <span class="fu">|</span> <span class="dt">AddF</span> a a <span class="kw">deriving</span> <span class="dt">Functor</span>
-
-<span class="kw">newtype</span> <span class="dt">Fix</span> f <span class="fu">=</span> <span class="dt">Fix</span> (f (<span class="dt">Fix</span> f))
-
-<span class="kw">type</span> <span class="dt">Hutton</span> <span class="fu">=</span> <span class="dt">Fix</span> <span class="dt">HuttonF</span></code></pre></div>
-<p>Unfortunately, we can no longer use any of our existing functions. Fortunately, using pattern synonyms we can regain this functionality.</p>
-<div class="sourceCode"><pre class="sourceCode haskell"><code class="sourceCode haskell">pattern (<span class="dt">Int</span> n) <span class="fu">=</span> <span class="dt">Fix</span> (<span class="dt">IntF</span> n)
-pattern (<span class="dt">Add</span> x y) <span class="fu">=</span> <span class="dt">Fix</span> (<span class="dt">AddF</span> x y)</code></pre></div>
-<p>This is as far as GHC 7.8 will take us. To move further we need to take advantage of <a href="https://ghc.haskell.org/trac/ghc/ticket/8581">explicitly-bidirectional pattern synonyms</a> which are set to be introduced in GHC 7.10. These allow us to explicitly specify the constructor as well as the pattern. Useless in this case but what if we also wanted to annotate out AST?</p>
-<p>To do so it is usual to define a product type, <code>Annotate</code>,</p>
-<div class="sourceCode"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="kw">data</span> <span class="dt">Annotate</span> f <span class="fu">=</span> <span class="dt">Annotate</span> <span class="dt">Label</span> (f (<span class="dt">Annotate</span> f))</code></pre></div>
-<p>which we can then take the fixed point to get an annotated AST.</p>
-<div class="sourceCode"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="kw">data</span> <span class="dt">Annotated</span> <span class="fu">=</span> <span class="dt">Annotate</span> <span class="dt">Hutton</span></code></pre></div>
-<p>Now we want to be able to keep using our existing functions for both annotated and unannotated values. The catch is that we can only have one pattern which corresponds to each constructor. To get around this we can use view patterns and a type class in order to use the same pattern for both our annotated and unannotated AST.</p>
-<p><code>View</code> provides an injection and projection function. Then defining suitable instances for <code>Annotated</code> and <code>Hutton</code>, we can reuse all of our previous definitions.</p>
-<div class="sourceCode"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="kw">class</span> <span class="dt">View</span> a <span class="kw">where</span>
-<span class="ot">  proj ::</span> a <span class="ot">-&gt;</span> <span class="dt">HuttonF</span> a
-<span class="ot">  inj ::</span> <span class="dt">HuttonF</span> a <span class="ot">-&gt;</span> a
-
-pattern <span class="dt">I</span> n <span class="ot">&lt;-</span> (proj <span class="ot">-&gt;</span> <span class="dt">IF</span> n) <span class="kw">where</span>
-  <span class="dt">I</span> n <span class="fu">=</span> inj (<span class="dt">IF</span> n)
-
-pattern <span class="dt">Add</span> a b <span class="ot">&lt;-</span> (proj <span class="ot">-&gt;</span> <span class="dt">AddF</span> a b) <span class="kw">where</span>
-  <span class="dt">Add</span> a b <span class="fu">=</span> inj (<span class="dt">AddF</span> a b)
-
-
-<span class="kw">instance</span> <span class="dt">View</span> <span class="dt">Hutton</span> <span class="kw">where</span>
-  proj <span class="fu">=</span> unFix
-  inj <span class="fu">=</span> <span class="dt">Fix</span>
-
-<span class="kw">instance</span> <span class="dt">View</span> <span class="dt">Annotated</span> <span class="kw">where</span>
-  proj (<span class="dt">Annotated</span> _ e) <span class="fu">=</span> e
-  inj v <span class="fu">=</span> <span class="dt">Annotated</span> (mkLabel v) v
-
-<span class="ot">mkLabel ::</span> <span class="dt">HuttonF</span> <span class="dt">Annotated</span> <span class="ot">-&gt;</span> <span class="dt">Label</span></code></pre></div>
-<p>So far so good. Let’s test out our sample program.</p>
-<div class="sourceCode"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="ot">eval ::</span> <span class="dt">View</span> a <span class="ot">=&gt;</span> a <span class="ot">-&gt;</span> <span class="dt">Int</span>
-eval (<span class="dt">I</span> n) <span class="fu">=</span> n
-eval (<span class="dt">Add</span> a b) <span class="fu">=</span> eval a <span class="fu">+</span> eval b
-
-p1 <span class="fu">=</span> <span class="dt">Add</span> (<span class="dt">I</span> <span class="dv">5</span>) (<span class="dt">I</span> <span class="dv">6</span>)
-
-main <span class="fu">=</span> <span class="kw">do</span>
-  <span class="kw">let</span> p2 <span class="fu">=</span><span class="ot"> p1 ::</span> <span class="dt">Hutton</span>
-  <span class="kw">let</span> p3 <span class="fu">=</span><span class="ot"> p1 ::</span> <span class="dt">Annotated</span>
-  print (eval p2)
-  print (eval p3)
-
-<span class="fu">&gt;</span> <span class="fu">./</span>patterns
-<span class="dv">11</span>
-<span class="dv">11</span></code></pre></div>
-<p>To take stock for a moment - using technology available in GHC 7.8 we were able to swap out our standard data type and replace it with an unfixed variant. Then with machinery available to us in GHC 7.10, we were able to vary this underlying type as long as we could provide suitable mapping functions.</p>
-<p>Looking back at our definition of <code>inj</code> for <code>Annotated</code>, depending on what we want the label to be, it could make little sense to fill in the annotation whilst we are building the AST. It seems sensible to separate our <code>View</code> typeclass into two separate classes, one for projection and one for injection as they might not both make sense for all data types. Indeed if we introduce one more example, it is clear that they don’t.</p>
-<div class="sourceCode"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="kw">data</span> <span class="dt">Holey</span> f <span class="fu">=</span> <span class="dt">Hole</span> <span class="fu">|</span> <span class="dt">Expr</span> (f (<span class="dt">Holey</span> f))
-
-<span class="kw">type</span> <span class="dt">HuttonHole</span> <span class="fu">=</span> <span class="dt">Holey</span> <span class="dt">HuttonF</span></code></pre></div>
-<p>This union type represents syntax trees which might have holes in. Clearly there is no total definition of <code>proj</code> so we redefine our type classes as follows.</p>
-<div class="sourceCode"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="kw">class</span> <span class="dt">Project</span> a <span class="kw">where</span>
-<span class="ot">  proj ::</span> a <span class="ot">-&gt;</span> <span class="dt">HuttonF</span> a
-
-<span class="kw">class</span> <span class="dt">Inject</span> a <span class="kw">where</span>
-<span class="ot">  inj ::</span> <span class="dt">HuttonF</span> a <span class="ot">-&gt;</span> a
-
-<span class="kw">instance</span> <span class="dt">Inject</span> <span class="dt">HuttonHole</span> <span class="kw">where</span>
-  inj <span class="fu">=</span> <span class="dt">Expr</span></code></pre></div>
-<p>Now we <em>should</em> be able to use this data type very naturally to construct trees which might contain holes and later fill in the holes with whatever we please.</p>
-<div class="sourceCode"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span class="ot">hole ::</span> <span class="dt">HuttonHole</span>
-hole <span class="fu">=</span> <span class="dt">Hole</span>
-
-<span class="ot">p4 ::</span> <span class="dt">HuttonHole</span>
-p4 <span class="fu">=</span> <span class="dt">Add</span> (<span class="dt">I</span> <span class="dv">5</span>) hole
-
-<span class="ot">fillHole ::</span> (<span class="dt">Hole</span> <span class="ot">-&gt;</span> <span class="dt">Hutton</span>) <span class="ot">-&gt;</span> <span class="dt">HuttonHole</span> <span class="ot">-&gt;</span> <span class="dt">Hutton</span>
-fillHole f <span class="dt">Hole</span> <span class="fu">=</span> f <span class="dt">Hole</span>
-fillHole _ (<span class="dt">Expr</span> v) <span class="fu">=</span> v</code></pre></div>
-<p>Unfortunately we have pushed pattern synonyms a little bit too far. Instead of sweet sweet compilation, we are greeted with the following error message for each of the patterns.</p>
-<pre><code>Could not deduce (Inject a) arising from a use of ‘inj’
-    from the context (Project a)
-      bound by the type signature for Main.I :: Project a =&gt; Int -&gt; a
-      at patterns.hs:1:1
-    Possible fix:
-      add (Inject a) to the context of
-        the type signature for Main.I :: Project a =&gt; Int -&gt; a
-    In the expression: inj&#39; (IF n)
-    In an equation for ‘I’: I n = inj (IF n)</code></pre>
-<p>GHC baulks at the fact that we have different class constraints for the pattern and constructor. I don’t think there is any reason that they <em>need</em> to have the same constraints but it might be desirable so that constructors, even synonyms, continue to match up with patterns.</p>
-<p>There are many powerful abstractions in Haskell which allow a library maintainer to provide a consistent interface across interactions. Unfortunately, if they ever chose to expose their internal syntax tree to the end-user, it was previously very difficult to maintain backwards compatibility. Pattern synonyms provide the perfect tool to do just this but they don’t appear to stretch quite far enough to tackle all interesting use cases.</p>
-<div class="footnotes">
-<hr />
-<ol>
-<li id="fn1"><p>I’ve been meaning to put this post up for a while but <a href="http://stackoverflow.com/questions/27157717/boilerplate-free-annotation-of-asts-in-haskell">this</a> stack overflow answer prompted me to finish up the post. As a result, the examples I use here are heavily inspired by it.<a href="#fnref1">↩</a></p></li>
 </ol>
 </div>
 ]]></summary>
