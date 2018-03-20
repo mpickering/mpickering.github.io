@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+    <head>
+        <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+        <title>mpickering - Replacing type classes with records affects optimisation</title>
+        <link rel="stylesheet" type="text/css" href="../css/default.css" />
+        <link href="http://fonts.googleapis.com/css?family=Vollkorn" rel="stylesheet" type="text/css">
+        <script type="text/javascript" src="http://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML"></script>
+    </head>
+    <body>
+        <div id="sidebar">
+            <div id="navigation">
+              <a href="../">Home</a> <br>
+              <a href="../about.html">About</a> <br>
+              <a href="../archive.html">Archive</a> <br>
+            </div>
+        </div>
+
+        <div id="content">
+            <h2 class="post"> Replacing type classes with records affects optimisation </h2>
+<div class="info">
+    Posted on March 20, 2018
+    
+</div>
+
+<p>It is somewhat common to suggest using records instead of type classes for particular domains for which type classes are not deemed idiomatic. However, this suggestion should be taken with caution as the change will have consequences on how your program is optimised. Using records instead of type classes can lead to much slower programs.</p>
+<!--more-->
+<p>In order to provide an interface for propositional logic, we might provide a type class which allows the constructors to be overloaded. We can then provide a direct interpretation of <code>Prop</code> which evaluates an expression to a truth value.</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb1-1" data-line-number="1"><span class="kw">class</span> <span class="dt">Prop</span> r <span class="kw">where</span></a>
+<a class="sourceLine" id="cb1-2" data-line-number="2"><span class="ot">  or ::</span> r <span class="ot">-&gt;</span> r <span class="ot">-&gt;</span> r</a>
+<a class="sourceLine" id="cb1-3" data-line-number="3"><span class="ot">  and ::</span> r <span class="ot">-&gt;</span> r <span class="ot">-&gt;</span> r</a>
+<a class="sourceLine" id="cb1-4" data-line-number="4"><span class="ot">  true ::</span> r</a>
+<a class="sourceLine" id="cb1-5" data-line-number="5"><span class="ot">  false ::</span> r</a>
+<a class="sourceLine" id="cb1-6" data-line-number="6"></a>
+<a class="sourceLine" id="cb1-7" data-line-number="7"></a>
+<a class="sourceLine" id="cb1-8" data-line-number="8"><span class="kw">instance</span> <span class="dt">Prop</span> <span class="dt">Bool</span> <span class="kw">where</span></a>
+<a class="sourceLine" id="cb1-9" data-line-number="9">  or <span class="fu">=</span> (<span class="fu">||</span>)</a>
+<a class="sourceLine" id="cb1-10" data-line-number="10">  and <span class="fu">=</span> (<span class="fu">&amp;&amp;</span>)</a>
+<a class="sourceLine" id="cb1-11" data-line-number="11">  true <span class="fu">=</span> <span class="dt">True</span></a>
+<a class="sourceLine" id="cb1-12" data-line-number="12">  false <span class="fu">=</span> <span class="dt">False</span></a></code></pre></div>
+<p>However, one might be tempted to avoid using a type class and instead perform the manual type class desugaring in order to be able to more easily modify and extend an interpretation.</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb2-1" data-line-number="1"><span class="kw">data</span> <span class="dt">PropDict</span> r <span class="fu">=</span> <span class="dt">PropDict</span> {</a>
+<a class="sourceLine" id="cb2-2" data-line-number="2"><span class="ot">  dor ::</span> r <span class="ot">-&gt;</span> r <span class="ot">-&gt;</span> r</a>
+<a class="sourceLine" id="cb2-3" data-line-number="3">  ,<span class="ot"> dand ::</span> r <span class="ot">-&gt;</span> r <span class="ot">-&gt;</span> r</a>
+<a class="sourceLine" id="cb2-4" data-line-number="4">  ,<span class="ot"> dtrue ::</span> r</a>
+<a class="sourceLine" id="cb2-5" data-line-number="5">  ,<span class="ot"> dfalse ::</span> r</a>
+<a class="sourceLine" id="cb2-6" data-line-number="6">  }</a>
+<a class="sourceLine" id="cb2-7" data-line-number="7"></a>
+<a class="sourceLine" id="cb2-8" data-line-number="8">boolDict <span class="fu">=</span> <span class="dt">PropDict</span> {</a>
+<a class="sourceLine" id="cb2-9" data-line-number="9">  dor <span class="fu">=</span> (<span class="fu">||</span>)</a>
+<a class="sourceLine" id="cb2-10" data-line-number="10">  , dand <span class="fu">=</span> (<span class="fu">&amp;&amp;</span>)</a>
+<a class="sourceLine" id="cb2-11" data-line-number="11">  , dtrue <span class="fu">=</span> <span class="dt">True</span></a>
+<a class="sourceLine" id="cb2-12" data-line-number="12">  , dfalse <span class="fu">=</span> <span class="dt">False</span> }</a></code></pre></div>
+<p>We can then use both versions in order to implement a helper function which turns a list into a chain of disjunctions.</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb3-1" data-line-number="1"><span class="ot">ors ::</span> <span class="dt">Prop</span> r <span class="ot">=&gt;</span> [r] <span class="ot">-&gt;</span> r</a>
+<a class="sourceLine" id="cb3-2" data-line-number="2">ors [o] <span class="fu">=</span> o</a>
+<a class="sourceLine" id="cb3-3" data-line-number="3">ors (o<span class="fu">:</span>os) <span class="fu">=</span> o <span class="ot">`or`</span> ors os</a>
+<a class="sourceLine" id="cb3-4" data-line-number="4"></a>
+<a class="sourceLine" id="cb3-5" data-line-number="5"><span class="ot">dors ::</span> <span class="dt">PropDict</span> r <span class="ot">-&gt;</span> [r] <span class="ot">-&gt;</span> r</a>
+<a class="sourceLine" id="cb3-6" data-line-number="6">dors _ [o] <span class="fu">=</span> o</a>
+<a class="sourceLine" id="cb3-7" data-line-number="7">dors pd (o<span class="fu">:</span>os) <span class="fu">=</span> dor pd o (dors pd os)</a></code></pre></div>
+<p>We can then instantiate each function by either supplying a type argument or the dictionary directly in the latter case.</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb4-1" data-line-number="1"><span class="ot">test1 ::</span> [<span class="dt">Bool</span>] <span class="ot">-&gt;</span> <span class="dt">Bool</span></a>
+<a class="sourceLine" id="cb4-2" data-line-number="2">test1 <span class="fu">=</span> ors <span class="fu">@</span><span class="dt">Bool</span></a>
+<a class="sourceLine" id="cb4-3" data-line-number="3"></a>
+<a class="sourceLine" id="cb4-4" data-line-number="4"><span class="ot">test2 ::</span> [<span class="dt">Bool</span>] <span class="ot">-&gt;</span> <span class="dt">Bool</span></a>
+<a class="sourceLine" id="cb4-5" data-line-number="5">test2 <span class="fu">=</span> dors boolDict</a></code></pre></div>
+<p>What’s the difference between these two versions? The process of optimisation is different. In the first case, the overloading of <code>ors</code> will be eliminated by <strong>specialisation</strong>. In the later case, the static argument will be eliminated by <strong>SpecConstr</strong>. When we define these definitions in the same module as our earlier definitions of <code>ors</code> and <code>dors</code> then both definitions result in essentially the same code as each other. The overhead is eliminated.</p>
+<p>However, when we use <code>ors</code> or <code>dors</code> in another module, they behave quite differently. If we mark <code>ors</code> as <code>INLINABLE</code> then it will also be specialised in other modules. However, <strong>SpecConstr does not work across module boundaries</strong>. As a result, <code>dors</code> will not be specialised on the static argument and the dictionary overhead will remain.</p>
+
+        <div id="footer">
+          <a href="../atom.xml">Feed</a>
+        </div>
+        </div>
+    </body>
+</html>
