@@ -8,8 +8,115 @@
         <name>Matthew Pickering</name>
         <email>matthewtpickering@gmail.com</email>
     </author>
-    <updated>2018-03-20T00:00:00Z</updated>
+    <updated>2018-06-11T00:00:00Z</updated>
     <entry>
+    <title>Source Plugins: Four ways to typecheck a Haskell expression</title>
+    <link href="http://mpickering.github.io/posts/2018-06-11-source-plugins.html" />
+    <id>http://mpickering.github.io/posts/2018-06-11-source-plugins.html</id>
+    <published>2018-06-11T00:00:00Z</published>
+    <updated>2018-06-11T00:00:00Z</updated>
+    <summary type="html"><![CDATA[<h2 class="post"> Source Plugins: Four ways to typecheck a Haskell expression </h2>
+<div class="info">
+    Posted on June 11, 2018
+    
+</div>
+
+<p>A source plugin allows users to modify and analyse code after typechecking. They have access to all the features of the compiler to create and modify bindings.</p>
+<p>Sounds great right? GHC is all about creating and modifying bindings so this should be a doddle. However, it isn’t immediately obvious how to make a typechecked binding using the provided API.</p>
+<p>In this post, I’ll demonstrate and explain four different ways of arriving at a typechecked expression which can then be inserted into a program. All these examples are packaged up into a complete plugin on my <a href="https://github.com/mpickering/plugin-constraint">github page</a>.</p>
+<!--more-->
+<p>The four examples which we order from the most direct to the most indirect. Each has their advantages but in general, directly constructing an already typechecked binding is the most risky but flexible whilst starting from a Template Haskell quote is the safest but most rigid option.</p>
+<p>Each example will construct the simple expression <code>print ()</code>. This example is chosen because it demonstrates that we must be concerned with polymorphism and type classes during the process.</p>
+<h2 id="typechecked-expression">Typechecked Expression</h2>
+<p>Constructing a <code>HsExpr GhcTc</code> by hand is quite annoying as you must be knowledgable about how the typechecker prepares a program. You must also be quite explicit about types and the compiler won’t tell you that you’re wrong unless you compiler with core lint enabled.</p>
+<pre><code>-- Creates the already typechecked expression `print ()`
+--
+-- There is quite a lot of boilerplate and the compiler won&#39;t tell
+-- you where you went wrong unless -dcore-lint is enabled.
+mkNewExprTc :: TcM (LHsExpr GhcTc)
+mkNewExprTc = do
+  -- Get the `Id`s that we need, these ones helpfully are already defined
+  -- in `PrelNames` and `TysWiredIn`.
+  print_id    &lt;- tcLookupId printName
+
+  -- Generate the evidence for `Show ()` which we will pass to `print`
+  (dict_var, showUnitEv) &lt;- generateDictionary
+  let
+    rhs = mHsApp (mLHsWrap wrapper printExpr) unitExpr)
+
+    printExpr = nlHsVar print_id
+    unitExpr = nlHsDataCon unitDataCon
+
+    -- How we are going to apply the necessary type arguments
+    wrapper = mkWpLet showUnitEv &lt;.&gt; mkWpEvVarApps [dict_var] &lt;.&gt; mkWpTyApps [unitTy]
+  return rhs</code></pre>
+<p>Notice that in particular, we have to be careful to construct and apply a wrapper which will desugar to type and dictionary applications. We also have to explicitly come up with the correct dictionary for the <code>print</code> function and manually apply it ourselves. This approach gives us a lot of control but leaves many fiddly places to go wrong.</p>
+<h2 id="renamed-binding">Renamed Binding</h2>
+<p>The second approach creates a <code>HsExpr GhcRn</code> which we will then typecheck using the normal typechecker. This has the advantage that we can be direct about which names we mean but also have the safety that the compiler will emit an error when the plugin is used if we made a mistake.</p>
+<p>We still have to construct the return type of the expression to pass into the typechecker. We use <code>lookupOccRn</code> to find the definition of <code>print</code> which is in scope but can use <code>unitDataCon</code> directly without looking it up as it is already wired into the compiled and defined in <code>PrelNames</code>.</p>
+<pre><code>-- Creates a `LHsExpr GhcRn` which we then typecheck to turn into
+-- a `LHsExpr GhcTc`. The compiler will raise an error to the user if you
+-- made a mistake in constructing the term.
+mkNewExprRn :: TcM (LHsExpr GhcTc)
+mkNewExprRn = do
+  -- The names we want to use happen to already be in PrelNames so we use
+  -- them directly.
+  let print_occ = mkRdrUnqual (mkVarOcc &quot;print&quot;)
+  print_name &lt;- lookupOccRn print_occ
+  let raw_expr = nlHsApp (nlHsVar print_name) (nlHsVar (dataConName unitDataCon))
+  io_tycon &lt;- tcLookupTyCon ioTyConName
+  let exp_type = mkTyConApp io_tycon [unitTy]
+  typecheckExpr exp_type raw_expr</code></pre>
+<h2 id="parsed-binding">Parsed Binding</h2>
+<p>We sometimes don’t want to specify exactly which names we mean or know which renaming functions to use to find them. It’s easier to let the renamer do that for us. In this example, we construct a <code>HsExpr GhcPs</code> which we then pass into the renamer and typechecker. Therefore, the compiler will warn us about out of scope variables or type errors in the expression we have created like normal.</p>
+<p>Instead of constructing <code>Name</code>s like before, we are constructing <code>RdrName</code>s. These are conceptually easier to create as we must only consider the namespace the name lives in rather than any other details. The renamer will fill in the rest of the information.</p>
+<pre><code>-- An example of how to construct a value from a `LHsExpr GhcPs`.
+-- Making sure things are in the right namespace is sometimes a bit
+-- awkward.
+mkNewExprPs :: TcM (LHsExpr GhcTc)
+mkNewExprPs  = do
+
+  let
+    print_occ = mkRdrUnqual (mkVarOcc &quot;print&quot;)
+    unit_occ = nameRdrName (dataConName unitDataCon)
+    ps_expr = nlHsApp (nlHsVar print_occ)
+                      (nlHsVar unit_occ)
+
+  io_tycon &lt;- tcLookupTyCon ioTyConName
+  let exp_type = mkTyConApp io_tycon [unitTy]
+  renameExpr ps_expr &gt;&gt;= typecheckExpr exp_type</code></pre>
+<p>Note, I initially tried to use a different definition of <code>unit_occ</code> which didn’t start from the wired in name but it proved tricky to get correct. This is why we start from the more specific <code>Name</code> and turn it into a <code>RdrName</code>. We are also relying more on the context of the module, if the user hasn’t imported <code>print</code> then the plugin will fail.</p>
+<h2 id="constructing-a-binding-from-template-haskell">Constructing a binding from Template Haskell</h2>
+<p>Still, explicitly typing out the syntax tree is quite onerous. We would much prefer type out a Haskell program as normal and then splice it into our program. We can achieve this by using a Template Haskell quasiquoter.</p>
+<p>We first quote the expression we want to insert which creates a <code>TH.Exp</code> which we can convert to a normal <code>HsExpr GhcPs</code> by using the same function that GHC itself uses to deal with Template Haskell. Once we have the parsed expression we can rename it and typecheck it as in the previous examples. This is all quite convenient!</p>
+<pre><code>liftQ :: Q a -&gt; TcM a
+liftQ = liftIO . runQ
+
+-- Creates a `TH.Exp` using a quasiquoter before renaming
+-- and typechecking to create an `LHsExpr`. This is convenient as you
+-- don&#39;t have to write out the syntax.
+-- p
+mkNewExprTh :: TcM (LHsExpr GhcTc)
+mkNewExprTh = do
+  th_expr &lt;- liftQ [| print () |]
+  ps_expr &lt;- case convertToHsExpr noSrcSpan th_expr of
+    Left _err -&gt; error &quot;Bad expression&quot;
+    Right res -&gt; return res
+
+  io_tycon &lt;- tcLookupTyCon ioTyConName
+  let exp_type = mkTyConApp io_tycon [unitTy]
+  renameExpr ps_expr &gt;&gt;= typecheckExpr exp_type</code></pre>
+<h1 id="conclusion">Conclusion</h1>
+<p>In our experience, the most practical way of constructing expressions is to use Template Haskell. A more in-depth example which creates a much more complicated expresion can be see in the <a href="https://github.com/ocharles/assert-explainer">assert-explainer</a> which I worked on with Ollie Charles at Zurihac 2018.</p>
+<h1 id="addendum-how-can-i-interact-with-the-constraint-solver">Addendum: How can I interact with the constraint solver?</h1>
+<p>The <code>generateDictionary</code> is an example of how to generate some evidence. It might need to be refined further but worked for simple tests.</p>
+<h1 id="addendum-how-can-i-get-the-type-of-an-hsexpr-ghctc">Addendum: How can I get the type of an <code>HsExpr GhcTc</code>?</h1>
+<p>To get the type of an expression, first desugar the expression and then use <code>exprType</code> to find the type of the desugared variant. There is an example in <a href="https://github.com/ocharles/assert-explainer/blob/master/plugin/AssertExplainer.hs#L289">assert-explainer</a>.</p>
+<h1 id="addendum-how-can-i-combine-together-old-and-new-program-fragments">Addendum: How can I combine together old and new program fragments</h1>
+<p>If you want to combine together pieces of new syntax and old syntax then don’t try to do it directly. Construct a lambda with arguments for each of the pieces you want to insert. Finally, apply the lambda to the existing expressions you want to insert.</p>
+]]></summary>
+</entry>
+<entry>
     <title>Replacing type classes with records affects optimisation</title>
     <link href="http://mpickering.github.io/posts/2018-03-20-recordsvstypeclasses.html" />
     <id>http://mpickering.github.io/posts/2018-03-20-recordsvstypeclasses.html</id>
@@ -787,7 +894,7 @@ middle = cata middleFold</code></pre>
 <ol>
 <li id="fn1"><p>From now on when we say data type, we mean polynomial data type.<a href="#fnref1" class="footnote-back">↩</a></p></li>
 <li id="fn2"><p>Lambek’s lemma tells us that the two functions are each other’s inverse.<a href="#fnref2" class="footnote-back">↩</a></p></li>
-<li id="fn3"><p>Notice that we are only able to fold type constructors of kind <code>* -&gt; *</code>, this is an arbritary choice, motivated by the fact that most containers which we wish to fold are polymorphic in one way. (For example, lists and trees).<a href="#fnref3" class="footnote-back">↩</a></p></li>
+<li id="fn3"><p> Notice that we are only able to fold type constructors of kind <code>* -&gt; *</code>, this is an arbritary choice, motivated by the fact that most containers which we wish to fold are polymorphic in one way. (For example, lists and trees).<a href="#fnref3" class="footnote-back">↩</a></p></li>
 <li id="fn4"><p>Note that I didn’t think of this definiton myself but arrived at it purely calculationally from the definition of <code>foldMap</code> and <code>foldr</code>.<a href="#fnref4" class="footnote-back">↩</a></p></li>
 </ol>
 </section>
@@ -1046,151 +1153,6 @@ hlint --refactor myfile.hs</code></pre>
 <li><p>Not all hlint suggestions are supported. A notable exception being the eta reduction refactoring as it proved quite difficult to implement correctly.</p></li>
 <li><p>Sometimes hlint suggests a refactoring which uses a name which isn’t in scope. The tool is quite dumb! It just takes whatever hlint suggests and applies it blindly. It might be good to add an option to hlint to avoid spitting out hints which do this.</p></li>
 </ul>
-]]></summary>
-</entry>
-<entry>
-    <title>Announcing ghc-exactprint: A New Foundation For Refactoring Tools</title>
-    <link href="http://mpickering.github.io/posts/2015-07-23-ghc-exactprint.html" />
-    <id>http://mpickering.github.io/posts/2015-07-23-ghc-exactprint.html</id>
-    <published>2015-07-23T00:00:00Z</published>
-    <updated>2015-07-23T00:00:00Z</updated>
-    <summary type="html"><![CDATA[<h2 class="post"> Announcing ghc-exactprint: A New Foundation For Refactoring Tools </h2>
-<div class="info">
-    Posted on July 23, 2015
-    
-</div>
-
-<p>Over the last few months Alan Zimmerman and myself have been working on what will hopefully become a new foundation for refactoring Haskell programs. We have called this foundation <code>ghc-exactprint</code> and it is now available on <a href="https://hackage.haskell.org/package/ghc-exactprint">hackage</a> to coincide with the release of GHC 7.10.2.</p>
-<p>Thompson and Reinke originally described 22 refactorings in their <a href="http://www.cs.kent.ac.uk/projects/refactor-fp/publications/refactoring-draft-catalogue.pdf">catalogue</a> of functional refactorings which motivated the development of HaRe. Missing from their list is the identity transformation, in the context of refactoring this is perhaps the most important. When applying any kind of change to small segment of your project it is undesirable for the tooling to modify another part of your file unexpectedly. The identity refactoring seems to be the easiest of all but it is important that any refactoring tool behaves in this way.</p>
-<p>The biggest challenge of the last few months was being able to perform the identity refactoring whilst retaining a suitable representation to be able to easily transform programs. Now that we believe that <code>ghc-exactprint</code> is robust, the challenge is to build the promised refactoring tools upon it.</p>
-<!--more-->
-<h1 id="representation">Representation</h1>
-<p>If your only concern is to perform the identity transformation then perhaps the representation you choose is not very important. One can easily choose to operate directly on the source files for instance. The representation becomes much more important when considering other refactoring operations.</p>
-<p>When deciding on a representation, you have to take into account more complicated transformations such as renamings, insertions and deletions which are made much easier by manipulating an AST. Most current source manipulations are based on <code>haskell-src-exts</code> which provides a separate parser and as a result lacks support for many modern language extensions. We instead chose to base <code>ghc-exactprint</code> directly on the GHC parser so that we don’t have to worry (much) about adding support for future language extensions and secondly, working with the GHC AST directly is essential if you want to perform <em>type-aware</em> refactorings.</p>
-<p>We work in two stages.</p>
-<p>After receiving the output of the GHC parser, the first stage converts all the absolute source positions into relative positions.</p>
-<div class="sourceCode" id="cb1"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb1-1" data-line-number="1">not <span class="dt">True</span> <span class="fu">=</span> <span class="dt">False</span></a></code></pre></div>
-<p>For example, in the preceding declaration, using absolute source positions we might describe the the declaration starts at <code>(0,0)</code>, the first argument starts at <code>(0,4)</code> and the RHS of the definition starts at <code>(0,12)</code>. Using relative positioning like in the library, we instead describe the position of each element relative to the position of the previous element. For example, <code>True</code> is 0 lines and 1 column further than <code>not</code> and <code>False</code> is 0 lines and 1 column further than <code>=</code>.</p>
-<p>To keep track of this information we introduce a separate data structure which we call <em>annotations</em>. This data structure keeps track of the relative positions of all AST elements and keywords as well as any necessary information which is not included in the AST in order to exactly reproduce the original source file.</p>
-<p>We hope this approach will make it easy to perform transformations without worrying too much about where exactly everything will end up. With this style, replacing expressions is easy as we don’t have to worry about updating anything at all, just by replacing the expression in the AST produces the correct output.</p>
-<p>Secondly, we perform the reverse of this transformation and produce a source file given an AST and the previously worked out relative positions. Thus a refactoring becomes two things:</p>
-<ol type="1">
-<li>A direct modification of the AST.</li>
-<li>A modification of the associated annotations.</li>
-</ol>
-<h1 id="results">Results</h1>
-<p>Much of the last 10 months was spent modifying GHC and <code>ghc-exactprint</code> in order to be able roundtrip any source file successfully. The library has been through many iterations with varying levels of success but finally has reached an understandable and usable core. After testing the program on around 50,000 source files from Hackage, we can say with confidence that at least the foundations are in place for further tooling to be built.</p>
-<p>A glance at the <a href="https://github.com/alanz/ghc-exactprint/tree/master/tests/examples">test suite</a> will show some particularly tricky examples. The IOHCC also provided a good source of test material..</p>
-<div class="sourceCode" id="cb2"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb2-1" data-line-number="1"><span class="kw">import</span> <span class="dt">Data.Char</span></a>
-<a class="sourceLine" id="cb2-2" data-line-number="2">e<span class="fu">=</span><span class="dv">181021504832735228091659724090293195791121747536890433</span></a>
-<a class="sourceLine" id="cb2-3" data-line-number="3"></a>
-<a class="sourceLine" id="cb2-4" data-line-number="4">u(f,m)x<span class="fu">=</span>i(m(x),       [],<span class="kw">let</span>(a,b)<span class="fu">=</span>f(x)       <span class="kw">in</span>(a<span class="fu">:</span>u(f,m)b))</a>
-<a class="sourceLine" id="cb2-5" data-line-number="5">(v,h)<span class="fu">=</span>(foldr(\x(y    )<span class="ot">-&gt;</span><span class="dv">00</span><span class="fu">+</span><span class="dv">128</span><span class="fu">*</span>y<span class="fu">+</span>x)<span class="dv">0</span>,u(     sp(<span class="dv">25</span>),((<span class="fu">==</span>)<span class="st">&quot;&quot;</span>)))</a>
-<a class="sourceLine" id="cb2-6" data-line-number="6"><span class="ot">p::</span>(<span class="dt">Integer</span>,<span class="dt">Integer</span> )<span class="ot">-&gt;</span><span class="dt">Integer</span>      <span class="ot">-&gt;</span>     <span class="dt">Integer</span>    <span class="co">--NotInt</span></a>
-<a class="sourceLine" id="cb2-7" data-line-number="7">p(n,m)x     <span class="fu">=</span>i(n<span class="fu">==</span><span class="dv">0</span> ,<span class="dv">1</span>,i(z n             ,q(n,m)x,    r(n,m)x))</a>
-<a class="sourceLine" id="cb2-8" data-line-number="8">i(n,e,d     )<span class="fu">=</span><span class="kw">if</span>(n) <span class="kw">then</span>(e)              <span class="kw">else</span>  (d)    <span class="co">--23+3d4f</span></a>
-<a class="sourceLine" id="cb2-9" data-line-number="9">(g,main     ,s,un)<span class="fu">=</span> (\x<span class="ot">-&gt;</span>x,             y(j),\x<span class="ot">-&gt;</span>x<span class="fu">*</span>x,unlines)<span class="co">--)</span></a>
-<a class="sourceLine" id="cb2-10" data-line-number="10">j(o)<span class="fu">=</span>i(take(<span class="dv">2</span>)o<span class="fu">==</span>   <span class="st">&quot;e=&quot;</span>,<span class="st">&quot;e=&quot;</span><span class="fu">++</span>t        (drop(<span class="dv">4</span><span class="fu">-</span><span class="dv">2</span>)o),i(d<span class="fu">&gt;</span>e,k,l)o)</a>
-<a class="sourceLine" id="cb2-11" data-line-number="11">l<span class="fu">=</span>un<span class="fu">.</span>map (show<span class="fu">.</span>p      (e,n)<span class="fu">.</span>v<span class="fu">.</span>map(      fromIntegral<span class="co">{-g-}</span><span class="fu">.</span>ord))<span class="fu">.</span>h</a>
-<a class="sourceLine" id="cb2-12" data-line-number="12">k<span class="fu">=</span>co<span class="fu">.</span>map(map(chr       <span class="fu">.</span>fromIntegral    )<span class="fu">.</span>w<span class="fu">.</span>p(d,n)<span class="fu">.</span>   read)<span class="fu">.</span>lines</a>
-<a class="sourceLine" id="cb2-13" data-line-number="13">(t,y)<span class="fu">=</span>(\ (o<span class="fu">:</span>q)<span class="ot">-&gt;</span>              i(o<span class="fu">==</span><span class="ch">&#39;-&#39;</span>  ,<span class="ch">&#39;1&#39;</span>,<span class="ch">&#39;-&#39;</span> )<span class="fu">:</span>   q,interact)</a>
-<a class="sourceLine" id="cb2-14" data-line-number="14">q(n,m)x<span class="fu">=</span>   mod(s(    p(        div(n)<span class="dv">2</span>, m<span class="co">{-jl-}</span>)x)    )m<span class="co">--hd&amp;&amp;gdb</span></a>
-<a class="sourceLine" id="cb2-15" data-line-number="15">(r,z,co)    <span class="fu">=</span>(\(n,   m)x<span class="ot">-&gt;</span>mod(x<span class="fu">*</span>p(n<span class="fu">-</span><span class="dv">1</span>,  m)x)m,even    ,concat)<span class="co">--6</span></a>
-<a class="sourceLine" id="cb2-16" data-line-number="16">(w,sp)<span class="fu">=</span>(    u(\x<span class="ot">-&gt;</span>(   mod(x)<span class="dv">128</span>,div(x   )<span class="dv">128</span>),(<span class="fu">==</span><span class="dv">0</span>    )),splitAt)</a>
-<a class="sourceLine" id="cb2-17" data-line-number="17"></a>
-<a class="sourceLine" id="cb2-18" data-line-number="18">d<span class="fu">=</span><span class="dv">563347325936</span><span class="fu">+</span><span class="dv">1197371806136556985877790097</span><span class="fu">-</span><span class="dv">563347325936</span></a>
-<a class="sourceLine" id="cb2-19" data-line-number="19">n<span class="fu">=</span><span class="dv">351189532146914946493104395525009571831256157560461451</span></a></code></pre></div>
-<p>Replacements, deletions and rearrangements are very easy using this framework. Most of the time they can be specified by generic traversals (with any generics library) The last piece of the puzzle is to make it just as easy to add new items into the AST. A challenge that I and Alan Zimmerman will now begin to work on.</p>
-<h2 id="future-work">Future Work</h2>
-<ul>
-<li>I have used this tooling to write a <a href="https://github.com/mpickering/apply-refact">tool</a> which automatically applies hlint suggestions.</li>
-<li>HaRe is currently being rewritten to use this new machinery.</li>
-<li>We are looking at using pattern synonyms in order to smooth over the rough corners of the GHC API.</li>
-</ul>
-<p>If you are interested in using the tooling then we are both active in <code>#haskell-refactorer</code>.</p>
-<h2 id="caveats">Caveats</h2>
-<p>There are a few things which remain difficult to process.</p>
-<ul>
-<li>CPP - I think that every Haskell tool has difficultly dealing with CPP and we are no exception.</li>
-<li>Minimal Pragmas - The GHC AST performs normalisation on complicated Minimal Pragmas which means that some positional information is lost. This will be fixed for GHC 7.12.</li>
-<li>Unicode Syntax - The lexer doesn’t differentiate between unicode characters and their ascii equivalents. For the most part we can work around this by comparing the length of symbols. The exception is ★, which has the same length as it’s ascii equivalent * which means that ★’s are unfortunately lost on conversion.</li>
-</ul>
-<h2 id="a-simple-insertion">A simple insertion</h2>
-<p>This simple example inserts a type signature making sure to move comments to the right place. We hope to build a higher level interface on top of this low level manipulation.</p>
-<p>Along with the changes that Alan made to GHC to keep track of all the locations of keywords during parsing there have been two other improvements to enable this work.</p>
-<ol type="1">
-<li>Andrew Gibiansky added some more parser entry points which have proved invaluable.</li>
-<li>All the datatypes in the GHC AST now derive Data and Typeable instances which enables generic traversals.</li>
-</ol>
-<p>The following example takes advantage of the former of these two additions.</p>
-<h3 id="input">Input</h3>
-<div class="sourceCode" id="cb3"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb3-1" data-line-number="1"><span class="co">-- test.hs</span></a>
-<a class="sourceLine" id="cb3-2" data-line-number="2"><span class="kw">module</span> <span class="dt">Foo</span> <span class="kw">where</span></a>
-<a class="sourceLine" id="cb3-3" data-line-number="3"></a>
-<a class="sourceLine" id="cb3-4" data-line-number="4">baz <span class="st">&quot;one&quot;</span> <span class="fu">=</span> <span class="dv">1</span></a>
-<a class="sourceLine" id="cb3-5" data-line-number="5">baz <span class="st">&quot;two&quot;</span> <span class="fu">=</span> <span class="dv">2</span></a></code></pre></div>
-<h3 id="program">Program</h3>
-<div class="sourceCode" id="cb4"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb4-1" data-line-number="1"><span class="ot">{-# LANGUAGE NamedFieldPuns #-}</span></a>
-<a class="sourceLine" id="cb4-2" data-line-number="2"><span class="kw">module</span> <span class="dt">InsertSignature</span> <span class="kw">where</span></a>
-<a class="sourceLine" id="cb4-3" data-line-number="3"></a>
-<a class="sourceLine" id="cb4-4" data-line-number="4"><span class="kw">import</span> <span class="dt">Language.Haskell.GHC.ExactPrint</span></a>
-<a class="sourceLine" id="cb4-5" data-line-number="5"><span class="kw">import</span> <span class="dt">Language.Haskell.GHC.ExactPrint.Parsers</span></a>
-<a class="sourceLine" id="cb4-6" data-line-number="6"><span class="kw">import</span> <span class="dt">Language.Haskell.GHC.ExactPrint.Types</span></a>
-<a class="sourceLine" id="cb4-7" data-line-number="7"><span class="kw">import</span> <span class="dt">Language.Haskell.GHC.ExactPrint.Utils</span></a>
-<a class="sourceLine" id="cb4-8" data-line-number="8"></a>
-<a class="sourceLine" id="cb4-9" data-line-number="9"><span class="kw">import</span> <span class="kw">qualified</span> <span class="dt">Data.Map</span> <span class="kw">as</span> <span class="dt">Map</span></a>
-<a class="sourceLine" id="cb4-10" data-line-number="10"></a>
-<a class="sourceLine" id="cb4-11" data-line-number="11"><span class="kw">import</span> <span class="kw">qualified</span> <span class="dt">HsSyn</span> <span class="kw">as</span> <span class="dt">GHC</span></a>
-<a class="sourceLine" id="cb4-12" data-line-number="12"><span class="kw">import</span> <span class="kw">qualified</span> <span class="dt">RdrName</span> <span class="kw">as</span> <span class="dt">GHC</span></a>
-<a class="sourceLine" id="cb4-13" data-line-number="13"><span class="kw">import</span> <span class="kw">qualified</span> <span class="dt">SrcLoc</span> <span class="kw">as</span> <span class="dt">GHC</span></a>
-<a class="sourceLine" id="cb4-14" data-line-number="14"></a>
-<a class="sourceLine" id="cb4-15" data-line-number="15"><span class="kw">type</span> <span class="dt">Module</span> <span class="fu">=</span> <span class="dt">GHC.Located</span> (<span class="dt">GHC.HsModule</span> <span class="dt">GHC.RdrName</span>)</a>
-<a class="sourceLine" id="cb4-16" data-line-number="16"></a>
-<a class="sourceLine" id="cb4-17" data-line-number="17"><span class="ot">main ::</span> <span class="dt">IO</span> ()</a>
-<a class="sourceLine" id="cb4-18" data-line-number="18">main <span class="fu">=</span> <span class="kw">do</span></a>
-<a class="sourceLine" id="cb4-19" data-line-number="19">  <span class="dt">Right</span> (as, m) <span class="ot">&lt;-</span> parseModule <span class="st">&quot;test.hs&quot;</span></a>
-<a class="sourceLine" id="cb4-20" data-line-number="20">  (finalAs, finalM) <span class="ot">&lt;-</span> addSignature <span class="st">&quot;baz&quot;</span> <span class="st">&quot;baz :: String -&gt; Int&quot;</span> as m</a>
-<a class="sourceLine" id="cb4-21" data-line-number="21">  putStrLn <span class="fu">$</span> exactPrintWithAnns finalM finalAs</a>
-<a class="sourceLine" id="cb4-22" data-line-number="22"></a>
-<a class="sourceLine" id="cb4-23" data-line-number="23"></a>
-<a class="sourceLine" id="cb4-24" data-line-number="24"><span class="ot">addSignature ::</span> <span class="dt">String</span> <span class="co">-- ^ Function to add a signature for</span></a>
-<a class="sourceLine" id="cb4-25" data-line-number="25">             <span class="ot">-&gt;</span> <span class="dt">String</span> <span class="co">-- ^ Type signature</span></a>
-<a class="sourceLine" id="cb4-26" data-line-number="26">             <span class="ot">-&gt;</span> <span class="dt">Anns</span></a>
-<a class="sourceLine" id="cb4-27" data-line-number="27">             <span class="ot">-&gt;</span> <span class="dt">Module</span></a>
-<a class="sourceLine" id="cb4-28" data-line-number="28">             <span class="ot">-&gt;</span> <span class="dt">IO</span> (<span class="dt">Anns</span>, <span class="dt">Module</span>)</a>
-<a class="sourceLine" id="cb4-29" data-line-number="29">addSignature funid tsig as (<span class="dt">GHC.L</span> l m) <span class="fu">=</span> <span class="kw">do</span></a>
-<a class="sourceLine" id="cb4-30" data-line-number="30">  <span class="co">-- Parse new AST element</span></a>
-<a class="sourceLine" id="cb4-31" data-line-number="31">  <span class="dt">Right</span> (sigAnns, sig) <span class="ot">&lt;-</span> withDynFlags (\d <span class="ot">-&gt;</span> parseDecl d <span class="st">&quot;template&quot;</span> tsig)</a>
-<a class="sourceLine" id="cb4-32" data-line-number="32">  <span class="kw">let</span> (before, (bind<span class="fu">:</span> after)) <span class="fu">=</span> break findFunBind (GHC.hsmodDecls m)</a>
-<a class="sourceLine" id="cb4-33" data-line-number="33">      <span class="co">-- Add new annotations to the map</span></a>
-<a class="sourceLine" id="cb4-34" data-line-number="34">      newAs <span class="fu">=</span> Map.union as sigAnns</a>
-<a class="sourceLine" id="cb4-35" data-line-number="35">      <span class="co">-- Modify the annotations to</span></a>
-<a class="sourceLine" id="cb4-36" data-line-number="36">      <span class="co">-- 1. Retain the original spacing</span></a>
-<a class="sourceLine" id="cb4-37" data-line-number="37">      <span class="co">-- 2. Make sure that comments are placed correctly.</span></a>
-<a class="sourceLine" id="cb4-38" data-line-number="38">      <span class="dt">Just</span> <span class="dt">Ann</span>{annEntryDelta, annPriorComments} <span class="fu">=</span> Map.lookup (mkAnnKey bind) newAs</a>
-<a class="sourceLine" id="cb4-39" data-line-number="39">      finalAnns <span class="fu">=</span> Map.adjust (\sigAnn <span class="ot">-&gt;</span> sigAnn { annEntryDelta <span class="fu">=</span> annEntryDelta</a>
-<a class="sourceLine" id="cb4-40" data-line-number="40">                                                , annPriorComments <span class="fu">=</span> annPriorComments })</a>
-<a class="sourceLine" id="cb4-41" data-line-number="41">                             (mkAnnKey sig)</a>
-<a class="sourceLine" id="cb4-42" data-line-number="42">                  <span class="fu">.</span> Map.adjust (\bindAnn <span class="ot">-&gt;</span> bindAnn { annEntryDelta <span class="fu">=</span> <span class="dt">DP</span> (<span class="dv">1</span>, <span class="dv">0</span>)</a>
-<a class="sourceLine" id="cb4-43" data-line-number="43">                                                    , annPriorComments <span class="fu">=</span> [] })</a>
-<a class="sourceLine" id="cb4-44" data-line-number="44">                               (mkAnnKey bind) <span class="fu">$</span> newAs</a>
-<a class="sourceLine" id="cb4-45" data-line-number="45"></a>
-<a class="sourceLine" id="cb4-46" data-line-number="46">      finalMod <span class="fu">=</span> m { GHC.hsmodDecls <span class="fu">=</span> before <span class="fu">++</span> [sig, bind] <span class="fu">++</span> after }</a>
-<a class="sourceLine" id="cb4-47" data-line-number="47"></a>
-<a class="sourceLine" id="cb4-48" data-line-number="48">  return (finalAnns, <span class="dt">GHC.L</span> l finalMod)</a>
-<a class="sourceLine" id="cb4-49" data-line-number="49"></a>
-<a class="sourceLine" id="cb4-50" data-line-number="50"></a>
-<a class="sourceLine" id="cb4-51" data-line-number="51">  <span class="kw">where</span></a>
-<a class="sourceLine" id="cb4-52" data-line-number="52"><span class="ot">    findFunBind ::</span> <span class="dt">GHC.LHsDecl</span> <span class="dt">GHC.RdrName</span> <span class="ot">-&gt;</span> <span class="dt">Bool</span></a>
-<a class="sourceLine" id="cb4-53" data-line-number="53">    findFunBind (<span class="dt">GHC.L</span> _ (<span class="dt">GHC.ValD</span> b<span class="fu">@</span>(<span class="dt">GHC.FunBind</span> {})))</a>
-<a class="sourceLine" id="cb4-54" data-line-number="54">      <span class="fu">|</span> showGhc (GHC.unLoc (GHC.fun_id  b)) <span class="fu">==</span> funid <span class="fu">=</span> <span class="dt">True</span></a>
-<a class="sourceLine" id="cb4-55" data-line-number="55">    findFunBind _ <span class="fu">=</span> <span class="dt">False</span></a></code></pre></div>
-<h3 id="result">Result</h3>
-<div class="sourceCode" id="cb5"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb5-1" data-line-number="1"><span class="kw">module</span> <span class="dt">Foo</span> <span class="kw">where</span></a>
-<a class="sourceLine" id="cb5-2" data-line-number="2"></a>
-<a class="sourceLine" id="cb5-3" data-line-number="3"><span class="ot">baz ::</span> <span class="dt">String</span> <span class="ot">-&gt;</span> <span class="dt">Int</span></a>
-<a class="sourceLine" id="cb5-4" data-line-number="4">baz <span class="st">&quot;one&quot;</span> <span class="fu">=</span> <span class="dv">1</span></a>
-<a class="sourceLine" id="cb5-5" data-line-number="5">baz <span class="st">&quot;two&quot;</span> <span class="fu">=</span> <span class="dv">2</span></a></code></pre></div>
 ]]></summary>
 </entry>
 

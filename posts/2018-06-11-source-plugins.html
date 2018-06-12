@@ -1,0 +1,126 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+    <head>
+        <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+        <title>mpickering - Source Plugins: Four ways to typecheck a Haskell expression</title>
+        <link rel="stylesheet" type="text/css" href="../css/default.css" />
+        <link href="http://fonts.googleapis.com/css?family=Vollkorn" rel="stylesheet" type="text/css">
+        <script type="text/javascript" src="http://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML"></script>
+    </head>
+    <body>
+        <div id="sidebar">
+            <div id="navigation">
+              <a href="../">Home</a> <br>
+              <a href="../about.html">About</a> <br>
+              <a href="../archive.html">Archive</a> <br>
+            </div>
+        </div>
+
+        <div id="content">
+            <h2 class="post"> Source Plugins: Four ways to typecheck a Haskell expression </h2>
+<div class="info">
+    Posted on June 11, 2018
+    
+</div>
+
+<p>A source plugin allows users to modify and analyse code after typechecking. They have access to all the features of the compiler to create and modify bindings.</p>
+<p>Sounds great right? GHC is all about creating and modifying bindings so this should be a doddle. However, it isn’t immediately obvious how to make a typechecked binding using the provided API.</p>
+<p>In this post, I’ll demonstrate and explain four different ways of arriving at a typechecked expression which can then be inserted into a program. All these examples are packaged up into a complete plugin on my <a href="https://github.com/mpickering/plugin-constraint">github page</a>.</p>
+<!--more-->
+<p>The four examples which we order from the most direct to the most indirect. Each has their advantages but in general, directly constructing an already typechecked binding is the most risky but flexible whilst starting from a Template Haskell quote is the safest but most rigid option.</p>
+<p>Each example will construct the simple expression <code>print ()</code>. This example is chosen because it demonstrates that we must be concerned with polymorphism and type classes during the process.</p>
+<h2 id="typechecked-expression">Typechecked Expression</h2>
+<p>Constructing a <code>HsExpr GhcTc</code> by hand is quite annoying as you must be knowledgable about how the typechecker prepares a program. You must also be quite explicit about types and the compiler won’t tell you that you’re wrong unless you compiler with core lint enabled.</p>
+<pre><code>-- Creates the already typechecked expression `print ()`
+--
+-- There is quite a lot of boilerplate and the compiler won't tell
+-- you where you went wrong unless -dcore-lint is enabled.
+mkNewExprTc :: TcM (LHsExpr GhcTc)
+mkNewExprTc = do
+  -- Get the `Id`s that we need, these ones helpfully are already defined
+  -- in `PrelNames` and `TysWiredIn`.
+  print_id    &lt;- tcLookupId printName
+
+  -- Generate the evidence for `Show ()` which we will pass to `print`
+  (dict_var, showUnitEv) &lt;- generateDictionary
+  let
+    rhs = mHsApp (mLHsWrap wrapper printExpr) unitExpr)
+
+    printExpr = nlHsVar print_id
+    unitExpr = nlHsDataCon unitDataCon
+
+    -- How we are going to apply the necessary type arguments
+    wrapper = mkWpLet showUnitEv &lt;.&gt; mkWpEvVarApps [dict_var] &lt;.&gt; mkWpTyApps [unitTy]
+  return rhs</code></pre>
+<p>Notice that in particular, we have to be careful to construct and apply a wrapper which will desugar to type and dictionary applications. We also have to explicitly come up with the correct dictionary for the <code>print</code> function and manually apply it ourselves. This approach gives us a lot of control but leaves many fiddly places to go wrong.</p>
+<h2 id="renamed-binding">Renamed Binding</h2>
+<p>The second approach creates a <code>HsExpr GhcRn</code> which we will then typecheck using the normal typechecker. This has the advantage that we can be direct about which names we mean but also have the safety that the compiler will emit an error when the plugin is used if we made a mistake.</p>
+<p>We still have to construct the return type of the expression to pass into the typechecker. We use <code>lookupOccRn</code> to find the definition of <code>print</code> which is in scope but can use <code>unitDataCon</code> directly without looking it up as it is already wired into the compiled and defined in <code>PrelNames</code>.</p>
+<pre><code>-- Creates a `LHsExpr GhcRn` which we then typecheck to turn into
+-- a `LHsExpr GhcTc`. The compiler will raise an error to the user if you
+-- made a mistake in constructing the term.
+mkNewExprRn :: TcM (LHsExpr GhcTc)
+mkNewExprRn = do
+  -- The names we want to use happen to already be in PrelNames so we use
+  -- them directly.
+  let print_occ = mkRdrUnqual (mkVarOcc &quot;print&quot;)
+  print_name &lt;- lookupOccRn print_occ
+  let raw_expr = nlHsApp (nlHsVar print_name) (nlHsVar (dataConName unitDataCon))
+  io_tycon &lt;- tcLookupTyCon ioTyConName
+  let exp_type = mkTyConApp io_tycon [unitTy]
+  typecheckExpr exp_type raw_expr</code></pre>
+<h2 id="parsed-binding">Parsed Binding</h2>
+<p>We sometimes don’t want to specify exactly which names we mean or know which renaming functions to use to find them. It’s easier to let the renamer do that for us. In this example, we construct a <code>HsExpr GhcPs</code> which we then pass into the renamer and typechecker. Therefore, the compiler will warn us about out of scope variables or type errors in the expression we have created like normal.</p>
+<p>Instead of constructing <code>Name</code>s like before, we are constructing <code>RdrName</code>s. These are conceptually easier to create as we must only consider the namespace the name lives in rather than any other details. The renamer will fill in the rest of the information.</p>
+<pre><code>-- An example of how to construct a value from a `LHsExpr GhcPs`.
+-- Making sure things are in the right namespace is sometimes a bit
+-- awkward.
+mkNewExprPs :: TcM (LHsExpr GhcTc)
+mkNewExprPs  = do
+
+  let
+    print_occ = mkRdrUnqual (mkVarOcc &quot;print&quot;)
+    unit_occ = nameRdrName (dataConName unitDataCon)
+    ps_expr = nlHsApp (nlHsVar print_occ)
+                      (nlHsVar unit_occ)
+
+  io_tycon &lt;- tcLookupTyCon ioTyConName
+  let exp_type = mkTyConApp io_tycon [unitTy]
+  renameExpr ps_expr &gt;&gt;= typecheckExpr exp_type</code></pre>
+<p>Note, I initially tried to use a different definition of <code>unit_occ</code> which didn’t start from the wired in name but it proved tricky to get correct. This is why we start from the more specific <code>Name</code> and turn it into a <code>RdrName</code>. We are also relying more on the context of the module, if the user hasn’t imported <code>print</code> then the plugin will fail.</p>
+<h2 id="constructing-a-binding-from-template-haskell">Constructing a binding from Template Haskell</h2>
+<p>Still, explicitly typing out the syntax tree is quite onerous. We would much prefer type out a Haskell program as normal and then splice it into our program. We can achieve this by using a Template Haskell quasiquoter.</p>
+<p>We first quote the expression we want to insert which creates a <code>TH.Exp</code> which we can convert to a normal <code>HsExpr GhcPs</code> by using the same function that GHC itself uses to deal with Template Haskell. Once we have the parsed expression we can rename it and typecheck it as in the previous examples. This is all quite convenient!</p>
+<pre><code>liftQ :: Q a -&gt; TcM a
+liftQ = liftIO . runQ
+
+-- Creates a `TH.Exp` using a quasiquoter before renaming
+-- and typechecking to create an `LHsExpr`. This is convenient as you
+-- don't have to write out the syntax.
+-- p
+mkNewExprTh :: TcM (LHsExpr GhcTc)
+mkNewExprTh = do
+  th_expr &lt;- liftQ [| print () |]
+  ps_expr &lt;- case convertToHsExpr noSrcSpan th_expr of
+    Left _err -&gt; error &quot;Bad expression&quot;
+    Right res -&gt; return res
+
+  io_tycon &lt;- tcLookupTyCon ioTyConName
+  let exp_type = mkTyConApp io_tycon [unitTy]
+  renameExpr ps_expr &gt;&gt;= typecheckExpr exp_type</code></pre>
+<h1 id="conclusion">Conclusion</h1>
+<p>In our experience, the most practical way of constructing expressions is to use Template Haskell. A more in-depth example which creates a much more complicated expresion can be see in the <a href="https://github.com/ocharles/assert-explainer">assert-explainer</a> which I worked on with Ollie Charles at Zurihac 2018.</p>
+<h1 id="addendum-how-can-i-interact-with-the-constraint-solver">Addendum: How can I interact with the constraint solver?</h1>
+<p>The <code>generateDictionary</code> is an example of how to generate some evidence. It might need to be refined further but worked for simple tests.</p>
+<h1 id="addendum-how-can-i-get-the-type-of-an-hsexpr-ghctc">Addendum: How can I get the type of an <code>HsExpr GhcTc</code>?</h1>
+<p>To get the type of an expression, first desugar the expression and then use <code>exprType</code> to find the type of the desugared variant. There is an example in <a href="https://github.com/ocharles/assert-explainer/blob/master/plugin/AssertExplainer.hs#L289">assert-explainer</a>.</p>
+<h1 id="addendum-how-can-i-combine-together-old-and-new-program-fragments">Addendum: How can I combine together old and new program fragments</h1>
+<p>If you want to combine together pieces of new syntax and old syntax then don’t try to do it directly. Construct a lambda with arguments for each of the pieces you want to insert. Finally, apply the lambda to the existing expressions you want to insert.</p>
+
+        <div id="footer">
+          <a href="../atom.xml">Feed</a>
+        </div>
+        </div>
+    </body>
+</html>
