@@ -8,8 +8,110 @@
         <name>Matthew Pickering</name>
         <email>matthewtpickering@gmail.com</email>
     </author>
-    <updated>2018-06-21T00:00:00Z</updated>
+    <updated>2018-06-24T00:00:00Z</updated>
     <entry>
+    <title>Nix scaffolding for running Haskell plugins</title>
+    <link href="http://mpickering.github.io/posts/2018-06-24-haskell-nix-plugins.html" />
+    <id>http://mpickering.github.io/posts/2018-06-24-haskell-nix-plugins.html</id>
+    <published>2018-06-24T00:00:00Z</published>
+    <updated>2018-06-24T00:00:00Z</updated>
+    <summary type="html"><![CDATA[<h2 class="post"> Nix scaffolding for running Haskell plugins </h2>
+<div class="info">
+    Posted on June 24, 2018
+    
+</div>
+
+<p>I’ve been all about writing <a href="http://mpickering.github.io/posts/2018-06-11-source-plugins.html">source plugins</a> recently but have been disatisfied with how rough it is to use them practicallly. In particular, I am writing plugins which don’t change the semantics of my programs but are useful for debugging. I only sometimes want to run them and don’t want them to appear as dependencies at all on Hackage. It needs to be easy to apply them to my own and other people’s packages.</p>
+<p>Of course, the solution was to leverage my knowledge of nix to wrap up everything into a nice interface. The key to the interface is a new function <code>haskell.lib.addPlugin</code> which augments an existing package with a plugin.</p>
+<pre><code>addPlugin dump-core-plugin either</code></pre>
+<p>This invocation will now also output an HTML representation of the core program of the <code>either</code> package by using the <code>dump-core</code> plugin.</p>
+<p>This post will explain this interface in more detail but will not get into the gritty implementation details. The implementation can be found in the <a href="https://github.com/mpickering/haskell-nix-plugin"><code>haskell-nix-plugin</code></a> repo.</p>
+<!-- more --->
+<h1 id="two-uses-of-plugins">Two uses of plugins</h1>
+<p>There are two kinds of plugins:</p>
+<ol type="1">
+<li>A plugin which modify your program so should always run. For example, the <a href="https://hackage.haskell.org/package/ghc-typelits-natnormalise"><code>ghc-typelits-natnormalise</code></a> plugin which solves constraints containing type level numbers.</li>
+<li>A plugin which collects information or debugging information which is optional. For example, the <a href="https://hackage.haskell.org/package/dump-core"><code>dump-core</code></a> plugin which outputs an HTML rendering of the core of your program.</li>
+</ol>
+<p>Even though you only sometimes want to run plugins in the second category, the convenient way to involves several steps:</p>
+<ol type="1">
+<li>Add the plugin package to your <code>build-depends</code>.</li>
+<li>Pass a specific option <code>-fplugin=DumpCore</code> by modifying <code>ghc-options</code>.</li>
+</ol>
+<p>If you want to package your library correctly, you then need to hide this information behind a cabal flag. However, this is still undesirable as a package like <code>dump-core</code> is only going to be used by deveopers but the flag now appears in the public inteface. Further to this, I can’t run my plugin on someone elses package without modifying the cabal file.</p>
+<p>What we really want is a way to take an existing package and to augment it to run the plugin. In order to do this, we define a function <code>addPlugin</code> which takes a plugin and a package as an argument and then compiles the package whilst running the plugin. For example, if we want to inspect the core of the <code>either</code> package, we could specify this like so.</p>
+<pre><code>addPlugin dump-core-plugin either</code></pre>
+<p>If we then build this modified package, there will be a new output which has the same name as the plugin which contains the output of the plugin. So in this case, we will find the relevant HTML by inspecting the <code>DumpCore</code> attribute. It will also be symlinked to <code>result-DumpCore</code>.</p>
+<pre><code>either-core = (addPlugin dump-core-plugin either).DumpCore</code></pre>
+<p>There are three new elements to the nixpkgs API.</p>
+<ol type="1">
+<li>A new function <code>haskell.lib.addPlugin</code> which adds a plugin to a package.</li>
+<li>A new attribute <code>haskell.plugins</code> which is parameterised by a Haskell package set and contains a set of plugins.</li>
+<li>A new <code>with*</code> function, <code>haskellPackages.withPlugin</code> which takes a function expecting two arguments, the first being a set of plugins for that package set and the second being a list of packages for that package set. The result of the function should be a Haskell package.</li>
+</ol>
+<h2 id="the-plugin-set">The plugin set</h2>
+<p>The <code>haskell.plugins</code> attribute is a set of plugins parameterised by a normal Haskell package set. It is designed in this manner so the same plugin definitions can be used with different compilers.</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode nix"><code class="sourceCode bash"><a class="sourceLine" id="cb4-1" data-line-number="1"><span class="ex">hp</span>:</a>
+<a class="sourceLine" id="cb4-2" data-line-number="2"><span class="kw">{</span></a>
+<a class="sourceLine" id="cb4-3" data-line-number="3"><span class="ex">dump-core</span> = { ... <span class="kw">}</span>;</a>
+<a class="sourceLine" id="cb4-4" data-line-number="4"><span class="ex">graphmod-plugin</span> = { ... };</a>
+<a class="sourceLine" id="cb4-5" data-line-number="5">}</a></code></pre></div>
+<p>Each attribute is a different plugin which we might want to use with our program.</p>
+<h2 id="a-plugin">A plugin</h2>
+<p>A plugin is a Haskell package which provides the plugin with four additional attributes which describe how to run it. For example, here is the definition for the <code>dump-core</code> plugin.</p>
+<div class="sourceCode" id="cb5"><pre class="sourceCode nix"><code class="sourceCode bash"><a class="sourceLine" id="cb5-1" data-line-number="1"><span class="ex">dump-core</span> = { pluginPackage = hp.dump-core <span class="kw">;</span></a>
+<a class="sourceLine" id="cb5-2" data-line-number="2">              <span class="ex">pluginName</span> = <span class="st">&quot;DumpCore&quot;</span><span class="kw">;</span></a>
+<a class="sourceLine" id="cb5-3" data-line-number="3">              <span class="ex">pluginOpts</span> = (out-path: [out-path]);</a>
+<a class="sourceLine" id="cb5-4" data-line-number="4">              <span class="ex">pluginDepends</span> = []<span class="kw">;</span></a>
+<a class="sourceLine" id="cb5-5" data-line-number="5">              <span class="ex">finalPhase</span> = _: <span class="st">&quot;&quot;</span><span class="kw">;</span> } ;</a></code></pre></div>
+<dl>
+<dt><code>pluginPackage</code></dt>
+<dd>The Haskell package which provides the plugin.
+</dd>
+<dt><code>pluginName</code></dt>
+<dd>The module name where the plugin is defined.
+</dd>
+<dt><code>pluginOpts</code></dt>
+<dd>Additional options to pass to the plugin. The path where it places its output is passed as an argument.
+</dd>
+<dt><code>pluginDepends</code></dt>
+<dd>Any additional system dependencies the plugin needs for the finalPhase.
+</dd>
+<dt><code>finalPhase</code></dt>
+<dd>An action to run in the <code>postBuild</code> phase, after the plugin has run. The output directory is passed as an argument.
+</dd>
+</dl>
+<p>In most cases, <code>pluginDepends</code> and <code>finalPhase</code> can be omitted (they then take these default values) but they are useful for when a plugin emits information as it compiles each module which is then summarised at the end.</p>
+<p>An example of this architecture is the <a href="https://github.com/mpickering/graphmod-plugin"><code>graphmod-plugin</code></a>. As each module is compiled, the import information is serialised. Then, at the end we read all the serialised files and create a dot graph of the module import structure. Here is how we specify the final phase of the plugin:</p>
+<div class="sourceCode" id="cb6"><pre class="sourceCode nix"><code class="sourceCode bash"><a class="sourceLine" id="cb6-1" data-line-number="1"><span class="ex">graphmod</span> = { pluginPackage = hp.graphmod-plugin<span class="kw">;</span></a>
+<a class="sourceLine" id="cb6-2" data-line-number="2">             <span class="ex">pluginName</span> = <span class="st">&quot;GraphMod&quot;</span><span class="kw">;</span></a>
+<a class="sourceLine" id="cb6-3" data-line-number="3">             <span class="ex">pluginOpts</span> = (out-path: [<span class="st">&quot;</span><span class="va">${out-</span>path<span class="va">}</span><span class="st">/output&quot;</span>]);</a>
+<a class="sourceLine" id="cb6-4" data-line-number="4">             <span class="ex">pluginDepends</span> = [ nixpkgs.graphviz ]<span class="kw">;</span></a>
+<a class="sourceLine" id="cb6-5" data-line-number="5">             <span class="ex">finalPhase</span> = out-path: <span class="st">&#39;&#39;</span></a>
+<a class="sourceLine" id="cb6-6" data-line-number="6">                <span class="ex">graphmod-plugin</span> --indir <span class="va">${out-</span>path<span class="va">}</span>/output <span class="op">&gt;</span> <span class="va">${out-</span>path<span class="va">}</span>/out.dot</a>
+<a class="sourceLine" id="cb6-7" data-line-number="7">                <span class="fu">cat</span> <span class="va">${out-</span>path<span class="va">}</span>/out.dot <span class="kw">|</span> <span class="ex">tred</span> <span class="kw">|</span> <span class="ex">dot</span> -Tpdf <span class="op">&gt;</span> <span class="va">${out-</span>path<span class="va">}</span>/modules.pdf</a>
+<a class="sourceLine" id="cb6-8" data-line-number="8">              <span class="st">&#39;&#39;</span>; } ;</a></code></pre></div>
+<p>The first three fields are standard, however we now populate the final two arguments as well. We firstly add a dependency on <code>graphviz</code> which we will use to render the module graph and then specify the invocations needed to firstly summarise and then render the information.</p>
+<p>In this architecture, the plugin package provides a library interface which exposes the plugin and an executable which is invoked to collect the information output by the plugin. This is what the call to <code>graphmod-plugin</code> achieves.</p>
+<h2 id="withplugin"><code>withPlugin</code></h2>
+<p>We also provide the <code>withPlugin</code> attribute which supplies both the plugins and packages already applied to a specific package set. The reason for this is that <strong>a plugin and a package must be both compiled by the same compiler</strong>. Thus, unrestricted usage of <code>addPlugin</code> can lead to confusing errors if the plugin and package are compiled with different compilers. The <code>withPlugin</code> attribute ensures that the versions align correctly.</p>
+<pre><code>core-either =
+  haskellPackages.withPlugin
+    (plugins: packages: addPlugin plugins.dump-core packages.either)</code></pre>
+<h2 id="how-can-i-use-it">How can I use it?</h2>
+<p>This infrastructure is provided as an overlay. Install the overlay as you would normally, one suggested method can be see in the <a href="https://github.com/mpickering/haskell-nix-plugin/blob/master/example.nix"><code>example.nix</code></a> file.</p>
+<pre><code>let
+  plugin-overlay-git = builtins.fetchGit
+    { url = https://github.com/mpickering/haskell-nix-plugin.git;}  ;
+  plugin-overlay = import &quot;${plugin-overlay-git}/overlay.nix&quot;;
+  nixpkgs = import &lt;nixpkgs&gt; { overlays = [plugin-overlay]; };
+in ...</code></pre>
+<h2 id="conclusion">Conclusion</h2>
+<p>So far, I have not package many plugins in this manner but as source plugins are released in GHC 8.6 I expect to want to use plugins more and more regularly.</p>
+<h3 id="related-links">Related Links</h3>
+]]></summary>
+</entry>
+<entry>
     <title>Fixing the missing `ar` error with a development build of GHC (on NixOS)</title>
     <link href="http://mpickering.github.io/posts/2018-06-21-binutils-unwrapped.html" />
     <id>http://mpickering.github.io/posts/2018-06-21-binutils-unwrapped.html</id>
@@ -996,137 +1098,6 @@ middle = cata middleFold</code></pre>
 <a class="sourceLine" id="cb4-37" data-line-number="37">mapVec f <span class="dt">VNil</span> <span class="fu">=</span> <span class="dt">VNil</span></a>
 <a class="sourceLine" id="cb4-38" data-line-number="38">mapVec f (<span class="dt">VCons</span> x xs) <span class="fu">=</span> <span class="dt">VCons</span> (f x) (mapVec f xs)</a></code></pre></div>
 <p>If we were to change the definition of the nil case of <code>mapVec</code> to use <code>VCons</code> instead then it wouldn’t type check.</p>
-]]></summary>
-</entry>
-<entry>
-    <title>Pattern Synonyms in GHC 8.0</title>
-    <link href="http://mpickering.github.io/posts/2015-12-12-pattern-synonyms-8.html" />
-    <id>http://mpickering.github.io/posts/2015-12-12-pattern-synonyms-8.html</id>
-    <published>2015-12-12T00:00:00Z</published>
-    <updated>2015-12-12T00:00:00Z</updated>
-    <summary type="html"><![CDATA[<h2 class="post"> Pattern Synonyms in GHC 8.0 </h2>
-<div class="info">
-    Posted on December 12, 2015
-    
-</div>
-
-<p>There have been four small but significant improvements to pattern synonyms which are going to appear in GHC 8.0.</p>
-<p>This work closes up some holes which were left in the implementation of pattern synonyms and should provide library authors with a new and flexible method of abstraction.</p>
-<p>More information about pattern synonyms can be found in the <a href="http://mpickering.github.io/users_guide/glasgow_exts.html#pattern-synonyms">GHC 8.0 user guide</a>.</p>
-<!--more-->
-<h3 id="record-pattern-synonyms">Record Pattern Synonyms</h3>
-<p>The biggest update extends pattern synonyms to allow the construction of pattern synonyms which behave like record data constructors.</p>
-<p>Since GHC 7.8 you have been able to define prefix and infix pattern synonyms which behave like normal data constructors. With the addition of record pattern synonyms most data constructors can be replicated by pattern synonyms.<a href="#fn1" class="footnote-ref" id="fnref1"><sup>1</sup></a></p>
-<p>To make this clear, consider the data constructor <code>Just</code>. We can use this constructor in two contexts, in a pattern match or in an expression context to construct a value.</p>
-<p>If we defined the pattern synonym <code>MyJust</code>, we can use it in precisely the same contexts as <code>Just</code>.</p>
-<div class="sourceCode" id="cb1"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb1-1" data-line-number="1">pattern <span class="dt">MyJust</span><span class="ot"> ::</span> a <span class="ot">-&gt;</span> <span class="dt">Maybe</span> a</a>
-<a class="sourceLine" id="cb1-2" data-line-number="2">pattern <span class="dt">MyJust</span> a <span class="fu">=</span> <span class="dt">Just</span> a</a></code></pre></div>
-<p>Similarly, record data constructors can be used in seven contexts.</p>
-<table>
-<colgroup>
-<col style="width: 50%" />
-<col style="width: 50%" />
-</colgroup>
-<thead>
-<tr class="header">
-<th>Usage</th>
-<th>Example</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td>As a constructor</td>
-<td><code>zero = Point 0 0</code></td>
-</tr>
-<tr class="even">
-<td>As a constructor with record syntax</td>
-<td><code>zero = Point { x = 0, y = 0}</code></td>
-</tr>
-<tr class="odd">
-<td>In a pattern context</td>
-<td><code>isZero (Point 0 0) = True</code></td>
-</tr>
-<tr class="even">
-<td>In a pattern context with record syntax</td>
-<td><code>isZero (Point { x = 0, y = 0 }</code></td>
-</tr>
-<tr class="odd">
-<td>In a pattern context with field puns</td>
-<td><code>getX (Point {x}) = x</code></td>
-</tr>
-<tr class="even">
-<td>In a record update</td>
-<td><code>(0, 0) { x = 1 } == (1,0)</code></td>
-</tr>
-<tr class="odd">
-<td>Using record selectors</td>
-<td><code>x (0,0) == 0</code></td>
-</tr>
-</tbody>
-</table>
-<p>Record pattern synonyms are defined as follows and can also be used in these seven contexts.</p>
-<div class="sourceCode" id="cb2"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb2-1" data-line-number="1">pattern <span class="dt">MyPoint</span><span class="ot"> ::</span> <span class="dt">Int</span> <span class="ot">-&gt;</span> <span class="dt">Int</span> <span class="ot">-&gt;</span> (<span class="dt">Int</span>, <span class="dt">Int</span>)</a>
-<a class="sourceLine" id="cb2-2" data-line-number="2">pattern <span class="dt">MyPoint</span>{x, y} <span class="fu">=</span> (x,y)</a></code></pre></div>
-<p>Projection functions, <code>x</code> and <code>y</code> are defined like record selectors for ordinary constructors.</p>
-<div class="sourceCode" id="cb3"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb3-1" data-line-number="1"><span class="ot">x ::</span> (<span class="dt">Int</span>, <span class="dt">Int</span>) <span class="ot">-&gt;</span> <span class="dt">Int</span></a>
-<a class="sourceLine" id="cb3-2" data-line-number="2"><span class="ot">y ::</span> (<span class="dt">Int</span>, <span class="dt">Int</span>) <span class="ot">-&gt;</span> <span class="dt">Int</span></a></code></pre></div>
-<p>Because we defined this pattern synonym, tuples can now be updated with record update syntax.</p>
-<div class="sourceCode" id="cb4"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb4-1" data-line-number="1"><span class="fu">&gt;</span> (<span class="dv">0</span>,<span class="dv">0</span>) { x <span class="fu">=</span> <span class="dv">5</span> }</a>
-<a class="sourceLine" id="cb4-2" data-line-number="2">(<span class="dv">5</span>, <span class="dv">0</span>)</a></code></pre></div>
-<h3 id="bundling-pattern-synonyms">Bundling Pattern Synonyms</h3>
-<p>Since pattern synonyms are a lot like data constructors, they should be able to be imported just like data constructors. To put it another way a user should be unaware whether they are using a pattern synonym or a data constructor.</p>
-<p>However, before GHC 8.0, there has been quite an awkward distinction between the two. Data constructors couldn’t be imported or exported separated from the type which they construct. On the other hand, pattern synonyms could only be imported and exported individually by using the <code>pattern</code> keyword. This meant that consumers had to be aware that whether they were importing a pattern synonym or not! No good!</p>
-<p>Now there are two ways which we can export the pattern synonym <code>P :: A</code>.</p>
-<ol type="1">
-<li>Separately, as before, by using the <code>pattern</code> keyword. <code>haskell  module Foo (pattern P) where</code></li>
-<li>Bundled with the relevant type constructor <code>haskell  module Foo ( A(P) ) where</code> or to export all of <code>A</code>’s constructors along with the pattern synonym <code>P</code>. <code>haskell  module Foo ( A(.., P) ) where</code></li>
-</ol>
-<p>In this second case, if another module imports <code>Foo</code> then <code>P</code> can be imported alongwith <code>A</code>.</p>
-<div class="sourceCode" id="cb5"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb5-1" data-line-number="1"><span class="co">-- Will import P</span></a>
-<a class="sourceLine" id="cb5-2" data-line-number="2"><span class="kw">import</span> <span class="dt">Foo</span> (<span class="dt">A</span> (..))</a></code></pre></div>
-<p>or</p>
-<div class="sourceCode" id="cb6"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb6-1" data-line-number="1"><span class="co">-- Will import P</span></a>
-<a class="sourceLine" id="cb6-2" data-line-number="2"><span class="kw">import</span> <span class="dt">Foo</span> (<span class="dt">A</span> (<span class="dt">P</span>))</a></code></pre></div>
-<h4 id="an-example-errorcall">An Example: <code>ErrorCall</code></h4>
-<p>This problem reared its head in one of the first serious uses of pattern synonyms. In GHC 8 a pattern synonym <code>ErrorCall</code> is introduced into the base library to smooth over changes in the internal representation caused by Eric Seidel’s work on call stacks.</p>
-<p>The datatype <code>ErrorCall</code> previously just had one synonymous constructor.</p>
-<div class="sourceCode" id="cb7"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb7-1" data-line-number="1"><span class="kw">data</span> <span class="dt">ErrorCall</span> <span class="fu">=</span> <span class="dt">ErrorCall</span> <span class="dt">String</span></a></code></pre></div>
-<p>After the <a href="https://phabricator.haskell.org/D861">refactoring</a>, the single constructor was renamed to <code>ErrorCallWithLocation</code> but Eric wanted to smooth over the transition by providing a pattern synonym which would behave much like before.</p>
-<div class="sourceCode" id="cb8"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb8-1" data-line-number="1"><span class="kw">data</span> <span class="dt">ErrorCall</span> <span class="fu">=</span> <span class="dt">ErrorCallWithLocation</span> <span class="dt">String</span> <span class="dt">String</span></a>
-<a class="sourceLine" id="cb8-2" data-line-number="2"></a>
-<a class="sourceLine" id="cb8-3" data-line-number="3">pattern <span class="dt">ErrorCall</span><span class="ot"> ::</span> <span class="dt">String</span> <span class="ot">-&gt;</span> <span class="dt">ErrorCall</span></a>
-<a class="sourceLine" id="cb8-4" data-line-number="4">pattern <span class="dt">ErrorCall</span> s <span class="ot">&lt;-</span> <span class="dt">ErrorCallWithLocation</span> s _ <span class="kw">where</span></a>
-<a class="sourceLine" id="cb8-5" data-line-number="5">  <span class="dt">ErrorCall</span> s <span class="fu">=</span> <span class="dt">ErrorCallWithLocation</span> s <span class="st">&quot;&quot;</span></a></code></pre></div>
-<p>However clients importing <code>ErrorCall(..)</code> found that despite the careful efforts of the library author this change broke their code. The problem being that by default, it is necessary to explicitly import pattern synonyms.</p>
-<p>With this feature, we can now bundle the new <code>ErrorCall</code> pattern synonym in the export list of the module so that users importing <code>ErrorCall(..)</code> will also import the pattern synonym.</p>
-<div class="sourceCode" id="cb9"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb9-1" data-line-number="1"><span class="kw">module</span> <span class="dt">GHC.Exception</span> ( <span class="dt">ErrorCall</span>(<span class="fu">..</span>, <span class="dt">ErrorCall</span>) ) <span class="kw">where</span></a></code></pre></div>
-<h3 id="pattern-synonym-signatures">Pattern Synonym Signatures</h3>
-<p>Pattern synonyms can also have type signatures. The syntax is very similar to normal type signatures but there are two sets of constraints rather than the usual one which correspond to “required” and “provided” constraints.</p>
-<div class="sourceCode" id="cb10"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb10-1" data-line-number="1">pattern <span class="dt">P</span><span class="ot"> ::</span> required <span class="ot">=&gt;</span> provided <span class="ot">=&gt;</span> <span class="kw">type</span></a></code></pre></div>
-<p>In the common case that there are no provided constraints, it is possible to omit the first set of constraints.</p>
-<div class="sourceCode" id="cb11"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb11-1" data-line-number="1">pattern <span class="dt">P</span><span class="ot"> ::</span> required <span class="ot">=&gt;</span> <span class="kw">type</span></a></code></pre></div>
-<p>and in the even more common case when there are no constraints, both can be omitted.</p>
-<div class="sourceCode" id="cb12"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb12-1" data-line-number="1">pattern <span class="dt">P</span><span class="ot"> ::</span> <span class="kw">type</span></a></code></pre></div>
-<p><em>Required</em> constraints are constraints which are required in order to make a match. For example, we could provide the quite silly pattern synonym which uses <code>show</code> to check whether a pattern should match. As <code>show</code> is from the <code>Show</code> typeclass, we have to add it to the required constraints.</p>
-<div class="sourceCode" id="cb13"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb13-1" data-line-number="1">pattern <span class="dt">IsTrue</span><span class="ot"> ::</span> <span class="dt">Show</span> a <span class="ot">=&gt;</span> a</a>
-<a class="sourceLine" id="cb13-2" data-line-number="2">pattern <span class="dt">IsTrue</span> <span class="ot">&lt;-</span> ((<span class="fu">==</span> <span class="st">&quot;True&quot;</span>) <span class="fu">.</span> show <span class="ot">-&gt;</span> <span class="dt">True</span>)</a></code></pre></div>
-<p><em>Provided</em> constraints are constraints which are made available on a successful match. This usually occurs when matching on a GADT with an existential type.</p>
-<p>In fact, it only makes sense for provided constraints to mention existentially quantified type variables which explains why they are less often used.</p>
-<div class="sourceCode" id="cb14"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb14-1" data-line-number="1"><span class="kw">data</span> <span class="dt">T</span> <span class="kw">where</span></a>
-<a class="sourceLine" id="cb14-2" data-line-number="2">  <span class="dt">MkT</span><span class="ot"> ::</span> (<span class="dt">Show</span> b) <span class="ot">=&gt;</span> b <span class="ot">-&gt;</span> <span class="dt">T</span></a>
-<a class="sourceLine" id="cb14-3" data-line-number="3"></a>
-<a class="sourceLine" id="cb14-4" data-line-number="4">pattern <span class="dt">ExNumPat</span><span class="ot"> ::</span> () <span class="ot">=&gt;</span> <span class="dt">Show</span> b <span class="ot">=&gt;</span> b <span class="ot">-&gt;</span> <span class="dt">T</span></a>
-<a class="sourceLine" id="cb14-5" data-line-number="5">pattern <span class="dt">ExNumPat</span> x <span class="fu">=</span> <span class="dt">MkT</span> x</a></code></pre></div>
-<p>Pattern synonym signatures aren’t new for GHC 8.0 but the order of required and provided constraints has been switched.<a href="#fn2" class="footnote-ref" id="fnref2"><sup>2</sup></a></p>
-<h3 id="warnings-for-missing-pattern-synonym-signatures">Warnings for missing pattern synonym signatures</h3>
-<p>The final small change is that GHC can also warn about any pattern synonym which doesn’t have a type signature. The warning is turned on by the flag <code>-fwarn-missing-pat-syn-sigs</code> and is also enabled by <code>-Wall</code>.</p>
-<section class="footnotes">
-<hr />
-<ol>
-<li id="fn1"><p>There is one exception which is a datatype which has record constructors which share field names. <code>data A = B { a :: Int } | C { a :: Int, b :: Int }</code><a href="#fnref1" class="footnote-back">↩</a></p></li>
-<li id="fn2"><p>In previous versions, provided constraints appeared before required constraints and if only one set was given then it was assumed to be the provided rather than required constraints.<a href="#fnref2" class="footnote-back">↩</a></p></li>
-</ol>
-</section>
 ]]></summary>
 </entry>
 
