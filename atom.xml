@@ -15,11 +15,11 @@
     <id>http://mpickering.github.io/posts/2018-08-10-plugins-recompilation.html</id>
     <published>2018-08-10T00:00:00Z</published>
     <updated>2018-08-10T00:00:00Z</updated>
-    <summary type="html"><![CDATA[<h2 class="post"> Specifying how a plugin affects recompilation </h2>
-<div class="info">
+    <summary type="html"><![CDATA[<h2> Specifying how a plugin affects recompilation </h2>
+<p class="text-muted">
     Posted on August 10, 2018
     
-</div>
+</p>
 
 <p>Plugins have existed for a long time in GHC. The first plugins were implemented in <a href="http://blog.omega-prime.co.uk/2008/06/15/compiler-plugins-for-ghc-the-first-week/">2008</a> by Max Bolingbroke. They enabled users to modify the optimisation pipeline. They ran after desugaring and hence were called <a href="http://mpickering.github.io/ghc-docs/build-html/users_guide/extending_ghc.html#core-plugins-in-more-detail">“core” plugins</a>. Later, Adam Gundry implemented what I shall refer to as <a href="http://adam.gundry.co.uk/pub/typechecker-plugins/">“constraint solver” plugins</a> which allow users to provide custom solver logic to solve additional constraints. Recently, Boldizsár Németh has extended the number of extension points again with a set of plugins which can inspect and modify the syntax AST. Plugins can run after parsing, renaming or type checking and hence are called <a href="http://mpickering.github.io/ghc-docs/build-html/users_guide/extending_ghc.html#source-plugins">“source” plugins</a>.</p>
 <p>The idea behind plugins was great - a user can extend the compiler in their own specific way without having to modify the source tree and rebuild the compiler from scratch. It is far more convenient to write a plugin than to use a custom compiler. However, if a user wants to use a plugin, they will find that every module where the plugin is enabled is always recompiled, even if the source code didn’t change at all. Why is this? Well, a plugin can do anything, it could read the value from a temperature sensor and insert the room temperature into the program. Thus, we would always need to recompile a module if the temperature reading changed as it would affect what our program did.</p>
@@ -78,11 +78,11 @@
     <id>http://mpickering.github.io/posts/2018-08-09-source-plugin-graphmod.html</id>
     <published>2018-08-09T00:00:00Z</published>
     <updated>2018-08-09T00:00:00Z</updated>
-    <summary type="html"><![CDATA[<h2 class="post"> Reimplementing graphmod as a source plugin: graphmod-plugin </h2>
-<div class="info">
+    <summary type="html"><![CDATA[<h2> Reimplementing graphmod as a source plugin: graphmod-plugin </h2>
+<p class="text-muted">
     Posted on August  9, 2018
     
-</div>
+</p>
 
 <p>You may have heard about <a href="http://mpickering.github.io/ghc-docs/build-html/users_guide/extending_ghc.html#source-plugins">source plugins</a> by now. They allow you to modify and inspect the compiler’s intermediate representation. This is useful for extending GHC and performing static analysis of Haskell programs.</p>
 <p>In order to test them out, I reimplemented the <a href="https://github.com/yav/graphmod"><code>graphmod</code></a> tool as a source plugin. <code>graphmod</code> generates a graph of the module structure of your package. Reimplementing it as a source plugin makes the implementation more robust. I implemented it as as a type checker plugin which runs after type checking has finished. The result: <a href="https://github.com/mpickering/graphmod-plugin"><code>graphmod-plugin</code></a></p>
@@ -252,15 +252,15 @@
     <id>http://mpickering.github.io/posts/2018-06-24-haskell-nix-plugins.html</id>
     <published>2018-06-24T00:00:00Z</published>
     <updated>2018-06-24T00:00:00Z</updated>
-    <summary type="html"><![CDATA[<h2 class="post"> Nix scaffolding for running Haskell plugins </h2>
-<div class="info">
+    <summary type="html"><![CDATA[<h2> Nix scaffolding for running Haskell plugins </h2>
+<p class="text-muted">
     Posted on June 24, 2018
     
-</div>
+</p>
 
 <p>I’ve been all about writing <a href="http://mpickering.github.io/posts/2018-06-11-source-plugins.html">source plugins</a> recently but have been dissatisfied with how rough it is to use them practically. In particular, I am writing plugins which don’t change the semantics of my programs but are useful for debugging. I only sometimes want to run them and don’t want them to appear as dependencies at all on Hackage. It needs to be easy to apply them to my own and other people’s packages.</p>
 <p>Of course, the solution was to leverage my knowledge of nix to wrap up everything into a nice interface. The key to the interface is a new function <code>haskell.lib.addPlugin</code> which augments an existing package with a plugin.</p>
-<pre><code>addPlugin dump-core-plugin either</code></pre>
+<div class="sourceCode" id="cb1"><pre class="sourceCode nix"><code class="sourceCode bash"><a class="sourceLine" id="cb1-1" data-line-number="1"><span class="ex">addPlugin</span> dump-core-plugin either</a></code></pre></div>
 <p>This invocation will now also output an HTML representation of the core program of the <code>either</code> package by using the <code>dump-core</code> plugin.</p>
 <p>This post will explain this interface in more detail but will not get into the gritty implementation details. The implementation can be found in the <a href="https://github.com/mpickering/haskell-nix-plugin"><code>haskell-nix-plugin</code></a> repo.</p>
 <!--more-->
@@ -277,9 +277,9 @@
 </ol>
 <p>If you want to package your library correctly, you then need to hide this information behind a cabal flag. However, this is still undesirable as a package like <code>dump-core</code> is only going to be used by developers but the flag now appears in the public interface. Further to this, I can’t run my plugin on someone else’s package without modifying the cabal file.</p>
 <p>What we really want is a way to take an existing package and to augment it to run the plugin. In order to do this, we define a function <code>addPlugin</code> which takes a plugin and a package as an argument and then compiles the package whilst running the plugin. For example, if we want to inspect the core of the <code>either</code> package, we could specify this like so.</p>
-<pre><code>addPlugin dump-core-plugin either</code></pre>
+<div class="sourceCode" id="cb2"><pre class="sourceCode nix"><code class="sourceCode bash"><a class="sourceLine" id="cb2-1" data-line-number="1"><span class="ex">addPlugin</span> dump-core-plugin either</a></code></pre></div>
 <p>If we then build this modified package, there will be a new output which has the same name as the plugin which contains the output of the plugin. So in this case, we will find the relevant HTML by inspecting the <code>DumpCore</code> attribute. It will also be symlinked to <code>result-DumpCore</code>.</p>
-<pre><code>either-core = (addPlugin dump-core-plugin either).DumpCore</code></pre>
+<div class="sourceCode" id="cb3"><pre class="sourceCode nix"><code class="sourceCode bash"><a class="sourceLine" id="cb3-1" data-line-number="1"><span class="ex">either-core</span> = (addPlugin dump-core-plugin either)<span class="ex">.DumpCore</span></a></code></pre></div>
 <p>There are three new elements to the nixpkgs API.</p>
 <ol type="1">
 <li>A new function <code>haskell.lib.addPlugin</code> which adds a plugin to a package.</li>
@@ -354,11 +354,11 @@ in ...</code></pre>
     <id>http://mpickering.github.io/posts/2018-06-21-binutils-unwrapped.html</id>
     <published>2018-06-21T00:00:00Z</published>
     <updated>2018-06-21T00:00:00Z</updated>
-    <summary type="html"><![CDATA[<h2 class="post"> Fixing the missing `ar` error with a development build of GHC (on NixOS) </h2>
-<div class="info">
+    <summary type="html"><![CDATA[<h2> Fixing the missing `ar` error with a development build of GHC (on NixOS) </h2>
+<p class="text-muted">
     Posted on June 21, 2018
     
-</div>
+</p>
 
 <p>On NixOS, if you build GHC from source using Make or hadrian and try to use it with cabal then you will be greeted with the following error:</p>
 <pre><code>cabal: The program &#39;ar&#39; is required but it could not be found.</code></pre>
@@ -372,11 +372,11 @@ in ...</code></pre>
     <id>http://mpickering.github.io/posts/2018-06-11-source-plugins.html</id>
     <published>2018-06-11T00:00:00Z</published>
     <updated>2018-06-11T00:00:00Z</updated>
-    <summary type="html"><![CDATA[<h2 class="post"> Source Plugins: Four ways to build a typechecked Haskell expression </h2>
-<div class="info">
+    <summary type="html"><![CDATA[<h2> Source Plugins: Four ways to build a typechecked Haskell expression </h2>
+<p class="text-muted">
     Posted on June 11, 2018
     
-</div>
+</p>
 
 <p>A source plugin allows users to modify and analyse code after typechecking. They have access to all the features of the compiler to create and modify bindings.</p>
 <p>Sounds great right? GHC is all about creating and modifying bindings so this should be a doddle. However, it isn’t immediately obvious how to make a typechecked binding using the provided API.</p>
@@ -486,11 +486,11 @@ in ...</code></pre>
     <id>http://mpickering.github.io/posts/2018-03-20-recordsvstypeclasses.html</id>
     <published>2018-03-20T00:00:00Z</published>
     <updated>2018-03-20T00:00:00Z</updated>
-    <summary type="html"><![CDATA[<h2 class="post"> Replacing type classes with records affects optimisation </h2>
-<div class="info">
+    <summary type="html"><![CDATA[<h2> Replacing type classes with records affects optimisation </h2>
+<p class="text-muted">
     Posted on March 20, 2018
     
-</div>
+</p>
 
 <p>It is somewhat common to suggest using records instead of type classes for particular domains for which type classes are not deemed idiomatic. However, this suggestion should be taken with caution as the change will have consequences on how your program is optimised. Using records instead of type classes can lead to much slower programs.</p>
 <!--more-->
@@ -549,11 +549,11 @@ in ...</code></pre>
     <id>http://mpickering.github.io/posts/2018-01-05-ghchead-nix.html</id>
     <published>2018-01-05T00:00:00Z</published>
     <updated>2018-01-05T00:00:00Z</updated>
-    <summary type="html"><![CDATA[<h2 class="post"> Using a development version of GHC with nix </h2>
-<div class="info">
+    <summary type="html"><![CDATA[<h2> Using a development version of GHC with nix </h2>
+<p class="text-muted">
     Posted on January  5, 2018
     
-</div>
+</p>
 
 <p>Most documentation for using nix with Haskell concentrates on quite simple use cases such as how to modify or add new dependencies. What about when you want to do something more complicated? In this post we look at combining modifications from different sources. The goal is to create a package set which can be used to compile packages with HEAD.</p>
 <!--more-->
@@ -798,11 +798,11 @@ git diff &gt; &lt;patchDir&gt;/haskell-src-exts-1.20.1.patch</code></pre>
     <id>http://mpickering.github.io/posts/2017-05-17-inlining-case-study.html</id>
     <published>2017-05-17T00:00:00Z</published>
     <updated>2017-05-17T00:00:00Z</updated>
-    <summary type="html"><![CDATA[<h2 class="post"> INLIN(E)ing: A case study </h2>
-<div class="info">
+    <summary type="html"><![CDATA[<h2> INLIN(E)ing: A case study </h2>
+<p class="text-muted">
     Posted on May 17, 2017
     
-</div>
+</p>
 
 <p>Ollie Charles recently popped into #ghc to ask about a small program which was taking a long time to compile. In fact, the compiler was taking so long in the simplifier he had to increase the tick factor (a measure of how much work the simplifier is allowed to do) to get compilation to finish. Oleg and I quickly set to work working out what was going on in his program.</p>
 <p>It turned out that a misplaced <code>INLINE</code> pragma was causing a lot of simplification work to be duplicated. Removing the pragma allowed the compiler to operate faster whilst producing the same code.</p>
@@ -889,11 +889,11 @@ char7 = (\c -&gt; fromIntegral $ ord c .&amp;. 0x7f) &gt;$&lt; word8</code></pre
     <id>http://mpickering.github.io/posts/2017-04-10-indexed-optics.html</id>
     <published>2017-04-10T00:00:00Z</published>
     <updated>2017-04-10T00:00:00Z</updated>
-    <summary type="html"><![CDATA[<h2 class="post"> Indexed Optics </h2>
-<div class="info">
+    <summary type="html"><![CDATA[<h2> Indexed Optics </h2>
+<p class="text-muted">
     Posted on April 10, 2017
     
-</div>
+</p>
 
 <p>What is an indexed optic? It is an optic which gives you access to an index whilst performing updates.</p>
 <p>It is a simple clear generalisation of a lens but the implementation looks quite complicated. This is due to the desire to reuse the same combinators for both non-indexed and indexed variants. We we will start by explaining a simplified implementation of indexed optics before the technique used in order to reuse the same combinators as ordinary optics.</p>
@@ -996,11 +996,11 @@ char7 = (\c -&gt; fromIntegral $ ord c .&amp;. 0x7f) &gt;$&lt; word8</code></pre
     <id>http://mpickering.github.io/posts/2017-03-20-inlining-and-specialisation.html</id>
     <published>2017-03-20T00:00:00Z</published>
     <updated>2017-03-20T00:00:00Z</updated>
-    <summary type="html"><![CDATA[<h2 class="post"> Inlining and Specialisation </h2>
-<div class="info">
+    <summary type="html"><![CDATA[<h2> Inlining and Specialisation </h2>
+<p class="text-muted">
     Posted on March 20, 2017
     
-</div>
+</p>
 
 <p>The inliner and specialiser are the two parts of the optimiser which are crucial to writing performant functional programs. They ensure that we can write programs at a high-level of abstraction which are simplified when eventually used with concrete arguments.</p>
 <p>The inliner’s job is to replace a function with its definition. This removes one layer of indirection and most importantly allows other optimisations to fire. The specialiser is important for optimising code which uses type classes. Type classes are desugared into dictionary passing style but the specialiser removes a layer of indirection by creating new functions with the relevant dictionaries already supplied.</p>
