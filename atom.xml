@@ -8,8 +8,226 @@
         <name>Matthew Pickering</name>
         <email>matthewtpickering@gmail.com</email>
     </author>
-    <updated>2018-08-10T00:00:00Z</updated>
+    <updated>2018-09-12T00:00:00Z</updated>
     <entry>
+    <title>Using funflow to cache a nix based workflow</title>
+    <link href="http://mpickering.github.io/posts/2018-09-12-funflow-nix.html" />
+    <id>http://mpickering.github.io/posts/2018-09-12-funflow-nix.html</id>
+    <published>2018-09-12T00:00:00Z</published>
+    <updated>2018-09-12T00:00:00Z</updated>
+    <summary type="html"><![CDATA[<h2> Using funflow to cache a nix based workflow </h2>
+<p class="text-muted">
+    Posted on September 12, 2018
+    
+</p>
+
+<p>My latest project has been to plot a <a href="http://mpickering.github.io/maps.html">map of orienteering maps</a> in the UK. This post explains the technical aspects behind the project and primarily the use of <a href="https://hackage.haskell.org/package/funflow"><code>funflow</code></a> to turn my assortment of scripts into into a resumable workflow.</p>
+<p>There was nothing wrong with my ad-hoc python and bash scripts but they downloaded and regenerated the whole output every time. The whole generation takes about 2 hours so it’s desirable to only recompute the necessary portions. This is where <code>funflow</code> comes in, by stringing together these scripts in their DSL, you get caching for free. The workflow is also highly parallelisable so in the future I could distribute the work across multiple machines if necessary.</p>
+<p>The code for the project can be found <a href="https://github.com/mpickering/rg-map">here</a>.</p>
+<p><img src="https://i.imgur.com/NVLui01.png" style="width: 50%; margin: auto; display: block" /></p>
+<!--more-->
+<h2 id="funflow"><code>funflow</code></h2>
+<p>There are already two blog posts introducing the concepts of <code>funflow</code>.</p>
+<ol type="1">
+<li><a href="https://www.tweag.io/posts/2018-04-25-funflow.html">Funflow: Typed Resumable Workflows</a></li>
+<li><a href="https://www.tweag.io/posts/2018-07-10-funflow-make.html">Funflow Example: Emulating Make</a></li>
+</ol>
+<p>The main idea is that you specify your workflow (usually a sequence of external scripts) using a DSL and then <code>funflow</code> will automatically cache and schedule the steps.</p>
+<p>My primary motivation for using <code>funflow</code> was the automatic caching. The store is content addressed which means that the location for each file in the store depends on its contents. <code>funflow</code> performs two different types of caching.</p>
+<ol type="1">
+<li>Input-based caching: A flow will only be executed once for each set of inputs.</li>
+<li>Output-based caching: If multiple different steps produce the same output then it will only be stored once in the store. Further steps will not be recomputed.</li>
+</ol>
+<p>The lack of output-based caching is one of the big missing features of nix which makes it unsuitable for this task. A content-addressed store where the address depends on the contents of the file is sometimes known as an <strong>intensional</strong> store. Nix’s store model is <strong>extensional</strong> as the store hash only depends on the inputs to the build.</p>
+<p>An intensional store relies on the program producing deterministic output hashes. It can be quite difficult to track down why a step is not being cached when you are relying on the output’s being identified in the store.</p>
+<h2 id="high-level-architecture">High-level architecture</h2>
+<p>There are two outputs to the project.</p>
+<ol type="1">
+<li>A folder of map tiles rendered at different resolutions.</li>
+<li>A HTML page which contains the javascript to display the map and markers.</li>
+</ol>
+<p>This folder is then uploaded to online storage and served as a static site.</p>
+<p>The processing pipeline is as follows:</p>
+<ol type="1">
+<li>Find all the maps with location information from <a href="http://www.routegadget.co.uk/">routegadget.co.uk</a>.</li>
+<li>Download the metainformation and map image for each map.</li>
+<li>Convert the maps to a common image format.</li>
+<li>Reproject the maps to remove any rotation.</li>
+<li>Merge overlapping maps into groups.</li>
+<li>Generate tiles at all the different resolutions.</li>
+<li>Combine all the tiles groups together.</li>
+<li>Generate the website with the map and location markers.</li>
+</ol>
+<p>As can be seen, the workflow is firstly highly parallelisable as much of the processing pipeline happens independently of other steps. However, the main goal is to avoid computing the tiles as much as possible as this is the step which takes by far the longest. At the time of writing there are about 500 maps to process. In general, there are about 5-10 maps added each week. Only recomputing the changed portions of the map saves a lot of time.</p>
+<h2 id="implementation-using-funflow">Implementation using <code>funflow</code></h2>
+<p>In theory, this is a perfect application for <code>funflow</code> but in order to achieve the perfect caching behaviour I had to rearchitecture several parts of the application.</p>
+<h3 id="using-nix-scripts">Using nix scripts</h3>
+<p>The recommended way to use <code>funflow</code> is to run each step of the flow in a docker container. I didn’t want to do this was my scripts already declared the correct environment to run in by using the <a href="http://iam.travishartwell.net/2015/06/17/nix-shell-shebang/"><code>nix-shell</code> shebang</a>.</p>
+<pre><code>#! /usr/bin/env nix-shell
+#! nix-shell -i bash -p gdal</code></pre>
+<p>By placing these two lines at the top of the file, the script will be run using the <code>bash</code> interpreter with the <code>gdal</code> package available. This is more lightweight and flexible than using a docker image as I don’t have to regenerate a new docker image any time I make a change.</p>
+<p>However, there is no native support for running these kinds of scripts built into <code>funflow</code>. It was easy enough to define my own function in order to run these kinds of scripts using the <code>external'</code> primitive.</p>
+<p><code>nixScript</code> takes a boolean parameter indicating whether the script is pure and should be cached. The name of the script to run, the names of any files the script depends on and finally a function which supplies any additional arguments to the script.</p>
+<pre><code>nixScriptX :: ArrowFlow eff ex arr =&gt; Bool
+                                   -&gt; Path Rel File
+                                   -&gt; [Path Rel File]
+                                   -&gt; (a -&gt; [Param])
+                                   -&gt; arr (Content Dir, a) CS.Item
+nixScriptX impure script scripts params = proc (scriptDir, a) -&gt; do
+  env &lt;- mergeFiles -&lt; absScripts scriptDir
+  external&#39; props (\(s, args) -&gt; ExternalTask
+        { _etCommand = &quot;perl&quot;
+        , _etParams = contentParam (s ^&lt;/&gt; script) : params args
+        , _etWriteToStdOut = NoOutputCapture
+        , _etEnv = [(&quot;NIX_PATH&quot;, envParam &quot;NIX_PATH&quot;)] }) -&lt; (env, a)
+  where
+    props = def { ep_impure = impure }
+    absScripts sd = map (sd ^&lt;/&gt;) (script : scripts)</code></pre>
+<p>The use of <code>perl</code> as the command relies on <a href="http://perldoc.perl.org/perlrun.html">the behaviour</a> of <code>perl</code> that it will execute the <code>#!</code> line if it does not contain the word “perl”. Yes, this <a href="https://askubuntu.com/questions/850384/is-there-a-command-for-running-a-script-according-to-its-shebang-line/850387">is dirty</a>.</p>
+<p>It would be desirable to set <code>NIX_PATH</code> to a fixed <code>nixpkgs</code> checkout by passing a tarball directly but this worked for now.</p>
+<p>All the steps are then defined in terms of <code>nixScriptX</code> indirectly as two helper functions are defined for the two cases of a pure or impure scripts.</p>
+<pre><code>nixScript = nixScriptX False
+impureNixScript = nixScriptX True</code></pre>
+<h2 id="step-1---finding-the-map-information">Step 1 - Finding the map information</h2>
+<p>Now to the nitty gritty details.</p>
+<p>Firstly, I had to decouple the processing of finding the map metainformation from downloading the image. Otherwise, I would end up doing a lot of redundant work downloading images multiple times.</p>
+<p>The python script <code>scraper.py</code> executes a selenium driver to extract the map information. For each map, the metainformation is serialised to its own file in the output directory.</p>
+<pre><code>scrape = impureNixScript [relfile|scraper.py|] [[relfile|shell.nix|]]
+          (\() -&gt; [ outParam ])</code></pre>
+<p>This step is marked as impure as we have to run it every time the flow runs to work out if we need to perform any more work.</p>
+<p>It is important that the filename of the serialised information is the same if the content of the file is the same. Otherwise, <code>funflow</code> will calculate a different hash for the file. As such, we compute our own hash of the metainformation for the name the serialised file.</p>
+<p>In the end the output directory looks like:</p>
+<pre><code>9442c7eaa81f82f7e9889f6ee8382e8d047df76db2d5f6a6983d1c82399a2698.pickle
+5e7e6994db565126a942d66a9435454d8b55cd7d3023dd37f64eca7bbb46df1f.pickle
+...</code></pre>
+<h3 id="gotcha-1-using-listdircontents-defeats-caching">Gotcha 1: Using <code>listDirContents</code> defeats caching</h3>
+<p>Now that we have a directory containing all the metainformation, we want to split it up and then execute the fetching, converting and warping in parallel for all the images. My first attempt was</p>
+<pre><code>meta_dir &lt;- step All &lt;&lt;&lt; scrape -&lt; (script_dir, ())
+keys &lt;- listDirContents -&lt; meta_dir</code></pre>
+<p>but this did not work and even if the keys remained the same, the images would be refetched. The problem was <a href="https://hackage.haskell.org/package/funflow-1.3.2/docs/Control-Funflow-Steps.html#v:listDirContents"><code>listDirContents</code></a> does not have the correct caching behaviour.</p>
+<p><code>listDirContents</code> takes a <code>Content Dir</code> and returns a <code>[Content File]</code> as required but the <code>[Content File]</code> are pointers into places into the <code>Content Dir</code>. This means that if the location of <code>Content Dir</code> changes (if there are any changes or new additions to any files in the directory) then the location of <em>all</em> the <code>[Content File]</code> will also be changed. This means the next stage of recompilation will be triggered despite being unnecessary.</p>
+<p>Instead, we have to put each file in the directory into its own store location so that the its location depends only on itself rather than the other contents of the directory. I defined the <code>splitDir</code> combinator in order to do this.</p>
+<pre><code>splitDir :: ArrowFlow eff ex arr =&gt; arr (Content Dir) ([Content File])
+splitDir = proc dir -&gt; do
+  (_, fs) &lt;- listDirContents -&lt; dir
+  mapA reifyFile -&lt; fs
+
+
+-- Put a file, which might be a pointer into a dir, into its own store
+-- location.
+reifyFile :: ArrowFlow eff ex arr =&gt; arr (Content File) (Content File)
+reifyFile = proc f -&gt; do
+  file &lt;- getFromStore return -&lt; f
+  putInStoreAt (\d fn -&gt; copyFile fn d) -&lt; (file, CS.contentFilename f)</code></pre>
+<p>It could be improved by using a hardlink rather than <code>copyFile</code>.</p>
+<h2 id="step-2-download-convert-and-warp">Step 2: Download, convert and warp</h2>
+<p>Now we have split the metainformation up into individual components we have to download, convert and warp the map files.</p>
+<p>We define three flows to do this which correspond to three different scripts.</p>
+<pre><code>fetch = nixScript [relfile|fetch.py|] [[relfile|shell.nix|]]
+          (\metadata -&gt; [ outParam, contentParam metadata ])
+
+convertToGif = nixScript [relfile|convert_gif|] []
+                (\dir -&gt; [ pathParam (IPItem dir), outParam ])
+
+warp = nixScript [relfile|do_warp|] []
+        (\dir -&gt; [ pathParam (IPItem dir), outParam ])</code></pre>
+<p>Each script takes an individual input file and produces output in a directory specified by <code>funflow</code>.</p>
+<p><code>fetch.py</code> is a python script whilst <code>convert_gif</code> and <code>do_warp</code> are bash scripts. We can treat them uniformly because of the <code>nix-shell</code> shebang.</p>
+<p>These steps are all cached by default because they are external processes.</p>
+<h2 id="step-3-merge-the-images-together">Step 3: Merge the images together</h2>
+<p>In order to get a good looking result, we need to group together the processed images into groups of overlapping images. This time we will use a python script again invoked in a similar manner. The output is a directory of files which specify the groups, remember:</p>
+<ol type="1">
+<li>We have to be careful naming the files so that the names remain stable across compilation. In my original program the names were supplied by a counter but now they are the hash of the files which were used to create the group.</li>
+<li>We have to use <code>splitDir</code> after creating the output to put each group file into it’s own store location so the next recompilation step will work.</li>
+</ol>
+<pre><code>mergeRasters = nixScript [relfile|merge-rasters.py|] [[relfile|merge-rasters.nix|]]
+                (\rs -&gt; outParam : map contentParam rs )</code></pre>
+<p>This command also relies on <code>merge-rasters.nix</code> which sets up the correct python environment to run the script.</p>
+<h3 id="gotcha-2-mergedirs-can-also-defeat-caching">Gotcha 2: <code>mergeDirs</code> can also defeat caching</h3>
+<p>The original implementation of this used <code>mergeDirs :: arr [Content File] (Content Dir)</code> in order to group together the files and pass a single directory to <code>merge-rasters.py</code>.</p>
+<p>However, this suffers a similar problem to <code>listDirContents</code> as <code>mergeDirs</code> will create a new content store entry which contains all the files in the merge directories. The hash of this store location will then depend on the whole contents of the directory. In this case these file paths ended up in the output so it would cause the next steps to recompile even if nothing had changed.</p>
+<p>In this case, we would prefer a “logical” group which groups the files together with a stable filename which wouldn’t affect caching.</p>
+<p>The workaround for now was to use <code>splitDir</code> again to put each processed image into its own storage path and then pass each filename individually to <code>merge-rasters.py</code> rather than a directory as before.</p>
+<h2 id="step-4-making-the-tiles">Step 4: Making the tiles</h2>
+<p>Making the tiles is another straightforward step which takes each of the groups and makes the necessary tiles for that group.</p>
+<pre><code>makeTiles = nixScript [relfile|make_tiles|] [] (\dir -&gt; [ contentParam dir, outParam, textParam &quot;16&quot; ])</code></pre>
+<h3 id="gotcha-3-mergedirs-doesnt-merge-duplicate-files">Gotcha 3: <code>mergeDirs</code> doesn’t merge duplicate files</h3>
+<p>Once we have made all the tiles we need to merge them all together. This is safe as we already ensured that they didn’t overlap each other. The problem is that <code>mergeDirs</code> will not merge duplicate files. The <code>make_tiles</code> step creates some unnecessary files which we don’t need but would cause <code>mergeDirs</code> to fail as they are contained in the output of each directory.</p>
+<p>The solution was to write my own version of <code>mergeDirs</code> which checks to see whether a file already exists before trying to merge it. It would be more hygienic to ensure that the directories I was trying to merge were properly distinct but this worked well for this use case.</p>
+<h2 id="step-5-creating-the-static-site">Step 5: Creating the static site</h2>
+<p>Our final script is a python script which creates the static site displaying all the markers and the map tiles. It takes the output of processing all the images and the metainformation to produce a single html file.</p>
+<pre><code>leaflet &lt;- step All &lt;&lt;&lt; makeLeaflet -&lt; ( script_dir, (merge_dir, meta_dir))</code></pre>
+<p>The final step then merges together the static page and all the tiles. This is a nice bundle we can directly upload and serve our static site.</p>
+<pre><code>mergeDirs -&lt; [leaflet, tiles]</code></pre>
+<h2 id="putting-it-all-together">Putting it all together</h2>
+<p>The complete flow is shown below:</p>
+<pre><code>mainFlow :: SimpleFlow () (Content Dir)
+mainFlow = proc () -&gt; do
+  cwd &lt;- stepIO (const getCurrentDir) -&lt; ()
+  script_dir &lt;- copyDirToStore -&lt; (DirectoryContent (cwd &lt;/&gt; [reldir|scripts/|]), Nothing)
+
+	# Step 1
+  meta_dir &lt;- step All &lt;&lt;&lt; scrape -&lt; (script_dir, ())
+  keys &lt;- splitDir -&lt; meta_dir
+	# Step 2
+  maps &lt;- mapA (fetch) -&lt; [( script_dir, event) | event &lt;- keys]
+  mapJpgs &lt;- mapA convertToGif -&lt; [(script_dir, m) | m &lt;- maps]
+  merge_dir &lt;- mergeDirs&#39; &lt;&lt;&lt; mapA (step All) &lt;&lt;&lt; mapA warp -&lt; [(script_dir, jpg) | jpg &lt;- mapJpgs ]
+  toMerge &lt;- splitDir -&lt; merge_dir
+	# Step 3
+  vrt_dir &lt;- step All &lt;&lt;&lt; mergeRasters -&lt; (script_dir, toMerge)
+  merged_vrts &lt;- splitDir -&lt; vrt_dir
+	# Step 4
+  tiles &lt;- mergeDirs&#39; &lt;&lt;&lt; mapA (step All) &lt;&lt;&lt; mapA makeTiles -&lt; [(script_dir, vrt) | vrt &lt;- merged_vrts]
+
+	# Step 5
+  leaflet &lt;- step All &lt;&lt;&lt; makeLeaflet -&lt; ( script_dir, (merge_dir, meta_dir))
+
+  mergeDirs -&lt; [leaflet, tiles]</code></pre>
+<p>Once all the kinks are ironed out – it’s quite short but a very powerful specification which avoids a lot of redundant work being carried out.</p>
+<h3 id="gotcha-4-copydirtostore-can-defeat-caching">Gotcha 4: <code>copyDirToStore</code> can defeat caching</h3>
+<p>Using <code>copyDirToStore</code> seems much more convenient than copying each script into the store manually but it can again have confusing caching behaviour. The hash of the store location for <code>script_dir</code> depends on the whole <code>script_dir</code> directory. If you change any file in the directory then the hash of it will change. This means that all steps will recompile if you modify any script!</p>
+<p>This is the reason for the <code>mergeFiles</code> call in <code>nixScriptX</code>. <code>mergeFiles</code> will take the necessary files from <code>script_dir</code> and put them into their own store directory. The hash of this directory will only depend on the files necessary for that step.</p>
+<h2 id="running-the-flow">Running the flow</h2>
+<p>The flow is run with the simple local runner. We pass in a location for the local store to the runner which is just a local directory in this case. The library has support for more complicated runners but I haven’t explored using those yet.</p>
+<pre><code>main :: IO ()
+main = do
+    cwd &lt;- getCurrentDir
+    r &lt;- withSimpleLocalRunner (cwd &lt;/&gt; [reldir|funflow-example/store|]) $ \run -&gt;
+      run (mainFlow &gt;&gt;&gt; storePath) ()
+    case r of
+      Left err -&gt;
+        putStrLn $ &quot;FAILED: &quot; ++ displayException err
+      Right out -&gt; do
+        putStrLn $ &quot;SUCCESS&quot;
+        putStrLn $ toFilePath out</code></pre>
+<h3 id="displaying-the-outpath">Displaying the outpath</h3>
+<p>A nice feature of <code>nix-build</code> is that it displays the path of the final output in the nix store once the build has finished. This is possible to replicate using <code>funflow</code> after defining your own combinator. It would be good to put this in the standard library.</p>
+<pre><code>storePath :: ArrowFlow eff ex arr =&gt; arr (Content Dir) (Path Abs Dir)
+storePath = getFromStore return</code></pre>
+<p>It means that we can run our flow and deploy the site in a single command given we have a script which performs the deployment given an output path.</p>
+<p>Mine looks a bit like:</p>
+<pre><code>#! /usr/bin/env nix-shell
+#! nix-shell -i bash -p awscli
+if [[ $# -eq 0 ]] ; then
+     echo &#39;Must pass output directory&#39;
+     exit 1
+fi
+aws s3 sync $1 s3://&lt;bucket-name&gt;</code></pre>
+<p>Putting them together:</p>
+<pre><code>cabal new-run | ./upload-s3</code></pre>
+<h2 id="conclusion">Conclusion</h2>
+<p>Once everything is set up properly, <code>funflow</code> is a joy to use. It abstracts beautifully away from the annoying problems of scheduling and caching leaving the core logic visible. An unfortunate consequence of the intensional store model is that debugging why a build step is not being cached can be very time consuming and fiddly. When I explain the problems I faced, they are obvious but each one required careful thought and reading the source code to understand the intricacies of each of the different operations.</p>
+<p>It was also very pleasant to combine using <code>nix</code> and <code>funflow</code> rather than the suggested <code>docker</code> support.</p>
+<h2 id="related-links">Related Links</h2>
+<ul>
+<li><a href="http://mpickering.github.io/maps.html">Map of orienteering maps</a></li>
+<li><a href="https://github.com/mpickering/rg-map">Source code</a></li>
+<li>Reddit comments</li>
+</ul>
+]]></summary>
+</entry>
+<entry>
     <title>Specifying how a plugin affects recompilation</title>
     <link href="http://mpickering.github.io/posts/2018-08-10-plugins-recompilation.html" />
     <id>http://mpickering.github.io/posts/2018-08-10-plugins-recompilation.html</id>
@@ -68,7 +286,7 @@
 <h1 id="related-links">Related Links</h1>
 <ul>
 <li><a href="http://mpickering.github.io/ghc-docs/build-html/users_guide/extending_ghc.html#controlling-recompilation">GHC User’s Guide</a></li>
-<li>Reddit comments</li>
+<li><a href="https://www.reddit.com/r/haskell/comments/967o6k/specifying_how_a_plugin_affects_recompilation/">Reddit comments</a></li>
 </ul>
 ]]></summary>
 </entry>
@@ -988,169 +1206,6 @@ char7 = (\c -&gt; fromIntegral $ ord c .&amp;. 0x7f) &gt;$&lt; word8</code></pre
 <p>Generalisations are possible which combine indices in other ways but this simple combination function highlights the essence of the approach.</p>
 <h1 id="what-are-indexed-optics-useful-for">What are indexed optics useful for?</h1>
 <p>Now that is a question which I will have to defer to reddit comments. I couldn’t find many libraries which were using the indexing in interesting ways.</p>
-]]></summary>
-</entry>
-<entry>
-    <title>Inlining and Specialisation</title>
-    <link href="http://mpickering.github.io/posts/2017-03-20-inlining-and-specialisation.html" />
-    <id>http://mpickering.github.io/posts/2017-03-20-inlining-and-specialisation.html</id>
-    <published>2017-03-20T00:00:00Z</published>
-    <updated>2017-03-20T00:00:00Z</updated>
-    <summary type="html"><![CDATA[<h2> Inlining and Specialisation </h2>
-<p class="text-muted">
-    Posted on March 20, 2017
-    
-</p>
-
-<p>The inliner and specialiser are the two parts of the optimiser which are crucial to writing performant functional programs. They ensure that we can write programs at a high-level of abstraction which are simplified when eventually used with concrete arguments.</p>
-<p>The inliner’s job is to replace a function with its definition. This removes one layer of indirection and most importantly allows other optimisations to fire. The specialiser is important for optimising code which uses type classes. Type classes are desugared into dictionary passing style but the specialiser removes a layer of indirection by creating new functions with the relevant dictionaries already supplied.</p>
-<p>This document will explain the basics of these two parts of the optimiser and some user-facing options which can be used to control them.</p>
-<!--more-->
-<h1 id="what-does-the-inlinable-pragma-do">What does the <code>INLINABLE</code> pragma do?</h1>
-<p>Top-level definitions can be marked <code>INLINABLE</code>.</p>
-<div class="sourceCode" id="cb1"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb1-1" data-line-number="1"><span class="ot">myComplicatedFunction ::</span> (<span class="dt">Show</span> a, <span class="dt">Num</span> a) <span class="ot">=&gt;</span> <span class="fu">...</span></a>
-<a class="sourceLine" id="cb1-2" data-line-number="2">myComplicatedFunction <span class="fu">=</span> <span class="fu">...</span></a>
-<a class="sourceLine" id="cb1-3" data-line-number="3"></a>
-<a class="sourceLine" id="cb1-4" data-line-number="4"><span class="ot">{-# INLINABLE myComplicatedFunction #-}</span></a></code></pre></div>
-<p>This causes exactly two things to happens.</p>
-<ol type="1">
-<li>The function’s (exact) definition is included in the interface file for the module.</li>
-<li>The function will be specialised at use sites – even across modules.</li>
-</ol>
-<p>Note that GHC is no more keen to inline an <code>INLINABLE</code> function than any other.</p>
-<h1 id="what-does-the-inline-pragma-do">What does the <code>INLINE</code> pragma do?</h1>
-<p>The <code>INLINE</code> pragma can be applied to top-level definitions. It behaves like the <code>INLINABLE</code> pragma but makes GHC very keen to inline the function.</p>
-<div class="sourceCode" id="cb2"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb2-1" data-line-number="1"><span class="ot">mySimpleFunction ::</span> <span class="fu">...</span></a>
-<a class="sourceLine" id="cb2-2" data-line-number="2">mySimpleFunction <span class="fu">=</span> <span class="fu">...</span></a>
-<a class="sourceLine" id="cb2-3" data-line-number="3"></a>
-<a class="sourceLine" id="cb2-4" data-line-number="4"><span class="ot">{-# INLINE mySimpleFunction #-}</span></a></code></pre></div>
-<p>It is a sledgehammer and without care you can make the compiler take a long time and produce a lot of code. Most “ticks exhausted” panics are due to library authors misusing <code>INLINE</code> pragmas.</p>
-<p>Liberally sprinkling all your definitions with <code>INLINE</code> is likely make the compiler take a very long time to compile your program. It is not beneficial to inline every function, inlining a function which is not optimised further only increases overall code size without improving performance.</p>
-<p>One situation where it is useful to use an <code>INLINE</code> pragma is when the definition of the function contains functions which are mentioned in <code>RULES</code>. In this case, it is essential that the optimiser is quite aggressive so that the <code>RULES</code> can fire.</p>
-<h1 id="optimised-vs-unoptimised-unfoldings">Optimised vs unoptimised unfoldings</h1>
-<p>GHC will decide to include some small unfoldings in interface files. When it does this, it first optimises the definitions so that they are not repeatedly optimised at each use site after being inlined. Unfoldings included by <code>INLINE</code> or <code>INLINABLE</code> are unoptimised so that they interact better with <code>RULES</code>.</p>
-<h1 id="what-is-an-interface-file">What is an interface file?</h1>
-<p>An interface file stores all information about a module which is needed by other modules.</p>
-<p>The key to cross-module inlining and specialisation is making sure that we have the definitions of functions we want to inline at hand. Information is only passed between modules by interface files, therefore we must include the unfoldings of definitions in interface files if we want to inline them across modules.</p>
-<p>The extension for interface files is <code>.hi</code>, you can see what’s in an interface file by using the <code>--show-iface</code> flag.</p>
-<h1 id="what-is-an-unfolding">What is an unfolding?</h1>
-<p>The <em>unfolding</em> of a function <code>f</code> is what <code>f</code> is replaced by when it is inlined. This is usually the definition of <code>f</code>.</p>
-<h1 id="when-are-unfoldings-included-in-interface-files">When are unfoldings included in interface files?</h1>
-<p>Not all definitions are included in interface files by default, doing so might create quite large files. There’s no point including an unfolding of very large definitions which we will never inline in other modules.</p>
-<p>Unfoldings end up in interface files in three ways:</p>
-<ol type="1">
-<li>GHC decides to include unfoldings of small functions by default which it knows it will inline later.</li>
-<li>Functions marked as <code>INLINE</code> or <code>INLINABLE</code> are included in interface files.</li>
-<li>Compiler flags such as <code>-fexpose-all-unfoldings</code> include all unfoldings of all definitions in a module unless they are marked as <code>NOINLINE</code>.</li>
-</ol>
-<h1 id="what-is-specialisation">What is specialisation?</h1>
-<p>Specialisation is the process of removing typeclass dictionary arguments by creating a new type-specialised definition for an overloaded function. Once specialised, dictionary methods can be easily inlined which usually creates more efficient code.</p>
-<p>For example, if we define the overloaded function <code>foo</code></p>
-<div class="sourceCode" id="cb3"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb3-1" data-line-number="1"><span class="ot">foo ::</span> <span class="dt">Show</span> a <span class="ot">=&gt;</span> a <span class="ot">-&gt;</span> a <span class="ot">-&gt;</span> <span class="dt">Bool</span></a>
-<a class="sourceLine" id="cb3-2" data-line-number="2">foo x y <span class="fu">=</span> show x <span class="fu">==</span> show y</a></code></pre></div>
-<p>the following core definition will be produced:</p>
-<div class="sourceCode" id="cb4"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb4-1" data-line-number="1">foo <span class="fu">=</span> \ <span class="fu">@</span>a <span class="fu">$</span>dShow x y <span class="ot">-&gt;</span></a>
-<a class="sourceLine" id="cb4-2" data-line-number="2">    eqString (show <span class="fu">$</span>dShow x) (show <span class="fu">$</span>dShow y)</a></code></pre></div>
-<p>There are now 4 parameters to <code>foo</code>, the first argument is a type (denoted by <code>@</code>), the second argument is the dictionary for <code>Show</code> (denoted by the <code>$d</code> prefix) and the last two are the arguments <code>x</code> and <code>y</code> of the original definition.</p>
-<p>The class constraint is translated into a dictionary. Each time a class method is used, we must dynamically lookup which definition to use in the supplied class dictionary.</p>
-<p>If we know which type <code>a</code> is instantiated with, we can specialise the definition of <code>foo</code> and produce much better code.</p>
-<div class="sourceCode" id="cb5"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb5-1" data-line-number="1"><span class="ot">qux ::</span> <span class="dt">Bool</span> <span class="ot">-&gt;</span> <span class="dt">Bool</span> <span class="ot">-&gt;</span> <span class="dt">Bool</span></a>
-<a class="sourceLine" id="cb5-2" data-line-number="2">qux <span class="fu">=</span> foo <span class="fu">@</span><span class="dt">Bool</span></a></code></pre></div>
-<p>Using <code>foo</code> at a specific type produces a new definition <code>foo_$sfoo</code> which is defined as:</p>
-<div class="sourceCode" id="cb6"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb6-1" data-line-number="1">foo_<span class="fu">$</span><span class="ot">sfoo ::</span> <span class="dt">Bool</span> <span class="ot">-&gt;</span> <span class="dt">Bool</span> <span class="ot">-&gt;</span> <span class="dt">Bool</span></a>
-<a class="sourceLine" id="cb6-2" data-line-number="2">foo_<span class="fu">$</span>sfoo <span class="fu">=</span> foo <span class="fu">@</span><span class="dt">Bool</span> <span class="fu">$</span>fShowBool</a></code></pre></div>
-<p>Further optimisations then inline <code>foo</code> and then the dictionary selector <code>show</code> which produces the following more direct program.</p>
-<div class="sourceCode" id="cb7"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb7-1" data-line-number="1">foo_<span class="fu">$</span>sfoo <span class="fu">=</span></a>
-<a class="sourceLine" id="cb7-2" data-line-number="2">  \ x y <span class="ot">-&gt;</span></a>
-<a class="sourceLine" id="cb7-3" data-line-number="3">    <span class="kw">case</span> x <span class="kw">of</span> {</a>
-<a class="sourceLine" id="cb7-4" data-line-number="4">      <span class="dt">False</span> <span class="ot">-&gt;</span></a>
-<a class="sourceLine" id="cb7-5" data-line-number="5">        <span class="kw">case</span> y <span class="kw">of</span> {</a>
-<a class="sourceLine" id="cb7-6" data-line-number="6">          <span class="dt">False</span> <span class="ot">-&gt;</span> foo4;</a>
-<a class="sourceLine" id="cb7-7" data-line-number="7">          <span class="dt">True</span> <span class="ot">-&gt;</span> foo3</a>
-<a class="sourceLine" id="cb7-8" data-line-number="8">        };</a>
-<a class="sourceLine" id="cb7-9" data-line-number="9">      <span class="dt">True</span> <span class="ot">-&gt;</span></a>
-<a class="sourceLine" id="cb7-10" data-line-number="10">        <span class="kw">case</span> y <span class="kw">of</span> _ {</a>
-<a class="sourceLine" id="cb7-11" data-line-number="11">          <span class="dt">False</span> <span class="ot">-&gt;</span> foo2;</a>
-<a class="sourceLine" id="cb7-12" data-line-number="12">          <span class="dt">True</span> <span class="ot">-&gt;</span> foo1</a>
-<a class="sourceLine" id="cb7-13" data-line-number="13">        }</a>
-<a class="sourceLine" id="cb7-14" data-line-number="14">    }</a></code></pre></div>
-<h2 id="when-does-specialisation-occur">When does specialisation occur?</h2>
-<p>Specialisation occurs when an overloaded function is called at a specific type. The specialised definition is placed in the module where the call happens but also exported so that it can be reused if there is another upstream call-site where specialisation would take place.</p>
-<p>By default, functions are not specialised across modules.</p>
-<p>There are two ways to make functions specialise across modules:</p>
-<ol type="1">
-<li>Marking a function as <code>INLINABLE</code> or <code>INLINE</code>.</li>
-<li>Using the flag <code>-fspecialise-aggressively</code> when compiling the client module. An unfolding must still be available to perform specialisation.</li>
-</ol>
-<p>Further to this, observe that for specialisation to occur across modules, the unfolding must be made available in interface files.</p>
-<p>Notice this subtle point, the <code>INLINABLE</code> pragma guarantees the precise conditions for a function to be specialised across modules.</p>
-<h1 id="how-do-i-use-the-specialise-pragma">How do I use the <code>SPECIALISE</code> pragma?</h1>
-<p>The <code>SPECIALISE</code> pragma is used to create a specialised copy of an overloaded function even if it is not used with that type in the module.</p>
-<div class="sourceCode" id="cb8"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb8-1" data-line-number="1"><span class="kw">module</span> <span class="dt">A</span> <span class="kw">where</span></a>
-<a class="sourceLine" id="cb8-2" data-line-number="2"></a>
-<a class="sourceLine" id="cb8-3" data-line-number="3"><span class="kw">class</span> <span class="dt">C</span> <span class="fu">...</span></a>
-<a class="sourceLine" id="cb8-4" data-line-number="4"></a>
-<a class="sourceLine" id="cb8-5" data-line-number="5"><span class="ot">foo ::</span> <span class="dt">C</span> a <span class="ot">=&gt;</span> a <span class="ot">-&gt;</span> a</a>
-<a class="sourceLine" id="cb8-6" data-line-number="6"></a>
-<a class="sourceLine" id="cb8-7" data-line-number="7"><span class="ot">{-# SPECIALISE foo :: Text -&gt; Text #-}</span></a></code></pre></div>
-<p>This example will create a new function, <code>foo_$sfoo :: Text -&gt; Text</code> which will be used whenever <code>foo</code> is applied to a <code>Text</code> value even in modules which import <code>A</code>.</p>
-<p>This is useful to prevent GHC creating many copies of the same specialised function if you have a very flat module structure.</p>
-<h1 id="what-is-a-loop-breaker">What is a loop-breaker?</h1>
-<p>In general, if we were to inline recursive definitions without care we could easily cause the simplifier to diverge. However, we still want to inline as many functions which appear in mutually recursive blocks as possible. GHC statically analyses each recursive groups of bindings and chooses one of them as the <em>loop-breaker</em>. Any function which is marked as a loop-breaker will never be inlined. Other functions in the recursive group are free to be inlined as eventually a loop-breaker will be reached and the inliner will stop.</p>
-<p>Note: Do not apply <code>INLINE</code> pragmas to loop-breakers, GHC will never inline a loop breaker regardless of which pragma you attach. In fact, with a debugging compiler, core lint will warn about using an <code>INLINE</code> pragma on a loopbreaker.</p>
-<p>Loop-breakers are discussed in detail in section 4 of <a href="https://www.microsoft.com/en-us/research/wp-content/uploads/2002/07/inline.pdf">Secrets of the Glasgow Haskell Compiler inliner</a>.</p>
-<h1 id="how-does-ghc-choose-a-loop-breaker">How does GHC choose a loop-breaker?</h1>
-<p>GHC uses a heuristic to decide which definitions it would be least beneficial to inline and to choose those as loop breakers. For example, it is very beneficial to inline simple expressions and dictionary selector functions so they are given high scores. Discounts are also available if an unfolding is available thus marking a definition as <code>INLINABLE</code> or <code>INLINE</code> will usually cause GHC to not choose it.</p>
-<h1 id="which-flags-can-i-use-to-control-the-simplifier-and-inliner">Which flags can I use to control the simplifier and inliner?</h1>
-<p><code>-fspecialise-aggressively</code> removes the restrictions about which functions are specialisable. Any overloaded function will be specialised with this flag. This can potentially create lots of additional code.</p>
-<p><code>-fexpose-all-unfoldings</code> will include the (optimised) unfoldings of all functions in interface files so that they can be inlined and specialised across modules.</p>
-<p>Using these two flags in conjunction will have nearly the same effect as marking every definition as <code>INLINABLE</code> apart from the fact that the unfoldings for <code>INLINABLE</code> definitions are <em>not</em> optimised.</p>
-<h1 id="will-ghc-ever-inline-recursive-definitions-with-static-arguments">Will GHC ever inline recursive definitions with static arguments?</h1>
-<p>Sometimes people ask if GHC is smart enough to unroll a recursive definition when given a static argument. For example, if we could define <code>sum</code> using direct recursion:</p>
-<div class="sourceCode" id="cb9"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb9-1" data-line-number="1">sum<span class="ot"> ::</span> [<span class="dt">Int</span>] <span class="ot">-&gt;</span> <span class="dt">Int</span></a>
-<a class="sourceLine" id="cb9-2" data-line-number="2">sum [] <span class="fu">=</span> <span class="dv">0</span></a>
-<a class="sourceLine" id="cb9-3" data-line-number="3">sum (x<span class="fu">:</span>xs) <span class="fu">=</span> x <span class="fu">+</span> sum xs</a></code></pre></div>
-<p>A user might expect <code>sum [1,2,3]</code> to be optimised to 6. However, GHC will not inline <code>sum</code> because it is a self-recursive definition and hence a loop-breaker. The compiler is not smart enough to realise that repeatedly inlining <code>sum</code> will terminate.</p>
-<p>However, there is a trick that can be used in order to tell GHC that an argument is truly static. We replace the value argument with a type argument. Then by defining suitable type class instances, we can recurse on the structure of the type as we would on a normal value. This time however, GHC will happily inline each “recursive” call as each call to <code>sum</code> is at a different type.</p>
-<div class="sourceCode" id="cb10"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb10-1" data-line-number="1"><span class="ot">{-# LANGUAGE DataKinds #-}</span></a>
-<a class="sourceLine" id="cb10-2" data-line-number="2"><span class="ot">{-# LANGUAGE KindSignatures #-}</span></a>
-<a class="sourceLine" id="cb10-3" data-line-number="3"><span class="ot">{-# LANGUAGE TypeOperators #-}</span></a>
-<a class="sourceLine" id="cb10-4" data-line-number="4"><span class="ot">{-# LANGUAGE TypeApplications #-}</span></a>
-<a class="sourceLine" id="cb10-5" data-line-number="5"><span class="ot">{-# LANGUAGE NoImplicitPrelude #-}</span></a>
-<a class="sourceLine" id="cb10-6" data-line-number="6"><span class="ot">{-# LANGUAGE ScopedTypeVariables #-}</span></a>
-<a class="sourceLine" id="cb10-7" data-line-number="7"><span class="ot">{-# LANGUAGE InstanceSigs #-}</span></a>
-<a class="sourceLine" id="cb10-8" data-line-number="8"><span class="ot">{-# LANGUAGE PolyKinds #-}</span></a>
-<a class="sourceLine" id="cb10-9" data-line-number="9"><span class="kw">module</span> <span class="dt">Sum</span> <span class="kw">where</span></a>
-<a class="sourceLine" id="cb10-10" data-line-number="10"></a>
-<a class="sourceLine" id="cb10-11" data-line-number="11"><span class="kw">import</span> <span class="dt">Prelude</span> (<span class="dt">Integer</span>, (+))</a>
-<a class="sourceLine" id="cb10-12" data-line-number="12"><span class="kw">import</span> <span class="dt">GHC.TypeLits</span></a>
-<a class="sourceLine" id="cb10-13" data-line-number="13"></a>
-<a class="sourceLine" id="cb10-14" data-line-number="14"><span class="kw">data</span> <span class="dt">Proxy</span> x <span class="fu">=</span> <span class="dt">Proxy</span></a>
-<a class="sourceLine" id="cb10-15" data-line-number="15"></a>
-<a class="sourceLine" id="cb10-16" data-line-number="16"><span class="kw">class</span> <span class="dt">Sum</span> (<span class="ot">xs ::</span> [<span class="dt">Nat</span>]) <span class="kw">where</span></a>
-<a class="sourceLine" id="cb10-17" data-line-number="17"><span class="ot">  sum ::</span> proxy xs <span class="ot">-&gt;</span> <span class="dt">Integer</span></a>
-<a class="sourceLine" id="cb10-18" data-line-number="18"></a>
-<a class="sourceLine" id="cb10-19" data-line-number="19"><span class="kw">instance</span> <span class="dt">Sum</span> <span class="ch">&#39;[] where</span></a>
-<a class="sourceLine" id="cb10-20" data-line-number="20">  sum _ <span class="fu">=</span> <span class="dv">0</span></a>
-<a class="sourceLine" id="cb10-21" data-line-number="21"></a>
-<a class="sourceLine" id="cb10-22" data-line-number="22"><span class="kw">instance</span> (<span class="dt">KnownNat</span> x, <span class="dt">Sum</span> xs) <span class="ot">=&gt;</span> <span class="dt">Sum</span> (x <span class="ch">&#39;: xs) where</span></a>
-<a class="sourceLine" id="cb10-23" data-line-number="23">  <span class="co">--sum :: Proxy (x &#39;: xs) -&gt; Int</span></a>
-<a class="sourceLine" id="cb10-24" data-line-number="24">  sum _ <span class="fu">=</span> natVal (<span class="dt">Proxy</span> <span class="fu">@</span>x) <span class="fu">+</span> sum (<span class="dt">Proxy</span> <span class="fu">@</span>xs)</a>
-<a class="sourceLine" id="cb10-25" data-line-number="25"></a>
-<a class="sourceLine" id="cb10-26" data-line-number="26">main <span class="fu">=</span> sum (<span class="dt">Proxy</span> <span class="fu">@</span><span class="ch">&#39;[1,2,3])</span></a></code></pre></div>
-<p>Inspecting the core we find that the definition of <code>main</code> is simplified to the constant value <code>6</code>.</p>
-<p>Note that this is slightly different to the <a href="http://blog.johantibell.com/2010/09/static-argument-transformation.html">static argument transformation</a> which applies to a multi-parameter recursive functions where one of the arguments is the same for each recursive call. In this case, there are no arguments which remain constant across recursive calls.</p>
-<p>This technique is due to Andres Löh.</p>
-<h1 id="more-links">More Links</h1>
-<ul>
-<li><a href="https://www.microsoft.com/en-us/research/wp-content/uploads/2002/07/inline.pdf">Secrets of the Glasgow Haskell Compiler inliner</a></li>
-<li><a href="https://dl.acm.org/authorize?297115">Optimizing Generics Is Easy!</a></li>
-<li><a href="https://downloads.haskell.org/~ghc/latest/docs/html/users_guide/">GHC Users Guide</a></li>
-<li><a href="https://www.reddit.com/r/haskell/comments/60h7a8/inlining_and_specialisation/?ref=share&amp;ref_source=link">Reddit Thread</a></li>
-<li><a href="https://ghc.haskell.org/trac/ghc/wiki/Inlining">GHC Wiki Inlining page</a></li>
-</ul>
-<h1 id="acknowledgements">Acknowledgements</h1>
-<p>Thanks to Reid Barton, Ashok Menon and Csongor Kiss for useful comments on a draft.</p>
 ]]></summary>
 </entry>
 
