@@ -8,8 +8,214 @@
         <name>Matthew Pickering</name>
         <email>matthewtpickering@gmail.com</email>
     </author>
-    <updated>2018-09-12T00:00:00Z</updated>
+    <updated>2018-09-19T00:00:00Z</updated>
     <entry>
+    <title>Packaging a Haskell library for artefact evaluation using nix</title>
+    <link href="http://mpickering.github.io/posts/2018-09-19-nix-artefacts.html" />
+    <id>http://mpickering.github.io/posts/2018-09-19-nix-artefacts.html</id>
+    <published>2018-09-19T00:00:00Z</published>
+    <updated>2018-09-19T00:00:00Z</updated>
+    <summary type="html"><![CDATA[<h2> Packaging a Haskell library for artefact evaluation using nix </h2>
+<p class="text-muted">
+    Posted on September 19, 2018
+    
+</p>
+
+<p>This year I packaged two artefacts for the ICFP artefact evaluation process. This post explains the system I used to make it easy to produce the docker images using nix. I hope this documentation will be useful for anyone else submitting a Haskell library for evaluation.</p>
+<p>The end result will be an <code>artefact.nix</code> file which is used to build a docker image to submit. It will be an entirely reproducible process as we will fix the versions of all the dependencies we use.</p>
+<!--more-->
+<h2 id="the-structure-of-the-artefact">The structure of the artefact</h2>
+<p>In this example, I am going to package the artefact from the paper <a href="https://dl.acm.org/citation.cfm?id=3236780">“Generic Deriving of Generic Traversals”</a>. The artefact was a Haskell library and an executable which ran some benchmarks. The resulting artefact will be a docker image which contains:</p>
+<ol type="1">
+<li>The source code of the library</li>
+<li>The source code for the benchmarks</li>
+<li>The executable of the benchmarks</li>
+<li>An environment where it is possible to compile the library and benchmarks</li>
+</ol>
+<p>To start with, I will assume that we have placed the source code and benchmarks code in our current directory. We will add the rest of the files</p>
+<pre><code>&gt;&gt;&gt; ls
+generic-lens-1.0.0.1/
+benchmarks/</code></pre>
+<h2 id="step-1-pinning-nixpkgs">Step 1: Pinning nixpkgs</h2>
+<p>The most important step of the whole process is to “pin” our version of nixpkgs to a specific version so that anyone else trying to build the image will use the same versions of all the libraries and system dependencies.</p>
+<p>Once we have established a commit of nixpkgs that out package builds with. We can use <code>nix-prefetch-git</code> in order to create <code>nixpkgs.json</code> which will provide the information about the pin.</p>
+<pre><code>nix-prefetch-git --rev 651239d5ee66d6fe8e5e8c7b7a0eb54d2f4d8621 --url https://github.com/NixOS/nixpkgs.git &gt; nixpkgs.json</code></pre>
+<p>Now we have a file, <code>nixpkgs.json</code> which specifies which version of nixpkgs we should use.</p>
+<p>We then need to load this file. Some boilerplate, <code>nixpkgs.nix</code>, will do that for us.</p>
+<pre><code>opts:
+let
+   hostPkgs = import &lt;nixpkgs&gt; {};
+   pinnedVersion = hostPkgs.lib.importJSON ./nixpkgs.json;
+   pinnedPkgs = hostPkgs.fetchFromGitHub {
+     owner = &quot;NixOS&quot;;
+     repo = &quot;nixpkgs&quot;;
+     inherit (pinnedVersion) rev sha256;
+   };
+in import pinnedPkgs opts</code></pre>
+<p><code>nixpkgs.nix</code> will be imported in <code>artefact.nix</code> and will determine precisely the version of all dependencies we will use.</p>
+<h2 id="step-2-using-dockertools">Step 2: Using <code>dockerTools</code></h2>
+<p>Now we have specified the set of dependencies we want to use we can go about starting to build our docker image. Nixpkgs provides a convenient set of functions called <code>dockerTools</code> in order to create docker images in a declarative manner. This is the start of our <code>artefact.nix</code> file.</p>
+<pre><code>let
+  pkgs = import ./nixpkgs.nix { };
+in
+with pkgs;
+let
+    debian = dockerTools.pullImage
+      { imageName = &quot;debian&quot;
+      ; imageTag = &quot;9.5&quot;
+      ; sha256 = &quot;1jxci0ph7l5fh0mm66g4apq1dpcm5r7gqfpnm9hqyj7rgnh44crb&quot;; };
+in
+dockerTools.buildImage {
+  name = &quot;generic-lens-artefact&quot;;
+
+  fromImage = debian;
+
+  contents = [  bashInteractive
+                glibcLocales
+             ];
+
+  config = {
+    Env = [&quot;LANG=en_US.UTF-8&quot;
+           &quot;LOCALE_ARCHIVE=${glibcLocales}/lib/locale/locale-archive&quot;];
+    WorkingDir = &quot;/programs&quot;;
+  };
+}</code></pre>
+<p>This is the barebones example we’ll start from. We firstly import <code>nixpkgs.nix</code> which defines the package set we want to use. Our docker file will be based on <code>debian</code>, and so we use the <code>dockerTools.pullImage</code> function to get this base image. The <code>imageName</code> comes from docker hub and the <code>imageTag</code> indicates the specific tag.</p>
+<p>This image is our base image when calling <code>dockerTools.buildImage</code>. For now, we add the basic packages <code>bashInteractive</code> and <code>glibcLocales</code>, in the next step we will add the specific contents that we need for our artefact.</p>
+<p>Setting the <code>LANG</code> and <code>LOCALE_ARCHIVE</code> env vars is important for Haskell programs as otherwise you can run into strange encoding errors.</p>
+<p>This is a complete image which can already be build with <code>nix-build artefact.nix</code>. The result will be a <code>.tar.gz</code> which can be loaded into docker and run as normal.</p>
+<h2 id="step-3-including-the-artefact">Step 3: Including the artefact</h2>
+<p>First we’ll deal with making the executable itself available on the image. Remember that the source code the the benchmarks, which is a normal Haskell package, is located in <code>benchmarks/</code>.</p>
+<p>We need to tell nix how to build the benchmarks. The standard way to do this is to use <code>cabal2nix</code> to generate a package specification which we will pass to <code>haskellPackages.callPackage</code>.</p>
+<pre><code>cabal2nix benchmarks/ &gt; benchmarks.nix</code></pre>
+<p>This will produce a file which looks a bit like</p>
+<pre><code>{ mkDerivation, base, criterion, deepseq, dlist, dump-core
+, generic-lens, geniplate-mirror, haskell-src, lens, mtl, one-liner
+, parallel, plugin, random, stdenv, syb, transformers, uniplate
+, weigh
+}:
+mkDerivation {
+  pname = &quot;benchmarks&quot;;
+  version = &quot;0.1.0.0&quot;;
+  src = ./benchmarks;
+  isLibrary = false;
+  isExecutable = true;
+  executableHaskellDepends = [
+    base criterion deepseq dlist dump-core generic-lens
+    geniplate-mirror haskell-src lens mtl one-liner parallel plugin
+    random syb transformers uniplate weigh
+  ];
+  license = stdenv.lib.licenses.bsd3;
+}</code></pre>
+<p>Now we will add the executable to the docker image. A new definition is created in the let bindings and then we add the executable to the <code>contents</code> of the image.</p>
+<pre><code>run-benchmarks = haskellPackages.callPackage ./benchmarks.nix {};</code></pre>
+<p>So now our <code>contents</code> section will look like:</p>
+<pre><code>  contents = [  bashInteractive
+                glibcLocales
+                run-benchmarks
+                ];</code></pre>
+<p>When we build this image, the executable will be available on the path by default. In our case, the user will type <code>bench</code> and it will run the benchmarks.</p>
+<h2 id="step-4-including-the-source-files">Step 4: Including the source files</h2>
+<p>The next step is to add the source files to the image. To do this we use a the <code>runCommand</code> script to make a simple derivation which copies some files into the right place.</p>
+<pre><code>benchmarks-raw = ./benchmarks;
+benchmarks =
+  runCommand &quot;benchmarks&quot; {} &#39;&#39;
+  mkdir -p $out/programs
+  mkdir -p $out/programs/benchmarks
+  cp -r ${benchmarks-raw}/* $out/programs/benchmarks
+&#39;&#39;;</code></pre>
+<p>All the derivation does is copy the directory into the nix store at a specific path. We then just add this to the <code>contents</code> list again and also do the same for the library itself and the README.</p>
+<pre><code>  contents = [  bashInteractive
+                glibcLocales
+                run-benchmarks
+                benchmarks
+                readme
+                library];</code></pre>
+<p>Now once we build the docker image, we’ll have the executable <code>bench</code> available and also a file called <code>README</code> and two folders containing the library code and benchmarks code.</p>
+<h2 id="step-5-an-environment-to-build-the-source-code">Step 5: An environment to build the source code</h2>
+<p>Finally, we need to do two more things to make it possible to build the source programs in the container.</p>
+<p>Including <code>cabal-install</code> in the contents is the first so that we can use <code>cabal</code> in the container.</p>
+<pre><code>  contents = [  bashInteractive
+                glibcLocales
+                run-benchmarks
+                benchmarks
+                readme
+                library
+                cabal-install ];</code></pre>
+<p>The second is much less obvious, we need to make sure that the necessary dependencies are already installed in the environment so that someone can just use <code>cabal build</code> in order to build the package. The way to achieve this is to modify the <code>benchmarks.nix</code> file and change <code>isLibrary</code> to <code>true</code>.</p>
+<pre><code>-  isLibrary = false;
++  isLibrary = true;</code></pre>
+<p>This means that all the build inputs for the benchmarks are propagated to the container so all the dependencies for the benchmarks will be available to rebuild them again.</p>
+<h2 id="complete-artefact.nix">Complete <code>artefact.nix</code></h2>
+<p>Here’s the complete <code>artefact.nix</code> that we ended up with. We also generated <code>nixpkgs.json</code>, <code>nixpkgs.nix</code> and <code>benchmarks.nix</code> along the way.</p>
+<pre><code>let
+  pkgs = import ./nixpkgs.nix {};
+in
+with pkgs;
+let
+    debian = dockerTools.pullImage
+      { imageName = &quot;debian&quot;
+      ; imageTag = &quot;9.5&quot;
+      ; sha256 = &quot;1y4k42ljf6nqxfq7glq3ibfaqsq8va6w9nrhghgfj50w36bq1fg5&quot;; };
+
+    benchmarks-raw = ./benchmarks;
+    benchmarks =
+      runCommand &quot;benchmarks&quot; {} &#39;&#39;
+        mkdir -p $out/programs
+        mkdir -p $out/programs/benchmarks
+        cp -r ${benchmarks-raw}/* $out/programs/benchmarks
+      &#39;&#39;;
+
+    library-raw = ./generic-lens-1.0.0.1;
+    library =
+      runCommand &quot;benchmarks&quot; {} &#39;&#39;
+        mkdir -p $out/programs
+        mkdir -p $out/programs/library
+        cp -r ${library-raw}/* $out/programs/library
+      &#39;&#39;;
+
+    readme-raw = ./README;
+    readme =
+      runCommand &quot;readme&quot; {} &#39;&#39;
+        mkdir -p $out/programs
+        cp ${readme-raw} $out/programs/README
+      &#39;&#39;;
+
+    run-benchmarks = haskellPackages.callPackage ./benchmarks.nix {};
+
+in
+dockerTools.buildImage {
+  name = &quot;generic-lens-artefact&quot;;
+
+
+  fromImage = debian;
+
+  contents = [  bashInteractive
+                cabal-install
+                glibcLocales
+                run-benchmarks
+                benchmarks
+                readme
+                library];
+
+  config = {
+    Env = [&quot;LANG=en_US.UTF-8&quot;
+           &quot;LOCALE_ARCHIVE=${glibcLocales}/lib/locale/locale-archive&quot;];
+    WorkingDir = &quot;/programs&quot;;
+  };
+}</code></pre>
+<h2 id="conclusion">Conclusion</h2>
+<p>Hopefully this tutorial will be useful for anyone having to package a Haskell library in future. Each artefact is different so you’ll probably have to modify some of the steps in order to make it work perfectly for you. It’s also possible that the <code>dockerTools</code> interface will change but it should be possible to modify the examples here to adapt to any minor changes. If you’re already using nix, you probably know what you’re doing anyway.</p>
+<h2 id="related-links">Related Links</h2>
+<ul>
+<li><a href="https://vaibhavsagar.com/blog/2018/05/27/quick-easy-nixpkgs-pinning/">Quick and Easy Nixpkgs Pinning - Vaibhav Sagar</a></li>
+<li><a href="https://nixos.org/nixpkgs/manual/#sec-pkgs-dockerTools"><code>dockerTools</code> documentation</a></li>
+<li><a href="https://www.software.ac.uk/blog/2017-10-05-reproducible-environments-nix">Reproducible Environments With Nix - Blair Archibald</a></li>
+<li>Reddit comments</li>
+</ul>
+]]></summary>
+</entry>
+<entry>
     <title>Using funflow to cache a nix based workflow</title>
     <link href="http://mpickering.github.io/posts/2018-09-12-funflow-nix.html" />
     <id>http://mpickering.github.io/posts/2018-09-12-funflow-nix.html</id>
@@ -1099,113 +1305,6 @@ char7 = (\c -&gt; fromIntegral $ ord c .&amp;. 0x7f) &gt;$&lt; word8</code></pre
 <ul>
 <li><a href="https://www.reddit.com/r/haskell/comments/6bojlj/inlineing_a_case_study/">Reddit Comments</a></li>
 </ul>
-]]></summary>
-</entry>
-<entry>
-    <title>Indexed Optics</title>
-    <link href="http://mpickering.github.io/posts/2017-04-10-indexed-optics.html" />
-    <id>http://mpickering.github.io/posts/2017-04-10-indexed-optics.html</id>
-    <published>2017-04-10T00:00:00Z</published>
-    <updated>2017-04-10T00:00:00Z</updated>
-    <summary type="html"><![CDATA[<h2> Indexed Optics </h2>
-<p class="text-muted">
-    Posted on April 10, 2017
-    
-</p>
-
-<p>What is an indexed optic? It is an optic which gives you access to an index whilst performing updates.</p>
-<p>It is a simple clear generalisation of a lens but the implementation looks quite complicated. This is due to the desire to reuse the same combinators for both non-indexed and indexed variants. We we will start by explaining a simplified implementation of indexed optics before the technique used in order to reuse the same combinators as ordinary optics.</p>
-<!--more-->
-<h1 id="simple-implementation">Simple Implementation</h1>
-<p>As a first approximation, we will augment the updating function with an additional index which we will then subsequently refine.</p>
-<div class="sourceCode" id="cb1"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb1-1" data-line-number="1"><span class="kw">type</span> <span class="dt">PrimitiveIndexedTraversal</span> i s t a b</a>
-<a class="sourceLine" id="cb1-2" data-line-number="2">  <span class="fu">=</span> forall f <span class="fu">.</span> <span class="dt">Applicative</span> f <span class="ot">=&gt;</span> (i <span class="ot">-&gt;</span> a <span class="ot">-&gt;</span> f b) <span class="ot">-&gt;</span> (s <span class="ot">-&gt;</span> f t)</a></code></pre></div>
-<p>Implementing optics by hand gives a good intuition for the types involved.</p>
-<div class="sourceCode" id="cb2"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb2-1" data-line-number="1"><span class="ot">pair ::</span> <span class="dt">PrimitiveIndexedTraversal</span> <span class="dt">Int</span> (a, a) (b, b) a b</a>
-<a class="sourceLine" id="cb2-2" data-line-number="2">pair iafb (a0, a1) <span class="fu">=</span> (,) <span class="fu">&lt;$&gt;</span> iafb <span class="dv">0</span> a0 <span class="fu">&lt;*&gt;</span> iafb <span class="dv">1</span> a1</a></code></pre></div>
-<p>The implementation is exactly the same as a normal traversals apart from we also pass an index to each call of the worker function. Note that we have a lot of choice about which indices we choose. We could have indexed each field with a boolean or in the opposite order. For lists, we need to use a helper function which passes an index to each recursive call.</p>
-<div class="sourceCode" id="cb3"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb3-1" data-line-number="1"><span class="ot">list ::</span> <span class="dt">PrimitiveIndexedTraversal</span> <span class="dt">Int</span> [a] [b] a b</a>
-<a class="sourceLine" id="cb3-2" data-line-number="2">list iafb xs <span class="fu">=</span> go xs <span class="dv">0</span></a>
-<a class="sourceLine" id="cb3-3" data-line-number="3">  <span class="kw">where</span></a>
-<a class="sourceLine" id="cb3-4" data-line-number="4">    go [] _ <span class="fu">=</span> pure []</a>
-<a class="sourceLine" id="cb3-5" data-line-number="5">    go (x<span class="fu">:</span>xs) n <span class="fu">=</span> (<span class="fu">:</span>) <span class="fu">&lt;$&gt;</span> iafb n x <span class="fu">&lt;*&gt;</span> go xs (n<span class="fu">+</span><span class="dv">1</span>)</a></code></pre></div>
-<p>There are all the usual combinators to work with indexed traversals as normal traversals but one of the most useful ones to see what is going on is <code>itoListOf</code> which converts an indexed traversal into a list of index-value pairs.</p>
-<div class="sourceCode" id="cb4"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb4-1" data-line-number="1"><span class="ot">itoListOf ::</span> ((i <span class="ot">-&gt;</span> a <span class="ot">-&gt;</span> <span class="dt">Const</span> [(i, a)] b) <span class="ot">-&gt;</span> s <span class="ot">-&gt;</span> (<span class="dt">Const</span> [(i, a)] t))</a>
-<a class="sourceLine" id="cb4-2" data-line-number="2">          <span class="ot">-&gt;</span> s <span class="ot">-&gt;</span> [(i, a)]</a>
-<a class="sourceLine" id="cb4-3" data-line-number="3">itoListOf t s <span class="fu">=</span> getConst <span class="fu">$</span> t (\i a <span class="ot">-&gt;</span> <span class="dt">Const</span> [(i, a)]) s</a>
-<a class="sourceLine" id="cb4-4" data-line-number="4"></a>
-<a class="sourceLine" id="cb4-5" data-line-number="5"><span class="fu">&gt;</span> itoListOf pair (<span class="dt">True</span>, <span class="dt">False</span>)</a>
-<a class="sourceLine" id="cb4-6" data-line-number="6">[(<span class="dv">0</span>, <span class="dt">True</span>), (<span class="dv">1</span>, <span class="dt">False</span>)]</a></code></pre></div>
-<p>We monomorphise the argument so that we we don’t have to use a variant of <code>cloneTraversal</code> in order to work around impredicative types.</p>
-<p>We can also turn an ordinary traversal into an indexed traversal by labelling each element with the order in which we traverse it. In order to do so we need to define an applicative functor which when traversed with will perform the labelling ultimately returning an indexed traversal.</p>
-<div class="sourceCode" id="cb5"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb5-1" data-line-number="1"><span class="kw">newtype</span> <span class="dt">Indexing</span> f s <span class="fu">=</span> <span class="dt">Indexing</span> {<span class="ot"> runIndexing ::</span> (<span class="dt">Int</span> <span class="ot">-&gt;</span> (<span class="dt">Int</span>, f s))}</a>
-<a class="sourceLine" id="cb5-2" data-line-number="2"></a>
-<a class="sourceLine" id="cb5-3" data-line-number="3"><span class="kw">instance</span> <span class="dt">Functor</span> f <span class="ot">=&gt;</span> <span class="dt">Functor</span> (<span class="dt">Indexing</span> f) <span class="kw">where</span></a>
-<a class="sourceLine" id="cb5-4" data-line-number="4">  fmap f (<span class="dt">Indexing</span> fn) <span class="fu">=</span> <span class="dt">Indexing</span> (over (_2 <span class="fu">.</span> mapped) f <span class="fu">.</span> fn)</a>
-<a class="sourceLine" id="cb5-5" data-line-number="5"></a>
-<a class="sourceLine" id="cb5-6" data-line-number="6"><span class="kw">instance</span> <span class="dt">Applicative</span> f <span class="ot">=&gt;</span> <span class="dt">Applicative</span> (<span class="dt">Indexing</span> f) <span class="kw">where</span></a>
-<a class="sourceLine" id="cb5-7" data-line-number="7">  pure x <span class="fu">=</span> <span class="dt">Indexing</span> (\i <span class="ot">-&gt;</span> (i, pure x))</a>
-<a class="sourceLine" id="cb5-8" data-line-number="8">  (<span class="dt">Indexing</span> fab) <span class="fu">&lt;*&gt;</span> (<span class="dt">Indexing</span> fa)</a>
-<a class="sourceLine" id="cb5-9" data-line-number="9">    <span class="fu">=</span> <span class="dt">Indexing</span> (\i <span class="ot">-&gt;</span></a>
-<a class="sourceLine" id="cb5-10" data-line-number="10">        <span class="kw">let</span> (i&#39;, ab) <span class="fu">=</span> fab i</a>
-<a class="sourceLine" id="cb5-11" data-line-number="11">            (i&#39;&#39;, a) <span class="fu">=</span> fa i&#39;</a>
-<a class="sourceLine" id="cb5-12" data-line-number="12">        <span class="kw">in</span> (i&#39;&#39;, ab <span class="fu">&lt;*&gt;</span> a))</a></code></pre></div>
-<p>Then traversing with this applicative functor supplies the index to each function call which we can pass to our indexed updating function.</p>
-<div class="sourceCode" id="cb6"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb6-1" data-line-number="1"><span class="ot">indexing ::</span> <span class="dt">Traversal</span> s t a b <span class="ot">-&gt;</span> <span class="dt">PrimitiveIndexedTraversal</span> <span class="dt">Int</span> s t a b</a>
-<a class="sourceLine" id="cb6-2" data-line-number="2">indexing t p s <span class="fu">=</span> snd <span class="fu">$</span> runIndexing</a>
-<a class="sourceLine" id="cb6-3" data-line-number="3">  (t (\a <span class="ot">-&gt;</span> <span class="dt">Indexing</span> (\i <span class="ot">-&gt;</span> (i <span class="fu">+</span> <span class="dv">1</span>, p i a) )) s) <span class="dv">0</span></a></code></pre></div>
-<p>A common pattern is to use <code>indexing</code> and <code>traverse</code> together to create indexed traversals for <code>Traversable</code> functors. It is so common that it is given a special name <code>traversed</code>.</p>
-<div class="sourceCode" id="cb7"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb7-1" data-line-number="1"><span class="ot">traversed ::</span> <span class="dt">Traversable</span> t <span class="ot">=&gt;</span> <span class="dt">PrimitiveIndexedTraversal</span> (t a) (t b) a b</a>
-<a class="sourceLine" id="cb7-2" data-line-number="2">traversed <span class="fu">=</span> indexing traverse</a>
-<a class="sourceLine" id="cb7-3" data-line-number="3"></a>
-<a class="sourceLine" id="cb7-4" data-line-number="4"><span class="fu">&gt;</span> itoListOf traversed (<span class="dt">Just</span> <span class="dv">5</span>)</a>
-<a class="sourceLine" id="cb7-5" data-line-number="5">[(<span class="dv">0</span>, <span class="dv">5</span>)]</a></code></pre></div>
-<p>However, there are two problems with this representation.</p>
-<ol type="1">
-<li>Indexed optics do not compose with ordinary optics.</li>
-<li>We need a different composition operator other than (<code>.</code>) in order to compose indexed optics together.</li>
-</ol>
-<h1 id="composing-indexed-and-ordinary-optics">Composing indexed and ordinary optics</h1>
-<p>Considering the first problem, in order to compose an indexed optic with an ordinary optic using function composition we would need to be able to unify <code>i -&gt; a -&gt; b</code> with <code>s -&gt; t</code>.</p>
-<p>Given an ordinary optic <code>op</code> and an indexed optic <code>iop</code> with the following types:</p>
-<div class="sourceCode" id="cb8"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb8-1" data-line-number="1">op <span class="fu">:</span> (a <span class="ot">-&gt;</span> f b) <span class="ot">-&gt;</span> (s <span class="ot">-&gt;</span> f t)</a>
-<a class="sourceLine" id="cb8-2" data-line-number="2">iop <span class="fu">:</span> (i <span class="ot">-&gt;</span> c <span class="ot">-&gt;</span> f d) <span class="ot">-&gt;</span> (u <span class="ot">-&gt;</span> f v)</a></code></pre></div>
-<p><code>op . iop</code> is the only composition which type checks. It yields an indexed traversal which keeps track of the index of the inner component.</p>
-<div class="sourceCode" id="cb9"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb9-1" data-line-number="1"><span class="fu">&gt;</span> itoListOf (traverse <span class="fu">.</span> list) (<span class="dt">True</span>, [<span class="dv">1</span>,<span class="dv">2</span>,<span class="dv">3</span>])</a>
-<a class="sourceLine" id="cb9-2" data-line-number="2">[(<span class="dv">0</span>, <span class="dv">1</span>), (<span class="dv">1</span>, <span class="dv">2</span>), (<span class="dv">2</span>, <span class="dv">3</span>)]</a></code></pre></div>
-<p>However, composition the other way around doesn’t work and further with this representation indexed optics do not compose together with <code>.</code>. In order to compose indexed optics together with <code>.</code> we need to be able to unify the argument and result type of the lens together. In order to do this, we abstract away from the the indexed argument of the updating function for any <code>Indexable</code> profunctor.</p>
-<div class="sourceCode" id="cb10"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb10-1" data-line-number="1"><span class="kw">class</span> <span class="dt">Indexable</span> i p <span class="kw">where</span></a>
-<a class="sourceLine" id="cb10-2" data-line-number="2"><span class="ot">  index ::</span> p a b <span class="ot">-&gt;</span> i <span class="ot">-&gt;</span> a <span class="ot">-&gt;</span> b</a></code></pre></div>
-<p>Using this class, the type for indexed traversals becomes:</p>
-<div class="sourceCode" id="cb11"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb11-1" data-line-number="1"><span class="kw">type</span> <span class="dt">IndexedTraversal</span> i s t a b <span class="fu">=</span></a>
-<a class="sourceLine" id="cb11-2" data-line-number="2">  forall f p <span class="fu">.</span> (<span class="dt">Applicative</span> f, <span class="dt">Indexable</span> i p) <span class="ot">=&gt;</span> p a (f b) <span class="ot">-&gt;</span> s <span class="ot">-&gt;</span> f t</a></code></pre></div>
-<p>There are instances for the newtype wrapped indexed functions which we were using before</p>
-<div class="sourceCode" id="cb12"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb12-1" data-line-number="1"><span class="kw">newtype</span> <span class="dt">Indexed</span> i a b <span class="fu">=</span> <span class="dt">Indexed</span> {<span class="ot"> runIndexed ::</span> i <span class="ot">-&gt;</span> a <span class="ot">-&gt;</span> b }</a>
-<a class="sourceLine" id="cb12-2" data-line-number="2"></a>
-<a class="sourceLine" id="cb12-3" data-line-number="3"><span class="kw">instance</span> (<span class="dt">Indexable</span> i (<span class="dt">Indexed</span> i)) <span class="kw">where</span></a>
-<a class="sourceLine" id="cb12-4" data-line-number="4">  index (<span class="dt">Indexed</span> p) <span class="fu">=</span> p</a></code></pre></div>
-<p>but also for <code>(-&gt;)</code> which ignores the index. This means that we can seamlessly use optics with or without the index by instantiating <code>p</code> with either <code>Indexed</code> or <code>-&gt;</code>.</p>
-<div class="sourceCode" id="cb13"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb13-1" data-line-number="1"><span class="kw">instance</span> (<span class="dt">Indexable</span> i (<span class="ot">-&gt;</span>)) <span class="kw">where</span></a>
-<a class="sourceLine" id="cb13-2" data-line-number="2">  index f _ <span class="fu">=</span> f</a></code></pre></div>
-<p>Now <code>op . iop</code> yields an indexed traversal, <code>iop . op</code> forces us to instantiate <code>p = (-&gt;)</code> and so yields a traversal which has forgotten the index. Perhaps most surprisingly, the composition <code>iop . iop</code> type-checks as well, but again we loose information as we are forced to instantiate <code>p = (-&gt;)</code> and thus forget about the indexing of the outer traversal.</p>
-<p>This is a double edged sword. Composing using <code>.</code> leads to more code reuse as the same combinators can be used for both indexed and non-indexed optics. On the other hand, composing indexed optics using <code>.</code> is nearly always the wrong thing if you care about the indices.</p>
-<h1 id="a-different-composition-operator">A different composition operator</h1>
-<p>Composing together indexed optics with the normal lens composition operator <code>.</code> leads to unexpected results as the indices are not combined appropriately. The index of the inner-most optic of the composition is preserved whilst the outer indexing is thrown away. It would be more desirable to combine the indices together in order to retain as much information as possible.</p>
-<p>To that end we define <code>&lt;.&gt;</code> which can compose indexed optics together whilst suitably combining their indices.</p>
-<div class="sourceCode" id="cb14"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb14-1" data-line-number="1"><span class="ot">(&lt;.&gt;) ::</span> <span class="dt">Indexable</span> (i, j) p</a>
-<a class="sourceLine" id="cb14-2" data-line-number="2">      <span class="ot">=&gt;</span> (<span class="dt">Indexed</span> i s t <span class="ot">-&gt;</span> r)</a>
-<a class="sourceLine" id="cb14-3" data-line-number="3">      <span class="ot">-&gt;</span> (<span class="dt">Indexed</span> j a b <span class="ot">-&gt;</span> s <span class="ot">-&gt;</span> t)</a>
-<a class="sourceLine" id="cb14-4" data-line-number="4">      <span class="ot">-&gt;</span> p a b <span class="ot">-&gt;</span> r</a>
-<a class="sourceLine" id="cb14-5" data-line-number="5">(istr <span class="fu">&lt;.&gt;</span> jabst) p</a>
-<a class="sourceLine" id="cb14-6" data-line-number="6">  <span class="fu">=</span> istr (<span class="dt">Indexed</span> (\i s <span class="ot">-&gt;</span></a>
-<a class="sourceLine" id="cb14-7" data-line-number="7">      jabst (<span class="dt">Indexed</span> (\j a <span class="ot">-&gt;</span></a>
-<a class="sourceLine" id="cb14-8" data-line-number="8">        indexed p (i, j) a)) s))</a></code></pre></div>
-<p>The definition monomorphises the argument again in order to avoid inpredicativity problems.</p>
-<div class="sourceCode" id="cb15"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb15-1" data-line-number="1"><span class="fu">&gt;</span> itoListOf (list <span class="fu">&lt;.&gt;</span> pair) [(<span class="dv">1</span>,<span class="dv">2</span>), (<span class="dv">2</span>, <span class="dv">3</span>)]</a>
-<a class="sourceLine" id="cb15-2" data-line-number="2">[((<span class="dv">0</span>,<span class="dv">0</span>),<span class="dv">1</span>),((<span class="dv">0</span>,<span class="dv">1</span>),<span class="dv">2</span>),((<span class="dv">1</span>,<span class="dv">0</span>),<span class="dv">2</span>),((<span class="dv">1</span>,<span class="dv">1</span>),<span class="dv">3</span>)]</a></code></pre></div>
-<p>Generalisations are possible which combine indices in other ways but this simple combination function highlights the essence of the approach.</p>
-<h1 id="what-are-indexed-optics-useful-for">What are indexed optics useful for?</h1>
-<p>Now that is a question which I will have to defer to reddit comments. I couldn’t find many libraries which were using the indexing in interesting ways.</p>
 ]]></summary>
 </entry>
 
