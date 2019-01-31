@@ -1,0 +1,137 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+    <head>
+        <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+        <title>mpickering - Implementing Nested Quotations</title>
+        <script type="text/javascript" src="http://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML"></script>
+        <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.1.3/css/bootstrap.min.css" integrity="sha384-MCw98/SFnGE8fJT3GXwEOngsV7Zt27NXFoaoApmYm81iuXoPkFOJwJ8ERdknLPMO" crossorigin="anonymous">
+        <script src="https://code.jquery.com/jquery-3.3.1.slim.min.js" integrity="sha384-q8i/X+965DzO0rT7abK41JStQIAqVgRVzpbzo5smXKp4YfRvH+8abtTE1Pi6jizo" crossorigin="anonymous"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.14.3/umd/popper.min.js" integrity="sha384-ZMP7rVo3mIykV+2+9J3UJ46jBk0WLaUAdn689aCwoqbBJiSnjAK/l8WvCWPIPm49" crossorigin="anonymous"></script>
+<script src="https://stackpath.bootstrapcdn.com/bootstrap/4.1.3/js/bootstrap.min.js" integrity="sha384-ChfqqxuZUCnJSK3+MXmPNIyE6ZbWh2IMqE241rYiqJxyMiZ6OW/JmZQ5stwEULTy" crossorigin="anonymous"></script>
+
+        <link rel="stylesheet" type="text/css" href="../css/default.css" />
+        <link href="http://fonts.googleapis.com/css?family=Vollkorn" rel="stylesheet" type="text/css">
+    </head>
+    <body>
+        <div class="container">
+          <div class="row">
+            <div class="col-sm-auto">
+              <ul class="nav flex-column">
+              <li class="nav-item">
+                <a href="../">Home</a>
+              </li>
+              <li class="nav-item">
+                <a href="../about.html">About</a> <br>
+              </li>
+              <li class="nav-item">
+                <a href="../archive.html">Archive</a> <br>
+              </li>
+              <li>
+                <a href="../atom.xml">Feed</a>
+              </li>
+              <li>
+                <a href="../plugins.html">Plugins</a>
+              </li>
+              <li>
+                <a href="../maps.html">Maps</a>
+              </li>
+              </ul>
+            </div>
+          <div class="col-md">
+
+            <div id="content">
+              <h2> Implementing Nested Quotations </h2>
+<p class="text-muted">
+    Posted on January 31, 2019
+    
+</p>
+
+<p>Quotation is one of the key elements of metaprogramming. Quoting an expression <code>e</code> gives us a representation of <code>e</code>.</p>
+<pre><code>[| e |] :: Repr</code></pre>
+<p>What this representation is depends on the metaprogramming framework and what we can do with the representation depends on the representation. The most common choice is to dissallow any inspection of the representation type relying on the other primative operation, the splice, in order to insert quoted values into larger programs.</p>
+<p>The purpose of this post is to explain how to implemented nested quotations. From our previous example, quoting a term <code>e</code>, gives us a term which represents <code>e</code>. It follows that we should be allowed to nest quotations so that quoting a quotation gives us a representation of that quotation.</p>
+<pre><code>[| [| 4 + 5 |] |]</code></pre>
+<p>However, nesting brackets in this manner has been disallowed in Template Haskell for a number of years despite nested splices being permitted. I wondered why this restriction was in place and it seemed that <a href="https://mail.haskell.org/pipermail/ghc-devs/2019-January/016939.html">no one knew the answer</a>. It turns out, there was no technical reason and implementing nested brackets is straightforward once you think about it correctly.</p>
+<!--more-->
+<h2 id="template-haskell">Template Haskell</h2>
+<p>We will now be concrete and talk about how these mechanisms are implemented in Template Haskell.</p>
+<p>In Template Haskell the representation type of expressions is called <code>Exp</code>. It is a <a href="http://hackage.haskell.org/package/template-haskell-2.14.0.0/docs/Language-Haskell-TH-Syntax.html#t:Exp">simple ADT</a> which mirrors source Haskell programs very closely. For example quoting <code>2 + 3</code> might be represented by:</p>
+<pre><code>[| 2 + 3 |] :: Exp
+= InfixE (Just (LitE 5)) (VarE +) (Just (LitE 5))</code></pre>
+<p>Because <code>Exp</code> is a normal data type we can define its representation in the same manner as any user defined data type. This is the purpose of the <code>Lift</code> type class which defines how to turn a value into its representation.</p>
+<pre><code>class Lift t where
+  lift :: t -&gt; Q Exp</code></pre>
+<p>So we just need to implement <code>instance Lift (Q Exp)</code> and we’re done. To do that we implement a general instance for <code>Lift (Q a)</code> and then also an instance for <code>Exp</code>.</p>
+<pre><code>instance Lift a =&gt; Lift (Q a) where
+  lift qe = qe &gt;&gt;= \b' -&gt; lift b' &gt;&gt;= \b'' -&gt; return ((VarE 'return) `AppE` b'')</code></pre>
+<p>This instance collapses effects from building the inner code value into a single outer layer. In order to make the types line up correctly, we have to insert a call to <code>return</code> to the result of lifting the inner expression.</p>
+<p>Instances for <code>Exp</code> and all its connected types are straightforward to define and thankfully we can use the <code>DeriveLift</code> extension in order to derive them.</p>
+<pre><code>deriving instance Lift Exp
+... 40 more instances
+deriving instance Lift PatSynDir</code></pre>
+<p>It’s now possible to write a useless program which lifts a boolean value twice before splicing it twice to get back the original program.</p>
+<pre><code>-- foo = True
+foo :: Bool
+foo = $($(lift (lift True)))</code></pre>
+<p>Running this program with <code>-ddump-splices</code> would show us that when the first splice is run, the code that is insert is the representation of <code>True</code>. After the second splice is run, this representation is turned back into <code>True</code>.</p>
+<h2 id="cross-stage-persistance">Cross Stage Persistance</h2>
+<p>If you use variables in a bracket the compiler has to persist their value from one stage to another so that they remain bound and bound to the correct value when we splice in the quote.</p>
+<p>For example, quoting <code>x</code>, we need to remember that the <code>x</code> refers to the <code>x</code> bound to the top-level which is equal to <code>5</code>.</p>
+<pre><code>x = 5
+
+foo = [| x |]</code></pre>
+<p>If we didn’t when splicing in <code>foo</code>, in another module, we would use whatever <code>x</code> was in scope or end up with an unbound reference to <code>x</code>. No good at all.</p>
+<p>For a locally bound variable, we can’t already precisely know the value of the variable. We will only know it later at runtime when the function is applied.</p>
+<pre><code>foo x = [| x |]</code></pre>
+<p>Thus, we must know for any value that <code>x</code> can take, how we construct its representation. If we remember, that’s precisely what the <code>Lift</code> class is for. So, to correct this cross-stage reference, we replace the variable <code>x</code> with a splice (which lowers the level by one) and a call to <code>lift</code>.</p>
+<pre><code>foo x = [| $(lift x) |]</code></pre>
+<h3 id="nesting-brackets">Nesting Brackets</h3>
+<p>The logic for persisting variables has to be extended to work with nested brackets.</p>
+<pre><code>foo3 :: Lift a =&gt; a -&gt; Q Exp
+foo3 x = [| [| x |] |]</code></pre>
+<p>In <code>foo3</code>, <code>x</code> is used at level 2 but defined at level 0, hence we must insert two levels of splices and two levels of lifting to rectify the stages.</p>
+<pre><code>foo3 :: Lift a =&gt; a -&gt; Q Exp
+foo3 x = [| [| $($(lift(lift x))) |] |]</code></pre>
+<p>Now with nested brackets, you can also lift variables defined in future stages.</p>
+<pre><code>foo4 :: Q Exp
+foo4 = [| \x -&gt; [| x |] |]</code></pre>
+<p>Now <code>x</code> is defined at stage 1 and used in stage 2. So, like normal, we need to insert a lift and splice in order to realign the stages. This time, just one splice as we just need to lift it one level.</p>
+<pre><code>foo4 :: Q Exp
+foo4 = [| \x -&gt; [| $(lift x) |] |]</code></pre>
+<h1 id="implementing-nested-brackets">Implementing Nested Brackets</h1>
+<h2 id="implementing-splices">Implementing Splices</h2>
+<p>After renaming a bracket, all the splices inside the bracket are moved into an associated environment.</p>
+<pre><code>foo = [| $(e) |]
+=&gt; [| x |]_{ x = e }</code></pre>
+<p>When renaming the RHS of <code>foo</code>, we replace the splice of <code>e</code> with a new variable <code>x</code>, this is termed the “splice point” for the expression <code>e</code>. Then, a new binding is added to the environment for the bracket which says that any reference to <code>x</code> inside the bracket refers to <code>e</code>. That means when we make the representation of the code inside the bracket, occurences of <code>x</code> are replaced with <code>e</code> directly (rather than a representation of <code>x</code>) in the program.</p>
+<p>The same mechanism is used for the implicit splices we create by instances of cross-stage persistence.</p>
+<pre><code>qux x = [| x |]
+        =&gt; [| $(lift x) |]
+        =&gt; [| x' |]_{ x' = lift x }</code></pre>
+<p>The environment is special in the sense that it connects a stage 1 variable with an expression at stage 0.</p>
+<p>How is this implemented? When we see a splice we rename it and the write it to a state variable whose scope is delimited by the bracket. Once the contents of the bracket is finished being renamed we read the contents and use that as the environment.</p>
+<h2 id="generalisation-to-n-levels">Generalisation to n-levels</h2>
+<p>If we insert an implicit splice for a variable with a two stage difference, we need to propagate the splice outwards two levels to correct the stage difference.</p>
+<pre><code>foo n = [| [| n |] |]
+      =&gt; [| [| $($(lift n)) |] |]
+      =&gt; [| [| x |]_{x = y} |]_{y = lift (lift n) }</code></pre>
+<p>As such, we annotate each pending splice with its target level and float it outwards as far as it needs to go. As the splice moves outwards, we leave behind trivial bindings which connect together the different stages.</p>
+<h2 id="representing-quotes">Representing Quotes</h2>
+<p>Template Haskell represents renamed terms so that references remain constent after splicing. As such, our representation of a quotation in the TH AST should reflect the renamed form of brackets which includes the environment.</p>
+<pre><code>data Exp = ... | BrackE [(Var, Exp)] Exp | ...</code></pre>
+<p>The constructor therefore takes a list which is the environment mapping splice points to expressions and a representation of the quoted expression.</p>
+<p>It is invariant that there are no splice forms in renamed syntax as they are all replaced during renaming into this environment form.</p>
+<p>To represent a simple quoted expression will have an empty environment but if we also use splices then these are included as well.</p>
+<pre><code>[| [| 4 |] |] =&gt; BrackE [] (representation of 4)
+
+[| [| $(foo) |] |] =&gt; BrackE [(x, representation of foo)] (representation of x)</code></pre>
+<h1 id="conclusion">Conclusion</h1>
+<p>Those are the details of implementing nested brackets, if you ever need to for your own language. In the end, the patch was quite simple but it took quite a bit of thinking to work out the correct way to propagate the splices and build the correct representation.</p>
+
+            </div>
+          </div>
+        </div>
+      </div>
+    </body>
+</html>

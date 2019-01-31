@@ -8,8 +8,103 @@
         <name>Matthew Pickering</name>
         <email>matthewtpickering@gmail.com</email>
     </author>
-    <updated>2018-09-19T00:00:00Z</updated>
+    <updated>2019-01-31T00:00:00Z</updated>
     <entry>
+    <title>Implementing Nested Quotations</title>
+    <link href="http://mpickering.github.io/posts/2019-01-31-nested-brackets.html" />
+    <id>http://mpickering.github.io/posts/2019-01-31-nested-brackets.html</id>
+    <published>2019-01-31T00:00:00Z</published>
+    <updated>2019-01-31T00:00:00Z</updated>
+    <summary type="html"><![CDATA[<h2> Implementing Nested Quotations </h2>
+<p class="text-muted">
+    Posted on January 31, 2019
+    
+</p>
+
+<p>Quotation is one of the key elements of metaprogramming. Quoting an expression <code>e</code> gives us a representation of <code>e</code>.</p>
+<pre><code>[| e |] :: Repr</code></pre>
+<p>What this representation is depends on the metaprogramming framework and what we can do with the representation depends on the representation. The most common choice is to dissallow any inspection of the representation type relying on the other primative operation, the splice, in order to insert quoted values into larger programs.</p>
+<p>The purpose of this post is to explain how to implemented nested quotations. From our previous example, quoting a term <code>e</code>, gives us a term which represents <code>e</code>. It follows that we should be allowed to nest quotations so that quoting a quotation gives us a representation of that quotation.</p>
+<pre><code>[| [| 4 + 5 |] |]</code></pre>
+<p>However, nesting brackets in this manner has been disallowed in Template Haskell for a number of years despite nested splices being permitted. I wondered why this restriction was in place and it seemed that <a href="https://mail.haskell.org/pipermail/ghc-devs/2019-January/016939.html">no one knew the answer</a>. It turns out, there was no technical reason and implementing nested brackets is straightforward once you think about it correctly.</p>
+<!--more-->
+<h2 id="template-haskell">Template Haskell</h2>
+<p>We will now be concrete and talk about how these mechanisms are implemented in Template Haskell.</p>
+<p>In Template Haskell the representation type of expressions is called <code>Exp</code>. It is a <a href="http://hackage.haskell.org/package/template-haskell-2.14.0.0/docs/Language-Haskell-TH-Syntax.html#t:Exp">simple ADT</a> which mirrors source Haskell programs very closely. For example quoting <code>2 + 3</code> might be represented by:</p>
+<pre><code>[| 2 + 3 |] :: Exp
+= InfixE (Just (LitE 5)) (VarE +) (Just (LitE 5))</code></pre>
+<p>Because <code>Exp</code> is a normal data type we can define its representation in the same manner as any user defined data type. This is the purpose of the <code>Lift</code> type class which defines how to turn a value into its representation.</p>
+<pre><code>class Lift t where
+  lift :: t -&gt; Q Exp</code></pre>
+<p>So we just need to implement <code>instance Lift (Q Exp)</code> and we’re done. To do that we implement a general instance for <code>Lift (Q a)</code> and then also an instance for <code>Exp</code>.</p>
+<pre><code>instance Lift a =&gt; Lift (Q a) where
+  lift qe = qe &gt;&gt;= \b&#39; -&gt; lift b&#39; &gt;&gt;= \b&#39;&#39; -&gt; return ((VarE &#39;return) `AppE` b&#39;&#39;)</code></pre>
+<p>This instance collapses effects from building the inner code value into a single outer layer. In order to make the types line up correctly, we have to insert a call to <code>return</code> to the result of lifting the inner expression.</p>
+<p>Instances for <code>Exp</code> and all its connected types are straightforward to define and thankfully we can use the <code>DeriveLift</code> extension in order to derive them.</p>
+<pre><code>deriving instance Lift Exp
+... 40 more instances
+deriving instance Lift PatSynDir</code></pre>
+<p>It’s now possible to write a useless program which lifts a boolean value twice before splicing it twice to get back the original program.</p>
+<pre><code>-- foo = True
+foo :: Bool
+foo = $($(lift (lift True)))</code></pre>
+<p>Running this program with <code>-ddump-splices</code> would show us that when the first splice is run, the code that is insert is the representation of <code>True</code>. After the second splice is run, this representation is turned back into <code>True</code>.</p>
+<h2 id="cross-stage-persistance">Cross Stage Persistance</h2>
+<p>If you use variables in a bracket the compiler has to persist their value from one stage to another so that they remain bound and bound to the correct value when we splice in the quote.</p>
+<p>For example, quoting <code>x</code>, we need to remember that the <code>x</code> refers to the <code>x</code> bound to the top-level which is equal to <code>5</code>.</p>
+<pre><code>x = 5
+
+foo = [| x |]</code></pre>
+<p>If we didn’t when splicing in <code>foo</code>, in another module, we would use whatever <code>x</code> was in scope or end up with an unbound reference to <code>x</code>. No good at all.</p>
+<p>For a locally bound variable, we can’t already precisely know the value of the variable. We will only know it later at runtime when the function is applied.</p>
+<pre><code>foo x = [| x |]</code></pre>
+<p>Thus, we must know for any value that <code>x</code> can take, how we construct its representation. If we remember, that’s precisely what the <code>Lift</code> class is for. So, to correct this cross-stage reference, we replace the variable <code>x</code> with a splice (which lowers the level by one) and a call to <code>lift</code>.</p>
+<pre><code>foo x = [| $(lift x) |]</code></pre>
+<h3 id="nesting-brackets">Nesting Brackets</h3>
+<p>The logic for persisting variables has to be extended to work with nested brackets.</p>
+<pre><code>foo3 :: Lift a =&gt; a -&gt; Q Exp
+foo3 x = [| [| x |] |]</code></pre>
+<p>In <code>foo3</code>, <code>x</code> is used at level 2 but defined at level 0, hence we must insert two levels of splices and two levels of lifting to rectify the stages.</p>
+<pre><code>foo3 :: Lift a =&gt; a -&gt; Q Exp
+foo3 x = [| [| $($(lift(lift x))) |] |]</code></pre>
+<p>Now with nested brackets, you can also lift variables defined in future stages.</p>
+<pre><code>foo4 :: Q Exp
+foo4 = [| \x -&gt; [| x |] |]</code></pre>
+<p>Now <code>x</code> is defined at stage 1 and used in stage 2. So, like normal, we need to insert a lift and splice in order to realign the stages. This time, just one splice as we just need to lift it one level.</p>
+<pre><code>foo4 :: Q Exp
+foo4 = [| \x -&gt; [| $(lift x) |] |]</code></pre>
+<h1 id="implementing-nested-brackets">Implementing Nested Brackets</h1>
+<h2 id="implementing-splices">Implementing Splices</h2>
+<p>After renaming a bracket, all the splices inside the bracket are moved into an associated environment.</p>
+<pre><code>foo = [| $(e) |]
+=&gt; [| x |]_{ x = e }</code></pre>
+<p>When renaming the RHS of <code>foo</code>, we replace the splice of <code>e</code> with a new variable <code>x</code>, this is termed the “splice point” for the expression <code>e</code>. Then, a new binding is added to the environment for the bracket which says that any reference to <code>x</code> inside the bracket refers to <code>e</code>. That means when we make the representation of the code inside the bracket, occurences of <code>x</code> are replaced with <code>e</code> directly (rather than a representation of <code>x</code>) in the program.</p>
+<p>The same mechanism is used for the implicit splices we create by instances of cross-stage persistence.</p>
+<pre><code>qux x = [| x |]
+        =&gt; [| $(lift x) |]
+        =&gt; [| x&#39; |]_{ x&#39; = lift x }</code></pre>
+<p>The environment is special in the sense that it connects a stage 1 variable with an expression at stage 0.</p>
+<p>How is this implemented? When we see a splice we rename it and the write it to a state variable whose scope is delimited by the bracket. Once the contents of the bracket is finished being renamed we read the contents and use that as the environment.</p>
+<h2 id="generalisation-to-n-levels">Generalisation to n-levels</h2>
+<p>If we insert an implicit splice for a variable with a two stage difference, we need to propagate the splice outwards two levels to correct the stage difference.</p>
+<pre><code>foo n = [| [| n |] |]
+      =&gt; [| [| $($(lift n)) |] |]
+      =&gt; [| [| x |]_{x = y} |]_{y = lift (lift n) }</code></pre>
+<p>As such, we annotate each pending splice with its target level and float it outwards as far as it needs to go. As the splice moves outwards, we leave behind trivial bindings which connect together the different stages.</p>
+<h2 id="representing-quotes">Representing Quotes</h2>
+<p>Template Haskell represents renamed terms so that references remain constent after splicing. As such, our representation of a quotation in the TH AST should reflect the renamed form of brackets which includes the environment.</p>
+<pre><code>data Exp = ... | BrackE [(Var, Exp)] Exp | ...</code></pre>
+<p>The constructor therefore takes a list which is the environment mapping splice points to expressions and a representation of the quoted expression.</p>
+<p>It is invariant that there are no splice forms in renamed syntax as they are all replaced during renaming into this environment form.</p>
+<p>To represent a simple quoted expression will have an empty environment but if we also use splices then these are included as well.</p>
+<pre><code>[| [| 4 |] |] =&gt; BrackE [] (representation of 4)
+
+[| [| $(foo) |] |] =&gt; BrackE [(x, representation of foo)] (representation of x)</code></pre>
+<h1 id="conclusion">Conclusion</h1>
+<p>Those are the details of implementing nested brackets, if you ever need to for your own language. In the end, the patch was quite simple but it took quite a bit of thinking to work out the correct way to propagate the splices and build the correct representation.</p>
+]]></summary>
+</entry>
+<entry>
     <title>Packaging a Haskell library for artefact evaluation using nix</title>
     <link href="http://mpickering.github.io/posts/2018-09-19-nix-artefacts.html" />
     <id>http://mpickering.github.io/posts/2018-09-19-nix-artefacts.html</id>
@@ -1214,97 +1309,6 @@ git diff &gt; &lt;patchDir&gt;/haskell-src-exts-1.20.1.patch</code></pre>
 <pre><code>nix-shell -p nix-prefetch-git
  --run &quot;nix-prefetch-git --fetch-submodules git://git.haskell.org/ghc.git &lt;rev&gt;&quot;</code></pre></li>
 </ol>
-]]></summary>
-</entry>
-<entry>
-    <title>INLIN(E)ing: A case study</title>
-    <link href="http://mpickering.github.io/posts/2017-05-17-inlining-case-study.html" />
-    <id>http://mpickering.github.io/posts/2017-05-17-inlining-case-study.html</id>
-    <published>2017-05-17T00:00:00Z</published>
-    <updated>2017-05-17T00:00:00Z</updated>
-    <summary type="html"><![CDATA[<h2> INLIN(E)ing: A case study </h2>
-<p class="text-muted">
-    Posted on May 17, 2017
-    
-</p>
-
-<p>Ollie Charles recently popped into #ghc to ask about a small program which was taking a long time to compile. In fact, the compiler was taking so long in the simplifier he had to increase the tick factor (a measure of how much work the simplifier is allowed to do) to get compilation to finish. Oleg and I quickly set to work working out what was going on in his program.</p>
-<p>It turned out that a misplaced <code>INLINE</code> pragma was causing a lot of simplification work to be duplicated. Removing the pragma allowed the compiler to operate faster whilst producing the same code.</p>
-<!--more-->
-<h1 id="the-problem">The Problem</h1>
-<p>When a lot of time is spent in the simplifier it is usually because the core programs have grown quite large. Core programs can grow large for a number of reasons but one of primary reasons is due to excessive inlining caused by <code>INLINE</code> pragmas.</p>
-<p>The first tool we have at our disposal is <code>-ddump-simpl-stats</code> which outputs a summary of each step the simplifier takes. Looking at this summary is a good way to work out roughly where the problem lies.</p>
-<p>In this case, the statistics file was quite <a href="https://gist.github.com/ocharles/8d69c518b5d3169e8254b24205e03f65">large</a>. The first bit I always check is the “UnfoldingDone” section which details how many times each definition has been inlined. Here is the relevant snippet from the top of that section.</p>
-<pre><code>  14620 UnfoldingDone
-    596 $
-    574 contramapF
-    546 $fNumInt_$c+
-    485 $fStorableWord8_$cpoke
-    485 castPtr
-    485 $fStorableWord8_$calignment
-    485 word8
-    485 $s&gt;$&lt;
-    485 castPtr1
-    484 thenIO
-    484 thenIO1
-    484 ord
-    484 $fBitsInt_$c.&amp;.
-    484 plusPtr
-    484 $fStorableWord19
-    463 char7
-    331 $s&gt;*&lt;1
-    331 pairF
-    220 returnIO
-    220 returnIO1
-    220 $s&gt;$&lt;
-    220 contramapB</code></pre>
-<p>The first thing to notice about these numbers is that there are groups of definitions which have all been inlined the same number of times. This is indicative of a misplaced <code>INLINE</code> pragma as a large unoptimised definition will then be inlined many times and then simplified individually at each call site rather than once at the definition site. Of particular suspicion is the large block of definitions which are each inlined exactly 484 times.</p>
-<p>By looking at the definitions of each of the identifiers in this list, we can then work out what is going on. To cut to the chase, inspecting the definition of <code>char7</code> from the <code>Data.ByteString.Builder.Prim.ASCII</code> module we can see where a lot of the work is coming from.</p>
-<pre><code>-- | Encode the least 7-bits of a &#39;Char&#39; using the ASCII encoding.
-{-# INLINE char7 #-}
-char7 :: FixedPrim Char
-char7 = (\c -&gt; fromIntegral $ ord c .&amp;. 0x7f) &gt;$&lt; word8</code></pre>
-<p>The definition of <code>char7</code> is concise but composed of combinators which will be keen to get inlined later on. The definitions of <code>ord</code>, <code>.&amp;.</code> and <code>&gt;$&lt;</code> are all small.</p>
-<p>By using an <code>INLINE</code> pragma, the unoptimised unfolding is included in the interface file so this complex definition will be inline verbatim into each call site. We can inspect the unfolding by using the <code>--show-iface</code> flag on the <code>.hi</code> file for the module.</p>
-<pre><code>8334ad079da5b638008c6f8feefdfa4a
-   char7 :: FixedPrim Char
-   {- HasNoCafRefs, Strictness: m, Inline: INLINE (sat-args=0),
-      Unfolding: InlineRule (0, False, False)
-                 ($s&gt;$&lt;
-                    @ Char
-                    @ Word8
-                    (\ (c :: Char) -&gt;
-                     $ @ &#39;PtrRepLifted
-                       @ Int
-                       @ Word8
-                       (\ (x :: Int) -&gt;
-                        case x of wild { I# x# -&gt; W8# (narrow8Word# (int2Word# x#)) })
-                       ($fBitsInt_$c.&amp;. (ord c) (I# 127#)))
-                   word8) -}</code></pre>
-<p>Which very closely resembles the source definition.</p>
-<p>Removing the <code>INLINE</code> pragma we get a nice, small optimised definition which crucially is still small enough that GHC inlines it at call sites.</p>
-<pre><code>5e7820a4ab4b18cf2032517105d2cc56
-  char7 :: FixedPrim Char
-  {- HasNoCafRefs, Strictness: m,
-     Unfolding: (FP
-                   @ Char
-                   1#
-                   char1
-                     `cast`
-                   (&lt;Char&gt;_R -&gt;_R &lt;Ptr Word8&gt;_R -&gt;_R Sym (N:IO[0] &lt;()&gt;_R)))      -}</code></pre>
-<p>Look! No calls to <code>&gt;$&lt;</code>, <code>.&amp;.</code>, <code>ord</code> or any other complicated functions. We have optimised the definition <em>once</em> at the definition site so that we don’t have to repeatedly do so at each call site. We didn’t even need to look at the program to spot the problem.</p>
-<h1 id="discussion">Discussion</h1>
-<p>This is currently a problem because <code>INLINE</code> is used for two different reasons.</p>
-<ol type="1">
-<li>By library authors who use <code>RULES</code> where it is important to inline the literal rhs of a definition so that the rules reliably fire.</li>
-<li>By library authors who want to inline definitions so that GHC’s simplifier can work better across modules.</li>
-</ol>
-<p>For the first case, the unoptimised unfoldings are important but for the second this leads to a lot of duplicated work. In this case, I could see that there were no rules defined which were relevant to the definition of <code>char7</code> so I ruled out the first scenario. I then verified that GHC considered the optimised version of <code>char7</code> small enough to include in interface files and inline by using <code>--show-iface</code>. Ruling out both of these possibilities, it then seemed sensible to remove the pragma.</p>
-<p>It would be good to add a new pragma which instructs GHC to inline an <em>optimised</em> unfolding across modules rather than the unoptimised version so that the second scenario can be reliably achieved.</p>
-<h1 id="links">Links</h1>
-<ul>
-<li><a href="https://www.reddit.com/r/haskell/comments/6bojlj/inlineing_a_case_study/">Reddit Comments</a></li>
-</ul>
 ]]></summary>
 </entry>
 
