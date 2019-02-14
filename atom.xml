@@ -8,8 +8,128 @@
         <name>Matthew Pickering</name>
         <email>matthewtpickering@gmail.com</email>
     </author>
-    <updated>2019-01-31T00:00:00Z</updated>
+    <updated>2019-02-14T00:00:00Z</updated>
     <entry>
+    <title>A three-stage program you definitely want to write</title>
+    <link href="http://mpickering.github.io/posts/2019-02-14-stage-3.html" />
+    <id>http://mpickering.github.io/posts/2019-02-14-stage-3.html</id>
+    <published>2019-02-14T00:00:00Z</published>
+    <updated>2019-02-14T00:00:00Z</updated>
+    <summary type="html"><![CDATA[<h2> A three-stage program you definitely want to write </h2>
+<p class="text-muted">
+    Posted on February 14, 2019
+    
+</p>
+
+<p>Writing programs explicitly in stages gives you guarantees that abstraction will be removed. A guarantee that the optimiser most certainly does not give you.</p>
+<p>After spending the majority of my early 20s inside the optimiser, I decided enough was enough and it was time to gain back control over how my programs were partially evaluated.</p>
+<p>So in this post I’ll give an example of how I took back control and eliminated two levels of abstraction for an interpreter by writing a program which runs in three stages.</p>
+<p>Enter: An applicative interpreter for Hutton’s razor.</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb1-1" data-line-number="1"><span class="kw">data</span> <span class="dt">Expr</span> <span class="fu">=</span> <span class="dt">Val</span> <span class="dt">Int</span> <span class="fu">|</span> <span class="dt">Add</span> <span class="dt">Expr</span> <span class="dt">Expr</span></a>
+<a class="sourceLine" id="cb1-2" data-line-number="2"></a>
+<a class="sourceLine" id="cb1-3" data-line-number="3"><span class="ot">eval ::</span> <span class="dt">Applicative</span> m <span class="ot">=&gt;</span> <span class="dt">Expr</span> <span class="ot">-&gt;</span> m <span class="dt">Int</span></a>
+<a class="sourceLine" id="cb1-4" data-line-number="4">eval (<span class="dt">Val</span> n) <span class="fu">=</span> pure n</a>
+<a class="sourceLine" id="cb1-5" data-line-number="5">eval (<span class="dt">Add</span> e1 e2) <span class="fu">=</span> (<span class="fu">+</span>) <span class="fu">&lt;$&gt;</span> eval e1 <span class="fu">&lt;*&gt;</span> eval e2</a></code></pre></div>
+<p>Written simply at one level, there are two levels of abstraction which could be failed to be eliminated.</p>
+<ol type="1">
+<li>If we statically know the expression we can eliminate <code>Expr</code>.</li>
+<li>If we statically know which <code>Applicative</code> then we can remove the indirection from the typeclass.</li>
+</ol>
+<p>Using typed Template Haskell we’ll work out how to remove both of these layers.</p>
+<!--more-->
+<h2 id="eliminating-the-expression">Eliminating the Expression</h2>
+<p>First we’ll have a look at how to stage the program just to eliminate the expression without discussion the application fragment. This is a two-stage program.</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb2-1" data-line-number="1"><span class="kw">module</span> <span class="dt">Two</span> <span class="kw">where</span></a>
+<a class="sourceLine" id="cb2-2" data-line-number="2"></a>
+<a class="sourceLine" id="cb2-3" data-line-number="3"><span class="kw">import</span> <span class="dt">Language.Haskell.TH</span></a>
+<a class="sourceLine" id="cb2-4" data-line-number="4"></a>
+<a class="sourceLine" id="cb2-5" data-line-number="5"><span class="kw">data</span> <span class="dt">Expr</span> <span class="fu">=</span> <span class="dt">Val</span> <span class="dt">Int</span> <span class="fu">|</span> <span class="dt">Add</span> <span class="dt">Expr</span> <span class="dt">Expr</span></a>
+<a class="sourceLine" id="cb2-6" data-line-number="6"></a>
+<a class="sourceLine" id="cb2-7" data-line-number="7"><span class="ot">eval ::</span> <span class="dt">Expr</span> <span class="ot">-&gt;</span> <span class="dt">TExpQ</span> <span class="dt">Int</span></a>
+<a class="sourceLine" id="cb2-8" data-line-number="8">eval (<span class="dt">Val</span> n) <span class="fu">=</span> [<span class="fu">||</span> n <span class="fu">||</span>]</a>
+<a class="sourceLine" id="cb2-9" data-line-number="9">eval (<span class="dt">Add</span> e1 e2) <span class="fu">=</span> [<span class="fu">||</span> <span class="fu">$$</span>(eval e1) <span class="fu">+</span> <span class="fu">$$</span>(eval e2) <span class="fu">||</span>]</a></code></pre></div>
+<p>The eval function takes an expression and generates code which unrolls the expression that needs to be evaluated.</p>
+<p>Splicing in <code>eval</code> gives us a chain of additions which are computed at run-time.</p>
+<pre><code>$$(eval (Add (Val 1) (Val 2)))
+=&gt; 1 + 2</code></pre>
+<p>By explicitly seperating the program into stages we know that there will be no mention of <code>Expr</code> in the resulting program.</p>
+<h2 id="eliminating-the-applicative-functor">Eliminating the Applicative Functor</h2>
+<p>That’s good. Eliminating the <code>Expr</code> data type was easy. We’ll have to work a bit more to eliminate the applicative.</p>
+<p>In the first stage, we will eliminate the expression in the same manner but instead of producing an <code>Int</code>, we will produce a <code>SynApplicative</code> which is a syntactic representation of an applicative. This allows us to inspect the structure of the program in the second stage and remove that overhead as well.</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb4-1" data-line-number="1"><span class="kw">data</span> <span class="dt">SynApplicative</span> a <span class="kw">where</span></a>
+<a class="sourceLine" id="cb4-2" data-line-number="2">  <span class="dt">Return</span><span class="ot"> ::</span> <span class="dt">WithCode</span> a <span class="ot">-&gt;</span> <span class="dt">SynApplicative</span> a</a>
+<a class="sourceLine" id="cb4-3" data-line-number="3">  <span class="dt">App</span><span class="ot">  ::</span> <span class="dt">SynApplicative</span> (a <span class="ot">-&gt;</span> b) <span class="ot">-&gt;</span> <span class="dt">SynApplicative</span> a <span class="ot">-&gt;</span> <span class="dt">SynApplicative</span> b</a>
+<a class="sourceLine" id="cb4-4" data-line-number="4"></a>
+<a class="sourceLine" id="cb4-5" data-line-number="5"><span class="kw">data</span> <span class="dt">WithCode</span> a <span class="fu">=</span> <span class="dt">WithCode</span> {<span class="ot"> _val ::</span> a,<span class="ot"> _code ::</span> <span class="dt">TExpQ</span> a }</a></code></pre></div>
+<p><code>WithCode</code> is a wrapper which pairs a value with a code fragment which was used to produce that value.</p>
+<p>If you notice in the earlier example, this wasn’t necessary when it was known that we needed to persist an <code>Int</code>, as there is a <code>Lift</code> instance for <code>Int</code>. However, in general, not all values can be persisted so using <code>WithCode</code> is more general and flexible, if a bit more verbose.</p>
+<p><code>elimExpr</code> eliminates the first layer of abstraction and returns code which generates a <code>SynApplicative</code>.</p>
+<div class="sourceCode" id="cb5"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb5-1" data-line-number="1"></a>
+<a class="sourceLine" id="cb5-2" data-line-number="2"><span class="ot">elimExpr ::</span> <span class="dt">Expr</span> <span class="ot">-&gt;</span> <span class="dt">TExpQ</span> (<span class="dt">SynApplicative</span> <span class="dt">Int</span>)</a>
+<a class="sourceLine" id="cb5-3" data-line-number="3">elimExpr (<span class="dt">Val</span> n) <span class="fu">=</span> [<span class="fu">||</span> <span class="dt">Return</span> (<span class="dt">WithCode</span> n (liftT n)) <span class="fu">||</span>]</a>
+<a class="sourceLine" id="cb5-4" data-line-number="4">elimExpr (<span class="dt">Add</span> e1 e2) <span class="fu">=</span></a>
+<a class="sourceLine" id="cb5-5" data-line-number="5">   [<span class="fu">||</span> <span class="dt">Return</span> (<span class="dt">WithCode</span> (<span class="fu">+</span>) codePlus)</a>
+<a class="sourceLine" id="cb5-6" data-line-number="6">        <span class="ot">`App`</span> <span class="fu">$$</span>(elimExpr e1)</a>
+<a class="sourceLine" id="cb5-7" data-line-number="7">        <span class="ot">`App`</span> <span class="fu">$$</span>(elimExpr e2) <span class="fu">||</span>]</a>
+<a class="sourceLine" id="cb5-8" data-line-number="8"></a>
+<a class="sourceLine" id="cb5-9" data-line-number="9"><span class="ot">liftT ::</span> <span class="dt">Lift</span> a <span class="ot">=&gt;</span> a <span class="ot">-&gt;</span> <span class="dt">TExpQ</span> a</a>
+<a class="sourceLine" id="cb5-10" data-line-number="10">liftT <span class="fu">=</span> unsafeTExpCoerce <span class="fu">.</span> lift</a>
+<a class="sourceLine" id="cb5-11" data-line-number="11"></a>
+<a class="sourceLine" id="cb5-12" data-line-number="12">codePlus <span class="fu">=</span> [<span class="fu">|</span> (<span class="fu">+</span>) <span class="fu">|</span>]</a></code></pre></div>
+<p>In the case for <code>Add</code> we encounter a situation where we would have liked to use nested brackets to persist the value of <code>[| (+) |]</code>. Instead you have to lift it to the top level and then perist that identifer.</p>
+<p>Next, it’s time to provide an interpreter to remove the abstraction of the applicative. In order to do this, we need to provide a dictionary which will be used to give the interpretation of the applicative commands.</p>
+<div class="sourceCode" id="cb6"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb6-1" data-line-number="1"><span class="kw">data</span> <span class="dt">ApplicativeDict</span> m <span class="fu">=</span></a>
+<a class="sourceLine" id="cb6-2" data-line-number="2">  <span class="dt">ApplicativeDict</span></a>
+<a class="sourceLine" id="cb6-3" data-line-number="3">    {<span class="ot"> _return ::</span> (forall a <span class="fu">.</span> <span class="dt">WithCode</span> (a <span class="ot">-&gt;</span> m a)),</a>
+<a class="sourceLine" id="cb6-4" data-line-number="4"><span class="ot">      _ap     ::</span> (forall a b <span class="fu">.</span> <span class="dt">WithCode</span> (m (a <span class="ot">-&gt;</span> b) <span class="ot">-&gt;</span> m a <span class="ot">-&gt;</span> m b))</a>
+<a class="sourceLine" id="cb6-5" data-line-number="5">    }</a></code></pre></div>
+<p><code>WithCode</code> is necessary again as it will be used to generate a program so it’s necessary to know how to implement the methods.</p>
+<div class="sourceCode" id="cb7"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb7-1" data-line-number="1">elimApplicative</a>
+<a class="sourceLine" id="cb7-2" data-line-number="2"><span class="ot">  ::</span> <span class="dt">SynApplicative</span> a</a>
+<a class="sourceLine" id="cb7-3" data-line-number="3">  <span class="ot">-&gt;</span> <span class="dt">ApplicativeDict</span> m</a>
+<a class="sourceLine" id="cb7-4" data-line-number="4">  <span class="ot">-&gt;</span> <span class="dt">TExpQ</span> (m a)</a>
+<a class="sourceLine" id="cb7-5" data-line-number="5">elimApplicative (<span class="dt">Return</span> v) d<span class="fu">@</span><span class="dt">ApplicativeDict</span>{<span class="fu">..</span>}</a>
+<a class="sourceLine" id="cb7-6" data-line-number="6">  <span class="fu">=</span> [<span class="fu">||</span> <span class="fu">$$</span>(_code _return) <span class="fu">$$</span>(_code v) <span class="fu">||</span>]</a>
+<a class="sourceLine" id="cb7-7" data-line-number="7">elimApplicative (<span class="dt">App</span> e1 e2) d<span class="fu">@</span><span class="dt">ApplicativeDict</span>{<span class="fu">..</span>}</a>
+<a class="sourceLine" id="cb7-8" data-line-number="8">  <span class="fu">=</span> [<span class="fu">||</span> <span class="fu">$$</span>(_code _ap) <span class="fu">$$</span>(elimApplicative e1 d) <span class="fu">$$</span>(elimApplicative e2 d) <span class="fu">||</span>]</a></code></pre></div>
+<p>This interpretation is very boring as it just amounts to replacing all the constructors with their implementations. However, it is exciting that we have guaranteed the removal of the overhead of the applicative abstraction.</p>
+<h2 id="running-the-splice">Running the Splice</h2>
+<p>Now we written two functions independently to to eliminate the two layers, they need to be combined together. This is the birth of our three-stage program.</p>
+<div class="sourceCode" id="cb8"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb8-1" data-line-number="1"><span class="kw">import</span> <span class="dt">Three</span></a>
+<a class="sourceLine" id="cb8-2" data-line-number="2"></a>
+<a class="sourceLine" id="cb8-3" data-line-number="3"><span class="ot">elim ::</span> <span class="dt">Identity</span> <span class="dt">Int</span></a>
+<a class="sourceLine" id="cb8-4" data-line-number="4">elim <span class="fu">=</span> <span class="fu">$$</span>(elimApplicative <span class="fu">$$</span>(elimExpr (<span class="dt">Add</span> (<span class="dt">Val</span> <span class="dv">1</span>) (<span class="dt">Val</span> <span class="dv">2</span>))) identityDict)</a>
+<a class="sourceLine" id="cb8-5" data-line-number="5"></a>
+<a class="sourceLine" id="cb8-6" data-line-number="6">identityDict <span class="fu">=</span> <span class="dt">ApplicativeDict</span>{<span class="fu">..</span>}</a>
+<a class="sourceLine" id="cb8-7" data-line-number="7">  <span class="kw">where</span></a>
+<a class="sourceLine" id="cb8-8" data-line-number="8">    _return <span class="fu">=</span> <span class="dt">WithCode</span> <span class="dt">Identity</span> [<span class="fu">||</span> <span class="dt">Identity</span> <span class="fu">||</span>]</a>
+<a class="sourceLine" id="cb8-9" data-line-number="9">    _ap <span class="fu">=</span> <span class="dt">WithCode</span> idAp [<span class="fu">||</span> idAp <span class="fu">||</span>]</a>
+<a class="sourceLine" id="cb8-10" data-line-number="10"></a>
+<a class="sourceLine" id="cb8-11" data-line-number="11"><span class="ot">idAp ::</span> <span class="dt">Identity</span> (a <span class="ot">-&gt;</span> b) <span class="ot">-&gt;</span> <span class="dt">Identity</span> a <span class="ot">-&gt;</span> <span class="dt">Identity</span> b</a>
+<a class="sourceLine" id="cb8-12" data-line-number="12">idAp (<span class="dt">Identity</span> f) (<span class="dt">Identity</span> a) <span class="fu">=</span> <span class="dt">Identity</span> (f a)</a></code></pre></div>
+<p><code>elim</code> is the combination of <code>elimApplicative</code> and <code>elimExpr</code>. The nested splices indicate that the program is more than two levels.</p>
+<p>Using <code>-ddump-splices</code> we can have a look at the program that gets generated.</p>
+<pre><code>Test.hs:10:30-59: Splicing expression
+    elimExpr (Add (Val 1) (Val 2))
+  ======&gt;
+    ((Return ((WithCode (+)) codePlus)
+        `App` Return ((WithCode 1) (liftT 1)))
+       `App` Return ((WithCode 2) (liftT 2)))
+Test.hs:10:11-73: Splicing expression
+    elimApplicative $$(elimExpr (Add (Val 1) (Val 2))) identityDict
+  ======&gt;
+    (idAp ((idAp (Identity (+))) (Identity 1))) (Identity 2)</code></pre>
+<p>Both steps appear in the debug output with the code which was produced at each step. Notice that we had very precise control over what code was generated and that functions like <code>idAp</code> are not inlined still. In this case, the compiler will certainly inline <code>idAp</code> and so on but in general it might be useful to generate code which contains calls to <code>GHC.Exts.inline</code> to force even recursive functions to be inlined once.</p>
+<h2 id="conclusion">Conclusion</h2>
+<p>In general, splitting your program up into stages is quite difficult so mechanisms like type class specialisation will be easier to achieve. In controlled situations though, staging gives you the guarantees you need.</p>
+<h2 id="related-links">Related Links</h2>
+<ul>
+<li>Reddit Discussion</li>
+<li><a href="https://github.com/mpickering/three-level">Code</a></li>
+</ul>
+]]></summary>
+</entry>
+<entry>
     <title>Implementing Nested Quotations</title>
     <link href="http://mpickering.github.io/posts/2019-01-31-nested-brackets.html" />
     <id>http://mpickering.github.io/posts/2019-01-31-nested-brackets.html</id>
@@ -1060,255 +1180,6 @@ in ...</code></pre>
 <li><a href="https://github.com/mpickering/rtcwrao-benchmarks">Benchmarks</a></li>
 <li><a href="https://www.reddit.com/r/haskell/comments/85svhm/replacing_type_classes_with_records_affects/">Reddit Discussion</a></li>
 </ul>
-]]></summary>
-</entry>
-<entry>
-    <title>Using a development version of GHC with nix</title>
-    <link href="http://mpickering.github.io/posts/2018-01-05-ghchead-nix.html" />
-    <id>http://mpickering.github.io/posts/2018-01-05-ghchead-nix.html</id>
-    <published>2018-01-05T00:00:00Z</published>
-    <updated>2018-01-05T00:00:00Z</updated>
-    <summary type="html"><![CDATA[<h2> Using a development version of GHC with nix </h2>
-<p class="text-muted">
-    Posted on January  5, 2018
-    
-</p>
-
-<p>Most documentation for using nix with Haskell concentrates on quite simple use cases such as how to modify or add new dependencies. What about when you want to do something more complicated? In this post we look at combining modifications from different sources. The goal is to create a package set which can be used to compile packages with HEAD.</p>
-<!--more-->
-<p>The main problem which we are going to solve is that many packages need modifying in order to compile with HEAD. There is already a nix package which builds a development version of the compiler and a corresponding package set but the utility is limited as many packages will fail to compile.</p>
-<p>For example, at the time of writing this post, if we try and build the <code>primitive</code> package, the build fails due to a missing <code>Semigroup</code> instance.</p>
-<p>If you are impatient, here is the <a href="https://gist.github.com/mpickering/209354a6affe2883ca07ffc4f4084af6">complete example</a> we are going to come up with. We create a new top-level attribute <code>new-ghcHEAD</code> which we can use to build packages with <code>ghcHEAD</code>.</p>
-<div class="sourceCode" id="cb1"><pre class="sourceCode nix"><code class="sourceCode bash"><a class="sourceLine" id="cb1-1" data-line-number="1"><span class="bu">let</span></a>
-<a class="sourceLine" id="cb1-2" data-line-number="2">  <span class="ex">nixpkgs</span> = import <span class="op">&lt;</span>nixpkgs<span class="op">&gt;</span> <span class="dt">{}</span><span class="kw">;</span></a>
-<a class="sourceLine" id="cb1-3" data-line-number="3">  <span class="ex">patchRepo</span> =</a>
-<a class="sourceLine" id="cb1-4" data-line-number="4">    <span class="ex">nixpkgs.fetchFromGitHub</span> {</a>
-<a class="sourceLine" id="cb1-5" data-line-number="5">      <span class="ex">owner</span> = <span class="st">&quot;mpickering&quot;</span><span class="kw">;</span></a>
-<a class="sourceLine" id="cb1-6" data-line-number="6">      <span class="ex">repo</span> = <span class="st">&quot;head.hackage&quot;</span><span class="kw">;</span></a>
-<a class="sourceLine" id="cb1-7" data-line-number="7">      <span class="fu">rev</span> = <span class="st">&quot;767dcf11b367ccff4a9fcd55df9c2432cd485fbe&quot;</span><span class="kw">;</span></a>
-<a class="sourceLine" id="cb1-8" data-line-number="8">      <span class="ex">sha256</span> = <span class="st">&quot;1cdrcw7grpc2dyxnb7a5bg9mi1h7qnblcibi91s348034zf7a0vj&quot;</span><span class="kw">;</span>};</a>
-<a class="sourceLine" id="cb1-9" data-line-number="9"></a>
-<a class="sourceLine" id="cb1-10" data-line-number="10">  <span class="ex">patchDir</span> = <span class="st">&quot;</span><span class="va">${patchRepo}</span><span class="st">/patches&quot;</span><span class="kw">;</span></a>
-<a class="sourceLine" id="cb1-11" data-line-number="11">  <span class="ex">patchScript</span> = <span class="st">&quot;</span><span class="va">${patchRepo}</span><span class="st">/scripts/overrides.nix&quot;</span><span class="kw">;</span></a>
-<a class="sourceLine" id="cb1-12" data-line-number="12"><span class="kw">in</span></a>
-<a class="sourceLine" id="cb1-13" data-line-number="13"><span class="ex">self</span>: super:</a>
-<a class="sourceLine" id="cb1-14" data-line-number="14"><span class="kw">{</span></a>
-<a class="sourceLine" id="cb1-15" data-line-number="15">  <span class="ex">haskellPatches</span> = self.callPackage patchScript</a>
-<a class="sourceLine" id="cb1-16" data-line-number="16">              <span class="kw">{</span> <span class="ex">patches</span> = patchDir<span class="kw">;</span> <span class="kw">}</span>;</a>
-<a class="sourceLine" id="cb1-17" data-line-number="17"></a>
-<a class="sourceLine" id="cb1-18" data-line-number="18">  <span class="ex">new-ghcHEAD</span> =</a>
-<a class="sourceLine" id="cb1-19" data-line-number="19">    <span class="bu">let</span> ghcPackageOverrides = self.callPackage self.haskellPatches <span class="dt">{}</span><span class="kw">;</span></a>
-<a class="sourceLine" id="cb1-20" data-line-number="20">        <span class="ex">localOverrides</span>      =</a>
-<a class="sourceLine" id="cb1-21" data-line-number="21">          <span class="ex">sel</span>: sup: { haskell-src-exts</a>
-<a class="sourceLine" id="cb1-22" data-line-number="22">                        = <span class="ex">sel.callHackage</span> <span class="st">&quot;haskell-src-exts&quot;</span> <span class="st">&quot;1.20.1&quot;</span> <span class="dt">{}</span><span class="kw">;</span></a>
-<a class="sourceLine" id="cb1-23" data-line-number="23">                      <span class="ex">mkDerivation</span></a>
-<a class="sourceLine" id="cb1-24" data-line-number="24">                        = <span class="ex">drv</span>: sup.mkDerivation (drv //</a>
-<a class="sourceLine" id="cb1-25" data-line-number="25">                             <span class="kw">{</span> <span class="ex">jailbreak</span> = true<span class="kw">;</span> <span class="ex">doHaddock</span> = false<span class="kw">;}</span>);</a>
-<a class="sourceLine" id="cb1-26" data-line-number="26">                     <span class="kw">}</span>;</a>
-<a class="sourceLine" id="cb1-27" data-line-number="27"></a>
-<a class="sourceLine" id="cb1-28" data-line-number="28">    <span class="kw">in</span> <span class="ex">self.haskell.packages.ghcHEAD.extend</span></a>
-<a class="sourceLine" id="cb1-29" data-line-number="29">         <span class="kw">(</span><span class="ex">self.lib.composeExtensions</span> localOverrides ghcPackageOverrides<span class="kw">)</span>;</a>
-<a class="sourceLine" id="cb1-30" data-line-number="30">}</a></code></pre></div>
-<h1 id="a-simple-overlay">A simple overlay</h1>
-<p>We are going to use an overlay in order to define the new package set. An overlay is the idiomatic way to extend and change the top-level nixpkgs set. It is a function which takes two arguments, the result of performing the modification and the old unmodified package set. It returns a set of attributes which augment the top-level attribute set.</p>
-<div class="sourceCode" id="cb2"><pre class="sourceCode nix"><code class="sourceCode bash"><a class="sourceLine" id="cb2-1" data-line-number="1"><span class="ex">self</span>: super: {</a>
-<a class="sourceLine" id="cb2-2" data-line-number="2">  <span class="ex">my-cool-new-attribute</span> = ...<span class="kw">;</span></a>
-<a class="sourceLine" id="cb2-3" data-line-number="3">}</a></code></pre></div>
-<p>As such <code>my-cool-new-attribute</code> will be in <code>self</code> but not in <code>super</code>. If we want to use <code>my-cool-new-attribute</code> in another attribute we can refer to it as <code>self.my-cool-new-attribute</code>.</p>
-<p>When this overlay is installed (see below), we can use <code>my-cool-new-attribute</code> like any top-level attribute defined in <code>nixpkgs</code>. The overlay mechanism surpasses the old <code>packageOverrides</code> mechanism which used to be how to modify <code>nixpkgs</code>.</p>
-<p>For example, we could enter an environment with <code>my-cool-new-attribute</code> available with <code>nix-shell -p my-cool-new-attribute</code> as if it were defined in the main <code>nixpkgs</code> repo.</p>
-<p>There are two ways to easily install an overlay.</p>
-<ol type="1">
-<li><p>Pass it as an argument when importing nixpkgs.<br />
-</p>
-<pre><code>let pkgs = import &lt;nixpkgs&gt; {overlays = [overlay1 overlay2 ..]};
-in ...</code></pre></li>
-<li><p>Place the overlay in <code>~/.config/nixpkgs/overlays/</code></p></li>
-</ol>
-<p>More details about using overlays can be found in the <a href="https://nixos.org/nixpkgs/manual/#sec-overlays-install">user manual</a>.</p>
-<h1 id="extending-a-package-set">Extending a package set</h1>
-<p>We’ll start from a simple template which demonstrates the concept of extending a Haskell package set like you might find in other documentation. We start from the <code>ghcHEAD</code> package set (<code>haskell.packages.ghcHEAD</code>) and then call the <code>extend</code> attribute with the extension function.</p>
-<p>The extension function takes two arguments, the extended haskell package set and the original haskell package set much like an overlay. <code>ghcPackageOverrides</code> is the identity extension function in this example which performs no modifications.</p>
-<div class="sourceCode" id="cb4"><pre class="sourceCode nix"><code class="sourceCode bash"><a class="sourceLine" id="cb4-1" data-line-number="1"><span class="ex">self</span>: super: {</a>
-<a class="sourceLine" id="cb4-2" data-line-number="2">  <span class="ex">new-ghcHEAD</span> =</a>
-<a class="sourceLine" id="cb4-3" data-line-number="3">    <span class="bu">let</span> ghcPackageOverrides = sel: sup: <span class="dt">{}</span><span class="kw">;</span></a>
-<a class="sourceLine" id="cb4-4" data-line-number="4">    <span class="kw">in</span> <span class="ex">self.haskell.packages.ghcHEAD.extend</span> ghcPackageOverrides <span class="kw">;</span></a>
-<a class="sourceLine" id="cb4-5" data-line-number="5">}</a></code></pre></div>
-<p>If we then want to fix a specific version of a package we can modify <code>ghcPackageOverrides</code> like so:</p>
-<div class="sourceCode" id="cb5"><pre class="sourceCode nix"><code class="sourceCode bash"><a class="sourceLine" id="cb5-1" data-line-number="1"><span class="ex">self</span>: super: {</a>
-<a class="sourceLine" id="cb5-2" data-line-number="2">  <span class="ex">new-ghcHEAD</span> =</a>
-<a class="sourceLine" id="cb5-3" data-line-number="3">    <span class="bu">let</span> ghcPackageOverrides =</a>
-<a class="sourceLine" id="cb5-4" data-line-number="4">          <span class="ex">sel</span>: sup: {</a>
-<a class="sourceLine" id="cb5-5" data-line-number="5">            <span class="ex">haskell-src-exts</span> =</a>
-<a class="sourceLine" id="cb5-6" data-line-number="6">              <span class="ex">sup.callHackage</span> <span class="st">&quot;haskell-src-exts&quot;</span> <span class="st">&quot;1.20.1&quot;</span> <span class="dt">{}</span><span class="kw">;</span></a>
-<a class="sourceLine" id="cb5-7" data-line-number="7">          };</a>
-<a class="sourceLine" id="cb5-8" data-line-number="8">    <span class="kw">in</span> <span class="ex">self.haskell.packages.ghcHEAD.extend</span> ghcPackageOverrides<span class="kw">;</span></a>
-<a class="sourceLine" id="cb5-9" data-line-number="9">}</a></code></pre></div>
-<p>When using the <code>new-ghcHEAD</code> package set, we will now install <code>haskell-src-exts-1.20.1</code> rather than <code>haskell-src-exts-1.19.1</code> if it is needed as a dependency.</p>
-<h2 id="more-extensions">More extensions</h2>
-<p>Manually redefining each package to get it to build is tedious. Instead, we’re going to use the patches from <a href="https://github.com/hvr/head.hackage"><code>head.hackage</code></a> in order to generate a lot of modifications automatically. What we need are the patches in <code>head.hackage/patches</code> which enable packages to build with the bleeding edge version of the compiler.</p>
-<p>In <code>head.hackage/scripts</code> there are the necessary files in order to use the patches with nix. <code>overrides.nix</code> is a wrapper which runs a haskell executable in order to generate a nix expression explaining the package modifications. The result of the derivation is a file which we can then import into our overlay directly.</p>
-<h3 id="using-a-local-copy-of-head.hackage">Using a local copy of <code>head.hackage</code></h3>
-<p>You will probably want to clone <code>head.hackage</code> locally so that you can add and modify patches as necessary to get your project to compile.</p>
-<p>In that case, instead of specifying a url, we just specify the correct paths for the packaging script and patch directory.</p>
-<p>For example:</p>
-<div class="sourceCode" id="cb6"><pre class="sourceCode nix"><code class="sourceCode bash"><a class="sourceLine" id="cb6-1" data-line-number="1"><span class="ex">self</span>: super: {</a>
-<a class="sourceLine" id="cb6-2" data-line-number="2">  <span class="ex">haskellPatches</span> = self.callPackage <span class="op">&lt;</span>path-to-overrides.nix<span class="op">&gt;</span></a>
-<a class="sourceLine" id="cb6-3" data-line-number="3">              <span class="kw">{</span> <span class="ex">patches</span> = <span class="op">&lt;</span>path-to-patch-dir<span class="op">&gt;</span><span class="kw">;</span> <span class="kw">}</span>;</a>
-<a class="sourceLine" id="cb6-4" data-line-number="4"></a>
-<a class="sourceLine" id="cb6-5" data-line-number="5">  <span class="ex">new-ghcHEAD</span> =</a>
-<a class="sourceLine" id="cb6-6" data-line-number="6">    <span class="bu">let</span> ghcPackageOverrides = self.callPackage self.haskellPatches <span class="dt">{}</span><span class="kw">;</span></a>
-<a class="sourceLine" id="cb6-7" data-line-number="7">    <span class="kw">in</span> <span class="ex">self.haskell.packages.ghcHEAD.extend</span> ghcPackageOverrides<span class="kw">;</span></a>
-<a class="sourceLine" id="cb6-8" data-line-number="8">}</a></code></pre></div>
-<h3 id="using-a-remote-copy-of-head.hackage">Using a remote copy of <code>head.hackage</code></h3>
-<p>If you don’t want to maintain a local clone of the repo then you can also fetch it from wherever you like. For example, here I fetch a specific branch from my clone of the repo which contains some nix specific patches.</p>
-<div class="sourceCode" id="cb7"><pre class="sourceCode nix"><code class="sourceCode bash"><a class="sourceLine" id="cb7-1" data-line-number="1"><span class="bu">let</span></a>
-<a class="sourceLine" id="cb7-2" data-line-number="2">  <span class="ex">nixpkgs</span> = import <span class="op">&lt;</span>nixpkgs<span class="op">&gt;</span> <span class="dt">{}</span><span class="kw">;</span></a>
-<a class="sourceLine" id="cb7-3" data-line-number="3">  <span class="ex">patchRepo</span> = nixpkgs.fetchFromGitHub {</a>
-<a class="sourceLine" id="cb7-4" data-line-number="4">    <span class="ex">owner</span> = <span class="st">&quot;mpickering&quot;</span><span class="kw">;</span></a>
-<a class="sourceLine" id="cb7-5" data-line-number="5">    <span class="ex">repo</span> = <span class="st">&quot;head.hackage&quot;</span><span class="kw">;</span></a>
-<a class="sourceLine" id="cb7-6" data-line-number="6">    <span class="fu">rev</span> = <span class="st">&quot;767dcf11b367ccff4a9fcd55df9c2432cd485fbe&quot;</span><span class="kw">;</span></a>
-<a class="sourceLine" id="cb7-7" data-line-number="7">    <span class="ex">sha256</span> = <span class="st">&quot;1cdrcw7grpc2dyxnb7a5bg9mi1h7qnblcibi91s348034zf7a0vj&quot;</span><span class="kw">;</span>};</a>
-<a class="sourceLine" id="cb7-8" data-line-number="8"></a>
-<a class="sourceLine" id="cb7-9" data-line-number="9">  <span class="ex">patchDir</span> = <span class="st">&quot;</span><span class="va">${patchRepo}</span><span class="st">/patches&quot;</span><span class="kw">;</span></a>
-<a class="sourceLine" id="cb7-10" data-line-number="10">  <span class="ex">patchScript</span> = <span class="st">&quot;</span><span class="va">${patchRepo}</span><span class="st">/scripts/overrides.nix&quot;</span><span class="kw">;</span></a>
-<a class="sourceLine" id="cb7-11" data-line-number="11"><span class="kw">in</span></a>
-<a class="sourceLine" id="cb7-12" data-line-number="12"><span class="ex">self</span>: super:</a>
-<a class="sourceLine" id="cb7-13" data-line-number="13">  <span class="kw">{</span></a>
-<a class="sourceLine" id="cb7-14" data-line-number="14">  <span class="ex">haskellPatches</span> = self.callPackage patchScript</a>
-<a class="sourceLine" id="cb7-15" data-line-number="15">              <span class="kw">{</span> <span class="ex">patches</span> = patchDir<span class="kw">;</span> <span class="kw">}</span>;</a>
-<a class="sourceLine" id="cb7-16" data-line-number="16"></a>
-<a class="sourceLine" id="cb7-17" data-line-number="17">  <span class="ex">new-ghcHEAD</span> =</a>
-<a class="sourceLine" id="cb7-18" data-line-number="18">    <span class="bu">let</span> ghcPackageOverrides = self.callPackage self.haskellPatches <span class="dt">{}</span><span class="kw">;</span></a>
-<a class="sourceLine" id="cb7-19" data-line-number="19">    <span class="kw">in</span> <span class="ex">self.haskell.packages.ghcHEAD.extend</span> ghcPackageOverrides<span class="kw">;</span></a>
-<a class="sourceLine" id="cb7-20" data-line-number="20"><span class="kw">}</span></a></code></pre></div>
-<h2 id="combining-head.hackage-modifications-with-local-modifications">Combining <code>head.hackage</code> modifications with local modifications</h2>
-<p>Unfortunately, this is not quite enough as it is sometimes necessary to further modify packages in order to get them to compile. The most obvious way is that a lot of packages have restrictive version bounds but compile fine with newer versions of libraries. So, in order to get around this we preemptively need to jailbreak all packages.</p>
-<p>Jailbreaking is a process which removes all version bounds from a package. This is safe to do as each package set only contains one version of each dependency anyway.</p>
-<p>We introduce a new extension function <code>localOverrides</code> which will contain our specific modifications which we don’t want to include in <code>head.hackage</code>. We will first only contain one specific modification which chooses a new version of <code>haskell-src-exts</code>.</p>
-<div class="sourceCode" id="cb8"><pre class="sourceCode nix"><code class="sourceCode bash"><a class="sourceLine" id="cb8-1" data-line-number="1"><span class="ex">self</span>: super: {</a>
-<a class="sourceLine" id="cb8-2" data-line-number="2">  <span class="ex">haskellPatches</span> = self.callPackage <span class="op">&lt;</span>path-to-overrides.nix<span class="op">&gt;</span></a>
-<a class="sourceLine" id="cb8-3" data-line-number="3"></a>
-<a class="sourceLine" id="cb8-4" data-line-number="4">              <span class="kw">{</span> <span class="ex">patches</span> = <span class="op">&lt;</span>path-to-patch-dir<span class="op">&gt;</span><span class="kw">;</span> <span class="kw">}</span>;</a>
-<a class="sourceLine" id="cb8-5" data-line-number="5"></a>
-<a class="sourceLine" id="cb8-6" data-line-number="6">  <span class="ex">new-ghcHEAD</span> =</a>
-<a class="sourceLine" id="cb8-7" data-line-number="7">    <span class="bu">let</span> ghcPackageOverrides = self.callPackage self.haskellPatches <span class="dt">{}</span><span class="kw">;</span></a>
-<a class="sourceLine" id="cb8-8" data-line-number="8">        <span class="ex">localOverrides</span>      =</a>
-<a class="sourceLine" id="cb8-9" data-line-number="9">          <span class="ex">sel</span>: sup:</a>
-<a class="sourceLine" id="cb8-10" data-line-number="10">            <span class="kw">{</span> <span class="ex">haskell-src-exts</span></a>
-<a class="sourceLine" id="cb8-11" data-line-number="11">                = <span class="ex">sel.callHackage</span> <span class="st">&quot;haskell-src-exts&quot;</span> <span class="st">&quot;1.20.1&quot;</span> <span class="dt">{}</span><span class="kw">;</span></a>
-<a class="sourceLine" id="cb8-12" data-line-number="12">            <span class="kw">}</span>;</a>
-<a class="sourceLine" id="cb8-13" data-line-number="13">    <span class="kw">in</span> <span class="ex">self.haskell.packages.ghcHEAD.extend</span></a>
-<a class="sourceLine" id="cb8-14" data-line-number="14">        <span class="kw">(</span><span class="ex">self.lib.composeExtensions</span> localOverrides ghcPackageOverrides<span class="kw">)</span>;</a>
-<a class="sourceLine" id="cb8-15" data-line-number="15">}</a></code></pre></div>
-<p>We need to use <code>composeExtensions</code> so that the attributes we locally modify are then also modified by <code>head.hackage</code> incrementally.</p>
-<h3 id="modifying-mkderivation">Modifying <code>mkDerivation</code></h3>
-<p>Finally, we will modify <code>mkDerivation</code> in order to jailbreak packages and not run <code>haddock</code> in order to speed up the builds. <code>mkDerivation</code> is the function which takes a Haskell package description and turns it into a nix derivation. It’s the function which when given the what to build, says precisely <em>how</em> to build it.</p>
-<div class="sourceCode" id="cb9"><pre class="sourceCode nix"><code class="sourceCode bash"><a class="sourceLine" id="cb9-1" data-line-number="1"><span class="ex">self</span>: super: {</a>
-<a class="sourceLine" id="cb9-2" data-line-number="2">  <span class="ex">haskellPatches</span> = self.callPackage <span class="op">&lt;</span>path-to-overrides.nix<span class="op">&gt;</span></a>
-<a class="sourceLine" id="cb9-3" data-line-number="3">              <span class="kw">{</span> <span class="ex">patches</span> = <span class="op">&lt;</span>path-to-patch-dir<span class="op">&gt;</span><span class="kw">;</span> <span class="kw">}</span>;</a>
-<a class="sourceLine" id="cb9-4" data-line-number="4"></a>
-<a class="sourceLine" id="cb9-5" data-line-number="5">  <span class="ex">new-ghcHEAD</span> =</a>
-<a class="sourceLine" id="cb9-6" data-line-number="6">    <span class="bu">let</span> ghcPackageOverrides = self.callPackage self.haskellPatches <span class="dt">{}</span><span class="kw">;</span></a>
-<a class="sourceLine" id="cb9-7" data-line-number="7">        <span class="ex">localOverrides</span>      =</a>
-<a class="sourceLine" id="cb9-8" data-line-number="8">          <span class="ex">sel</span>: sup: {</a>
-<a class="sourceLine" id="cb9-9" data-line-number="9">            <span class="ex">haskell-src-exts</span></a>
-<a class="sourceLine" id="cb9-10" data-line-number="10">              = <span class="ex">sel.callHackage</span> <span class="st">&quot;haskell-src-exts&quot;</span> <span class="st">&quot;1.20.1&quot;</span> <span class="dt">{}</span></a>
-<a class="sourceLine" id="cb9-11" data-line-number="11">            <span class="ex">mkDerivation</span></a>
-<a class="sourceLine" id="cb9-12" data-line-number="12">              = <span class="ex">drv</span>: sup.mkDerivation (drv //</a>
-<a class="sourceLine" id="cb9-13" data-line-number="13">                  <span class="kw">{</span> <span class="ex">jailbreak</span> = true<span class="kw">;</span> <span class="ex">doHaddock</span> = false<span class="kw">;}</span>);</a>
-<a class="sourceLine" id="cb9-14" data-line-number="14">          };</a>
-<a class="sourceLine" id="cb9-15" data-line-number="15"></a>
-<a class="sourceLine" id="cb9-16" data-line-number="16">    <span class="kw">in</span> <span class="ex">self.haskell.packages.ghcHEAD.extend</span></a>
-<a class="sourceLine" id="cb9-17" data-line-number="17">        <span class="kw">(</span><span class="ex">self.lib.composeExtensions</span> localOverrides ghcPackageOverrides<span class="kw">)</span>;</a>
-<a class="sourceLine" id="cb9-18" data-line-number="18">}</a></code></pre></div>
-<h2 id="testing">Testing</h2>
-<p>We can now test our new attribute using <code>nix-shell</code>. For example, let’s try to provision a version of the compiler with <code>primitive</code> available.</p>
-<pre><code>&gt; nix-shell -p &quot;new-ghcHEAD.ghcWithPackages (ps: [ps.primitive])&quot;
-...</code></pre>
-<p>Success!</p>
-<h1 id="conclusion">Conclusion</h1>
-<p>Thanks to Csongor Kiss, Alessio Zakaria, Sarah Brofeldt and Vaibhav Sagar for comments on a draft.</p>
-<h2 id="related-links">Related Links</h2>
-<hr />
-<h1 id="appendix">Appendix</h1>
-<h2 id="addendum-what-do-i-do-if-a-patch-from-head.hackage-doesnt-apply">Addendum: What do I do if a patch from <code>head.hackage</code> doesn’t apply?</h2>
-<p>There are some situations where patches from <code>head.hackage</code> fail to apply properly. The usual cause is that patches in the <code>head.hackage</code> repo apply to unmodified tarballs but the nix build process tries to apply patches after patching the cabal file to take into account package revisions.</p>
-<p>The workaround for this is to just create a new nix-specific patch in your local directory. :)</p>
-<h2 id="addendum-how-do-i-make-a-patch-to-contribute-to-head.hackage">Addendum: How do I make a patch to contribute to <code>head.hackage</code>?</h2>
-<pre><code>cabal get haskell-src-exts-1.20.1 &lt;--pristine&gt;
-cd haskell-src-exts-1.20.1
-git init
-git add .
-&lt;Make the simple change&gt;
-git diff &gt; &lt;patchDir&gt;/haskell-src-exts-1.20.1.patch</code></pre>
-<p>Use the <code>--pristine</code> flag if you intend to contribute the patch upstream! This will fetch the package without applying cabal file revisions.</p>
-<h2 id="addendum-how-does-overrides.nix-work">Addendum: How does <code>overrides.nix</code> work?</h2>
-<p><code>overrides.nix</code> is a simple derivation which packages a single haskell script. The haskell script scans a directory and generates the correct overrides for the given patches. The wrapper script then stores the overrides and copies the patch files into the nix store.</p>
-<div class="sourceCode" id="cb12"><pre class="sourceCode nix"><code class="sourceCode bash"><a class="sourceLine" id="cb12-1" data-line-number="1"><span class="kw">{</span> <span class="ex">stdenv</span></a>
-<a class="sourceLine" id="cb12-2" data-line-number="2">  , <span class="ex">haskell</span></a>
-<a class="sourceLine" id="cb12-3" data-line-number="3">  , <span class="ex">patches</span>  # A directory containing patch files used to build packages</a>
-<a class="sourceLine" id="cb12-4" data-line-number="4">             <span class="co"># it can either be a local directory or fetched from the web</span></a>
-<a class="sourceLine" id="cb12-5" data-line-number="5"><span class="kw">}</span>:</a>
-<a class="sourceLine" id="cb12-6" data-line-number="6"><span class="bu">let</span></a>
-<a class="sourceLine" id="cb12-7" data-line-number="7">  <span class="ex">ghc</span> = haskell.packages.ghc822.ghcWithPackages (ps: with ps<span class="kw">;</span></a>
-<a class="sourceLine" id="cb12-8" data-line-number="8">          [ ]);</a>
-<a class="sourceLine" id="cb12-9" data-line-number="9"><span class="kw">in</span></a>
-<a class="sourceLine" id="cb12-10" data-line-number="10"></a>
-<a class="sourceLine" id="cb12-11" data-line-number="11"><span class="ex">stdenv.mkDerivation</span> {</a>
-<a class="sourceLine" id="cb12-12" data-line-number="12"></a>
-<a class="sourceLine" id="cb12-13" data-line-number="13">  <span class="ex">name</span> = <span class="st">&quot;hs-generate-overrides-0.1&quot;</span><span class="kw">;</span></a>
-<a class="sourceLine" id="cb12-14" data-line-number="14"></a>
-<a class="sourceLine" id="cb12-15" data-line-number="15">  <span class="ex">src</span> = ./generate-nix-overrides.hs<span class="kw">;</span></a>
-<a class="sourceLine" id="cb12-16" data-line-number="16"></a>
-<a class="sourceLine" id="cb12-17" data-line-number="17">  <span class="ex">preUnpack</span> = <span class="st">&#39;&#39;</span>mkdir hs-generate-overrides<span class="st">&#39;&#39;</span><span class="kw">;</span></a>
-<a class="sourceLine" id="cb12-18" data-line-number="18">  <span class="ex">buildInputs</span> = [ ghc ]<span class="kw">;</span></a>
-<a class="sourceLine" id="cb12-19" data-line-number="19"></a>
-<a class="sourceLine" id="cb12-20" data-line-number="20">  <span class="ex">unpackCmd</span> = <span class="st">&#39;&#39;</span></a>
-<a class="sourceLine" id="cb12-21" data-line-number="21">    <span class="fu">cp</span> <span class="va">$curSrc</span> ./hs-generate-overrides</a>
-<a class="sourceLine" id="cb12-22" data-line-number="22">    <span class="fu">cp</span> -r <span class="va">${patches}</span> ./hs-generate-overrides/patches</a>
-<a class="sourceLine" id="cb12-23" data-line-number="23">    <span class="va">sourceRoot=</span>hs-generate-overrides;</a>
-<a class="sourceLine" id="cb12-24" data-line-number="24">  <span class="st">&#39;&#39;</span>;</a>
-<a class="sourceLine" id="cb12-25" data-line-number="25"></a>
-<a class="sourceLine" id="cb12-26" data-line-number="26">  <span class="ex">buildPhase</span> = <span class="st">&#39;&#39;</span></a>
-<a class="sourceLine" id="cb12-27" data-line-number="27">    <span class="ex">ghc</span> <span class="va">$src</span> -o generate</a>
-<a class="sourceLine" id="cb12-28" data-line-number="28">    <span class="ex">./generate</span> <span class="va">$script</span>/patches patches <span class="op">&gt;</span> patches.nix</a>
-<a class="sourceLine" id="cb12-29" data-line-number="29">  <span class="st">&#39;&#39;</span>;</a>
-<a class="sourceLine" id="cb12-30" data-line-number="30"></a>
-<a class="sourceLine" id="cb12-31" data-line-number="31">  <span class="ex">outputs</span> = [<span class="st">&quot;out&quot;</span> <span class="st">&quot;script&quot;</span>]<span class="kw">;</span></a>
-<a class="sourceLine" id="cb12-32" data-line-number="32"></a>
-<a class="sourceLine" id="cb12-33" data-line-number="33">  <span class="ex">installPhase</span> = <span class="st">&#39;&#39;</span></a>
-<a class="sourceLine" id="cb12-34" data-line-number="34">    <span class="fu">cp</span> patches.nix <span class="va">$out</span></a>
-<a class="sourceLine" id="cb12-35" data-line-number="35">    <span class="ex">ensureDir</span> <span class="va">$script</span>/patches</a>
-<a class="sourceLine" id="cb12-36" data-line-number="36">    <span class="fu">cp</span> -r patches <span class="va">$script</span>/patches</a>
-<a class="sourceLine" id="cb12-37" data-line-number="37">  <span class="st">&#39;&#39;</span>;</a>
-<a class="sourceLine" id="cb12-38" data-line-number="38"></a>
-<a class="sourceLine" id="cb12-39" data-line-number="39">}</a></code></pre></div>
-<h2 id="addendum-how-is-jailbreaking-different-to-cabals---allow-newer">Addendum: How is jailbreaking different to cabal’s <code>--allow-newer</code>?</h2>
-<p>The goal of jailbreaking and <code>--allow-newer</code> are the same, to remove restrictive bounds on packages.</p>
-<p>Jailbreaking achieves this by parsing and rewriting the cabal file to remove nearly all bounds. This fits better into the nix ecosystem where there is exactly one version of each package anyway so additional version bounds are irrelevant.</p>
-<p><code>--allow-newer</code> influences the solver in order to pick a package set as if the package didn’t have any upper bounds.</p>
-<h2 id="addendum-why-are-you-using-extend-rather-than-override.">Addendum: Why are you using <code>extend</code> rather than <code>override</code>.</h2>
-<p><code>override</code> is a general nix mechanism to override arguments to a function. In the haskell package set case, one of the arguments to the package set is called <code>overrides</code>, which is a function explaining how we want to modify the package set further.</p>
-<p>However, there is one big downside to using this mechanism, it is not possible to repeatedly override the package set with more and more extensions as each time you call <code>override</code> you <em>replace</em> the argument.</p>
-<p>For more explanation of the difference see <a href="https://github.com/NixOS/nixpkgs/issues/25887">this issue</a> on the nixpkgs issue tracker.</p>
-<h2 id="addendum-what-to-do-if-callhackage-doesnt-find-the-latest-version-of-a-package">Addendum: What to do if <code>callHackage</code> doesn’t find the latest version of a package</h2>
-<p>If <code>callHackage</code> doesn’t find a package which you know is on hackage then it is because the <code>all-cabal-hashes</code> attribute is too old. In order to override it, you can simply add a new line to your overlay with an updated copy.</p>
-<p>For example, this version is from <code>2018-01-05</code>:</p>
-<pre><code>all-cabal-hashes = super.fetchurl {
-  url    = &quot;https://github.com/commercialhaskell/all-cabal-hashes/archive/e1089e56e666c2a0fe82f840d3cc7f49b9c9fe9b.tar.gz&quot;;
-  sha256 = &quot;0qbzdngm4q8cmwydnrg7jvipw39nb1mjxw95vw6f789874002kn1&quot;;
-};</code></pre>
-<h2 id="addendum-how-to-update-the-ghchead-derivation">Addendum: How to update the ghcHEAD derivation</h2>
-<p>If you want to use a more recent version of HEAD then you have to update the ghcHEAD derivation. It can be found at <code>development/compilers/ghc/head.nix</code>.</p>
-<p>You then need to modify three things.</p>
-<ol type="1">
-<li>Correct the version of the compiler by modifying the <code>version</code> argument.</li>
-<li>Set <code>rev</code> to the git commit identifier of the revision you want to build.</li>
-<li><p>Correct the <code>sha256</code> attribute by running <code>nix-prefetch-git</code> and copying the resulting hash.</p>
-<pre><code>nix-shell -p nix-prefetch-git
- --run &quot;nix-prefetch-git --fetch-submodules git://git.haskell.org/ghc.git &lt;rev&gt;&quot;</code></pre></li>
-</ol>
 ]]></summary>
 </entry>
 
