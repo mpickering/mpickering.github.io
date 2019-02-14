@@ -90,19 +90,18 @@
 <p><code>WithCode</code> is a wrapper which pairs a value with a code fragment which was used to produce that value.</p>
 <p>If you notice in the earlier example, this wasn’t necessary when it was known that we needed to persist an <code>Int</code>, as there is a <code>Lift</code> instance for <code>Int</code>. However, in general, not all values can be persisted so using <code>WithCode</code> is more general and flexible, if a bit more verbose.</p>
 <p><code>elimExpr</code> eliminates the first layer of abstraction and returns code which generates a <code>SynApplicative</code>.</p>
-<div class="sourceCode" id="cb5"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb5-1" data-line-number="1"></a>
-<a class="sourceLine" id="cb5-2" data-line-number="2"><span class="ot">elimExpr ::</span> <span class="dt">Expr</span> <span class="ot">-&gt;</span> <span class="dt">TExpQ</span> (<span class="dt">SynApplicative</span> <span class="dt">Int</span>)</a>
-<a class="sourceLine" id="cb5-3" data-line-number="3">elimExpr (<span class="dt">Val</span> n) <span class="fu">=</span> [<span class="fu">||</span> <span class="dt">Return</span> (<span class="dt">WithCode</span> n (liftT n)) <span class="fu">||</span>]</a>
-<a class="sourceLine" id="cb5-4" data-line-number="4">elimExpr (<span class="dt">Add</span> e1 e2) <span class="fu">=</span></a>
-<a class="sourceLine" id="cb5-5" data-line-number="5">   [<span class="fu">||</span> <span class="dt">Return</span> (<span class="dt">WithCode</span> (<span class="fu">+</span>) codePlus)</a>
-<a class="sourceLine" id="cb5-6" data-line-number="6">        <span class="ot">`App`</span> <span class="fu">$$</span>(elimExpr e1)</a>
-<a class="sourceLine" id="cb5-7" data-line-number="7">        <span class="ot">`App`</span> <span class="fu">$$</span>(elimExpr e2) <span class="fu">||</span>]</a>
-<a class="sourceLine" id="cb5-8" data-line-number="8"></a>
-<a class="sourceLine" id="cb5-9" data-line-number="9"><span class="ot">liftT ::</span> <span class="dt">Lift</span> a <span class="ot">=&gt;</span> a <span class="ot">-&gt;</span> <span class="dt">TExpQ</span> a</a>
-<a class="sourceLine" id="cb5-10" data-line-number="10">liftT <span class="fu">=</span> unsafeTExpCoerce <span class="fu">.</span> lift</a>
-<a class="sourceLine" id="cb5-11" data-line-number="11"></a>
-<a class="sourceLine" id="cb5-12" data-line-number="12">codePlus <span class="fu">=</span> [<span class="fu">|</span> (<span class="fu">+</span>) <span class="fu">|</span>]</a></code></pre></div>
-<p>In the case for <code>Add</code> we encounter a situation where we would have liked to use nested brackets to persist the value of <code>[| (+) |]</code>. Instead you have to lift it to the top level and then perist that identifer.</p>
+<div class="sourceCode" id="cb5"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb5-1" data-line-number="1"><span class="ot">elimExpr ::</span> <span class="dt">Expr</span> <span class="ot">-&gt;</span> <span class="dt">TExpQ</span> (<span class="dt">SynApplicative</span> <span class="dt">Int</span>)</a>
+<a class="sourceLine" id="cb5-2" data-line-number="2">elimExpr (<span class="dt">Val</span> n) <span class="fu">=</span> [<span class="fu">||</span> <span class="dt">Return</span> (<span class="dt">WithCode</span> n (liftT n)) <span class="fu">||</span>]</a>
+<a class="sourceLine" id="cb5-3" data-line-number="3">elimExpr (<span class="dt">Add</span> e1 e2) <span class="fu">=</span></a>
+<a class="sourceLine" id="cb5-4" data-line-number="4">   [<span class="fu">||</span> <span class="dt">Return</span> (<span class="dt">WithCode</span> (<span class="fu">+</span>) codePlus)</a>
+<a class="sourceLine" id="cb5-5" data-line-number="5">        <span class="ot">`App`</span> <span class="fu">$$</span>(elimExpr e1)</a>
+<a class="sourceLine" id="cb5-6" data-line-number="6">        <span class="ot">`App`</span> <span class="fu">$$</span>(elimExpr e2) <span class="fu">||</span>]</a>
+<a class="sourceLine" id="cb5-7" data-line-number="7"></a>
+<a class="sourceLine" id="cb5-8" data-line-number="8"><span class="ot">liftT ::</span> <span class="dt">Lift</span> a <span class="ot">=&gt;</span> a <span class="ot">-&gt;</span> <span class="dt">TExpQ</span> a</a>
+<a class="sourceLine" id="cb5-9" data-line-number="9">liftT <span class="fu">=</span> unsafeTExpCoerce <span class="fu">.</span> lift</a>
+<a class="sourceLine" id="cb5-10" data-line-number="10"></a>
+<a class="sourceLine" id="cb5-11" data-line-number="11">codePlus <span class="fu">=</span> [<span class="fu">||</span> (<span class="fu">+</span>) <span class="fu">||</span>]</a></code></pre></div>
+<p>In the case for <code>Add</code> we encounter a situation where we would have liked to use nested brackets to persist the value of <code>[|| (+) ||]</code>. Instead you have to lift it to the top level and then perist that identifer.</p>
 <p>Next, it’s time to provide an interpreter to remove the abstraction of the applicative. In order to do this, we need to provide a dictionary which will be used to give the interpretation of the applicative commands.</p>
 <div class="sourceCode" id="cb6"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb6-1" data-line-number="1"><span class="kw">data</span> <span class="dt">ApplicativeDict</span> m <span class="fu">=</span></a>
 <a class="sourceLine" id="cb6-2" data-line-number="2">  <span class="dt">ApplicativeDict</span></a>
@@ -145,12 +144,12 @@ Test.hs:10:11-73: Splicing expression
     elimApplicative $$(elimExpr (Add (Val 1) (Val 2))) identityDict
   ======&gt;
     (idAp ((idAp (Identity (+))) (Identity 1))) (Identity 2)</code></pre>
-<p>Both steps appear in the debug output with the code which was produced at each step. Notice that we had very precise control over what code was generated and that functions like <code>idAp</code> are not inlined still. In this case, the compiler will certainly inline <code>idAp</code> and so on but in general it might be useful to generate code which contains calls to <code>GHC.Exts.inline</code> to force even recursive functions to be inlined once.</p>
+<p>Both steps appear in the debug output with the code which was produced at each step. Notice that we had very precise control over what code was generated and that functions like <code>idAp</code> are not inlined. In this case, the compiler will certainly inline <code>idAp</code> and so on but in general it might be useful to generate code which contains calls to <code>GHC.Exts.inline</code> to force even recursive functions to be inlined once.</p>
 <h2 id="conclusion">Conclusion</h2>
 <p>In general, splitting your program up into stages is quite difficult so mechanisms like type class specialisation will be easier to achieve. In controlled situations though, staging gives you the guarantees you need.</p>
 <h2 id="related-links">Related Links</h2>
 <ul>
-<li>Reddit Discussion</li>
+<li><a href="http://mpickering.github.io/posts/2019-02-14-stage-3.html">Reddit Discussion</a></li>
 <li><a href="https://github.com/mpickering/three-level">Code</a></li>
 </ul>
 
