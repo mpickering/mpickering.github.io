@@ -8,8 +8,84 @@
         <name>Matthew Pickering</name>
         <email>matthewtpickering@gmail.com</email>
     </author>
-    <updated>2019-02-14T00:00:00Z</updated>
+    <updated>2019-06-11T00:00:00Z</updated>
     <entry>
+    <title>Tools for working on GHC</title>
+    <link href="http://mpickering.github.io/posts/2019-06-11-ghc-tools.html" />
+    <id>http://mpickering.github.io/posts/2019-06-11-ghc-tools.html</id>
+    <published>2019-06-11T00:00:00Z</published>
+    <updated>2019-06-11T00:00:00Z</updated>
+    <summary type="html"><![CDATA[<h2> Tools for working on GHC </h2>
+<p class="text-muted">
+    Posted on June 11, 2019
+    
+</p>
+
+<p>In the old days of the Make build system, the only reliable IDE-like feature which was useful whilst working on GHC was a tags file. Even loading GHC into GHCi was not easily possible, the most simple of interactive development workflows. Thankfully now times are changing, there are now build targets to start a GHCi session which enables developers to use tooling such as <a href="https://github.com/ndmitchell/ghcid">ghcid</a> or <a href="https://marketplace.visualstudio.com/items?itemName=dramforever.vscode-ghc-simple">vscode-ghc-simple</a>. Something which is quite important when working on a project with over 500 modules!</p>
+<p>In this post we’ll briefly describe some recent advancements in developer tooling which have been made possible by the move to Hadrian.</p>
+<!--more-->
+<h2 id="ghci"><code>ghci</code></h2>
+<p>The first target allows a developer to load GHC into GHCi. The <code>-fno-code</code> option is used which means that you can’t evaluate any expressions. It is useful for rapid feedback.</p>
+<script id="asciicast-EKHiPuGgxhXz0ZHQgtR3OQd9G" src="https://asciinema.org/a/EKHiPuGgxhXz0ZHQgtR3OQd9G.js" async></script>
+<h2 id="ghcid"><code>ghcid</code></h2>
+<p><code>ghcid</code> can be used whilst working on <code>ghc</code> by invoking the <code>./hadrian/ghci.sh</code> target.</p>
+<script id="asciicast-HAu0U5cVbneuujaoUA92Nxld5" src="https://asciinema.org/a/HAu0U5cVbneuujaoUA92Nxld5.js" async></script>
+<p>There is a <code>.ghcid</code> file included <a href="https://gitlab.haskell.org/ghc/ghc/blob/master/.ghcid">in the repo</a> which includes some basic settings instructing <code>.ghcid</code> to reload the session if <code>hadrian/</code> changes. It might also be useful to add further directories here so that working with the many components of <code>ghc</code> is seamless.</p>
+<h2 id="haskell-ide-engine"><code>haskell-ide-engine</code></h2>
+<p>Once you have a working <code>ghci</code> target then in theory it becomes possible to use all other tooling with your build system. I realised that it would be possible to get <code>haskell-ide-engine</code> working with <code>ghc</code> but it required a <a href="https://github.com/haskell/haskell-ide-engine/pull/1126">very significant refactor</a>.</p>
+<blockquote class="twitter-tweet" data-lang="en">
+<p lang="en" dir="ltr">
+Here's a short demo of using haskell-ide-engine on GHC's code base using my fork which integrates HIE into hadrian/cabal/rules_haskell/stack/obelisk <a href="https://t.co/rA1ps7dSb1">pic.twitter.com/rA1ps7dSb1</a>
+</p>
+— Matthew Pickering (<span class="citation" data-cites="mpickering_">(<span class="citeproc-not-found" data-reference-id="mpickering_"><strong>???</strong></span>)</span>) <a href="https://twitter.com/mpickering_/status/1110874588509016064?ref_src=twsrc%5Etfw">March 27, 2019</a>
+</blockquote>
+<script async src="https://platform.twitter.com/widgets.js" charset="utf-8"></script>
+<p>As a result, the branch can’t easily be merged back into the main repo but once it is merged then <code>haskell-ide-engine</code> will be more flexible and target agnostic.</p>
+<h2 id="future-work-running-main">Future work: running <code>:main</code></h2>
+<p>A final <a href="https://gitlab.haskell.org/ghc/ghc/issues/16672">goal</a> is to be able to run GHC’s <code>main</code> function from inside the interpreter. In order to do this it’s necessary to interpret the code rather than pass <code>-fno-code</code>. With some modifications to the <code>./hadrian/ghci.sh</code> script and patches by Michael Sloan we have been able to load load <code>ghc</code> into <code>GHCi</code> in the interpreted mode.</p>
+<p>Unfortunately, this isn’t enough as in order to build programs with <code>HEAD</code> you also need to build libraries such as <code>base</code> with <code>HEAD</code>. The way around this is to first compile stage2 and then use the stage2 compiler to launch GHCi and load GHC into that. Then the libraries will be the correct versions and can be used to compile other modules.</p>
+<p>A few months ago I got this working but since then it seems that the workflow <a href="https://gitlab.haskell.org/ghc/ghc/issues/16797">has been broken</a>. It’s a bit unfortunate that you have to jump through so many hoops in order to compile even a simple module but this is a unavoidable consequence of how GHC compiles and uses modules.</p>
+<h3 id="ghci-debugger">GHCi Debugger</h3>
+<p>Once you can execute <code>:main</code>, you can also use the GHCi debugger to debug GHC itself! This works without any problems but until you can use <code>:main</code> to compile programs then its of limited utility. I used the debugger to find the original reason why <code>:main</code> was failing whe compiling a program.</p>
+]]></summary>
+</entry>
+<entry>
+    <title>Making use of GHC bindists built by GitLab CI</title>
+    <link href="http://mpickering.github.io/posts/2019-06-11-ghc-artefact.html" />
+    <id>http://mpickering.github.io/posts/2019-06-11-ghc-artefact.html</id>
+    <published>2019-06-11T00:00:00Z</published>
+    <updated>2019-06-11T00:00:00Z</updated>
+    <summary type="html"><![CDATA[<h2> Making use of GHC bindists built by GitLab CI </h2>
+<p class="text-muted">
+    Posted on June 11, 2019
+    
+</p>
+
+<p>The new GHC GitLab CI infrastructure builds hundreds of different commits a week. Each commit on <code>master</code> is built, as well as any merge requests; each build produces an bindist which can be downloaded and installed on the relevant platform.</p>
+<p><a href="https://github.com/mpickering/ghc-artefact-nix"><code>ghc-artefact-nix</code></a> provides a program <code>ghc-head-from</code> which downloads and enters a shell providing an artefact built with GitLab CI.</p>
+<!--more-->
+<h2 id="using-ghc-artefact-nix">Using <code>ghc-artefact-nix</code></h2>
+<p>You can install <code>ghc-head-from</code> using <a href="https://github.com/nix-community/NUR"><code>NUR</code></a>.</p>
+<pre><code>nix-shell -p nur.repos.mpickering.ghc-head-from</code></pre>
+<p>There are three modes of operation.</p>
+<h3 id="grab-a-recent-commit-from-master">Grab a recent commit from <code>master</code></h3>
+<pre><code>ghc-head-from</code></pre>
+<h3 id="grab-a-merge-request">Grab a merge request</h3>
+<pre><code>ghc-head-from 1107</code></pre>
+<h3 id="grab-a-specific-bindist-for-example-from-a-branch-or-fork">Grab a specific bindist (for example, from a branch or fork)</h3>
+<pre><code>ghc-head-from https://gitlab.haskell.org/ghc/ghc/-/jobs/98842/artifacts/raw/ghc-x86_64-fedora27-linux.tar.xz</code></pre>
+<p>The URL you provide has to be a direct link to a <code>fedora27</code> bindist.</p>
+<h2 id="technical-details">Technical Details</h2>
+<p>The bindist is downloaded from the (very flaky) CDN and patched to remove platform specific paths. The <code>fedora27</code> job is used because it is built using <code>ncurses6</code> which works better with nix.</p>
+<h3 id="using-an-artefact-in-a-nix-expression">Using an artefact in a nix expression</h3>
+<p>The <a href="https://github.com/mpickering/old-ghc-nix"><code>old-ghc-nix</code></a> repo provides a <code>mkGhc</code> function which can be used in a nix expression to create an attribute for a specific bindist. It is also packaged using <code>NUR</code>.</p>
+<pre><code>nur.repos.mpickering.ghc.mkGhc
+  {  url = &quot;https://gitlab-artifact-url.com&quot;; hash = &quot;sha256&quot;; ncursesVersion = &quot;6&quot;; }</code></pre>
+<p>The <code>ncursesVersion</code> attribute is important to set for <code>fedora27</code> jobs as the function assumes that the bindist was built with <code>deb8</code> which uses <code>ncurses5</code>.</p>
+<p>If you plan on using the artefact for a while then make sure you click the “keep” button on the artefact download page as otherwise it will be deleted after a week. This is very useful if you are developing a library against an unreleased version of the compiler and want to make sure all your collaborators are using the same version of GHC.</p>
+]]></summary>
+</entry>
+<entry>
     <title>A three-stage program you definitely want to write</title>
     <link href="http://mpickering.github.io/posts/2019-02-14-stage-3.html" />
     <id>http://mpickering.github.io/posts/2019-02-14-stage-3.html</id>
@@ -1002,183 +1078,6 @@ in ...</code></pre>
 <pre><code>cabal: The program &#39;ar&#39; is required but it could not be found.</code></pre>
 <p>The way to fix this problem is to run cabal in an environment with the <code>binutils-unwrapped</code> package available. You can then use cabal as normal.</p>
 <pre><code>nix-shell -p binutils-unwrapped</code></pre>
-]]></summary>
-</entry>
-<entry>
-    <title>Source Plugins: Four ways to build a typechecked Haskell expression</title>
-    <link href="http://mpickering.github.io/posts/2018-06-11-source-plugins.html" />
-    <id>http://mpickering.github.io/posts/2018-06-11-source-plugins.html</id>
-    <published>2018-06-11T00:00:00Z</published>
-    <updated>2018-06-11T00:00:00Z</updated>
-    <summary type="html"><![CDATA[<h2> Source Plugins: Four ways to build a typechecked Haskell expression </h2>
-<p class="text-muted">
-    Posted on June 11, 2018
-    
-</p>
-
-<p>A source plugin allows users to modify and analyse code after typechecking. They have access to all the features of the compiler to create and modify bindings.</p>
-<p>Sounds great right? GHC is all about creating and modifying bindings so this should be a doddle. However, it isn’t immediately obvious how to make a typechecked binding using the provided API.</p>
-<p>In this post, I’ll demonstrate and explain four different ways of arriving at a typechecked expression which can then be inserted into a program. All these examples are packaged up into a complete plugin on my <a href="https://github.com/mpickering/plugin-constraint">GitHub page</a>.</p>
-<!--more-->
-<h2 id="constructing-expressions">Constructing Expressions</h2>
-<p>The four examples which we order from the most direct to the most indirect. Each has their advantages but in general, directly constructing an already typechecked binding is the most risky but flexible whilst starting from a Template Haskell quote is the safest but most rigid option. In the end we will always end up with a <code>LHsExpr GhcTc</code> but we will start from four different places.</p>
-<ul>
-<li><code>LHsExpr GhcTc</code> - An already typechecked expression</li>
-<li><code>LHsExpr GhcRn</code> - An already renamed expression</li>
-<li><code>LHsExpr GhcPs</code> - A parsed expression</li>
-<li><code>TH.Exp</code> - A quoted expression</li>
-</ul>
-<p>Each example will construct the simple expression <code>print ()</code>. This example is chosen because it demonstrates that we must be concerned with polymorphism and type classes during the process.</p>
-<h2 id="typechecked-expression">Typechecked Expression</h2>
-<p>Constructing a <code>LHsExpr GhcTc</code> by hand is quite annoying as you must be knowledgeable about how the typechecker prepares a program. You must also be quite explicit about types and the compiler won’t tell you that you’re wrong unless you compiler with core lint enabled.</p>
-<div class="sourceCode" id="cb1"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb1-1" data-line-number="1"><span class="co">-- Creates the already typechecked expression `print ()`</span></a>
-<a class="sourceLine" id="cb1-2" data-line-number="2"><span class="co">--</span></a>
-<a class="sourceLine" id="cb1-3" data-line-number="3"><span class="co">-- There is quite a lot of boilerplate and the compiler won&#39;t tell</span></a>
-<a class="sourceLine" id="cb1-4" data-line-number="4"><span class="co">-- you where you went wrong unless -dcore-lint is enabled.</span></a>
-<a class="sourceLine" id="cb1-5" data-line-number="5"><span class="ot">mkNewExprTc ::</span> <span class="dt">TcM</span> (<span class="dt">LHsExpr</span> <span class="dt">GhcTc</span>)</a>
-<a class="sourceLine" id="cb1-6" data-line-number="6">mkNewExprTc <span class="fu">=</span> <span class="kw">do</span></a>
-<a class="sourceLine" id="cb1-7" data-line-number="7">  <span class="co">-- Get the `Id`s that we need, these ones helpfully are already defined</span></a>
-<a class="sourceLine" id="cb1-8" data-line-number="8">  <span class="co">-- in `PrelNames` and `TysWiredIn`.</span></a>
-<a class="sourceLine" id="cb1-9" data-line-number="9">  print_id    <span class="ot">&lt;-</span> tcLookupId printName</a>
-<a class="sourceLine" id="cb1-10" data-line-number="10"></a>
-<a class="sourceLine" id="cb1-11" data-line-number="11">  <span class="co">-- Generate the evidence for `Show ()` which we will pass to `print`</span></a>
-<a class="sourceLine" id="cb1-12" data-line-number="12">  (dict_var, showUnitEv) <span class="ot">&lt;-</span> generateDictionary</a>
-<a class="sourceLine" id="cb1-13" data-line-number="13">  <span class="kw">let</span></a>
-<a class="sourceLine" id="cb1-14" data-line-number="14">    rhs <span class="fu">=</span> mHsApp (mLHsWrap wrapper printExpr) unitExpr)</a>
-<a class="sourceLine" id="cb1-15" data-line-number="15"></a>
-<a class="sourceLine" id="cb1-16" data-line-number="16">    printExpr <span class="fu">=</span> nlHsVar print_id</a>
-<a class="sourceLine" id="cb1-17" data-line-number="17">    unitExpr <span class="fu">=</span> nlHsDataCon unitDataCon</a>
-<a class="sourceLine" id="cb1-18" data-line-number="18"></a>
-<a class="sourceLine" id="cb1-19" data-line-number="19">    <span class="co">-- How we are going to apply the necessary type arguments</span></a>
-<a class="sourceLine" id="cb1-20" data-line-number="20">    wrapper <span class="fu">=</span> mkWpLet showUnitEv <span class="fu">&lt;.&gt;</span> mkWpEvVarApps [dict_var] <span class="fu">&lt;.&gt;</span> mkWpTyApps [unitTy]</a>
-<a class="sourceLine" id="cb1-21" data-line-number="21">  return rhs</a></code></pre></div>
-<p>Notice that in particular, we have to be careful to construct and apply a wrapper which will desugar to type and dictionary applications. We also have to explicitly come up with the correct dictionary for the <code>print</code> function and manually apply it ourselves. This approach gives us a lot of control but leaves many fiddly places to go wrong.</p>
-<h2 id="renamed-binding">Renamed Binding</h2>
-<p>The second approach creates a <code>LHsExpr GhcRn</code> which we will then typecheck using the normal typechecker. This has the advantage that we can be direct about which names we mean but also have the safety that the compiler will emit an error when the plugin is used if we made a mistake.</p>
-<p>We still have to construct the return type of the expression to pass into the typechecker. We use <code>lookupOccRn</code> to find the definition of <code>print</code> which is in scope but can use <code>unitDataCon</code> directly without looking it up as it is already wired into the compiled and defined in <code>PrelNames</code>.</p>
-<div class="sourceCode" id="cb2"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb2-1" data-line-number="1"><span class="co">-- Creates a `LHsExpr GhcRn` which we then typecheck to turn into</span></a>
-<a class="sourceLine" id="cb2-2" data-line-number="2"><span class="co">-- a `LHsExpr GhcTc`. The compiler will raise an error to the user if you</span></a>
-<a class="sourceLine" id="cb2-3" data-line-number="3"><span class="co">-- made a mistake in constructing the term.</span></a>
-<a class="sourceLine" id="cb2-4" data-line-number="4"><span class="ot">mkNewExprRn ::</span> <span class="dt">TcM</span> (<span class="dt">LHsExpr</span> <span class="dt">GhcTc</span>)</a>
-<a class="sourceLine" id="cb2-5" data-line-number="5">mkNewExprRn <span class="fu">=</span> <span class="kw">do</span></a>
-<a class="sourceLine" id="cb2-6" data-line-number="6">  <span class="co">-- The names we want to use happen to already be in PrelNames so we use</span></a>
-<a class="sourceLine" id="cb2-7" data-line-number="7">  <span class="co">-- them directly.</span></a>
-<a class="sourceLine" id="cb2-8" data-line-number="8">  <span class="kw">let</span> print_occ <span class="fu">=</span> mkRdrUnqual (mkVarOcc <span class="st">&quot;print&quot;</span>)</a>
-<a class="sourceLine" id="cb2-9" data-line-number="9">  print_name <span class="ot">&lt;-</span> lookupOccRn print_occ</a>
-<a class="sourceLine" id="cb2-10" data-line-number="10">  <span class="kw">let</span> raw_expr <span class="fu">=</span> nlHsApp (nlHsVar print_name) (nlHsVar (dataConName unitDataCon))</a>
-<a class="sourceLine" id="cb2-11" data-line-number="11">  io_tycon <span class="ot">&lt;-</span> tcLookupTyCon ioTyConName</a>
-<a class="sourceLine" id="cb2-12" data-line-number="12">  <span class="kw">let</span> exp_type <span class="fu">=</span> mkTyConApp io_tycon [unitTy]</a>
-<a class="sourceLine" id="cb2-13" data-line-number="13">  typecheckExpr exp_type raw_expr</a></code></pre></div>
-<h2 id="parsed-binding">Parsed Binding</h2>
-<p>We sometimes don’t want to specify exactly which names we mean or know which renaming functions to use to find them. It’s easier to let the renamer do that for us. In this example, we construct a <code>LHsExpr GhcPs</code> which we then pass into the renamer and typechecker. Therefore, the compiler will warn us about out of scope variables or type errors in the expression we have created like normal.</p>
-<p>Instead of constructing <code>Name</code>s like before, we are constructing <code>RdrName</code>s. These are conceptually easier to create as we must only consider the namespace the name lives in rather than any other details. The renamer will fill in the rest of the information.</p>
-<div class="sourceCode" id="cb3"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb3-1" data-line-number="1"><span class="co">-- An example of how to construct a value from a `LHsExpr GhcPs`.</span></a>
-<a class="sourceLine" id="cb3-2" data-line-number="2"><span class="co">-- Making sure things are in the right namespace is sometimes a bit</span></a>
-<a class="sourceLine" id="cb3-3" data-line-number="3"><span class="co">-- awkward.</span></a>
-<a class="sourceLine" id="cb3-4" data-line-number="4"><span class="ot">mkNewExprPs ::</span> <span class="dt">TcM</span> (<span class="dt">LHsExpr</span> <span class="dt">GhcTc</span>)</a>
-<a class="sourceLine" id="cb3-5" data-line-number="5">mkNewExprPs  <span class="fu">=</span> <span class="kw">do</span></a>
-<a class="sourceLine" id="cb3-6" data-line-number="6"></a>
-<a class="sourceLine" id="cb3-7" data-line-number="7">  <span class="kw">let</span></a>
-<a class="sourceLine" id="cb3-8" data-line-number="8">    print_occ <span class="fu">=</span> mkRdrUnqual (mkVarOcc <span class="st">&quot;print&quot;</span>)</a>
-<a class="sourceLine" id="cb3-9" data-line-number="9">    unit_occ <span class="fu">=</span> nameRdrName (dataConName unitDataCon)</a>
-<a class="sourceLine" id="cb3-10" data-line-number="10">    ps_expr <span class="fu">=</span> nlHsApp (nlHsVar print_occ)</a>
-<a class="sourceLine" id="cb3-11" data-line-number="11">                      (nlHsVar unit_occ)</a>
-<a class="sourceLine" id="cb3-12" data-line-number="12"></a>
-<a class="sourceLine" id="cb3-13" data-line-number="13">  io_tycon <span class="ot">&lt;-</span> tcLookupTyCon ioTyConName</a>
-<a class="sourceLine" id="cb3-14" data-line-number="14">  <span class="kw">let</span> exp_type <span class="fu">=</span> mkTyConApp io_tycon [unitTy]</a>
-<a class="sourceLine" id="cb3-15" data-line-number="15">  renameExpr ps_expr <span class="fu">&gt;&gt;=</span> typecheckExpr exp_type</a></code></pre></div>
-<p>Note, I initially tried to use a different definition of <code>unit_occ</code> which didn’t start from the wired in name but it proved tricky to get correct. This is why we start from the more specific <code>Name</code> and turn it into a <code>RdrName</code>. We are also relying more on the context of the module, if the user hasn’t imported <code>print</code> then the plugin will fail.</p>
-<h2 id="constructing-a-binding-from-template-haskell">Constructing a binding from Template Haskell</h2>
-<p>Still, explicitly typing out the syntax tree is quite onerous. We would much prefer type out a Haskell program as normal and then splice it into our program. We can achieve this by using a Template Haskell quasiquoter.</p>
-<p>We first quote the expression we want to insert which creates a <code>TH.Exp</code> which we can convert to a normal <code>HsExpr GhcPs</code> by using the same function that GHC itself uses to deal with Template Haskell. Once we have the parsed expression we can rename it and typecheck it as in the previous examples. This is all quite convenient!</p>
-<div class="sourceCode" id="cb4"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb4-1" data-line-number="1"><span class="ot">liftQ ::</span> <span class="dt">Q</span> a <span class="ot">-&gt;</span> <span class="dt">TcM</span> a</a>
-<a class="sourceLine" id="cb4-2" data-line-number="2">liftQ <span class="fu">=</span> liftIO <span class="fu">.</span> runQ</a>
-<a class="sourceLine" id="cb4-3" data-line-number="3"></a>
-<a class="sourceLine" id="cb4-4" data-line-number="4"><span class="co">-- Creates a `TH.Exp` using a quasiquoter before renaming</span></a>
-<a class="sourceLine" id="cb4-5" data-line-number="5"><span class="co">-- and typechecking to create an `LHsExpr`. This is convenient as you</span></a>
-<a class="sourceLine" id="cb4-6" data-line-number="6"><span class="co">-- don&#39;t have to write out the syntax.</span></a>
-<a class="sourceLine" id="cb4-7" data-line-number="7"><span class="co">-- p</span></a>
-<a class="sourceLine" id="cb4-8" data-line-number="8"><span class="ot">mkNewExprTh ::</span> <span class="dt">TcM</span> (<span class="dt">LHsExpr</span> <span class="dt">GhcTc</span>)</a>
-<a class="sourceLine" id="cb4-9" data-line-number="9">mkNewExprTh <span class="fu">=</span> <span class="kw">do</span></a>
-<a class="sourceLine" id="cb4-10" data-line-number="10">  th_expr <span class="ot">&lt;-</span> liftQ [<span class="fu">|</span> print () <span class="fu">|</span>]</a>
-<a class="sourceLine" id="cb4-11" data-line-number="11">  ps_expr <span class="ot">&lt;-</span> <span class="kw">case</span> convertToHsExpr noSrcSpan th_expr <span class="kw">of</span></a>
-<a class="sourceLine" id="cb4-12" data-line-number="12">    <span class="dt">Left</span> _err <span class="ot">-&gt;</span> error <span class="st">&quot;Bad expression&quot;</span></a>
-<a class="sourceLine" id="cb4-13" data-line-number="13">    <span class="dt">Right</span> res <span class="ot">-&gt;</span> return res</a>
-<a class="sourceLine" id="cb4-14" data-line-number="14"></a>
-<a class="sourceLine" id="cb4-15" data-line-number="15">  io_tycon <span class="ot">&lt;-</span> tcLookupTyCon ioTyConName</a>
-<a class="sourceLine" id="cb4-16" data-line-number="16">  <span class="kw">let</span> exp_type <span class="fu">=</span> mkTyConApp io_tycon [unitTy]</a>
-<a class="sourceLine" id="cb4-17" data-line-number="17">  renameExpr ps_expr <span class="fu">&gt;&gt;=</span> typecheckExpr exp_type</a></code></pre></div>
-<h1 id="conclusion">Conclusion</h1>
-<p>In our experience, the most practical way of constructing expressions is to use Template Haskell. A more in-depth example which creates a complicated expression can be see in the <a href="https://github.com/ocharles/assert-explainer">assert-explainer</a> which I worked on with Ollie Charles at Zurihac 2018.</p>
-<h1 id="addendum-how-can-i-interact-with-the-constraint-solver">Addendum: How can I interact with the constraint solver?</h1>
-<p>The <code>generateDictionary</code> is an example of how to generate some evidence. It might need to be refined further but worked for simple tests.</p>
-<h1 id="addendum-how-can-i-get-the-type-of-an-hsexpr-ghctc">Addendum: How can I get the type of an <code>HsExpr GhcTc</code>?</h1>
-<p>To get the type of an expression, first desugar the expression and then use <code>exprType</code> to find the type of the desugared variant. There is an example in <a href="https://github.com/ocharles/assert-explainer/blob/master/plugin/AssertExplainer.hs#L289">assert-explainer</a>.</p>
-<h1 id="addendum-how-can-i-combine-together-old-and-new-program-fragments">Addendum: How can I combine together old and new program fragments</h1>
-<p>If you want to combine together pieces of new syntax and old syntax then don’t try to do it directly. Construct a lambda with arguments for each of the pieces you want to insert. Finally, apply the lambda to the existing expressions you want to insert.</p>
-]]></summary>
-</entry>
-<entry>
-    <title>Replacing type classes with records affects optimisation</title>
-    <link href="http://mpickering.github.io/posts/2018-03-20-recordsvstypeclasses.html" />
-    <id>http://mpickering.github.io/posts/2018-03-20-recordsvstypeclasses.html</id>
-    <published>2018-03-20T00:00:00Z</published>
-    <updated>2018-03-20T00:00:00Z</updated>
-    <summary type="html"><![CDATA[<h2> Replacing type classes with records affects optimisation </h2>
-<p class="text-muted">
-    Posted on March 20, 2018
-    
-</p>
-
-<p>It is somewhat common to suggest using records instead of type classes for particular domains for which type classes are not deemed idiomatic. However, this suggestion should be taken with caution as the change will have consequences on how your program is optimised. Using records instead of type classes can lead to much slower programs.</p>
-<!--more-->
-<p>In order to provide an interface for propositional logic, we might provide a type class which allows the constructors to be overloaded. We can then provide a direct interpretation of <code>Prop</code> which evaluates an expression to a truth value.</p>
-<div class="sourceCode" id="cb1"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb1-1" data-line-number="1"><span class="kw">class</span> <span class="dt">Prop</span> r <span class="kw">where</span></a>
-<a class="sourceLine" id="cb1-2" data-line-number="2"><span class="ot">  or ::</span> r <span class="ot">-&gt;</span> r <span class="ot">-&gt;</span> r</a>
-<a class="sourceLine" id="cb1-3" data-line-number="3"><span class="ot">  and ::</span> r <span class="ot">-&gt;</span> r <span class="ot">-&gt;</span> r</a>
-<a class="sourceLine" id="cb1-4" data-line-number="4"><span class="ot">  true ::</span> r</a>
-<a class="sourceLine" id="cb1-5" data-line-number="5"><span class="ot">  false ::</span> r</a>
-<a class="sourceLine" id="cb1-6" data-line-number="6"></a>
-<a class="sourceLine" id="cb1-7" data-line-number="7"></a>
-<a class="sourceLine" id="cb1-8" data-line-number="8"><span class="kw">instance</span> <span class="dt">Prop</span> <span class="dt">Bool</span> <span class="kw">where</span></a>
-<a class="sourceLine" id="cb1-9" data-line-number="9">  or <span class="fu">=</span> (<span class="fu">||</span>)</a>
-<a class="sourceLine" id="cb1-10" data-line-number="10">  and <span class="fu">=</span> (<span class="fu">&amp;&amp;</span>)</a>
-<a class="sourceLine" id="cb1-11" data-line-number="11">  true <span class="fu">=</span> <span class="dt">True</span></a>
-<a class="sourceLine" id="cb1-12" data-line-number="12">  false <span class="fu">=</span> <span class="dt">False</span></a></code></pre></div>
-<p>However, one might be tempted to avoid using a type class and instead perform the manual type class desugaring in order to be able to more easily modify and extend an interpretation.</p>
-<div class="sourceCode" id="cb2"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb2-1" data-line-number="1"><span class="kw">data</span> <span class="dt">PropDict</span> r <span class="fu">=</span> <span class="dt">PropDict</span> {</a>
-<a class="sourceLine" id="cb2-2" data-line-number="2"><span class="ot">  dor ::</span> r <span class="ot">-&gt;</span> r <span class="ot">-&gt;</span> r</a>
-<a class="sourceLine" id="cb2-3" data-line-number="3">  ,<span class="ot"> dand ::</span> r <span class="ot">-&gt;</span> r <span class="ot">-&gt;</span> r</a>
-<a class="sourceLine" id="cb2-4" data-line-number="4">  ,<span class="ot"> dtrue ::</span> r</a>
-<a class="sourceLine" id="cb2-5" data-line-number="5">  ,<span class="ot"> dfalse ::</span> r</a>
-<a class="sourceLine" id="cb2-6" data-line-number="6">  }</a>
-<a class="sourceLine" id="cb2-7" data-line-number="7"></a>
-<a class="sourceLine" id="cb2-8" data-line-number="8">boolDict <span class="fu">=</span> <span class="dt">PropDict</span> {</a>
-<a class="sourceLine" id="cb2-9" data-line-number="9">  dor <span class="fu">=</span> (<span class="fu">||</span>)</a>
-<a class="sourceLine" id="cb2-10" data-line-number="10">  , dand <span class="fu">=</span> (<span class="fu">&amp;&amp;</span>)</a>
-<a class="sourceLine" id="cb2-11" data-line-number="11">  , dtrue <span class="fu">=</span> <span class="dt">True</span></a>
-<a class="sourceLine" id="cb2-12" data-line-number="12">  , dfalse <span class="fu">=</span> <span class="dt">False</span> }</a></code></pre></div>
-<p>We can then use both versions in order to implement a helper function which turns a list into a chain of disjunctions.</p>
-<div class="sourceCode" id="cb3"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb3-1" data-line-number="1"><span class="ot">ors ::</span> <span class="dt">Prop</span> r <span class="ot">=&gt;</span> [r] <span class="ot">-&gt;</span> r</a>
-<a class="sourceLine" id="cb3-2" data-line-number="2">ors [o] <span class="fu">=</span> o</a>
-<a class="sourceLine" id="cb3-3" data-line-number="3">ors (o<span class="fu">:</span>os) <span class="fu">=</span> o <span class="ot">`or`</span> ors os</a>
-<a class="sourceLine" id="cb3-4" data-line-number="4"></a>
-<a class="sourceLine" id="cb3-5" data-line-number="5"><span class="ot">dors ::</span> <span class="dt">PropDict</span> r <span class="ot">-&gt;</span> [r] <span class="ot">-&gt;</span> r</a>
-<a class="sourceLine" id="cb3-6" data-line-number="6">dors _ [o] <span class="fu">=</span> o</a>
-<a class="sourceLine" id="cb3-7" data-line-number="7">dors pd (o<span class="fu">:</span>os) <span class="fu">=</span> dor pd o (dors pd os)</a></code></pre></div>
-<p>We can then instantiate each function by either supplying a type argument or the dictionary directly in the latter case.</p>
-<div class="sourceCode" id="cb4"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb4-1" data-line-number="1"><span class="ot">test1 ::</span> [<span class="dt">Bool</span>] <span class="ot">-&gt;</span> <span class="dt">Bool</span></a>
-<a class="sourceLine" id="cb4-2" data-line-number="2">test1 <span class="fu">=</span> ors <span class="fu">@</span><span class="dt">Bool</span></a>
-<a class="sourceLine" id="cb4-3" data-line-number="3"></a>
-<a class="sourceLine" id="cb4-4" data-line-number="4"><span class="ot">test2 ::</span> [<span class="dt">Bool</span>] <span class="ot">-&gt;</span> <span class="dt">Bool</span></a>
-<a class="sourceLine" id="cb4-5" data-line-number="5">test2 <span class="fu">=</span> dors boolDict</a></code></pre></div>
-<p>What’s the difference between these two versions? The process of optimisation is different. In the first case, the overloading of <code>ors</code> will be eliminated by <strong>specialisation</strong>. In the later case, the static argument will be eliminated by <strong>SpecConstr</strong>. When we define these definitions in the same module as our earlier definitions of <code>ors</code> and <code>dors</code> then both definitions result in essentially the same code as each other. The overhead is eliminated.</p>
-<p>However, when we use <code>ors</code> or <code>dors</code> in another module, they behave quite differently. If we mark <code>ors</code> as <code>INLINABLE</code> then it will also be specialised in other modules. However, <strong>SpecConstr does not work across module boundaries</strong>. As a result, <code>dors</code> will not be specialised on the static argument and the dictionary overhead will remain.</p>
-<h2 id="links">Links</h2>
-<ul>
-<li><a href="https://github.com/mpickering/rtcwrao-benchmarks">Benchmarks</a></li>
-<li><a href="https://www.reddit.com/r/haskell/comments/85svhm/replacing_type_classes_with_records_affects/">Reddit Discussion</a></li>
-</ul>
 ]]></summary>
 </entry>
 
