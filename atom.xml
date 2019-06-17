@@ -281,11 +281,11 @@ foo4 = [| \x -&gt; [| $(lift x) |] |]</code></pre>
 <p>The environment is special in the sense that it connects a stage 1 variable with an expression at stage 0.</p>
 <p>How is this implemented? When we see a splice we rename it and the write it to a state variable whose scope is delimited by the bracket. Once the contents of the bracket is finished being renamed we read the contents and use that as the environment.</p>
 <h2 id="generalisation-to-n-levels">Generalisation to n-levels</h2>
-<p>If we insert an implicit splice for a variable with a two stage difference, we need to propagate the splice outwards two levels to correct the stage difference.</p>
-<pre><code>foo n = [| [| n |] |]
-      =&gt; [| [| $($(lift n)) |] |]
-      =&gt; [| [| x |]_{x = y} |]_{y = lift (lift n) }</code></pre>
-<p>As such, we annotate each pending splice with its target level and float it outwards as far as it needs to go. As the splice moves outwards, we leave behind trivial bindings which connect together the different stages.</p>
+<p>Nested splices work immediately with nested brackets. When there is a nested bracket, the expression on the inside is first floated outwards into the inner brackets environment.</p>
+<pre><code>foo n = [| [| $($(n)) |] |]
+      =&gt; [| [| x |]_{x=$(n)} |]
+      =&gt; [| [| x |]_{x = y} |]_{y = n}</code></pre>
+<p>Then it is floated again to the top-level leaving a behind a trail of bindings.</p>
 <h2 id="representing-quotes">Representing Quotes</h2>
 <p>Template Haskell represents renamed terms so that references remain constent after splicing. As such, our representation of a quotation in the TH AST should reflect the renamed form of brackets which includes the environment.</p>
 <pre><code>data Exp = ... | BrackE [(Var, Exp)] Exp | ...</code></pre>
