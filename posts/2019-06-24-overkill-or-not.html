@@ -1,0 +1,183 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+    <head>
+        <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+        <title>mpickering - Complete overkill or exactly right? Deploying a static site using nix</title>
+        <script type="text/javascript" src="http://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML"></script>
+        <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.1.3/css/bootstrap.min.css" integrity="sha384-MCw98/SFnGE8fJT3GXwEOngsV7Zt27NXFoaoApmYm81iuXoPkFOJwJ8ERdknLPMO" crossorigin="anonymous">
+        <script src="https://code.jquery.com/jquery-3.3.1.slim.min.js" integrity="sha384-q8i/X+965DzO0rT7abK41JStQIAqVgRVzpbzo5smXKp4YfRvH+8abtTE1Pi6jizo" crossorigin="anonymous"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.14.3/umd/popper.min.js" integrity="sha384-ZMP7rVo3mIykV+2+9J3UJ46jBk0WLaUAdn689aCwoqbBJiSnjAK/l8WvCWPIPm49" crossorigin="anonymous"></script>
+<script src="https://stackpath.bootstrapcdn.com/bootstrap/4.1.3/js/bootstrap.min.js" integrity="sha384-ChfqqxuZUCnJSK3+MXmPNIyE6ZbWh2IMqE241rYiqJxyMiZ6OW/JmZQ5stwEULTy" crossorigin="anonymous"></script>
+
+        <link rel="stylesheet" type="text/css" href="../css/default.css" />
+        <link href="http://fonts.googleapis.com/css?family=Vollkorn" rel="stylesheet" type="text/css">
+    </head>
+    <body>
+        <div class="container">
+          <div class="row">
+            <div class="col-sm-auto">
+              <ul class="nav flex-column">
+              <li class="nav-item">
+                <a href="../">Home</a>
+              </li>
+              <li class="nav-item">
+                <a href="../about.html">About</a> <br>
+              </li>
+              <li class="nav-item">
+                <a href="../archive.html">Archive</a> <br>
+              </li>
+              <li>
+                <a href="../atom.xml">Feed</a>
+              </li>
+              <li>
+                <a href="../plugins.html">Plugins</a>
+              </li>
+              <li>
+                <a href="../maps.html">Maps</a>
+              </li>
+              </ul>
+            </div>
+          <div class="col-md">
+
+            <div id="content">
+              <h2> Complete overkill or exactly right? Deploying a static site using nix </h2>
+<p class="text-muted">
+    Posted on June 24, 2019
+    
+</p>
+
+<p><a href="https://mpickering.github.io/eventlog2html/"><code>eventlog2html</code></a> is my new library for visualising Haskell heap profiles as an interactive webpage.</p>
+<p>For the documentation, I thought it was important to provide some interactive examples which is why I decided to host my own static webpage rather than rely on a GitHub README. This led to two constraints:</p>
+<ol type="1">
+<li>The documentation is a static web page containing up-to-date examples of the tool’s output.</li>
+<li>The page should be automatically deployed using CI.</li>
+</ol>
+<p>This post is a question about whether the combination of <a href="https://nixos.org/nix/">nix</a>, <a href="https://cachix.org/">Cachix</a>, <a href="https://travis-ci.org/">Travis CI</a>, <a href="https://input-output-hk.github.io/haskell.nix/">haskell.nix</a> and <a href="https://jaspervdj.be/hakyll/">Hakyll</a> was the perfect solution to these constraints or an exercise in overkill.</p>
+<!--more-->
+<h1 id="generating-the-static-site">Generating the static site</h1>
+<p>The static site is generated using Hakyll. The content is written using markdown and rendered using pandoc. Inline charts are specified using special code blocks.</p>
+<pre><code>```{.eventlog traces=False }
+examples/ghc.eventlog --bands 10
+```</code></pre>
+<p>A <a href="https://pandoc.org/filters.html">pandoc filter</a> identifiers a code block which has the <code>eventlog</code> class and replaces it with the suitable visualisation. Options can be specified as attributes or using normal command line arguments.</p>
+<p>Using a site generator implemented in Haskell meant that I could import <code>eventlog2html</code> as a library and use it directly without having to modify the external interface. This ended up being about <a href="https://github.com/mpickering/eventlog2html/blob/master/hakyll-eventlog/site.hs#L87">40 lines</a> for the filter which inserts eventlogs. There is also a <a href="https://github.com/mpickering/eventlog2html/blob/master/hakyll-eventlog/site.hs#L142">simpler filter</a> which inserts the result of calling <code>--help</code>.</p>
+<p>Using Hakyll has already proved to be a good idea when I wanted to add the <a href="https://mpickering.github.io/eventlog2html/examples.html">examples gallery</a>. It was trivial to generate this page from a folder of eventlogs so that all I have to do to add a new eventlog is commit it to the repo.</p>
+<p>So far, I haven’t broken the complexity budget. In order to satisfy the first constraint and keep the generated documentation up to date I created a package for the site. In the <code>cabal.project</code> file I then added the site’s folder as a subdirectory. Now, <code>hakyll-eventlog</code> will use the local version of <code>eventlog2html</code> as a dependency when it builds the site.</p>
+<pre><code>packages: .
+          hakyll-eventlog</code></pre>
+<p>The site can be built and run using <code>cabal new-build hakyll-eventlog</code>. Now we move onto how to perform deployment of the generated site.</p>
+<h1 id="deploying-using-travis">Deploying using Travis</h1>
+<p>CircleCI and Travis are both popular CI providers and they can both to deploy to GitHub Pages. However, the Travis integration was far simpler to set up. There is built-in support for GitHub pages as a deployment target so a single stanza is necessary to perform the deployment.</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode yaml"><code class="sourceCode yaml"><a class="sourceLine" id="cb3-1" data-line-number="1"><span class="fu">deploy:</span></a>
+<a class="sourceLine" id="cb3-2" data-line-number="2">  <span class="fu">provider:</span><span class="at"> pages</span></a>
+<a class="sourceLine" id="cb3-3" data-line-number="3">  <span class="fu">skip_cleanup:</span><span class="at"> true</span></a>
+<a class="sourceLine" id="cb3-4" data-line-number="4">  <span class="fu">github_token:</span><span class="at"> $GITHUB_TOKEN</span></a>
+<a class="sourceLine" id="cb3-5" data-line-number="5">  <span class="fu">keep_history:</span><span class="at"> true</span></a>
+<a class="sourceLine" id="cb3-6" data-line-number="6">  <span class="fu">target_branch:</span><span class="at"> gh-pages</span></a>
+<a class="sourceLine" id="cb3-7" data-line-number="7">  <span class="fu">local_dir:</span><span class="at"> site</span></a>
+<a class="sourceLine" id="cb3-8" data-line-number="8">  <span class="fu">on:</span></a>
+<a class="sourceLine" id="cb3-9" data-line-number="9">    <span class="fu">tags:</span><span class="at"> true</span></a></code></pre></div>
+<p>The stanza says, deploy to GitHub pages by pushing the contents of the <code>site</code> directory to the <code>gh-pages</code> branch of the current repository. GitHub then serves the contents of the <code>gh-pages</code> branch on <code>https://mpickering.github.io/eventlog2html</code>.</p>
+<p>Now all we need to do is generate the <code>site</code> directory. I found it quite daunting to modify the Travis script generated by <a href="http://hackage.haskell.org/package/haskell-ci"><code>haskell-ci</code></a> so at this point I decided to convert all the CI infrastructure to use nix instead.</p>
+<h1 id="building-using-nix">Building using nix</h1>
+<p>An obvious question at this stage is why is nix necessary at all? Wouldn’t a CI configuration which uses cabal have worked equally as well? On reflection, I could think of four reasons why I considered this to be a good idea.</p>
+<ol type="1">
+<li>Much more concise than the <code>haskell-ci</code> generated travis file.</li>
+<li>Easier to run the same script locally</li>
+<li>Easier for other nix users to use the project</li>
+<li>Easy caching with Cachix</li>
+</ol>
+<h2 id="haskell.nix"><code>haskell.nix</code></h2>
+<p>A key part in the decision was the new <a href="https://github.com/input-output-hk/haskell.nix"><code>haskell.nix</code></a> tooling to build Haskell packages. If you use the normal Haskell infrastructure which is built into nixpkgs then any collaborator has to know about nix in order to fix CI when it breaks. On the other hand, <code>haskell.nix</code> creates its derivations from the result of <code>cabal new-configure</code> so it matches up with using a <code>new-build</code> workflow locally.</p>
+<p>Purity is retained by explicitly passing the <code>--index-state</code> flag to <code>new-configure</code> so anyone can update the CI configuration by changing the index state parameter in the <code>default.nix</code> file.</p>
+<p>How does this look in practice? The <code>default.nix</code> is a very concise script which calls <code>haskell.nix</code>.</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode nix"><code class="sourceCode bash"><a class="sourceLine" id="cb4-1" data-line-number="1"><span class="bu">let</span></a>
+<a class="sourceLine" id="cb4-2" data-line-number="2">  <span class="ex">pin</span> = import ((import ./nix/sources.nix)<span class="ex">.nixpkgs</span>) <span class="dt">{}</span> ;</a>
+<a class="sourceLine" id="cb4-3" data-line-number="3"></a>
+<a class="sourceLine" id="cb4-4" data-line-number="4">  <span class="co"># Import the Haskell.nix library,</span></a>
+<a class="sourceLine" id="cb4-5" data-line-number="5">  <span class="ex">haskell</span> = import (builtins.fetchTarball https://github.com/input-output-hk/haskell.nix/archive/master.tar.gz) <span class="kw">{</span> <span class="ex">pkgs</span> = pin<span class="kw">;</span> <span class="kw">}</span>;</a>
+<a class="sourceLine" id="cb4-6" data-line-number="6"></a>
+<a class="sourceLine" id="cb4-7" data-line-number="7">  <span class="co"># Generate the pkgs.nix file using callCabalProjectToNix IFD</span></a>
+<a class="sourceLine" id="cb4-8" data-line-number="8">  <span class="ex">pkgPlan</span> = haskell.callCabalProjectToNix</a>
+<a class="sourceLine" id="cb4-9" data-line-number="9">              <span class="kw">{</span> <span class="ex">index-state</span> = <span class="st">&quot;2019-05-10T00:00:00Z&quot;</span></a>
+<a class="sourceLine" id="cb4-10" data-line-number="10">              ; <span class="ex">src</span> = pin.lib.cleanSource ./.<span class="kw">;}</span>;</a>
+<a class="sourceLine" id="cb4-11" data-line-number="11"></a>
+<a class="sourceLine" id="cb4-12" data-line-number="12">  <span class="co"># Instantiate a package set using the generated file.</span></a>
+<a class="sourceLine" id="cb4-13" data-line-number="13">  <span class="ex">pkgSet</span> = haskell.mkCabalProjectPkgSet {</a>
+<a class="sourceLine" id="cb4-14" data-line-number="14">    <span class="ex">plan-pkgs</span> = import pkgPlan<span class="kw">;</span></a>
+<a class="sourceLine" id="cb4-15" data-line-number="15">    <span class="ex">pkg-def-extras</span> = []<span class="kw">;</span></a>
+<a class="sourceLine" id="cb4-16" data-line-number="16">    <span class="ex">modules</span> = []<span class="kw">;</span></a>
+<a class="sourceLine" id="cb4-17" data-line-number="17">  };</a>
+<a class="sourceLine" id="cb4-18" data-line-number="18"></a>
+<a class="sourceLine" id="cb4-19" data-line-number="19">  <span class="ex">site</span> = import ./nix/site.nix { nixpkgs = pin<span class="kw">;</span> <span class="ex">hspkgs</span> = pkgSet.config.hsPkgs<span class="kw">;</span> };</a>
+<a class="sourceLine" id="cb4-20" data-line-number="20"></a>
+<a class="sourceLine" id="cb4-21" data-line-number="21"><span class="kw">in</span></a>
+<a class="sourceLine" id="cb4-22" data-line-number="22">  <span class="kw">{</span> <span class="ex">eventlog2html</span> = pkgSet.config.hsPkgs.eventlog2html.components.exes.eventlog2html <span class="kw">;</span></a>
+<a class="sourceLine" id="cb4-23" data-line-number="23">    <span class="ex">site</span> = site<span class="kw">;</span> <span class="kw">}</span></a></code></pre></div>
+<p>The <code>callCabalProjectToNix</code> function is the key. That is the function which calls <code>new-configure</code> to create the build plan directly using cabal. It produces the same result as calling <code>plan-to-json</code> manually, as <a href="https://input-output-hk.github.io/haskell.nix/user-guide/cabal-projects/">the documentation</a> explains how you should use <code>haskell.nix</code>. Therefore, the rest of the documentation can be followed but with the difference that the result of <code>callCabalProjectToNix</code> is passed as an argument to <code>mkCabalProjectPkgSet</code> rather than an explicit <code>pkgs.nix</code> file.</p>
+<p>A derivation which generates the documentation site is also created. The definition is simple because <code>haskell.nix</code> takes care of building the site generator for us. All the derivation does it apply the site generator to the contents of the <code>docs/</code> subdirectory.</p>
+<div class="sourceCode" id="cb5"><pre class="sourceCode nix"><code class="sourceCode bash"><a class="sourceLine" id="cb5-1" data-line-number="1"><span class="kw">{</span> <span class="ex">nixpkgs</span>, hspkgs <span class="kw">}</span>:</a>
+<a class="sourceLine" id="cb5-2" data-line-number="2"><span class="ex">nixpkgs.stdenv.mkDerivation</span> {</a>
+<a class="sourceLine" id="cb5-3" data-line-number="3">  <span class="ex">name</span> = <span class="st">&quot;docs-0.1&quot;</span><span class="kw">;</span></a>
+<a class="sourceLine" id="cb5-4" data-line-number="4"></a>
+<a class="sourceLine" id="cb5-5" data-line-number="5">  <span class="ex">src</span> = nixpkgs.lib.cleanSource ../docs<span class="kw">;</span></a>
+<a class="sourceLine" id="cb5-6" data-line-number="6">  <span class="ex">LANG</span> = <span class="st">&quot;en_US.UTF-8&quot;</span><span class="kw">;</span></a>
+<a class="sourceLine" id="cb5-7" data-line-number="7">  <span class="ex">LOCALE_ARCHIVE</span> = <span class="st">&quot;</span><span class="va">${nixpkgs</span><span class="er">.glibcLocales</span><span class="va">}</span><span class="st">/lib/locale/locale-archive&quot;</span><span class="kw">;</span></a>
+<a class="sourceLine" id="cb5-8" data-line-number="8"></a>
+<a class="sourceLine" id="cb5-9" data-line-number="9">  <span class="ex">buildInputs</span> = [ hspkgs.hakyll-eventlog.components.exes.site ]<span class="kw">;</span></a>
+<a class="sourceLine" id="cb5-10" data-line-number="10"></a>
+<a class="sourceLine" id="cb5-11" data-line-number="11">  <span class="ex">preConfigure</span> = <span class="st">''</span>export LANG=<span class="st">&quot;en_US.UTF-8&quot;</span><span class="kw">;</span><span class="st">''</span>;</a>
+<a class="sourceLine" id="cb5-12" data-line-number="12"></a>
+<a class="sourceLine" id="cb5-13" data-line-number="13">  <span class="ex">buildPhase</span> = <span class="st">''</span>site build<span class="st">''</span><span class="kw">;</span></a>
+<a class="sourceLine" id="cb5-14" data-line-number="14"></a>
+<a class="sourceLine" id="cb5-15" data-line-number="15">  <span class="ex">installPhase</span> = <span class="st">''</span>cp -r _site <span class="va">$out</span><span class="st">''</span><span class="kw">;</span></a>
+<a class="sourceLine" id="cb5-16" data-line-number="16">}</a></code></pre></div>
+<p>Evaluating <code>default.nix</code> results in the a set containing the two outputs of the project. The executable <code>eventlog2html</code> and the documentation site. You can build each attribute locally</p>
+<pre><code>cachix use mpickering
+nix build -f . eventlog2html
+nix build -f . site</code></pre>
+<p>but also by passing a link to the generated github tarball.</p>
+<pre><code>nix run -f https://github.com/mpickering/eventlog2html/archive/master.tar.gz eventlog2html -c eventlog2html my-leaky-program.eventlog</code></pre>
+<h2 id="updated-travis-configuration">Updated Travis configuration</h2>
+<p>The build job now calls nix to build these scripts and uses the <code>-o</code> flag to place the output into the <code>site</code> directory. The precise location where Travis expected to find the generated site so the deployment step can now find the files.</p>
+<div class="sourceCode" id="cb8"><pre class="sourceCode yaml"><code class="sourceCode yaml"><a class="sourceLine" id="cb8-1" data-line-number="1"><span class="kw">-</span> <span class="fu">stage:</span><span class="at"> build documentation</span></a>
+<a class="sourceLine" id="cb8-2" data-line-number="2">    <span class="fu">script:</span></a>
+<a class="sourceLine" id="cb8-3" data-line-number="3">      <span class="kw">-</span> <span class="fu">nix-env -iA cachix -f https:</span><span class="at">//cachix.org/api/v1/install</span></a>
+<a class="sourceLine" id="cb8-4" data-line-number="4">      <span class="kw">-</span> cachix use mpickering</a>
+<a class="sourceLine" id="cb8-5" data-line-number="5">      <span class="kw">-</span> cachix push mpickering --watch-store&amp;</a>
+<a class="sourceLine" id="cb8-6" data-line-number="6">      <span class="kw">-</span> nix-build -A site -o site</a></code></pre></div>
+<p>We use Cachix to cache the result of building the individual derivations. This makes a huge difference to the total time that CI takes to run.</p>
+<div class="alert alert-info" data-role="alert">
+<p>You can greatly speed up the initial CI runs by pushing local build artifacts to travis.</p>
+<pre><code>nix-store -qR --include-outputs $(nix-instantiate default.nix) | cachix push mpickering</code></pre>
+</div>
+<h2 id="conclusion">Conclusion</h2>
+<p>That’s basically it. Despite a complicated amalgamation of tools, everything worked out nicely together without any horrible hacks. All I had to do was to work out how to fix the pieces together. When using bleeding edge technology such as <code>haskell.nix</code>, this isn’t always straightforward but now I’ve documented my struggles the next person should find it easier.</p>
+<h2 id="addendum-using-secure-env-vars-in-travis">Addendum: Using secure env vars in Travis</h2>
+<p>We need to set two env vars for CI to work. You have to encrypt these so you can place them into the public <code>.travis.yml</code> file without exposing secrets.</p>
+<ul>
+<li><code>GITHUB_TOKEN</code> - To allow travis to push to the repo</li>
+<li><code>CACHIX_SIGNING_KEY</code> - To allow Cachix to push to a cache</li>
+</ul>
+<p>To generate the <code>GITHUB_TOKEN</code> go to <a href="https://github.com/settings/tokens">GitHub settings</a> and generate a token with the <code>public_repo</code> permissions.</p>
+<p>The <code>CACHIX_SIGNING_KEY</code> can be found in <code>~/.config/cachix/cachix.dhall</code> in the <code>secreyKey</code> field for the corresponding binary cache.</p>
+<p>Once you have the keys you have to encrypt them using the <code>travis</code> command line application.</p>
+<pre><code>nix-shell -p travis
+travis encrypt GITHUB_TOKEN=token
+travis encrypt CACHIX_SIGNING_KEY=token</code></pre>
+<p>Then copy and paste the result into your <code>.travis.yml</code> file. Make sure you add the <code>-</code> so the field is treated as a list. Otherwise Travis will ignore one of your keys.</p>
+<div class="sourceCode" id="cb11"><pre class="sourceCode yaml"><code class="sourceCode yaml"><a class="sourceLine" id="cb11-1" data-line-number="1"><span class="fu">env:</span></a>
+<a class="sourceLine" id="cb11-2" data-line-number="2">  <span class="fu">global:</span></a>
+<a class="sourceLine" id="cb11-3" data-line-number="3">    <span class="co"># github</span></a>
+<a class="sourceLine" id="cb11-4" data-line-number="4">    <span class="kw">-</span> <span class="fu">secure:</span><span class="at"> &lt;enrypted-key-1&gt;</span></a>
+<a class="sourceLine" id="cb11-5" data-line-number="5"></a>
+<a class="sourceLine" id="cb11-6" data-line-number="6">    <span class="co"># cachix</span></a>
+<a class="sourceLine" id="cb11-7" data-line-number="7">    <span class="kw">-</span> <span class="fu">secure:</span><span class="at"> &lt;encrypted-key-2&gt;</span></a></code></pre></div>
+
+            </div>
+          </div>
+        </div>
+      </div>
+    </body>
+</html>

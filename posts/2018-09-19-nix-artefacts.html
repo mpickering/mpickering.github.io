@@ -64,7 +64,7 @@ generic-lens-1.0.0.1/
 benchmarks/</code></pre>
 <h2 id="step-1-pinning-nixpkgs">Step 1: Pinning nixpkgs</h2>
 <p>The most important step of the whole process is to “pin” our version of nixpkgs to a specific version so that anyone else trying to build the image will use the same versions of all the libraries and system dependencies.</p>
-<p>Once we have established a commit of nixpkgs that out package builds with. We can use <code>nix-prefetch-git</code> in order to create <code>nixpkgs.json</code> which will provide the information about the pin.</p>
+<p>Once we have established a commit of nixpkgs that our package builds with. We can use <code>nix-prefetch-git</code> in order to create <code>nixpkgs.json</code> which will provide the information about the pin.</p>
 <pre><code>nix-prefetch-git --rev 651239d5ee66d6fe8e5e8c7b7a0eb54d2f4d8621 --url https://github.com/NixOS/nixpkgs.git &gt; nixpkgs.json</code></pre>
 <p>Now we have a file, <code>nixpkgs.json</code> which specifies which version of nixpkgs we should use.</p>
 <p>We then need to load this file. Some boilerplate, <code>nixpkgs.nix</code>, will do that for us.</p>
@@ -111,7 +111,7 @@ dockerTools.buildImage {
 <p>Setting the <code>LANG</code> and <code>LOCALE_ARCHIVE</code> env vars is important for Haskell programs as otherwise you can run into strange encoding errors.</p>
 <p>This is a complete image which can already be build with <code>nix-build artefact.nix</code>. The result will be a <code>.tar.gz</code> which can be loaded into docker and run as normal.</p>
 <h2 id="step-3-including-the-artefact">Step 3: Including the artefact</h2>
-<p>First we’ll deal with making the executable itself available on the image. Remember that the source code the the benchmarks, which is a normal Haskell package, is located in <code>benchmarks/</code>.</p>
+<p>First we’ll deal with making the executable itself available on the image. Remember that the source code of the benchmarks, which is a normal Haskell package, is located in <code>benchmarks/</code>.</p>
 <p>We need to tell nix how to build the benchmarks. The standard way to do this is to use <code>cabal2nix</code> to generate a package specification which we will pass to <code>haskellPackages.callPackage</code>.</p>
 <pre><code>cabal2nix benchmarks/ &gt; benchmarks.nix</code></pre>
 <p>This will produce a file which looks a bit like</p>
@@ -142,11 +142,10 @@ mkDerivation {
                 ];</code></pre>
 <p>When we build this image, the executable will be available on the path by default. In our case, the user will type <code>bench</code> and it will run the benchmarks.</p>
 <h2 id="step-4-including-the-source-files">Step 4: Including the source files</h2>
-<p>The next step is to add the source files to the image. To do this we use a the <code>runCommand</code> script to make a simple derivation which copies some files into the right place.</p>
+<p>The next step is to add the source files to the image. To do this we use the <code>runCommand</code> script to make a simple derivation which copies some files into the right place.</p>
 <pre><code>benchmarks-raw = ./benchmarks;
 benchmarks =
   runCommand &quot;benchmarks&quot; {} ''
-  mkdir -p $out/programs
   mkdir -p $out/programs/benchmarks
   cp -r ${benchmarks-raw}/* $out/programs/benchmarks
 '';</code></pre>
@@ -187,7 +186,6 @@ let
     benchmarks-raw = ./benchmarks;
     benchmarks =
       runCommand &quot;benchmarks&quot; {} ''
-        mkdir -p $out/programs
         mkdir -p $out/programs/benchmarks
         cp -r ${benchmarks-raw}/* $out/programs/benchmarks
       '';
@@ -195,7 +193,6 @@ let
     library-raw = ./generic-lens-1.0.0.1;
     library =
       runCommand &quot;benchmarks&quot; {} ''
-        mkdir -p $out/programs
         mkdir -p $out/programs/library
         cp -r ${library-raw}/* $out/programs/library
       '';
@@ -237,7 +234,7 @@ dockerTools.buildImage {
 <li><a href="https://vaibhavsagar.com/blog/2018/05/27/quick-easy-nixpkgs-pinning/">Quick and Easy Nixpkgs Pinning - Vaibhav Sagar</a></li>
 <li><a href="https://nixos.org/nixpkgs/manual/#sec-pkgs-dockerTools"><code>dockerTools</code> documentation</a></li>
 <li><a href="https://www.software.ac.uk/blog/2017-10-05-reproducible-environments-nix">Reproducible Environments With Nix - Blair Archibald</a></li>
-<li>Reddit comments</li>
+<li><a href="https://www.reddit.com/r/haskell/comments/9h6xh2/packaging_a_haskell_library_for_artefact/">Reddit comments</a></li>
 </ul>
 
             </div>
