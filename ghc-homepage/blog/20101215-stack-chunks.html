@@ -1,0 +1,149 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+  <head>
+    <title>An overhaul of stack management, and some performance improvements — The Glasgow Haskell Compiler</title>
+    <meta http-equiv="Content-Language" content="en-gb">
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css" integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
+    <link href="../ghc.css" rel="stylesheet" type="text/css">
+
+  </head>
+  <body>
+    <header id="header">
+      <span id="header-txt"> GHC </span>
+      <span id="header-name"> The Glasgow Haskell Compiler </span>
+    </header>
+    <div>
+    <div class="row no-gutters">
+      <div id="sidebar" class="col-sm-4">
+       <div class="sticky-top">
+          <div class="navbar-fixed-left">
+	<div class="nav navbar-nav">
+  <span class="nav-title">About GHC</span>
+  <li class="nav-item"> <a class="nav-link" href="../">Home</a> </li>
+  <li class="nav-item"> <a class="nav-link" href="../license.html">License</a> </li>
+  <li class="nav-item"> <a class="nav-link" href="https://haskell.org/haskellwiki/GHC">Documentation</a> </li>
+  <li class="nav-item"> <a class="nav-link" href="../blog.html">Blog</a> </li>
+  <li class="nav-item"> <a class="nav-link" href="../download.html">Download</a> </li>
+  <li class="nav-item"> <a class="nav-link" href="https://gitlab.haskell.org/ghc/ghc/wikis/report-a-bug">Report a bug</a> </li>
+  <li class="nav-item"> <a class="nav-link" href="https://gitlab.haskell.org/ghc/ghc/wikis">Developers Wiki</a> </li>
+  <span class="nav-title">About Haskell</span>
+  <li class="nav-item"> <a class="nav-link" href="https://haskell.org">Haskell.org</a> </li>
+  <li class="nav-item"> <a class="nav-link" href="https://www.haskell.org/haskellwiki/Definition">Haskell 2010 Report</a> </li>
+  <li class="nav-item"> <a class="nav-link" href="https://www.haskell.org/haskellwiki/Mailing_lists">Haskell Mailing Lists</a> </li>
+  <span class="nav-title">Links</span>
+  <li class="nav-item"> <a class="nav-link" href="http://hackage.haskell.org/platform/">Haskell Platform</a> </li>
+  <li class="nav-item"> <a class="nav-link" href="http://hackage.haskell.org/">Hackage</a> </li>
+
+</div>
+</div>
+
+       </div>
+      </div>
+      <div id="content" class="col">
+        <h1>An overhaul of stack management, and some performance improvements</h1>
+<h4 class="text-muted">simonmar - 2010-12-15T16:29:22</h4>
+
+<p>I just <a href="http://www.haskell.org/pipermail/cvs-ghc/2010-December/058307.html">committed a patch</a> I’ve been working on for a few days that revamps the way thread stacks are managed in the runtime system. There’ll be some nice performance improvements coming in 7.2.1 as a result of this.</p>
+<h2 id="background">Background</h2>
+<p>In GHC 7.0 and earlier, a thread is represented by a TSO object in the heap. The TSO contains:</p>
+<ul>
+<li>some thread-specific state and flags</li>
+<li>a couple of link fields for linking the TSO onto lists</li>
+<li>the stack, growing backwards from the end of the TSO</li>
+</ul>
+<p>when the stack overflows, as long as the maximum stack size (<code>+RTS -K&lt;size&gt;</code>) has not yet been reached, then the runtime system would create a new TSO double the size of the old one, copy the stack and the thread state into the new object, and mark the old TSO as a <code>ThreadRelocated</code> pointing to the new one. This last step is important, because the TSO might be reachable from other places: a <code>ThreadId</code> is basically a pointer to the TSO, for instance.</p>
+<p>This <code>ThreadRelocated</code> thing is a nuisance, because it means every time we derefernce a TSO pointer, we have to check for <code>ThreadRelocated</code> in a little loop. This loop was enshrined in a function <code>deRefTSO()</code> in the RTS, and was called from various places. Over the years we’ve had several bugs caused by a missing <code>deRefTSO</code>.</p>
+<h2 id="overheads-of-the-old-way">Overheads of the old way</h2>
+<p>Obviously there’s a certain amount of overhead associated with copying the whole stack every time we need to enlarge the TSO: every stack word is written approximately twice. What’s worse, though, is that the entire stack is traversed during every GC, if the thread is active (threads that haven’t run since the last GC are marked “clean” and not traversed). If the thread has a deep stack, this makes minor GCs expensive, which shows up as a high GC overhead. A common workaround is to use a larger allocation area, e.g. <code>+RTS -A4m</code>, but that has the disadvantage of making the allocation area larger than the L2 cache, which also hurts performance.</p>
+<h2 id="a-better-way-stack-chunks">A better way: stack chunks</h2>
+<p>The solution to the repeated traversal problem is to identify the parts of the stack that are unmodified since the last GC, and not traverse them. The GC already does a lot of this kind of thing - it’s called a “write barrier”, and it’s a basic requirement for generational GC.</p>
+<p>There are two ways we could do this: either do a card-marking trick like we do for mutable arrays, or we could divide the stack up into multiple objects and mark each object as either clean or dirty. The card-marking option would have been fairly complicated to administer, so we discarded that idea. In contrast, having multiple objects containing parts of the stack was relatively straightforward.</p>
+<p>Perhaps we should have done this ages ago. I put it off because I thought it would be complex - we have lots of places in the RTS that traverse stacks. It turns out that the majority of these places don’t care about stack chunks, which is nice.</p>
+<h2 id="death-to-threadrelocated">Death to <code>ThreadRelocated</code></h2>
+<p>The obvious solution to the <code>ThreadRelocated</code> problem is to separate the stack from the TSO, and that’s exactly what we’ve done. Now the TSO contains the thread state only, and it points to a separate STACK object for the topmost stack chunk, containing the stack pointer and the stack itself. The result is that a fragile invariant goes away, which is a very good thing.</p>
+<p>Why didn’t we do this before? Well, in fact I did try making this change a long time ago, and found that it made performance worse for some thread benchmarks. I put it down to the extra cache-line fill required to access the stack pointer in the separate STACK object. However, this time the results look pretty good - I’m not entirely sure why, maybe it’s the combination of doing this with stack chunks, or maybe I did something wrong last time, who knows (or cares!).</p>
+<h2 id="performance">Performance</h2>
+<p>Here are some performance figures from a small collection of thread benchmarks (<a href="http://darcs.haskell.org/nofib/smp" class="uri">http://darcs.haskell.org/nofib/smp</a>). This is comparing yesterday’s HEAD with my working branch:</p>
+<pre><code>--------------------------------------------------------------------------------
+        Program           Size    Allocs   Runtime   Elapsed
+--------------------------------------------------------------------------------
+    callback001        +289.3%    -13.5%     +0.8%     +1.2%
+    callback002        +302.0%    -13.5%     -1.3%     -1.3%
+          sieve        +329.2%     -0.2%     -1.6%     -1.3%
+     threads001        +292.4%     +0.0%     +4.2%     +4.5%
+     threads003        +298.9%     -0.5%    -36.5%    -36.4%
+     threads006        +304.1%     -2.2%    -66.4%    -66.4%
+     threads007        +409.7%     +0.0%     +2.4%     +2.5%
+--------------------------------------------------------------------------------
+            Min        +289.3%    -13.5%    -66.4%    -66.4%
+            Max        +409.7%     +0.0%     +4.2%     +4.5%
+ Geometric Mean        +316.3%     -4.5%    -19.3%    -19.2%</code></pre>
+<p>Ignore the size figures, it’s because the HEAD build was using <code>-split-objs</code>.</p>
+<p>We can see that several benchmarks display no difference or get very slightly worse, but a couple (threads003 and threads006) see a big jump in performance. threads003 is an old variant on threadring, and threads006 is a microbenchmark for throwTo. I don’t fully understand the difference in performance here, but typically I don’t investigate when things go faster, only when they go slower.</p>
+<p>GHC itself got a little faster: 1-2% when compiling Cabal.</p>
+<p>But what you really wanted to know was… what about threadring, right? Well, it currently goes a few percent slower with the new changes. However, I notice that it’s allocating a lot more than before, so I think there’s something suspicious going on. I shall investigate…</p>
+<h2 id="update-some-more-results">Update: some more results</h2>
+<p>!BinaryTrees, from the shootout:</p>
+<ul>
+<li>before: 64.26s</li>
+<li>after: 17.61s</li>
+</ul>
+<p>So I guess the problem with !BinaryTrees was more to do with repeated stack traversals than it was to do with a low mortality rate. Nice that we can get good performance from this program without tweaking the heap settings at all now.</p>
+<p>Hackage benchmarks, from David Peixotto’s fibon benchmark suite:</p>
+<pre><code>--------------------------------------------------------------------------------
+        Program           Size    Allocs   Runtime   Elapsed  TotalMem
+--------------------------------------------------------------------------------
+           Agum        +306.5%     +3.5%     +0.8%     +0.9%     +0.0%
+          Bzlib          -----     -----     -----     -----     -----
+           Cpsa        +125.1%     +2.1%     -2.2%     -2.3%     +0.0%
+         Crypto          -----     -----     -----     -----     -----
+            Fgl        +408.9%     +0.1%     +2.0%     +2.0%     -5.4%
+            Fst        +137.7%     -0.0%     -4.4%     -4.3%     +0.0%
+         Funsat        +151.4%     +0.2%     +1.7%     +1.8%     -2.0%
+             Gf         13990k 13885653k      9.03      9.60   116736k
+          HaLeX        +195.9%     +0.0%     +1.2%     +1.1%     +0.0%
+          Happy        +135.0%     +3.3%     -5.3%     -5.4%    -13.7%
+         Hgalib        +236.7%     +1.0%     +0.7%     +0.7%     +0.0%
+    Palindromes        +243.1%    -10.1%     +3.4%     +3.4%     +2.1%
+          Pappy        +148.9%     +0.5%     +3.7%     +3.8%    -17.7%
+     QuickCheck        +139.5%     -0.1%     -1.6%     -1.6%     +0.0%
+          Regex        +182.1%     +0.0%     +3.5%     +3.5%    -21.4%
+          Simgi        +159.3%     +0.0%     +6.9%     +6.9%     +0.0%
+   TernaryTrees        +519.4%     -2.0%    -32.4%    -32.7%    -14.3%
+          Xsact        +246.4%     +1.2%     +0.9%     +0.9%     -0.6%
+--------------------------------------------------------------------------------
+            Min        +125.1%    -10.1%    -32.4%    -32.7%    -21.4%
+            Max        +519.4%     +3.5%     +6.9%     +6.9%     +2.1%
+ Geometric Mean        +207.6%     -0.1%     -1.9%     -1.9%     -5.2%</code></pre>
+<p>One or two nice ones in there: !TernaryTrees, Happy, Fst all look good. Simgi probably deserves further investigation.</p>
+<p>Notice how the overall memory size is reducing too, by 5% on average.</p>
+<h2 id="update-2-threadring-results">Update 2: threadring results</h2>
+<p>threadring 10000000, without <code>-threaded</code>:</p>
+<ul>
+<li>6.12.3: 1.50s</li>
+<li>7.0.1: 2.05s</li>
+<li>HEAD with stack patches: 1.67s</li>
+</ul>
+<p>So the stack patches recovered almost all the performance lost between 6.12.3 and 7.0.1 on non-threaded threadring. The performance lost in 7.0.1 was due to the BLACKHOLE changes and some other changes to fix pathological cases of bad <code>MVar</code> performance.</p>
+<p>More interesting are the <code>-threaded</code> numbers:</p>
+<ul>
+<li>6.12.3: 5.86s</li>
+<li>7.0.1: 3.00s</li>
+<li>HEAD with stack patches: 2.31s</li>
+</ul>
+<p>The new code is very clearly winning here. I spent a little while with the perf tool on Linux trying to understand the results, but wasn’t able to fully account for it, sadly.</p>
+
+      </div>
+    </div>
+    <div class="row">
+          </td>
+  </tr>
+</table>
+
+    </div>
+  </div>
+  </body>
+</html>

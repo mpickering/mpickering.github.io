@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+  <head>
+    <title>First results from GHC's new garbage collector — The Glasgow Haskell Compiler</title>
+    <meta http-equiv="Content-Language" content="en-gb">
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css" integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
+    <link href="../ghc.css" rel="stylesheet" type="text/css">
+
+  </head>
+  <body>
+    <header id="header">
+      <span id="header-txt"> GHC </span>
+      <span id="header-name"> The Glasgow Haskell Compiler </span>
+    </header>
+    <div>
+    <div class="row no-gutters">
+      <div id="sidebar" class="col-sm-4">
+       <div class="sticky-top">
+          <div class="navbar-fixed-left">
+	<div class="nav navbar-nav">
+  <span class="nav-title">About GHC</span>
+  <li class="nav-item"> <a class="nav-link" href="../">Home</a> </li>
+  <li class="nav-item"> <a class="nav-link" href="../license.html">License</a> </li>
+  <li class="nav-item"> <a class="nav-link" href="https://haskell.org/haskellwiki/GHC">Documentation</a> </li>
+  <li class="nav-item"> <a class="nav-link" href="../blog.html">Blog</a> </li>
+  <li class="nav-item"> <a class="nav-link" href="../download.html">Download</a> </li>
+  <li class="nav-item"> <a class="nav-link" href="https://gitlab.haskell.org/ghc/ghc/wikis/report-a-bug">Report a bug</a> </li>
+  <li class="nav-item"> <a class="nav-link" href="https://gitlab.haskell.org/ghc/ghc/wikis">Developers Wiki</a> </li>
+  <span class="nav-title">About Haskell</span>
+  <li class="nav-item"> <a class="nav-link" href="https://haskell.org">Haskell.org</a> </li>
+  <li class="nav-item"> <a class="nav-link" href="https://www.haskell.org/haskellwiki/Definition">Haskell 2010 Report</a> </li>
+  <li class="nav-item"> <a class="nav-link" href="https://www.haskell.org/haskellwiki/Mailing_lists">Haskell Mailing Lists</a> </li>
+  <span class="nav-title">Links</span>
+  <li class="nav-item"> <a class="nav-link" href="http://hackage.haskell.org/platform/">Haskell Platform</a> </li>
+  <li class="nav-item"> <a class="nav-link" href="http://hackage.haskell.org/">Hackage</a> </li>
+
+</div>
+</div>
+
+       </div>
+      </div>
+      <div id="content" class="col">
+        <h1>First results from GHC's new garbage collector</h1>
+<h4 class="text-muted">simonmar - 2010-09-03T08:42:32</h4>
+
+<p>For a number of months now, we have been designing and developing a new garbage collector for GHC, with the primary goal of improving scaling on multicores. The current garbage collector isn’t exactly a slouch: it is a parallel generational design, and after <a href="http://www.haskell.org/~simonmar/bib/multicore-ghc-09_abstract.html">going to some effort to improve locality</a> we managed to achieve some respectable scaling results on up to 8 cores, and the Intel CnC project has been able to achieve <a href="http://www.haskell.org/~simonmar/bib/cnc-2010_abstract.html">even greater speedups</a> (as much as 22x on a 32-core machine) with carefully-tuned benchmarks.</p>
+<p>Still, we recognise that the garbage collector is often the bottleneck where scaling is concerned. Tuning a program for scaling usually involves reducing its demands on the memory subsystem and hence reducing the amount of GC that happens. Here’s how the current GC impedes scaling:</p>
+<p>[[Image(minimax-head.png)]]</p>
+<p>This is a screenshot from <a href="http://research.microsoft.com/en-us/projects/threadscope/">ThreadScope</a>, showing part of the timeline of the execution of a parallel Haskell program - in this case, the <a href="http://darcs.haskell.org/nofib/parallel/minimax">minimax</a> program for searching the game tree of 4x4 noughts and crosses. Each bar represents the execution of a single CPU, and the thin orange/green bars are the GCs. Every GC stops all the threads and performs the GC in parallel, before restarting the computation again. This is known as “stop the world” parallal GC - compared to other techniques such as concurrent GC it’s easier to implement and generally gives good performance. Many industrial-strength virtual machines use stop-the-world parallel GC in their server products, because it gives the best throughput. However, the diagram clearly shows that we’re wasting time here: the GCs aren’t well-balanced (the green parts show the actual work, the blank parts are idle time). We deliberately don’t load-balance the work in young-generation collections, because doing so impacts locality and is worse for overall performance (we discussed this in the <a href="http://www.haskell.org/~simonmar/bib/multicore-ghc-09_abstract.html">ICFP’09 paper</a> and gave measurements). So we end up wasting some of our processor bandwidth, and hence losing some scaling.</p>
+<p>Not only that, but the cost of the all-core synchronisation becomes a bottleneck as the number of cores increases, and the need for rapid synchronisations causes problems if the OS decides to borrow one of the cores to do something else for a while: the symptom of this problem has been dubbed the “last core parallel slowdown” in Haskell.</p>
+<p>Here’s what our new GC looks like on the same program:</p>
+<p>[[Image(minimax-new.png)]]</p>
+<p>The heap organisation in fact hasn’t changed much: there are still per-core young generations and a single old generation, but the improvement is that the per-core young generations can be collected independently without stopping the other threads. Collecting the old generation - the “global heap” - still requires stopping all the threads, but since this is the old generation, global collections are much less frequent than local collections.</p>
+<p>Since there are fewer synchronisations and less wasted processor bandwidth, the overall throughput is higher - only about 10% on 8 cores with this example, but there are other (less picturesque) examples that improve more, and it’s still early days and we have a lot of tuning to do. We expect the benefits to be greater on larger numbers of cores, and furthermore the “last core slowdown” should be finally banished.</p>
+<p>Designs like this have appeared in the literature (starting with <a href="http://portal.acm.org/citation.cfm?id=158511.158611">Doligez/Leroy POPL’93</a>), and ours borrows ideas from several of these earlier designs while adding a few novel twists of our own. We plan to write up the design properly once all the tuning is done and we have some solid results. I expect it to land in GHC HEAD in a few months time, and it should be in the autumn 2011 major release of GHC.</p>
+
+      </div>
+    </div>
+    <div class="row">
+          </td>
+  </tr>
+</table>
+
+    </div>
+  </div>
+  </body>
+</html>

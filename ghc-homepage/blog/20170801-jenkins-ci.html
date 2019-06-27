@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+  <head>
+    <title>Meet Jenkins: GHC's new CI and build infrastructure — The Glasgow Haskell Compiler</title>
+    <meta http-equiv="Content-Language" content="en-gb">
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css" integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
+    <link href="../ghc.css" rel="stylesheet" type="text/css">
+
+  </head>
+  <body>
+    <header id="header">
+      <span id="header-txt"> GHC </span>
+      <span id="header-name"> The Glasgow Haskell Compiler </span>
+    </header>
+    <div>
+    <div class="row no-gutters">
+      <div id="sidebar" class="col-sm-4">
+       <div class="sticky-top">
+          <div class="navbar-fixed-left">
+	<div class="nav navbar-nav">
+  <span class="nav-title">About GHC</span>
+  <li class="nav-item"> <a class="nav-link" href="../">Home</a> </li>
+  <li class="nav-item"> <a class="nav-link" href="../license.html">License</a> </li>
+  <li class="nav-item"> <a class="nav-link" href="https://haskell.org/haskellwiki/GHC">Documentation</a> </li>
+  <li class="nav-item"> <a class="nav-link" href="../blog.html">Blog</a> </li>
+  <li class="nav-item"> <a class="nav-link" href="../download.html">Download</a> </li>
+  <li class="nav-item"> <a class="nav-link" href="https://gitlab.haskell.org/ghc/ghc/wikis/report-a-bug">Report a bug</a> </li>
+  <li class="nav-item"> <a class="nav-link" href="https://gitlab.haskell.org/ghc/ghc/wikis">Developers Wiki</a> </li>
+  <span class="nav-title">About Haskell</span>
+  <li class="nav-item"> <a class="nav-link" href="https://haskell.org">Haskell.org</a> </li>
+  <li class="nav-item"> <a class="nav-link" href="https://www.haskell.org/haskellwiki/Definition">Haskell 2010 Report</a> </li>
+  <li class="nav-item"> <a class="nav-link" href="https://www.haskell.org/haskellwiki/Mailing_lists">Haskell Mailing Lists</a> </li>
+  <span class="nav-title">Links</span>
+  <li class="nav-item"> <a class="nav-link" href="http://hackage.haskell.org/platform/">Haskell Platform</a> </li>
+  <li class="nav-item"> <a class="nav-link" href="http://hackage.haskell.org/">Hackage</a> </li>
+
+</div>
+</div>
+
+       </div>
+      </div>
+      <div id="content" class="col">
+        <h1>Meet Jenkins: GHC's new CI and build infrastructure</h1>
+<h4 class="text-muted">Ben Gamari - 2017-08-01T01:02:08</h4>
+
+<p>While Phabricator is generally well-liked among GHC developers, GHC’s interaction with Harbormaster, Phabricator’s continuous integration component, has been less than rosy. The problem is in large part a mismatch between Harbormaster’s design assumptions and GHC’s needs, but it’s also in part attributable to the somewhat half-finished state in which Harbormaster seems to linger. Regardless, we won’t go into detail here; these issues are well covered <a href="https://gitlab.haskell.org/ghc/ghc/wikis/ticket:13716">elsewhere</a>.</p>
+<p>Suffice it to say that, after having looked at a number of alternatives to Harbormaster (including <a href="https://buildbot.net/">buildbot</a>, GitLab’s <a href="https://gitlab.com/">Pipelines</a>, <a href="https://concourse.ci/">Concourse</a>, and home-grown solutions), Jenkins seems to be the best option at the moment. Of course, this is not to say that it is perfect; as we have learned over the last few months it is very far from perfect. However, it has the maturity and user-base to be almost-certainly able to handle what we need of it on the platforms that we care about.</p>
+<p>See the Trac ticket <a href="https://gitlab.haskell.org/ghc/ghc/issues/13716">#13716</a></p>
+<p>Let’s see what we get out of this new bit of infrastructure:</p>
+<h3 id="pre-merge-testing">Pre-merge testing</h3>
+<p>Currently there are two ways that code ends up in <code>master</code>,</p>
+<ul>
+<li>a Differential is opened, built with Harbormaster, and eventually landed (hopefully, but not always, after Harbormaster successfully finishes)</li>
+<li>someone pushes commits directly</li>
+</ul>
+<p>Bad commits routinely end up merged via both channels. This means that authors of patches failing CI often need to consider whether <em>their</em> patch is incorrect or whether they rather simply had the misfortune of basing their patch on a bad commit. Even worse, if the commit isn’t quickly reverted or fixed GHC will end up with a hole in its commit history where neither bisection nor performance tracking will be possible. For these reasons, we want to catch these commits before they make it into <code>master</code>.</p>
+<p>To accomplish this we have developed some <a href="https://github.com/bgamari/ghc-auto-push">tooling</a> to run CI on commits <em>before</em> they are finally merged to <code>master</code>. By making CI the only path patches can take to get to <code>master</code>, improve our changes of rejecting bad patches before they turn the tree red.</p>
+<h3 id="automation-of-the-release-builds">Automation of the release builds</h3>
+<p>Since the 7.10.3 release we have been gradually working towards automating GHC’s release process. Thanks to this work, today a single person can build binary distributions for all seven tier-1 configurations in approximately a day, most of which is spent simply waiting. This has allowed us to take responsibility (starting in 8.2.1) for the OpenBSD, FreeBSD, ARMv7 and AArch64 builds in addition to the traditional tier-1 platforms, allowing us to eliminate the week-long wait between source distribution availability and the binary distribution announcement previously needed for correspondence with binary build contributors..</p>
+<p>However, we are far from done: our new Jenkins-based build infrastructure (see <a href="https://gitlab.haskell.org/ghc/ghc/issues/13716">#13716</a>) will allow us to produce binary distributions directly from CI, reducing the cost of producing release builds to nearly nothing.</p>
+<h3 id="testing-of-ghc-against-user-packages">Testing of GHC against user packages</h3>
+<p>While GHC is already tested against Hackage and Stackage prior to release candidate availability, these builds have been of limited use as packages low on the dependency tree (think <code>hashable</code> and <code>lens</code>) often don’t build prior to the first release candidate. While we do our best to fix these packages up, the sheer number of them makes this a losing battle for a small team such as GHC’s.</p>
+<p>Having the ability to cheaply produce binary distributions means that we can produce and validate nightly snapshot releases. This gives users a convenient way to test pre-release compilers and fix their libraries accordingly. We hope this will spread the maintenance effort across a larger fraction of the Haskell community and over a longer period of time, meaning there will be less to do at release time and consequently pre-release Stackage builds will be more fruitful.</p>
+<p>Once the Jenkins infrastructure is stable, we can consider introducing nightly builds of user packages as well. While building a large population such as Stackage would likely not be productive, working with a smaller sample of popular, low-dependency-count packages would be quite possible. For testing against larger package repositories, leaning on a dedicated tool such as the <a href="https://matrix.hackage.haskell.org/">Hackage Matrix Builder</a> will likely be a more productive path.</p>
+<h3 id="expanded-platform-coverage-of-ci">Expanded platform coverage of CI</h3>
+<p>While GHC targets a wide variety of architectures and operating systems (and don’t forget cross-compilation targets), by far the majority of developers use Linux, Darwin, or Windows on amd64. This means that breakage often only comes to light long after the culpable patch was merged.</p>
+<p>Of course, GHC, being a project with modest financial resources, can’t test each commit on every supported platform. We can, however, shrink the time between a bad commit being merged and the breakage being found by testing these “unusual” platforms on a regular (e.g. nightly) basis.</p>
+<p>By catching regressions early, we hope to reduce the amount of time spent bisecting and fixing bugs around release time.</p>
+<h3 id="tracking-core-libraries">Tracking core libraries</h3>
+<p>Keeping GHC’s core library dependencies (e.g. <code>directory</code>, <code>process</code>) up-to-date with their respective upstreams is important to ensure that tools that link against the <code>ghc</code> library (e.g. <code>ghc-mod</code>) can build easily. However, it also requires that we work with nearly a dozen upstream maintainers at various points in their own release cycles to arrange that releases are made prior to the GHC release. Moreover, there is inevitably a fair amount of work propagating verion bounds changes down the dependency tree. While this work takes relatively little effort in terms of man-hours,</p>
+<p>Jenkins can help us here by allowing us to automate integration testing of upstream libraries, catching bounds issues and other compatibility issues well before they are in the critical path of the release.</p>
+<h3 id="improved-debugging-tools">Improved debugging tools</h3>
+<p>One of the most useful ways to track down a bugs in GHC is bisection. This is especially true for regressions found in release candidates, where you have at most a few thousand commits to bisect through. Nevertheless, GHC builds are long and developer time scarce so this approach isn’t used as often as it could be.</p>
+<p>Having an archive of nightly GHC builds will free the developer from having to build dozens of compilers during bisection, making the process a significantly more enjoyable experience than it is today. This will allow us to solve more bugs in less time and with far fewer grey hairs.</p>
+<h2 id="status-of-jenkins-effort">Status of Jenkins effort</h2>
+<p>The Jenkins CI overhaul has been an on-going project throughout the spring and summer and is nearing completion. The Jenkins configuration can be seen in the <code>wip/jenkins</code> branch on <code>git.haskell.org</code> (<a href="https://git.haskell.org/ghc.git/shortlog/refs/heads/wip/jenkins">gitweb</a>). At the moment the prototype is running on a few private machines but we will be setting up a publicly accessible test instance in the coming weeks. Jenkins will likely coexist with our current Harbormaster infrastructure for a month or so while we validate that things are stable.</p>
+
+      </div>
+    </div>
+    <div class="row">
+          </td>
+  </tr>
+</table>
+
+    </div>
+  </div>
+  </body>
+</html>

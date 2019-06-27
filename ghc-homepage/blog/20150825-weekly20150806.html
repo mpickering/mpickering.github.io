@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+  <head>
+    <title>GHC Weekly News - 2015/08/06 — The Glasgow Haskell Compiler</title>
+    <meta http-equiv="Content-Language" content="en-gb">
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css" integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
+    <link href="../ghc.css" rel="stylesheet" type="text/css">
+
+  </head>
+  <body>
+    <header id="header">
+      <span id="header-txt"> GHC </span>
+      <span id="header-name"> The Glasgow Haskell Compiler </span>
+    </header>
+    <div>
+    <div class="row no-gutters">
+      <div id="sidebar" class="col-sm-4">
+       <div class="sticky-top">
+          <div class="navbar-fixed-left">
+	<div class="nav navbar-nav">
+  <span class="nav-title">About GHC</span>
+  <li class="nav-item"> <a class="nav-link" href="../">Home</a> </li>
+  <li class="nav-item"> <a class="nav-link" href="../license.html">License</a> </li>
+  <li class="nav-item"> <a class="nav-link" href="https://haskell.org/haskellwiki/GHC">Documentation</a> </li>
+  <li class="nav-item"> <a class="nav-link" href="../blog.html">Blog</a> </li>
+  <li class="nav-item"> <a class="nav-link" href="../download.html">Download</a> </li>
+  <li class="nav-item"> <a class="nav-link" href="https://gitlab.haskell.org/ghc/ghc/wikis/report-a-bug">Report a bug</a> </li>
+  <li class="nav-item"> <a class="nav-link" href="https://gitlab.haskell.org/ghc/ghc/wikis">Developers Wiki</a> </li>
+  <span class="nav-title">About Haskell</span>
+  <li class="nav-item"> <a class="nav-link" href="https://haskell.org">Haskell.org</a> </li>
+  <li class="nav-item"> <a class="nav-link" href="https://www.haskell.org/haskellwiki/Definition">Haskell 2010 Report</a> </li>
+  <li class="nav-item"> <a class="nav-link" href="https://www.haskell.org/haskellwiki/Mailing_lists">Haskell Mailing Lists</a> </li>
+  <span class="nav-title">Links</span>
+  <li class="nav-item"> <a class="nav-link" href="http://hackage.haskell.org/platform/">Haskell Platform</a> </li>
+  <li class="nav-item"> <a class="nav-link" href="http://hackage.haskell.org/">Hackage</a> </li>
+
+</div>
+</div>
+
+       </div>
+      </div>
+      <div id="content" class="col">
+        <h1>GHC Weekly News - 2015/08/06</h1>
+<h4 class="text-muted">bgamari - 2015-08-25T21:14:08</h4>
+
+<p>Hello *,</p>
+<p>Here is a rather belated Weekly News which I found sitting nearly done on my work-queue. I hope this will make for a good read despite its age. The next edition of the Weekly News will be posted soon.</p>
+<h2 id="warnings-for-missed-specialization-opportunities">Warnings for missed specialization opportunities</h2>
+<p>Simon Peyton Jones recently [a4261549afaee56b00fbea1b4bc1a07c95e60929 introduced] a warning in <code>master</code> to alert users when the compiler was unable to specialize an imported binding despite it being marked as <code>INLINEABLE</code>. This change was motivated by <a href="https://gitlab.haskell.org/ghc/ghc/issues/10720">#10720</a>, where the reporter observed poor runtime performance despite taking care to ensure his binding could be inlined. Up until now, ensuring that the compiler’s optimizations meet the user’s expectation would require a careful look at the produced Core. With this change the user is notified of exactly where the compiler had to stop specializing, along with a helpful hint on where to add a <code>INLINABLE</code> pragma.</p>
+<h2 id="ticky-ticky-profiling">Ticky-Ticky profiling</h2>
+<p>Recently I have been looking into breathing life back into GHC’s <a href="https://gitlab.haskell.org/ghc/ghc/wikis/wiki:Debugging/TickyTicky">ticky-ticky</a> profiling mechanism. When enabled, ticky-ticky maintains low-level counters of various runtime-system events. These include closure entries, updates, and allocations. While ticky doesn’t provide nearly the detail that the cost-center profiler allows, it is invisible to the Core-to-Core optimization passes and has minimal runtime overhead (manifested as a bit more memory traffic due to counter updates). For this reason, the ticky-ticky profiler can be a useful tool for those working on the Core simplifier.</p>
+<p>Sadly, ticky-ticky has fallen into quite a state of disrepair in recent years as the runtime system and native code generator have evolved. As the beginning of an effort to resuscitate the ticky-ticky profiler I’ve started putting together a <a href="https://ghc.haskell.org/trac/ghc/wiki/Debugging/TickyTicky#Ticky-Tickycounters">list</a> of the counters currently implemented and whether they can be expected to do something useful. Evaluating the functionality of these counters is non-trivial, however, so this will be an on-going effort.</p>
+<p>One of our goals is to eventually do a systematic comparison of the heap allocation numbers produced by the ticky-ticky profiler, the cost-center profiler, and ticky-ticky. While this will help validate some of the more coarse-grained counters exposed by ticky, most of them will need a more thorough read-through of the runtime system to verify.</p>
+<h2 id="integer-gmp-performance"><code>integer-gmp</code> Performance</h2>
+<p>Since the 7.10.2 release much of my effort has been devoted to characterizing the performance of various benchmarks over various GHC versions. This is part of an effort to find places where we have regressed in the past few versions. One product of this effort is a complete comparison of <a href="http://home.smart-cactus.org/~ben/nofib.html">results</a> from our <code>nofib</code> benchmark suite ranging from 7.4.2 to 7.10.1.</p>
+<p>The good news is there are essentially no disastrous regressions. Moreover, on the mean runtimes are over 10% faster than they were in 7.4.2. There are, however, a few cases which have regressed. The runtime of the <code>integer</code> test, for instance, has increased by 7%. Looking at the trend across versions, it becomes apparent that the regression began with 7.10.1.</p>
+<p>One of the improvements that was introduced with 7.10 was a rewrite of the <code>integer-gmp</code> library, which this benchmark tests heavily. To isolate this potential cause, I recompiled GHC 7.10.1 with the old <code>integer-gmp-0.5</code>. Comparing 7.10.1 with the two <code>integer-gmp</code> versions reveals a 4% increase in allocations.</p>
+<p>While we can’t necessarily attribute all of the runtime increase to these allocations, they are something that should be addressed if possible. Herbert Valerio Riedel, the author of the <code>integer-gmp</code> rewrite, believes that the cause may be due to the tendency for the rewrite to initially allocate a conservatively-sized backing <code>ByteArray#</code> for results. This leads to increased allocations due to the reallocations that are later required to accommodate larger-than-expected results.</p>
+<p>While being more liberal in the initial allocation sizes would solve the reallocation issue, this approach may substantially increase working-set sizes and heap fragmentation for integer-heavy workloads. For this reason, Herbert will be looking into exploiting a feature of our heap allocator. Heap allocations in GHC occur by bumping a pointer into an allocation block. Not only is this a very efficient means of allocating, it potentially allows one to efficiently grow an existing allocation. In this case, if we allocate a buffer and soon after realize that our request was too small we can simply bump the heap pointer by the size deficit, so long as no other allocations have occurred since our initial allocation. We can do this since we know that the memory after the heap pointer is available; we merely need to ensure that the current block we are allocating into is large enough.</p>
+<p>Simon Marlow and Herbert will be investigating this possibility in the coming weeks.</p>
+<p>== D924: <code>mapM_</code> and <code>traverse_</code></p>
+<p>As discussed in the <a href="https://ghc.haskell.org/trac/ghc/blog#AMP-relatedperformanceregression">most recent</a> Weekly News, one issue on our plate at the moment is Phab:D924, which attempted to patch up two remaining facets of the Applicative-Monad Proposal,</p>
+<ol type="1">
+<li>Remove the override of <code>mapM</code> for the <code>[]</code> <code>Traversal</code> instance</li>
+<li>Rewrite <code>mapM_</code> in terms of <code>traverse_</code></li>
+</ol>
+<p>While (1) seems like an obvious cleanup, (2) is a bit tricky. As noted last time, <code>traverse_</code> appears to give rise to non-linear behavior in this context.</p>
+<p><code>akio</code> has contributed an insightful <a href="https://ghc.haskell.org/trac/ghc/timeline?from=2015-08-01T10%3A00%3A33Z&amp;precision=second">analysis</a> shedding light on the cause of this behavior. Given that the quadratic behavior is intrinsic to the <code>Applicative</code> formulation, we’ll be sending this matter back to the Core Libraries Committee to inform their future design decisions.</p>
+<p>That is all for this week!</p>
+<dl>
+<dt>Cheers,</dt>
+<dd><p>Ben</p>
+</dd>
+</dl>
+
+      </div>
+    </div>
+    <div class="row">
+          </td>
+  </tr>
+</table>
+
+    </div>
+  </div>
+  </body>
+</html>

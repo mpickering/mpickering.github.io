@@ -1,0 +1,157 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+  <head>
+    <title>HIE Files - coming soon to a GHC near you! — The Glasgow Haskell Compiler</title>
+    <meta http-equiv="Content-Language" content="en-gb">
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css" integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
+    <link href="../ghc.css" rel="stylesheet" type="text/css">
+
+  </head>
+  <body>
+    <header id="header">
+      <span id="header-txt"> GHC </span>
+      <span id="header-name"> The Glasgow Haskell Compiler </span>
+    </header>
+    <div>
+    <div class="row no-gutters">
+      <div id="sidebar" class="col-sm-4">
+       <div class="sticky-top">
+          <div class="navbar-fixed-left">
+	<div class="nav navbar-nav">
+  <span class="nav-title">About GHC</span>
+  <li class="nav-item"> <a class="nav-link" href="../">Home</a> </li>
+  <li class="nav-item"> <a class="nav-link" href="../license.html">License</a> </li>
+  <li class="nav-item"> <a class="nav-link" href="https://haskell.org/haskellwiki/GHC">Documentation</a> </li>
+  <li class="nav-item"> <a class="nav-link" href="../blog.html">Blog</a> </li>
+  <li class="nav-item"> <a class="nav-link" href="../download.html">Download</a> </li>
+  <li class="nav-item"> <a class="nav-link" href="https://gitlab.haskell.org/ghc/ghc/wikis/report-a-bug">Report a bug</a> </li>
+  <li class="nav-item"> <a class="nav-link" href="https://gitlab.haskell.org/ghc/ghc/wikis">Developers Wiki</a> </li>
+  <span class="nav-title">About Haskell</span>
+  <li class="nav-item"> <a class="nav-link" href="https://haskell.org">Haskell.org</a> </li>
+  <li class="nav-item"> <a class="nav-link" href="https://www.haskell.org/haskellwiki/Definition">Haskell 2010 Report</a> </li>
+  <li class="nav-item"> <a class="nav-link" href="https://www.haskell.org/haskellwiki/Mailing_lists">Haskell Mailing Lists</a> </li>
+  <span class="nav-title">Links</span>
+  <li class="nav-item"> <a class="nav-link" href="http://hackage.haskell.org/platform/">Haskell Platform</a> </li>
+  <li class="nav-item"> <a class="nav-link" href="http://hackage.haskell.org/">Hackage</a> </li>
+
+</div>
+</div>
+
+       </div>
+      </div>
+      <div id="content" class="col">
+        <h1>HIE Files - coming soon to a GHC near you!</h1>
+<h4 class="text-muted">wz1000 - 2019-06-26T17:00:00</h4>
+
+<p>When GHC compiles your programs, it has to work out a bunch of information - it figures out where stuff is defined, assigns types to expressions, solves constraints and so on. However, all this information is not easily accessible to you after GHC is finished. To get your hands on this, you need to set up a GHC environment, and tediously use the GHC API to extract whatever information you care about.</p>
+<p>HIE files are a new type of file that can be emitted by GHC via the <code>-fwrite-ide-info</code> flag. They serialize a bunch of useful information about your source, so that it is easy and fast to access when you need it.</p>
+<p>HIE files will be appearing for the first time in GHC 8.8.</p>
+<h1 id="how-you-can-make-use-of-.hie-files-right-now">How you can make use of .hie files right now</h1>
+<p>First, you need to generate some .hie files. To do this, you need GHC 8.8, or a recently built version of GHC HEAD.</p>
+<p>Once you have these, you need to compile some files with <code>-fwrite-ide-info</code>.</p>
+<p>You can do this by invoking GHC explicitly, or by adding this flag to the <code>ghc-options</code> section of a <code>.cabal</code> file. The compiler will output one <code>.hie</code> file for each module it compiles. The file is a binary format which can be read using a simple function from the GHC API.</p>
+<p>The output directory for the files can be set using the <code>-hiedir &lt;dir&gt;</code> flag. This way it’s easy to collate all the files for your project into one place.</p>
+<p>The rest of this blog post will be about projects which already use HIE files and some future ideas that we have for using them.</p>
+<h2 id="using-hiedb-to-lookup-information-about-your-code">Using hiedb to lookup information about your code</h2>
+<p><a href="https://github.com/wz1000/HieDb"><code>hiedb</code></a> is a command line tool that makes it easy to query <code>.hie</code> files. It stores the information from the files in a SQLite db, to enable very fast indexing and querying.</p>
+<p>Once you have installed <code>hiedb</code>, you can index your <code>.hie</code> files. For fun, we’ll index GHC itself. The files were easy to generate just by passing <code>-fwrite-ide-info</code>.</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode bash"><code class="sourceCode bash"><a class="sourceLine" id="cb1-1" title="1">$ <span class="ex">hiedb</span> index hiefiles/ghc</a>
+<a class="sourceLine" id="cb1-2" title="2"><span class="ex">Processing</span> file 561/561: /home/matt/ghc/hie-files/Check.hie... done</a>
+<a class="sourceLine" id="cb1-3" title="3"><span class="ex">Completed</span>!</a></code></pre></div>
+<p>The whole process take less than a minute to index the 561 files. Reindexing is very fast, less than one second, so you can incrementally update the database as you work on your project and generate updated HIE files.</p>
+<p><code>hiedb</code> can dump the original Haskell source of a module (useful when your build tool doesn’t keep this around):</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode bash"><code class="sourceCode bash"><a class="sourceLine" id="cb2-1" title="1">$ <span class="ex">hiedb</span> cat Main</a>
+<a class="sourceLine" id="cb2-2" title="2">{<span class="ex">-</span># LANGUAGE CPP, NondecreasingIndentation, TupleSections <span class="co">#-}</span></a>
+<a class="sourceLine" id="cb2-3" title="3">{<span class="ex">-</span># OPTIONS -fno-warn-incomplete-patterns -optc-DNON_POSIX_SOURCE <span class="co">#-}</span></a>
+<a class="sourceLine" id="cb2-4" title="4"></a>
+<a class="sourceLine" id="cb2-5" title="5"><span class="ex">-----------------------------------------------------------------------------</span></a>
+<a class="sourceLine" id="cb2-6" title="6"><span class="ex">--</span></a>
+<a class="sourceLine" id="cb2-7" title="7"><span class="ex">--</span> GHC Driver program</a>
+<a class="sourceLine" id="cb2-8" title="8"><span class="ex">--</span></a>
+<a class="sourceLine" id="cb2-9" title="9"><span class="ex">--</span> (c) <span class="ex">The</span> University of Glasgow 2005</a>
+<a class="sourceLine" id="cb2-10" title="10"><span class="ex">--</span></a>
+<a class="sourceLine" id="cb2-11" title="11"><span class="ex">-----------------------------------------------------------------------------</span></a>
+<a class="sourceLine" id="cb2-12" title="12"></a>
+<a class="sourceLine" id="cb2-13" title="13"><span class="ex">module</span> Main (main) <span class="ex">where</span></a></code></pre></div>
+<p>Now let’s suppose we want to know everywhere in GHC which uses the <code>eqType</code> function. <code>hiedb</code> can be queried to find all references to this name:</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode bash"><code class="sourceCode bash"><a class="sourceLine" id="cb3-1" title="1">$ <span class="ex">hiedb</span> name-refs eqType</a>
+<a class="sourceLine" id="cb3-2" title="2"><span class="ex">TcBinds</span>:863:34-863:42</a>
+<a class="sourceLine" id="cb3-3" title="3"><span class="ex">TcBinds</span>:1018:48-1018:56</a>
+<a class="sourceLine" id="cb3-4" title="4"><span class="ex">OptCoercion</span>:121:55-121:63</a>
+<a class="sourceLine" id="cb3-5" title="5"><span class="ex">OptCoercion</span>:121:116-121:124</a>
+<a class="sourceLine" id="cb3-6" title="6"><span class="ex">OptCoercion</span>:266:9-266:17</a>
+<a class="sourceLine" id="cb3-7" title="7"><span class="ex">OptCoercion</span>:799:9-799:17</a>
+<a class="sourceLine" id="cb3-8" title="8"><span class="ex">OptCoercion</span>:1045:8-1045:16</a>
+<a class="sourceLine" id="cb3-9" title="9"><span class="ex">TcHsSyn</span>:1692:37-1692:45</a>
+<a class="sourceLine" id="cb3-10" title="10"><span class="ex">TcMType</span>:354:20-354:28</a>
+<a class="sourceLine" id="cb3-11" title="11"><span class="ex">TcMType</span>:355:20-355:28</a>
+<a class="sourceLine" id="cb3-12" title="12"><span class="ex">...</span></a></code></pre></div>
+<p>There are quite a few!</p>
+<p>For tooling you might want to know about the references for an identifier at certain source position. <code>hiedb</code> also supports this query, and it works for locally defined and unexported names.</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb4-1" title="1">eqType t1 t2 <span class="ot">=</span> isEqual <span class="op">$</span> nonDetCmpType t1 t2</a></code></pre></div>
+<p>Pointing it to the <code>t1</code> parameter of <code>eqType</code>, line 2500, column 9:</p>
+<div class="sourceCode" id="cb5"><pre class="sourceCode bash"><code class="sourceCode bash"><a class="sourceLine" id="cb5-1" title="1">$ <span class="ex">hiedb</span> point-refs Type 2500 9</a>
+<a class="sourceLine" id="cb5-2" title="2"><span class="ex">Name</span> t1 at (2500,9) <span class="ex">is</span> used in:</a>
+<a class="sourceLine" id="cb5-3" title="3"><span class="ex">Type</span>:2500:8-2500:10</a>
+<a class="sourceLine" id="cb5-4" title="4"><span class="ex">Type</span>:2500:40-2500:42</a></code></pre></div>
+<p>The two references to <code>t1</code>, the definition and its sole usage are returned. Similarly, we can query for the type at a point. Asking for the type of the usage of <code>t1</code> in the body, we find that its type is … <code>Type</code>!.</p>
+<div class="sourceCode" id="cb6"><pre class="sourceCode bash"><code class="sourceCode bash"><a class="sourceLine" id="cb6-1" title="1">$ <span class="ex">hiedb</span> point-type Type 2500 40</a>
+<a class="sourceLine" id="cb6-2" title="2"><span class="ex">Type</span></a></code></pre></div>
+<p>There are a few more commands you can learn about by looking at the help text:</p>
+<div class="sourceCode" id="cb7"><pre class="sourceCode bash"><code class="sourceCode bash"><a class="sourceLine" id="cb7-1" title="1">$ <span class="ex">hiedb</span> --help</a>
+<a class="sourceLine" id="cb7-2" title="2"><span class="ex">hiedb</span> - a tool to query groups of .hie files</a>
+<a class="sourceLine" id="cb7-3" title="3"></a>
+<a class="sourceLine" id="cb7-4" title="4"><span class="ex">Usage</span>: hiedb [-D<span class="kw">|</span><span class="ex">--database</span> DATABASE] [-v<span class="kw">|</span><span class="ex">--trace</span>] [-q<span class="kw">|</span><span class="ex">--quiet</span>]</a>
+<a class="sourceLine" id="cb7-5" title="5">             [<span class="ex">-f</span><span class="kw">|</span><span class="ex">--virtual-file</span>] COMMAND</a>
+<a class="sourceLine" id="cb7-6" title="6">  <span class="ex">Query</span> .hie files</a>
+<a class="sourceLine" id="cb7-7" title="7"></a>
+<a class="sourceLine" id="cb7-8" title="8"><span class="ex">Available</span> options:</a>
+<a class="sourceLine" id="cb7-9" title="9">  <span class="ex">-D</span>,--database DATABASE   References Database (default: <span class="st">&quot;~/.hiedb&quot;</span>)</a>
+<a class="sourceLine" id="cb7-10" title="10">  <span class="ex">-h</span>,--help                Show this help text</a>
+<a class="sourceLine" id="cb7-11" title="11"></a>
+<a class="sourceLine" id="cb7-12" title="12"><span class="ex">Available</span> commands:</a>
+<a class="sourceLine" id="cb7-13" title="13">  <span class="ex">init</span>                     Initialize databse</a>
+<a class="sourceLine" id="cb7-14" title="14">  <span class="ex">index</span>                    Index database</a>
+<a class="sourceLine" id="cb7-15" title="15">  <span class="ex">name-refs</span>                Lookup references of value MODULE.NAME</a>
+<a class="sourceLine" id="cb7-16" title="16">  <span class="ex">type-refs</span>                Lookup references of type MODULE.NAME</a>
+<a class="sourceLine" id="cb7-17" title="17">  <span class="fu">cat</span>                      Dump contents of MODULE as stored in the hiefile</a>
+<a class="sourceLine" id="cb7-18" title="18">  <span class="ex">point-refs</span>               Find references for symbol at point/span</a>
+<a class="sourceLine" id="cb7-19" title="19">  <span class="ex">point-types</span>              List types of ast at point/span</a></code></pre></div>
+<h2 id="type-information-in-haddocks-hyperlinked-source">Type information in Haddock’s hyperlinked source</h2>
+<p><code>hiedb</code> is a great way to consume HIE files but it’s not the only way. Since GHC 8.8 and the Haddock version that ships with it (2.23.0), the hyperlinker has been re-engineered to use <code>.hie</code> files to generate hyperlinked source. This allows the generated hyperlinked source files to report types of expressions on hover.</p>
+<p>To use this, you just need to build haddock documentation for your project with <code>--hyperlinked-source</code> enabled.</p>
+<p><img src="./images/20190626-HIEFiles/HyperlinkedSource.png" width="600" /></p>
+<h2 id="code-navigation-and-type-information-in-your-github-editor-using-hie-lsif">Code navigation and type information in your Github editor using hie-lsif</h2>
+<p>The <a href="https://microsoft.github.io/language-server-protocol/overview">Language Server Protocol</a> is a language agnostic protocol for editors a tools to communicate. A LSP client, such as vscode, sends requests to a LSP server, such as <code>haskell-ide-engine</code> for information such as what to display on a hover or what references a certain symbol has.</p>
+<p><a href="https://code.visualstudio.com/blogs/2019/02/19/lsif">LSIF files</a> are a new extension to the protocol which provide a static snapshot of how a language server would respond to a request for a fixed piece of code. These allow editors and other clients to provide code intelligence for a project without having to run an LSP server. This can be used to answer queries like “go to definition”, “find references”, “hover”, etc. in editors as well as interfaces like GitHub’s PR code review.</p>
+<p>You can use the <a href="https://github.com/mpickering/hie-lsif"><code>hie-lsif</code></a> tool to generate an LSIF file for you project using <code>.hie</code> files.</p>
+<p>LSIF files are planned to be <a href="https://code.visualstudio.com/blogs/2018/12/04/rich-navigation">integrated into</a> GitHub pull requests soon. With the release of GHC 8.8, Haskell will be in a good position to take advantage of this feature.</p>
+<p><img src="./images/20190626-HIEFiles/LSIF.png" width="600" /></p>
+<h1 id="future-developments">Future developments</h1>
+<p>There’s a couple more applications of <code>.hie</code> files that we’re excited about which are in the works.</p>
+<h2 id="fast-low-memory-usage-and-persistent-code-intelligence-for-language-servers">Fast, low memory usage and persistent code intelligence for language servers</h2>
+<p><code>.hie</code> files are good way to power some of the code intelligence features of language servers like haskell-ide-engine. They are easy to use and require very few system resources to answer queries. They can be used on their own, or as a fallback when typechecked modules aren’t available.</p>
+<p>Furthermore, if you load a file in <code>haskell-ide-engine</code> that doesn’t compile, it will not be able to give you any code intelligence for that file. <code>.hie</code> files offer a way to persist some of the data <code>haskell-ide-engine</code> requires to answer queries.</p>
+<p>Integrating <code>hiedb</code> with <code>haskell-ide-engine</code> will also enable cross project go-to defintion and symbol references, two long requested features.</p>
+<p>I plan to work on this during the rest of the summer.</p>
+<h2 id="ghcis-set-c---now-powered-by-.hie-files">GHCi’s :set +c - now powered by .hie files</h2>
+<p>GHCi’s :set +c functionality also exposes features like type-at-point, references-at-point etc. This is being rewritten to use <code>.hie</code> files, which should make it faster and more reliable.</p>
+<p>You can track progress on this here: <a href="https://gitlab.haskell.org/ghc/ghc/issues/16804" class="uri">https://gitlab.haskell.org/ghc/ghc/issues/16804</a></p>
+<h1 id="conclusion">Conclusion</h1>
+<p><code>.hie</code> files have already been put to good use and they haven’t event been released yet! They provide a convenient middle ground between querying GHCi for information and writing a full blown source plugin. There’s a lot of information, probably all you need, in a simple and easy to consume format.</p>
+<p>We’re looking forward to seeing how people use <code>.hie</code> files and if you have any problems with them make sure to open tickets on the issue tracker.t</p>
+
+      </div>
+    </div>
+    <div class="row">
+          </td>
+  </tr>
+</table>
+
+    </div>
+  </div>
+  </body>
+</html>

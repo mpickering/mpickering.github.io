@@ -1,0 +1,299 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+  <head>
+    <title>New directions for Template Haskell — The Glasgow Haskell Compiler</title>
+    <meta http-equiv="Content-Language" content="en-gb">
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css" integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
+    <link href="../ghc.css" rel="stylesheet" type="text/css">
+
+  </head>
+  <body>
+    <header id="header">
+      <span id="header-txt"> GHC </span>
+      <span id="header-name"> The Glasgow Haskell Compiler </span>
+    </header>
+    <div>
+    <div class="row no-gutters">
+      <div id="sidebar" class="col-sm-4">
+       <div class="sticky-top">
+          <div class="navbar-fixed-left">
+	<div class="nav navbar-nav">
+  <span class="nav-title">About GHC</span>
+  <li class="nav-item"> <a class="nav-link" href="../">Home</a> </li>
+  <li class="nav-item"> <a class="nav-link" href="../license.html">License</a> </li>
+  <li class="nav-item"> <a class="nav-link" href="https://haskell.org/haskellwiki/GHC">Documentation</a> </li>
+  <li class="nav-item"> <a class="nav-link" href="../blog.html">Blog</a> </li>
+  <li class="nav-item"> <a class="nav-link" href="../download.html">Download</a> </li>
+  <li class="nav-item"> <a class="nav-link" href="https://gitlab.haskell.org/ghc/ghc/wikis/report-a-bug">Report a bug</a> </li>
+  <li class="nav-item"> <a class="nav-link" href="https://gitlab.haskell.org/ghc/ghc/wikis">Developers Wiki</a> </li>
+  <span class="nav-title">About Haskell</span>
+  <li class="nav-item"> <a class="nav-link" href="https://haskell.org">Haskell.org</a> </li>
+  <li class="nav-item"> <a class="nav-link" href="https://www.haskell.org/haskellwiki/Definition">Haskell 2010 Report</a> </li>
+  <li class="nav-item"> <a class="nav-link" href="https://www.haskell.org/haskellwiki/Mailing_lists">Haskell Mailing Lists</a> </li>
+  <span class="nav-title">Links</span>
+  <li class="nav-item"> <a class="nav-link" href="http://hackage.haskell.org/platform/">Haskell Platform</a> </li>
+  <li class="nav-item"> <a class="nav-link" href="http://hackage.haskell.org/">Hackage</a> </li>
+
+</div>
+</div>
+
+       </div>
+      </div>
+      <div id="content" class="col">
+        <h1>New directions for Template Haskell</h1>
+<h4 class="text-muted">simonpj - 2010-10-18T21:55:06</h4>
+
+<p><strong>Nota bene</strong>: <em><a href="https://gitlab.haskell.org/ghc/ghc/wikis/TemplateHaskell/BlogPostChanges">TemplateHaskell/BlogPostChanges</a> is a copy of this blog post, but with subsequent edits and improvements. Don’t pay too much attention to the text below; I’m keeping it only so that you can see the context for comments</em>.</p>
+<p>This post explores a set of design proposals for Template Haskell. They are inspired by discussion with Tim Sheard, Kathleen Fisher, and Jacques Carette. It was originally triggered by several Template Haskell tickets: including <a href="https://gitlab.haskell.org/ghc/ghc/issues/4230">#4230</a>, <a href="https://gitlab.haskell.org/ghc/ghc/issues/4135">#4135</a>, <a href="https://gitlab.haskell.org/ghc/ghc/issues/4128">#4128</a>, <a href="https://gitlab.haskell.org/ghc/ghc/issues/4170">#4170</a>, <a href="https://gitlab.haskell.org/ghc/ghc/issues/4125">#4125</a>, <a href="https://gitlab.haskell.org/ghc/ghc/issues/4124">#4124</a>, <a href="https://gitlab.haskell.org/ghc/ghc/issues/4364">#4364</a>, <a href="https://gitlab.haskell.org/ghc/ghc/issues/6062">#6062</a>, <a href="https://gitlab.haskell.org/ghc/ghc/issues/6089">#6089</a>. (See also <a href="https://gitlab.haskell.org/ghc/ghc/issues/7016">#7016</a>, which work better with the suggestions below.) Taken together, these proposals would make quite a big change to TH, I think for the better. Happily, I’m pretty sure they are relatively easy to implement.</p>
+<p>There’s an interesting <a href="http://stackoverflow.com/questions/10857030/whats-so-bad-about-template-haskell">critique of Template Haskell</a> on !StackOverflow, some (but not all) of which is addressed by proposals here.</p>
+<p>But I’d like to get the design right; hence this post. I’m going to treat it as a working draft, and modify it in the light of comments. So please comment.</p>
+<p>I’m going to assume that you are more or less familiar with Template Haskell. If not, there’s lots of background on the <a href="http://www.haskell.org/haskellwiki/Template_Haskell">Template Haskell page</a>. It’s a Wiki so you can help to improve it.</p>
+<p>Here’s the <a href="https://gitlab.haskell.org/ghc/ghc/wikis/wiki:Commentary/Compiler/TemplateHaskell/Typed">implementation page</a> the describes how we are going to implement this stuff.</p>
+<h1 id="some-brief-background">Some brief background</h1>
+<p>After parsing, GHC runs two completely separate passes, one after the other: * The <strong>renamer</strong> resolves scopes, fixing precisely which <em>binding site</em> is connected which <em>occurrence</em> of every variable. For example, you write</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb1-1" title="1"><span class="kw">let</span> x <span class="ot">=</span> \\x <span class="ot">-&gt;</span> x<span class="op">+</span><span class="dv">1</span> <span class="kw">in</span> x</a></code></pre></div>
+<p>and the renamer changes it to</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb2-1" title="1"><span class="kw">let</span> x_77 <span class="ot">=</span> \\x_78 <span class="ot">-&gt;</span> x_78 <span class="op">+</span> <span class="dv">1</span> <span class="kw">in</span> x_77</a></code></pre></div>
+<p>The renamer also performs depdenency analysis, which sorts bindings (both value declarations and type declarations) into the smallest possible mutually recursive groups. This prior sorting is required to maximise polymorphism in mutually recursive value bindings.</p>
+<ul>
+<li>The <strong>typechecker</strong> works on the renamed program, and typechecks it.</li>
+</ul>
+<p>At the moment these two passes relate to Template Haskell as follows: * <strong>Quasi-quotes are run in the renamer</strong>. Why? Because quasi-quotes can expand to patterns. Consider this, which has a quasi-quoted pattern:</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb3-1" title="1">\\x <span class="ot">-&gt;</span> \\ [pads| blah |] <span class="ot">-&gt;</span> x<span class="op">+</span><span class="dv">1</span></a></code></pre></div>
+<p>Is the “x” in “x+1” bound by the outer <code>\\x</code> or by the ‘x’ that might be bought into scope by the <code>[pads| blah |]</code> quasi-quote? The only way to know is to run the quasi-quote, so that’s what happens.</p>
+<ul>
+<li><strong>All other Template Haskell stuff is run in the typechecker</strong>. Why? Because we try to typecheck quotations before feeding them into TH functions. More on this below.</li>
+</ul>
+<hr />
+<h1 id="the-main-issue">The main issue</h1>
+<p>The big issue is this: Template Haskell is both too <em>weakly</em> typed and too <em>strongly</em> typed.</p>
+<h2 id="too-weakly-typed">Too weakly typed</h2>
+<p>A TH quotation has type <code>Q Exp</code>, a type that says nothing about the type of the quoted term. For example, consider</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb4-1" title="1"><span class="ot">qnot ::</span> <span class="dt">Q</span> <span class="dt">Exp</span> <span class="ot">-&gt;</span> <span class="dt">Q</span> <span class="dt">Exp</span></a>
+<a class="sourceLine" id="cb4-2" title="2">qnot x <span class="ot">=</span> [<span class="op">|</span> <span class="fu">not</span> <span class="op">$</span>x <span class="op">|</span>]</a></code></pre></div>
+<p>Presumably the author expects <code>$x</code> to be a boolean-valued term, but that is not checked. For example we might write</p>
+<div class="sourceCode" id="cb5"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb5-1" title="1">h <span class="ot">=</span> <span class="op">$</span>(qnot [<span class="op">|</span> <span class="st">&quot;hello&quot;</span> <span class="op">|</span>])</a></code></pre></div>
+<p>in which we pass a string-valued term to <code>qnot</code>. The splice will typecheck fine, but the returned code will be the ill-typed <code>not "hello"</code>. There is no soundness problem because GHC typechecks the result of the splice <code>$(qnot [| "hello" |])</code>, but the error is reported in code that the user never wrote.</p>
+<p>Moreover, errors can be delayed. For example, suppose <code>qnot</code> was like this:</p>
+<div class="sourceCode" id="cb6"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb6-1" title="1"><span class="ot">qnot ::</span> <span class="dt">Q</span> <span class="dt">Exp</span> <span class="ot">-&gt;</span> <span class="dt">Q</span> <span class="dt">Exp</span></a>
+<a class="sourceLine" id="cb6-2" title="2">qnot x <span class="ot">=</span> [<span class="op">|</span> (<span class="fu">not</span> <span class="op">$</span>x, <span class="fu">length</span> <span class="op">$</span>x) <span class="op">|</span>]</a></code></pre></div>
+<p>This cannot possibly be right, becuase <code>$x</code> cannot be both a boolean and a list. Yet TH will accept it, because a splice has type <code>forall a.a</code>. The error will only be reported to <em>callers</em> of <code>qnot</code>.</p>
+<p>This is bad. MetaML solves this problem by giving types to quoted terms, something like this:</p>
+<div class="sourceCode" id="cb7"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb7-1" title="1"><span class="ot">qnot ::</span> <span class="dt">TExp</span> <span class="dt">Bool</span> <span class="ot">-&gt;</span> <span class="dt">TExp</span> <span class="dt">Bool</span></a>
+<a class="sourceLine" id="cb7-2" title="2">qnot x <span class="ot">=</span> [<span class="op">|</span> <span class="fu">not</span> <span class="op">$</span>x <span class="op">|</span>]</a></code></pre></div>
+<p>Here <code>TExp</code> (short for typed expressions) has a type parameter that expresses the type of the quoted term.</p>
+<p>In TH we deliberately did not do this, because it restricts expressiveness; see <a href="http://research.microsoft.com/en-us/um/people/simonpj/papers/meta-haskell/index.htm">the original TH paper</a>. We could make this choice without losing soundness because in TH, unlike in MetaML, all splicing is done at compile time, and the result of a splice is typechecked from scratch. But still, it’s a weakness and, for some users (stand up Jacques), a very serious weakness.</p>
+<h2 id="too-strongly-typed">Too strongly typed</h2>
+<p>Even though TH cannot guarantee to construct only type-correct code, every quotation is typechecked. For example, the quotation <code>[| "hello" &amp;&amp; True |]</code> would be rejected because it is internally inconsistent.</p>
+<p>But with the advent of type splices (a very useful feature) typechecking quotes has become hard to do. Consider this:</p>
+<div class="sourceCode" id="cb8"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb8-1" title="1"><span class="ot">  f ::</span> <span class="dt">Q</span> <span class="dt">Type</span> <span class="ot">-&gt;</span> <span class="dt">Q</span> [<span class="dt">Dec</span>]</a>
+<a class="sourceLine" id="cb8-2" title="2">  f t <span class="ot">=</span> [d| data T = MkT $t; </a>
+<a class="sourceLine" id="cb8-3" title="3">            g (MkT x) = g+1 |]</a></code></pre></div>
+<p>This function f returns a declaration quote, declaring T and g. You’ll see that the constructor MkT takes an argument whose type is passed (as a quotation) to f – a type splice.</p>
+<p>The difficulty is that we can’t typecheck the declaration of ‘g’ until we know what $t is; and we won’t know that until f is called. In short, * we can’t really typecheck the declaration quote at all An analogous problem occurs in other declaration splices, for example</p>
+<div class="sourceCode" id="cb9"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb9-1" title="1">  f t <span class="ot">=</span> [d| instance C $t where ... |]</a></code></pre></div>
+<p>Here GHC’s check that an instance decl is always of form</p>
+<div class="sourceCode" id="cb10"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb10-1" title="1">  <span class="kw">instance</span> <span class="dt">C</span> (<span class="dt">T</span> a b c)</a></code></pre></div>
+<p>falls over, again because we don’t know what $t will be. Here’s another example:</p>
+<div class="sourceCode" id="cb11"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb11-1" title="1">      [<span class="op">|</span> <span class="kw">let</span> {<span class="ot"> f ::</span> <span class="op">$</span>t; f <span class="ot">=</span> e } <span class="kw">in</span> <span class="op">..</span> <span class="op">|</span>]</a></code></pre></div>
+<p>We can’t sensibly typecheck the term without knowing what f’s type signature is, and we can’t know that without expanding the splice.</p>
+<p>Here’s a rather different example, <a href="https://gitlab.haskell.org/ghc/ghc/issues/4364">#4364</a>:</p>
+<div class="sourceCode" id="cb12"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb12-1" title="1"><span class="kw">type</span> <span class="dt">N0</span> <span class="ot">=</span> <span class="op">$</span>( [t| Z |] )</a>
+<a class="sourceLine" id="cb12-2" title="2"><span class="kw">type</span> <span class="dt">N1</span> <span class="ot">=</span> <span class="op">$</span>( [t| Z |] )</a></code></pre></div>
+<p>Faced with a type splice</p>
+<div class="sourceCode" id="cb13"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb13-1" title="1"><span class="kw">type</span> <span class="dt">N0</span> <span class="ot">=</span> <span class="op">$</span>(<span class="op">...</span>blah<span class="op">...</span>)</a></code></pre></div>
+<p>the renamer doesn’t know what the splice will expand to, because splices are currently run later, in the type checker. So it pessimistically assumes that the splice could expand to mention anything in scope. But that pessimistic assuption triggers the error message</p>
+<pre><code>     Cycle in type synonym declarations:
+       m.hs:7:1-23: type N0 = $([t| Z |])
+       m.hs:8:1-23: type N1 = $([t| Z |])  ```</code></pre>
+<p>All this is quite annoying. Several users have said “I’m just using a quotation as a convenient way to build a syntax tree. Please don’t even try to typecheck it; just wait until it is finally spliced into a top-level splice”.</p>
+<table style="width:39%;">
+<colgroup>
+<col style="width: 38%" />
+</colgroup>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;"># A proposal</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">TH currently embodies an uneasy compromise between being too strongly typed and too weakly typed. So my proposal is to move TH in both directions at once: * Part A: Move the existing structures towards the expressive but weakly-typed end. * Part B: Add new MetaML-style constructs for strongly-typed metaprogramming. * Part C: Clean up and improve reification * Part D: Quasi-quotation improvements</td>
+</tr>
+</tbody>
+</table>
+<h2 id="part-a-reduce-typechecking-for-quotes">Part A: Reduce typechecking for quotes</h2>
+<p>On the “make-it-weaker” front, here’s what I propose:</p>
+<ul>
+<li><p><strong>Cease typechecking TH quotes altogether</strong>. Instead, to use GHC’s terminology, we would <em>rename</em> a quote, but not <em>typecheck</em> it. The renaming pass ensures that the scope hygiene mechanisms would remain unchanged. By not attempting to typecheck we avoid all the tricky problems sketched above.</p></li>
+<li><p><strong>Add pattern splices and local declaration splices</strong>, as requested in <a href="https://gitlab.haskell.org/ghc/ghc/issues/1476">#1476</a>. For example</p></li>
+</ul>
+<div class="sourceCode" id="cb15"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb15-1" title="1"><span class="co">-- mkPat :: Q Pat -&gt; Q Pat</span></a>
+<a class="sourceLine" id="cb15-2" title="2">f <span class="op">$</span>(mkPat [p| x |]) <span class="ot">=</span> x<span class="op">+</span><span class="dv">1</span></a>
+<a class="sourceLine" id="cb15-3" title="3"></a>
+<a class="sourceLine" id="cb15-4" title="4"><span class="co">-- mkDecl :: Int -&gt; Q [Dec]</span></a>
+<a class="sourceLine" id="cb15-5" title="5">g x <span class="ot">=</span> <span class="kw">let</span> <span class="op">$</span>(mkDecl <span class="dv">3</span>) <span class="kw">in</span> <span class="op">...</span></a></code></pre></div>
+<p>These are not supported today because they bring new variables into scope, and hence are incompatible with running splices only after the renamer is finished; see <a href="http://research.microsoft.com/~simonpj/tmp/notes2.ps">Notes on Template Haskell</a>, section 8.</p>
+<ul>
+<li><strong>Run TH splices in the renamer</strong>, uniformly with quasi-quotes. Of course, we must still typecheck the code we are about to run. But there’s an <em>existing</em> TH restriction that code run in top-level splices must be imported. So we can typecheck this code even during renaming, because it can only mention imported (and hence already fully-typechecked) code.</li>
+</ul>
+<p>This solves <a href="https://gitlab.haskell.org/ghc/ghc/issues/4364">#4364</a> because we run the splice in the renamer, so things are sorted out by the time we are checking for cycles (in the type checker).</p>
+<ul>
+<li><strong>Allow quoted names as patterns</strong> as <a href="http://www.haskell.org/pipermail/libraries/2012-January/017449.html">requested by Conal Eliott</a>. This is just a variation on allowing splices in patterns, since a quoted name <code>'x</code> is really just a simple splice</li>
+</ul>
+<p>These changes would essentially implement the desires of those who say “I just want to generate syntax trees”. All the mentioned bug reports would be fixed. The big loss is that quotes would not be typechecked at all.</p>
+<h2 id="lexical-scoping">Lexical scoping</h2>
+<p>Consider these definitions:</p>
+<div class="sourceCode" id="cb16"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb16-1" title="1"><span class="ot">g ::</span> <span class="dt">Int</span> <span class="ot">-&gt;</span> <span class="dt">Q</span> <span class="dt">Pat</span></a>
+<a class="sourceLine" id="cb16-2" title="2"></a>
+<a class="sourceLine" id="cb16-3" title="3"><span class="ot">y ::</span> <span class="dt">Int</span></a>
+<a class="sourceLine" id="cb16-4" title="4">y <span class="ot">=</span> <span class="dv">7</span></a>
+<a class="sourceLine" id="cb16-5" title="5"></a>
+<a class="sourceLine" id="cb16-6" title="6"><span class="ot">f ::</span> <span class="dt">Int</span> <span class="ot">-&gt;</span> <span class="dt">Q</span> <span class="dt">Exp</span></a>
+<a class="sourceLine" id="cb16-7" title="7">f n <span class="ot">=</span> [<span class="op">|</span> \\ <span class="op">$</span>(g n) <span class="ot">-&gt;</span> y<span class="op">+</span><span class="dv">1</span> <span class="op">|</span>]</a></code></pre></div>
+<p>Where is the ‘y’ bound in the RHS of <code>f</code>?<br />
+* Perhaps by the <code>y = 7</code> that is in scope at the definition of <code>f</code>? * Perhaps by the pattern that <code>$(g n)</code> expands to?<br />
+* Perhaps by a ‘y’ that is in scope at the splice site of <code>f</code>? * Does it depend on whether <code>$(g n)</code> in fact binds ‘y’? A major point about TH is that we get lexical scoping (also called “hygienic”). So, to me it seems the the first of these choices is the only reasonable one. If you want the second you can instead use explicit dynamic binding by saying</p>
+<div class="sourceCode" id="cb17"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb17-1" title="1">f n <span class="ot">=</span> [<span class="op">|</span> \\ <span class="op">$</span>(g n) <span class="ot">-&gt;</span> <span class="op">$</span>(<span class="fu">return</span> (<span class="dt">VarE</span> (mkName <span class="st">&quot;n&quot;</span>))) <span class="op">+</span> <span class="dv">1</span> <span class="op">|</span>]</a></code></pre></div>
+<p>So the rule would be: * In a quote, a variable ‘v’ is bound by the lexically enclosing binding of ‘v’, ignoring all pattern and declaration splices. To be consistent this should apply to top level splices too.</p>
+<h2 id="a-variation-probably-not">A variation (probably not)</h2>
+<p>A possible, rather <em>ad hoc</em>, variation would be to still typecheck quotes that are (a) top level, and (b) expression quotes. For example, we might still reject this:</p>
+<div class="sourceCode" id="cb18"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb18-1" title="1">f x <span class="ot">=</span> [<span class="op">|</span> <span class="op">$</span>x <span class="op">+</span> (<span class="dt">True</span> <span class="ch">'c'</span>) <span class="op">|</span>]</a></code></pre></div>
+<p>because the quote is obviously ill-typed. Only quotes nested inside top-level splices would avoid the type checker (because if the splice is run in the renamer, we can’t typecheck the nexted quote). For example:</p>
+<div class="sourceCode" id="cb19"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb19-1" title="1"><span class="op">$</span>(f [<span class="op">|</span> <span class="dt">True</span> <span class="ch">'c'</span> <span class="op">|</span>])</a></code></pre></div>
+<p>This splice would run in the renamer, and only the <em>result</em> of the splice would be typechecked. But what about this?</p>
+<div class="sourceCode" id="cb20"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb20-1" title="1">f t <span class="ot">=</span> [<span class="op">|</span> <span class="kw">let</span><span class="ot"> g ::</span> <span class="op">$</span>t<span class="ot">-&gt;</span> <span class="dt">Int</span>; g <span class="ot">=</span> e <span class="kw">in</span> <span class="op">....</span> <span class="op">|</span>]</a></code></pre></div>
+<p>This is still very awkward to typecheck. After all, if <code>$t</code> expands to a polymorphic type, the result of the splice might typecheck, but it’s really impossible to typecheck without knowing the signature. Maybe we should just give up if there’s a type splice? The only really simple thing is not to typecheck quotes at all.</p>
+<hr />
+<h2 id="part-b-add-metaml-style-typed-quotes">Part B: Add MetaML-style typed quotes</h2>
+<p>Template Haskell has quotes for terms, types, patterns, and declarations. They are all untyped, in the sense that the type of the quote tells you nothing about the type of the quoted thing. For example</p>
+<div class="sourceCode" id="cb21"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb21-1" title="1">  [<span class="op">|</span> <span class="dt">True</span> <span class="op">|</span>]<span class="ot"> ::</span> <span class="dt">Q</span> <span class="dt">Exp</span></a></code></pre></div>
+<p>There’s no clue that the type of the quoted expression is <code>Bool</code>.</p>
+<p>In the case of terms (only), we know how from MetaML to have <em>typed</em> quotations. Here’s a proposed extension to TH to add typed term quotes:</p>
+<ul>
+<li><p><strong>Add a new type of typed expressions</strong> <code>TExp a</code></p></li>
+<li><p><strong>Add a new term quotation form</strong> <code>[|| e ||]</code>, called a <em>typed quote</em>; the type of the quote is <code>TExp ty</code>, where <code>ty</code> is the type of <code>e</code>. In the type-system jargon, this is the “introduction form” for <code>TExp</code>.</p></li>
+<li><p><strong>Add a new splice form</strong> <code>$$e</code>, called a <em>typed splice</em>. The term <code>e</code> must have type <code>TExp ty</code>, and the splice <code>$$e</code> then has type <code>ty</code>. This is the “elimination form” for <code>TExp</code>.</p></li>
+<li><p><strong>Add a constant which takes a typed quote and returns an untyped one</strong>: <code>unType :: TExp a -&gt; Q Exp</code></p></li>
+<li><p><strong>Run these new typed splices in the typechecker</strong>, not the renamer.</p></li>
+</ul>
+<p>(The precise syntax for typed-quotes and type-splices is of course up for grabs. But doubling the symbols seems plausible to me.)</p>
+<p>Here’s a standard example:</p>
+<div class="sourceCode" id="cb22"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb22-1" title="1"><span class="ot">power ::</span> <span class="dt">Int</span> <span class="ot">-&gt;</span> <span class="dt">TExp</span> (<span class="dt">Int</span> <span class="ot">-&gt;</span> <span class="dt">Int</span>)</a>
+<a class="sourceLine" id="cb22-2" title="2">power n <span class="ot">=</span> [<span class="op">||</span> \\x <span class="ot">-&gt;</span> <span class="op">$$</span>(go n [<span class="op">||</span> x <span class="op">||</span>]) <span class="op">||</span>]</a>
+<a class="sourceLine" id="cb22-3" title="3">  <span class="kw">where</span></a>
+<a class="sourceLine" id="cb22-4" title="4"><span class="ot">    go ::</span> <span class="dt">TExp</span> <span class="dt">Int</span> <span class="ot">-&gt;</span> <span class="dt">TExp</span> <span class="dt">Int</span></a>
+<a class="sourceLine" id="cb22-5" title="5">    go <span class="dv">0</span> x <span class="ot">=</span> [<span class="op">||</span> <span class="dv">1</span> <span class="op">||</span>]</a>
+<a class="sourceLine" id="cb22-6" title="6">    go n x <span class="ot">=</span> [<span class="op">||</span> <span class="op">$</span>x <span class="op">*</span> <span class="op">$$</span>(go (n<span class="op">-</span><span class="dv">1</span>)) <span class="op">||</span>]</a></code></pre></div>
+<p>You could do this with existing TH but there’d be no guarantee that <code>power</code> would return a well-typed term. With <code>TExp</code> there is.</p>
+<p>Points to notice * Unlike TH, the <em>only</em> way to construct a value of type <code>TExp</code> is with a quote. You cannot drop into do-ntation, nor use explicit construction of the values in the <code>Exp</code> algebraic data type. That restriction limits expressiveness, but it enables the strong typing guarantees.</p>
+<ul>
+<li><p>There are no declaration, type, or pattern quotes for these typed quotes. Only terms.</p></li>
+<li><p>You can’t use an untyped splice in a typed quote, thus <code>[|| ...$(e)... ||]</code>. Similarly, you can’t splice a type, pattern, or declaration group in a typed term quote.</p></li>
+<li><p>Using <code>unType</code> you can go from the typed world to the untyped one, which lets you mix the worlds. Example:</p></li>
+</ul>
+<div class="sourceCode" id="cb23"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb23-1" title="1"><span class="ot">f ::</span> <span class="dt">TExp</span> <span class="dt">Int</span> <span class="ot">-&gt;</span> <span class="dt">Q</span> <span class="dt">Exp</span> <span class="ot">-&gt;</span> <span class="dt">Q</span> <span class="dt">Exp</span></a>
+<a class="sourceLine" id="cb23-2" title="2">f qt qu <span class="ot">=</span> [<span class="op">|</span> <span class="op">$</span>(unType qt) <span class="op">+</span> <span class="op">$</span>qu <span class="op">|</span>]</a></code></pre></div>
+<ul>
+<li>Unlike <code>Exp</code>, <code>TExp</code> is an abstract type, so you can’t decompose values of type <code>TExp</code>. All you can do with them is splice them (into a program or a larger quote). Or you can convert to a <code>Q Exp</code> and <em>then</em> decompose, using the existing TH mechanisms. For example</li>
+</ul>
+<div class="sourceCode" id="cb24"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb24-1" title="1"><span class="ot">g ::</span> <span class="dt">TExp</span> <span class="dt">Int</span> <span class="ot">-&gt;</span> <span class="dt">Q</span> <span class="dt">Exp</span></a>
+<a class="sourceLine" id="cb24-2" title="2">g qt <span class="ot">=</span> <span class="kw">do</span> { tree <span class="ot">&lt;-</span> unType qt</a>
+<a class="sourceLine" id="cb24-3" title="3">          ; <span class="kw">case</span> tree <span class="kw">of</span></a>
+<a class="sourceLine" id="cb24-4" title="4">              <span class="dt">VarE</span> v <span class="ot">-&gt;</span> <span class="op">...</span></a>
+<a class="sourceLine" id="cb24-5" title="5">              <span class="dt">ConE</span> c <span class="ot">-&gt;</span> <span class="op">...</span></a>
+<a class="sourceLine" id="cb24-6" title="6">              <span class="op">...</span>etc<span class="op">...</span>  }</a></code></pre></div>
+<ul>
+<li><code>TExp</code> is not a monad, but it is an applicative type constructor, although not quite an instance of <code>Applicative</code> class:</li>
+</ul>
+<div class="sourceCode" id="cb25"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb25-1" title="1">   <span class="fu">pure</span> e   <span class="op">===</span>   [<span class="op">||</span> e <span class="op">||</span>]</a>
+<a class="sourceLine" id="cb25-2" title="2">   f <span class="op">&lt;*&gt;</span> g   <span class="ot">=</span>    [<span class="op">||</span> <span class="op">$$</span>f <span class="op">$$</span>g <span class="op">||</span>]</a></code></pre></div>
+<p>Reminder: the <code>Applicative</code> class looks like this</p>
+<div class="sourceCode" id="cb26"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb26-1" title="1"><span class="kw">class</span> <span class="dt">Applicative</span> f <span class="kw">where</span></a>
+<a class="sourceLine" id="cb26-2" title="2"><span class="ot">  pure ::</span> a <span class="ot">-&gt;</span> f a</a>
+<a class="sourceLine" id="cb26-3" title="3">  <span class="op">&lt;*&gt;</span><span class="ot">  ::</span> f (a<span class="ot">-&gt;</span>b) <span class="ot">-&gt;</span> f a <span class="ot">-&gt;</span> f b</a></code></pre></div>
+<p><code>TExp</code> is only “almost an instance” because <code>pure</code> isn’t a function; its argument must be syntactically quoted.</p>
+<p><strong>Syntax</strong> is always a delicate point. * We could use some other kind of bracket, although brackets are always in short supply; eg <code>(| ... |)</code> or <code>{| ... |}</code>. * We could add Unicode brackets too (suggestions?); but I think we should have ASCII equivalents. * Ian asked whether <code>$(...)</code> could accept either <code>Q Exp</code> or <code>TExp</code>. I think not; we need to know which kind of splice it is before type checking.</p>
+<hr />
+<h2 id="part-c-reification-and-typechecking">Part C: Reification and typechecking</h2>
+<p>The third part of this proposal concerns reification. The Q monad gives you access to the typechecker’s environment. Notably, Template Haskell provides the function</p>
+<div class="sourceCode" id="cb27"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb27-1" title="1"><span class="ot">reify ::</span> <span class="dt">Name</span> <span class="ot">-&gt;</span> <span class="dt">Q</span> <span class="dt">Info</span></a></code></pre></div>
+<p>which, given the <code>Name</code> of a variable, type, or class, looks the <code>Name</code> up in the type environment and returns what the type checker knows about it:</p>
+<div class="sourceCode" id="cb28"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb28-1" title="1"><span class="kw">data</span> <span class="dt">Info</span> <span class="ot">=</span> <span class="dt">TyConI</span>       <span class="co">-- A type</span></a>
+<a class="sourceLine" id="cb28-2" title="2">               <span class="dt">Dec</span>\t        <span class="co">-- Declaration of the type</span></a>
+<a class="sourceLine" id="cb28-3" title="3"></a>
+<a class="sourceLine" id="cb28-4" title="4">          <span class="op">|</span> <span class="dt">ClassI</span>       <span class="co">-- A class</span></a>
+<a class="sourceLine" id="cb28-5" title="5">               <span class="dt">Dec</span>              <span class="co">-- Declaration of the class</span></a>
+<a class="sourceLine" id="cb28-6" title="6">               [<span class="dt">ClassInstance</span>]\t<span class="co">-- The instances of that class</span></a>
+<a class="sourceLine" id="cb28-7" title="7"></a>
+<a class="sourceLine" id="cb28-8" title="8">          <span class="op">...</span>etc<span class="op">...</span></a></code></pre></div>
+<h3 id="what-reify-sees">What reify sees</h3>
+<p>A dark corner of <code>reify</code> is this: what types does <code>reify</code> see? Consider</p>
+<div class="sourceCode" id="cb29"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb29-1" title="1">f x <span class="ot">=</span> (<span class="op">$</span>(<span class="kw">do</span> { xi <span class="ot">&lt;-</span> reify 'x; <span class="op">...</span> }),</a>
+<a class="sourceLine" id="cb29-2" title="2">       x <span class="op">&amp;&amp;</span> <span class="dt">True</span>)</a></code></pre></div>
+<p>Here, <code>reify</code> can be used to examine the type of <code>x</code>. But the type of <code>x</code> isn’t fully known until the type checker has seen the term <code>(x &amp;&amp; True)</code>. So in current TH it’s going to be unpredicatable what you see for <code>x</code>, which is hardly satisfactory.</p>
+<p>It seems to me that the only decent, predictable story is to say that <code>reify</code> can only consult the <em>top-level</em> type environment. More specifically, Template Haskell processes a program top-down:</p>
+<div class="sourceCode" id="cb30"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb30-1" title="1">  <span class="kw">module</span> <span class="dt">M</span> <span class="kw">where</span></a>
+<a class="sourceLine" id="cb30-2" title="2">   <span class="kw">import</span> ...</a>
+<a class="sourceLine" id="cb30-3" title="3">   f x <span class="ot">=</span> x</a>
+<a class="sourceLine" id="cb30-4" title="4">   <span class="op">$</span>(th1 <span class="dv">4</span>)</a>
+<a class="sourceLine" id="cb30-5" title="5">   h y <span class="ot">=</span> k y y <span class="op">$</span>(blah1)</a>
+<a class="sourceLine" id="cb30-6" title="6">   <span class="op">$</span>(th2 <span class="dv">10</span>)</a>
+<a class="sourceLine" id="cb30-7" title="7">   w z <span class="ot">=</span> <span class="op">$</span>(blah2)</a></code></pre></div>
+<p>TH processes this module as follows: 1. Typecheck down to, but not including, the first splice, <code>$(th1 4)</code>. These declarations constitute the first <em>declaration group</em>. 2. Typecheck and run the splice, which returns a bunch of declarations D1 3. Typecheck the declarations D1 combined with the declarations down to, but not including, the second splice. These declarations consitute the second declaration group. 4. Typecheck and run the next splice, <code>$(th2 10)</code> 5. Rinse and repeat</p>
+<p>So the proposal is as follows. A <em>declaration group</em> is the chunk of declarations created by a top-level declaration splice, plus those following it, down to but not includig the next top-level declaration splice. Then <strong>the type environment seen by <code>reify</code> includes all the declaration up to the end of the immediately preceding declaration block, but no more.</strong></p>
+<p>So, in the preceding example: * A <code>reify</code> inside the splice <code>$(th1 ..)</code> would see the definition of <code>f</code>. * A <code>reify</code> inside the splice <code>$(blah)</code> woudl see the definition of <code>f</code>, but would not see any bindings created by <code>$(th1...)</code>. * A <code>reify</code> inside the splice <code>$(th2..)</code> would see the definition of <code>f</code>, all the bindings created by <code>$(th1..)</code>, and teh definition of <code>h</code>. * A <code>reify</code> inside the splice <code>$(blah2)</code> would see the same definitions as the splice <code>$(th2...)</code>.</p>
+<p>This would mean that you could not say</p>
+<div class="sourceCode" id="cb31"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb31-1" title="1">f x <span class="ot">=</span> x</a>
+<a class="sourceLine" id="cb31-2" title="2">g y <span class="ot">=</span> <span class="op">$</span>(<span class="kw">do</span> { info <span class="ot">&lt;-</span> reify 'f; <span class="op">...</span> })</a></code></pre></div>
+<p>because there is no top=level splice between the declaration of <code>f</code> and the splice. But that seems reasonable to me. If you want that behaviour you can say</p>
+<div class="sourceCode" id="cb32"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb32-1" title="1">f x <span class="ot">=</span> x</a>
+<a class="sourceLine" id="cb32-2" title="2"><span class="op">$</span>(<span class="fu">return</span> [])</a>
+<a class="sourceLine" id="cb32-3" title="3">g y <span class="ot">=</span> <span class="op">$</span>(<span class="kw">do</span> { info <span class="ot">&lt;-</span> reify 'f; <span class="op">...</span> })</a></code></pre></div>
+<h3 id="reifying-expressions">Reifying expressions</h3>
+<p>But what about <em>expressions</em>? It would be useful (stand up Kathleen) to have a more elaborate reify, like this:</p>
+<div class="sourceCode" id="cb33"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb33-1" title="1"><span class="ot">typecheck ::</span> [(<span class="dt">Name</span>,<span class="dt">Type</span>)]  <span class="co">-- Extend the type environment with this </span></a>
+<a class="sourceLine" id="cb33-2" title="2">          <span class="ot">-&gt;</span> <span class="dt">Exp</span>\t    <span class="co">-- The expression to typecheck</span></a>
+<a class="sourceLine" id="cb33-3" title="3">          <span class="ot">-&gt;</span> <span class="dt">Q</span> (<span class="dt">Either</span> <span class="dt">String</span> <span class="dt">Type</span>)</a>
+<a class="sourceLine" id="cb33-4" title="4"> <span class="co">-- Typecheck the expression, returning</span></a>
+<a class="sourceLine" id="cb33-5" title="5"> <span class="co">--    Left error-message     if typechecking fails</span></a>
+<a class="sourceLine" id="cb33-6" title="6"> <span class="co">--    Right type             if typechecking succeeds</span></a></code></pre></div>
+<p>(For GHCi users, <code>reify f</code> is like <code>:info f</code>, while <code>typecheck [] (...)</code> is like <code>:type (...)</code>.)</p>
+<p>You might ask whether we <em>can</em> typeckeck an expression; remember, these <code>Q ty</code> things are going to be run in the renamer. But if the type environment is that in force just before the last top-level splice, then all is well: that stuff has been fully typechecked.</p>
+<hr />
+<h2 id="part-d-quasiquotation">Part D: quasiquotation</h2>
+<p>This part is unrelated to the preceding proposals, and is responding to <a href="https://gitlab.haskell.org/ghc/ghc/issues/4372">#4372</a> and <a href="https://gitlab.haskell.org/ghc/ghc/issues/2041">#2041</a>.</p>
+<ul>
+<li>For <a href="https://gitlab.haskell.org/ghc/ghc/issues/2041">#2041</a>, rather than the proposal made there, I think the nicest thing is for <code>Language.Haskell.TH</code> to expose a <em>Haskell</em> quasiquoter:</li>
+</ul>
+<div class="sourceCode" id="cb34"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb34-1" title="1"><span class="ot">parseHaskell ::</span> <span class="dt">QuasiQuoter</span></a></code></pre></div>
+<p>Remember that a <code>QuasiQuoter</code> is a quadruple of parsers:</p>
+<div class="sourceCode" id="cb35"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb35-1" title="1"><span class="kw">data</span> <span class="dt">QuasiQuoter</span> <span class="ot">=</span> <span class="dt">QuasiQuoter</span> {<span class="ot"> quoteExp  ::</span> <span class="dt">String</span> <span class="ot">-&gt;</span> <span class="dt">Q</span> <span class="dt">Exp</span>,</a>
+<a class="sourceLine" id="cb35-2" title="2"><span class="ot">                                 quotePat  ::</span> <span class="dt">String</span> <span class="ot">-&gt;</span> <span class="dt">Q</span> <span class="dt">Pat</span>,</a>
+<a class="sourceLine" id="cb35-3" title="3"><span class="ot">                                 quoteType ::</span> <span class="dt">String</span> <span class="ot">-&gt;</span> <span class="dt">Q</span> <span class="dt">Type</span>,</a>
+<a class="sourceLine" id="cb35-4" title="4"><span class="ot">                                 quoteDec  ::</span> <span class="dt">String</span> <span class="ot">-&gt;</span> <span class="dt">Q</span> [<span class="dt">Dec</span>] }</a></code></pre></div>
+<p>If TH provided such parsers, you could use them to parse antiquotes. That seems better to than having strings in the TH syntax.</p>
+<p>See <a href="https://gitlab.haskell.org/ghc/ghc/issues/4430">#4430</a> for an excellent point about fixities.</p>
+<ul>
+<li><p>For <a href="https://gitlab.haskell.org/ghc/ghc/issues/4372">#4372</a>, I’m a bit agnostic. There is no technical issue here; it’s just about syntax. Read the notes on the ticket.</p></li>
+<li><p>See <a href="https://gitlab.haskell.org/ghc/ghc/issues/4429">#4429</a> for a suggestion about reifying <code>Names</code>.</p></li>
+</ul>
+<hr />
+<h2 id="part-e-other-minor-issues">Part E: Other minor issues</h2>
+<p>This section collects other TH changes that I think should be done.</p>
+<ul>
+<li>The <code>InfixE</code> construtor of <code>Syntax.Exp</code> should only allow a <code>Var</code> in the operator position. See Trac <a href="https://gitlab.haskell.org/ghc/ghc/issues/4877">#4877</a></li>
+</ul>
+
+      </div>
+    </div>
+    <div class="row">
+          </td>
+  </tr>
+</table>
+
+    </div>
+  </div>
+  </body>
+</html>

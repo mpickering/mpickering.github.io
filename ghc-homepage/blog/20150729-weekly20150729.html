@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+  <head>
+    <title>GHC Weekly News - 2015/07/29 — The Glasgow Haskell Compiler</title>
+    <meta http-equiv="Content-Language" content="en-gb">
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css" integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
+    <link href="../ghc.css" rel="stylesheet" type="text/css">
+
+  </head>
+  <body>
+    <header id="header">
+      <span id="header-txt"> GHC </span>
+      <span id="header-name"> The Glasgow Haskell Compiler </span>
+    </header>
+    <div>
+    <div class="row no-gutters">
+      <div id="sidebar" class="col-sm-4">
+       <div class="sticky-top">
+          <div class="navbar-fixed-left">
+	<div class="nav navbar-nav">
+  <span class="nav-title">About GHC</span>
+  <li class="nav-item"> <a class="nav-link" href="../">Home</a> </li>
+  <li class="nav-item"> <a class="nav-link" href="../license.html">License</a> </li>
+  <li class="nav-item"> <a class="nav-link" href="https://haskell.org/haskellwiki/GHC">Documentation</a> </li>
+  <li class="nav-item"> <a class="nav-link" href="../blog.html">Blog</a> </li>
+  <li class="nav-item"> <a class="nav-link" href="../download.html">Download</a> </li>
+  <li class="nav-item"> <a class="nav-link" href="https://gitlab.haskell.org/ghc/ghc/wikis/report-a-bug">Report a bug</a> </li>
+  <li class="nav-item"> <a class="nav-link" href="https://gitlab.haskell.org/ghc/ghc/wikis">Developers Wiki</a> </li>
+  <span class="nav-title">About Haskell</span>
+  <li class="nav-item"> <a class="nav-link" href="https://haskell.org">Haskell.org</a> </li>
+  <li class="nav-item"> <a class="nav-link" href="https://www.haskell.org/haskellwiki/Definition">Haskell 2010 Report</a> </li>
+  <li class="nav-item"> <a class="nav-link" href="https://www.haskell.org/haskellwiki/Mailing_lists">Haskell Mailing Lists</a> </li>
+  <span class="nav-title">Links</span>
+  <li class="nav-item"> <a class="nav-link" href="http://hackage.haskell.org/platform/">Haskell Platform</a> </li>
+  <li class="nav-item"> <a class="nav-link" href="http://hackage.haskell.org/">Hackage</a> </li>
+
+</div>
+</div>
+
+       </div>
+      </div>
+      <div id="content" class="col">
+        <h1>GHC Weekly News - 2015/07/29</h1>
+<h4 class="text-muted">bgamari - 2015-07-29T15:52:19</h4>
+
+<p>Hi *,</p>
+<p>Welcome for the latest entry in the GHC Weekly News. Today GHC HQ met to discuss plans post-7.10.2.</p>
+<h1 id="ghc-7.10.2-release">GHC 7.10.2 release</h1>
+<p>GHC 7.10.2 has been <a href="https://mail.haskell.org/pipermail/haskell/2015-July/024634.html">released</a>!</p>
+<p>Feel free to grab a <a href="https://www.haskell.org/ghc/download_ghc_7_10_2">tarball</a> and enjoy! See the <a href="https://downloads.haskell.org/~ghc/latest/docs/html/users_guide/release-7-10-2.html">release notes</a> for discussion of what has changed.</p>
+<p>As always, if you suspect that you have found a regression don’t hesitate to <a href="https://ghc.haskell.org/trac/ghc/wiki/ReportABug">open a Trac ticket</a>. We are especially interested in performance regressions with fairly minimal reproduction cases.</p>
+<h2 id="ghc-7.10.2-and-the-text-package">GHC 7.10.2 and the <code>text</code> package</h2>
+<p>A few days ago a report came in of long compilations times under 7.10.2 on a program with many <code>Text</code> literals (<a href="https://gitlab.haskell.org/ghc/ghc/issues/10528">#10528</a>). This ended up being due to a change in the simplifier which caused it to perform rule rewrites on the left-hand-side of other rules. While this is questionable (read “buggy”) behavior, it doesn’t typically cause trouble so long as rules are properly annotated with phase control numbers to ensure they are performed in the correct order. Unfortunately, it turns out that the rules provided by the <code>text</code> package for efficiently handling string literals did not include phase control annotations. This resulted in a rule from <code>base</code> being performed on the literal rules, which rendered the literal rules ineffective. The simplifier would then expend a great deal of effort trying to simplify the rather complex terms that remained.</p>
+<p>Thankfully, the <a href="https://github.com/bos/text/pull/129/files">fix</a> is quite straightforward: ensure that the the text literal rules fire in the first simplifier phase (phase 2). This avoids interference from the <code>base</code> rules, allowing them to fire as expected.</p>
+<p>This fix is now present in <code>text-1.2.1.2</code>. <strong>Users of GHC 7.10.2 should be use this release if at all possible.</strong> Thanks to <code>text</code>’s maintainer, Bryan O’Sullivan for taking time out of his vacation to help me get this new release out.</p>
+<p>While this mis-behaviour was triggered by a bug in GHC, a similar outcome could have arisen even without this bug. This highlights the importance of including phase control annotations on <code>INLINE</code> and <code>RULE</code> pragmas: Without them the compiler may choose the rewrite in an order that you did not anticipate. This has also drawn attention to a few shortcomings in the current rewrite rule mechanism, which lacks the expressiveness to encode complex ordering relationships between rules. This limitation pops up in a number of places, including when trying to write rules on class-overloaded functions. Simon Peyton Jones is currently pondering possible solutions to this on <a href="https://gitlab.haskell.org/ghc/ghc/issues/10595">#10595</a>.</p>
+<h1 id="strictdata">StrictData</h1>
+<p>This week we merged the long-anticipated <code>-XStrictData</code> extension (Phab:D1033) by Adam Sandberg Ericsson. This implements a subset of the [StrictPragma] proposal initiated by Johan Tibell.In particular, <code>StrictData</code> allows a user to specify that datatype fields should be strict-by-default on a per-module basis, greatly reducing the syntactic noise introduced by this common pattern. In addition to implementing a useful feature, the patch ended up being a nice clean-up of the GHC’s handling of strictness annotations.</p>
+<p>What remains of this proposal is the more strong <code>-XStrict</code> extension which essentially makes all bindings strict-by-default. Adam has indicated that he may take up this work later this summer.</p>
+<p>$ AMP-related performance regression</p>
+<p>In late May Herbert Valerio Riedel opened Phab:D924, which removed an explicit definition for <code>mapM</code> in the <code>[]</code> <code>Traversable</code> instance, as well as redefined <code>mapM_</code> in terms of <code>traverse_</code> to <a href="https://mail.haskell.org/pipermail/libraries/2015-May/025708.html">bring consistency</a> with the post-AMP world. The patch remains unmerged, however, due to a failing ghci testcase. It turns out the regression is due to the redefinition of <code>mapM_</code>, which uses <code>(*&gt;)</code> where <code>(&gt;&gt;)</code> was once used. This tickles poor behavior in ghci’s <code>ByteCodeAsm</code> module. The problem can be resolved by defining <code>(*&gt;) = (&gt;&gt;)</code> in the <code>Applicative Assembler</code> instance (e.g. Phab:1097). That being said, the fact that this change has already exposed performance regressions raises doubts as to whether it is prudent.</p>
+<h1 id="ghc-performance-work">GHC Performance work</h1>
+<p>Over the last month or so I have been working on nailing down a variety of performance issues in GHC and the code it produces. This has resulted in a number of patches which in some cases dramatically improve compilation time (namely Phab:1012 and Phab:D1041). Now since 7.10.2 is out I’ll again be spending most of my time on these issues. We have heard a number of reports that GHC 7.10 has regressed on real-world programs. If you have a reproducible performance regression that you would like to see addressed please open a Trac ticket.</p>
+<h1 id="merged-patches">Merged patches</h1>
+<ul>
+<li>Phab:D1028: Fixity declarations are now allowed for infix data constructors in GHCi (thanks to Thomas Miedema)</li>
+<li>Phab:D1061: Fix a long-standing correctness issue arising when pattern matching on floating point values</li>
+<li>Phab:D1085: Allow programs to run in environments lacking iconv (thanks to Reid Barton)</li>
+<li>Phab:D1094: Improve code generation in <code>integer-gmp</code> (thanks to Reid Barton)</li>
+<li>Phab:D1068: Implement support for the <code>MO_U_Mul2</code> <code>MachOp</code> in the LLVM backend (thanks to Michael Terepeta)</li>
+<li>Phab:D524: Improve runtime system allocator performance with two-step allocation (thanks to Simon Marlow)</li>
+</ul>
+<p>That’s all for this time. Enjoy your week!</p>
+<p>Cheers,</p>
+<ul>
+<li>Ben</li>
+</ul>
+
+      </div>
+    </div>
+    <div class="row">
+          </td>
+  </tr>
+</table>
+
+    </div>
+  </div>
+  </body>
+</html>

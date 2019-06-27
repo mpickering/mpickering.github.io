@@ -1,0 +1,166 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+  <head>
+    <title>Let generalisation in GHC 7.0 — The Glasgow Haskell Compiler</title>
+    <meta http-equiv="Content-Language" content="en-gb">
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css" integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
+    <link href="../ghc.css" rel="stylesheet" type="text/css">
+
+  </head>
+  <body>
+    <header id="header">
+      <span id="header-txt"> GHC </span>
+      <span id="header-name"> The Glasgow Haskell Compiler </span>
+    </header>
+    <div>
+    <div class="row no-gutters">
+      <div id="sidebar" class="col-sm-4">
+       <div class="sticky-top">
+          <div class="navbar-fixed-left">
+	<div class="nav navbar-nav">
+  <span class="nav-title">About GHC</span>
+  <li class="nav-item"> <a class="nav-link" href="../">Home</a> </li>
+  <li class="nav-item"> <a class="nav-link" href="../license.html">License</a> </li>
+  <li class="nav-item"> <a class="nav-link" href="https://haskell.org/haskellwiki/GHC">Documentation</a> </li>
+  <li class="nav-item"> <a class="nav-link" href="../blog.html">Blog</a> </li>
+  <li class="nav-item"> <a class="nav-link" href="../download.html">Download</a> </li>
+  <li class="nav-item"> <a class="nav-link" href="https://gitlab.haskell.org/ghc/ghc/wikis/report-a-bug">Report a bug</a> </li>
+  <li class="nav-item"> <a class="nav-link" href="https://gitlab.haskell.org/ghc/ghc/wikis">Developers Wiki</a> </li>
+  <span class="nav-title">About Haskell</span>
+  <li class="nav-item"> <a class="nav-link" href="https://haskell.org">Haskell.org</a> </li>
+  <li class="nav-item"> <a class="nav-link" href="https://www.haskell.org/haskellwiki/Definition">Haskell 2010 Report</a> </li>
+  <li class="nav-item"> <a class="nav-link" href="https://www.haskell.org/haskellwiki/Mailing_lists">Haskell Mailing Lists</a> </li>
+  <span class="nav-title">Links</span>
+  <li class="nav-item"> <a class="nav-link" href="http://hackage.haskell.org/platform/">Haskell Platform</a> </li>
+  <li class="nav-item"> <a class="nav-link" href="http://hackage.haskell.org/">Hackage</a> </li>
+
+</div>
+</div>
+
+       </div>
+      </div>
+      <div id="content" class="col">
+        <h1>Let generalisation in GHC 7.0</h1>
+<h4 class="text-muted">simonpj - 2010-09-30T01:53:54</h4>
+
+<p>[Note: updated to GHC 7.2, Sept 2011]</p>
+<p>GHC 7.2 has a completely new type inference engine. The old one had grown to resemble the closing stages of a game of Jenga, in which making any change was a delicate operation that risked bringing the whole edifice crashing down. In particular, there were a dozen open bugs concerning type families that I had no idea how to fix.</p>
+<p>This summer Dimitrios Vytiniotis, Brent Yorgey and I built a completely new inference engine. It rests on a solid technical foundation developed over the last couple of years, in a collaboration with Dimitrios, Tom Schrijvers, and Martin Sulzmann. There is a series of papers that lead up to it, but our JFP submission “<a href="http://haskell.org/haskellwiki/Simonpj/Talk:OutsideIn">Modular type inference with local assumptions</a>” summarises the whole thing in one consistent notation.</p>
+<p>The new engine feels much more solid to me, and indeed I’ve been able to close almost all those open bugs. Doubtless there will be some new ones, but I feel vastly more confident that we can fix them than I did with the old engine.</p>
+<p>One other thing is that the new typechecker has completely swept away the old rather <em>ad-hoc</em> stuff about “rigid” types in GADT pattern matches. So you may find that some GADT programs will typecheck with fewer type annotations than before.</p>
+<p>However, there is one way in which GHC 7.2 will type <em>fewer</em> programs than before, and that is the focus of this post. I want explain what the change is, and how to adapt your code to accommodate it.</p>
+<h2 id="local-polymorphism">Local polymorphism</h2>
+<p>Consider this (contrived) program:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb1-1" title="1"><span class="ot">{-# LANGUAGE ScopedTypeVariables #-}</span></a>
+<a class="sourceLine" id="cb1-2" title="2"></a>
+<a class="sourceLine" id="cb1-3" title="3"><span class="ot">f ::</span> <span class="kw">forall</span> a<span class="op">.</span> a <span class="ot">-&gt;</span> ((a, <span class="dt">Char</span>), (a, <span class="dt">Bool</span>))</a>
+<a class="sourceLine" id="cb1-4" title="4">f x <span class="ot">=</span> (g <span class="ch">'v'</span>, g <span class="dt">True</span>)</a>
+<a class="sourceLine" id="cb1-5" title="5">    <span class="kw">where</span></a>
+<a class="sourceLine" id="cb1-6" title="6"><span class="ot">      g ::</span> <span class="kw">forall</span> b<span class="op">.</span> b <span class="ot">-&gt;</span> (a,b)</a>
+<a class="sourceLine" id="cb1-7" title="7">      g y <span class="ot">=</span> (x,y)</a></code></pre></div>
+<p>This polymorphism is expressed in <code>g</code>’s type signature:</p>
+<ul>
+<li><p><code>g</code> is a <em>polymorphic</em> function, because it is applied both to the character ‘v’ and to the boolean <code>True</code>.</p></li>
+<li><p>However, <code>g</code> is <em>monomorphic</em> in <code>a</code>, because <code>g</code>’s body mentions <code>x</code></p></li>
+</ul>
+<p>The type signature <code>g :: forall b. b -&gt; (a,b)</code> reflects these two points:</p>
+<ul>
+<li><p>The “<code>forall b</code>” says that <code>g</code> is polymorphic in <code>b</code>.</p></li>
+<li><p>The <code>a</code> in the signature must is the <code>a</code> in the type of <code>x</code>. This type variable <code>a</code> is brought into scope, in the body of <code>f</code>, by the <code>forall a</code> in the type signature for <code>f</code>.</p></li>
+</ul>
+<p>The <code>LANGUAGE ScopedTypeVariables</code> pragma (a) allows you to use an explicit “<code>forall</code>” in the type signature for a function <code>f</code>, and (b) brings the <code>forall</code>’d type variables (<code>a</code> in this case) into scope in the body of the function <code>f</code>.</p>
+<h2 id="what-has-changed-in-ghc-7.2">What has changed in GHC 7.2?</h2>
+<p>GHC 6.12 will compile the above program without any type signatures at all. It infers the polymorphic type for <code>g</code>. But, if you are using type families or GADTs, GHC 7.0 will not. More precisely:</p>
+<ul>
+<li><p>The flags <code>-XGADTs</code> or <code>-XTypeFamilies</code>, or the corresponding <code>LANGUAGE</code> pragmas, imply the (new) flag <code>-XMonoLocalBinds</code>.</p></li>
+<li><p>With <code>-XMonoLocalBinds</code>, non-top-level (or <em>local</em>) let/where bindings are not generalised.</p></li>
+<li><p>Remember that <code>-fglasgow-exts</code> implies <code>-XGADTs</code> and hence <code>-XTypeFamilies</code>.</p></li>
+</ul>
+<p>So given the type-signature-free code</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb2-1" title="1"><span class="ot">{-# LANGUAGE MonoLocalBinds #-}</span></a>
+<a class="sourceLine" id="cb2-2" title="2">f x <span class="ot">=</span> (g <span class="ch">'v'</span>, g <span class="dt">True</span>)</a>
+<a class="sourceLine" id="cb2-3" title="3">    <span class="kw">where</span></a>
+<a class="sourceLine" id="cb2-4" title="4">      g y <span class="ot">=</span> (x,y)</a></code></pre></div>
+<p>GHC 7.2 will reject the program with</p>
+<pre><code>Foo.hs:6:17:
+    Couldn't match expected type `Char' with actual type `Bool'
+    In the first argument of `g', namely `True'
+    In the expression: g True
+    In the expression: (g 'v', g True)</code></pre>
+<p>Why? Because the type of <code>g</code> is not generalised, so it can only be applied to either <code>Char</code> or <code>Bool</code> but not both.</p>
+<h2 id="which-bindings-are-affected">Which bindings are affected?</h2>
+<p>In the JFP paper we propose the rule that <em>local bindings are not generalised</em>, where “local” means “syntactically not top level”. This was the rule implemented by GHC 7.0.</p>
+<p>However GHC 7.2 relaxes the restriction slightly. Consider</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb4-1" title="1"><span class="ot">{-# LANGUAGE MonoLocalBinds #-}</span></a>
+<a class="sourceLine" id="cb4-2" title="2">f x <span class="ot">=</span> (k <span class="ch">'v'</span>, k <span class="dt">True</span>)</a>
+<a class="sourceLine" id="cb4-3" title="3">    <span class="kw">where</span></a>
+<a class="sourceLine" id="cb4-4" title="4">      h y <span class="ot">=</span> (y,y)  <span class="co">-- Note: x is not mentioned</span></a>
+<a class="sourceLine" id="cb4-5" title="5">      k z <span class="ot">=</span> (h z, h z)</a></code></pre></div>
+<p>Now the binding for <code>h</code> is “local” in the sense that it is not syntactically top-level, but it has no free variables, so it <em>could have been</em> top-level. Similarly, <code>k</code> is “local” but only mentions <code>h</code> which could have been top-level, and hence <code>k</code> could be top-level too. GHC 7.2 spots this, and generalises both just as if they had been top level.</p>
+<p>Here’s the rule. With <code>-XMonoLocalBinds</code> (the default), a binding without a type signature is <strong>generalised only if all its free variables are closed</strong>.</p>
+<p>A binding is <strong>closed</strong> if and only if * It has a type signature, and the type signature has no free variables; or * It has no type signature, and all its free variables are closed, and it is unaffected by the monomorphism restriction. And hence it is fully generalised.</p>
+<p>In our example, <code>h</code> has no free variables and hence is generalised; moreover, <code>k</code> has free variable <code>h</code>, but it is closed, so <code>k</code> too can be generalised.</p>
+<p>Here’s another example:</p>
+<div class="sourceCode" id="cb5"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb5-1" title="1">x <span class="ot">=</span> <span class="dv">4</span> <span class="op">+</span> <span class="dv">5</span></a>
+<a class="sourceLine" id="cb5-2" title="2">y <span class="ot">=</span> x <span class="op">+</span> <span class="dv">7</span></a></code></pre></div>
+<p>Both bindings are top-level, but <code>x</code> falls under the Monomorphism Restriction and is not generalised for that reason. So <code>x</code> is not closed. Hence <code>y</code> is not generalised either, since it has a non-closed free variable <code>x</code>. (This really fixes a bug in GHC 7.0 which erroneously generalised <code>y</code> because it was syntactically top level.)</p>
+<h2 id="how-can-i-fix-my-program">How can I fix my program?</h2>
+<p>Almost all code doesn’t need local let definitions to have a polymorphic type, because the function is only used at one type. But not all. There are two ways to fix your program if it falls over because of the <code>MonoLocalBinds</code> change.</p>
+<ul>
+<li><p>Check whether you need <code>-XGADTs</code> or <code>-XTypeFamilies</code>. If you are using the blunderbuss <code>-fglasgow-exts</code>, replace it with proper <code>LANGUAGE</code> pragmas.</p></li>
+<li><p>The good way is simply give a type signature to the local definition, as I did for <code>g</code> above. Writing such a type signature may force you to use <code>{-# LANGUAGE ScopedTypeVariables #-}</code> as the above example showed. My experience is that the code is easier to understand with the type signature.</p></li>
+<li><p>The <code>-XGADTs</code> or <code>-XTypeFamilies</code> pragmas switch on <code>MonoLocalBinds</code> but, if you want, you can override it with <code>-XNoMonoLocalBinds</code> (or the equivalent <code>LANGUAGE</code> pragma). The type checker will then do its best to generalise local bindings, and your program will almost certainly work. However, I don’t know how to guarantee any good properties of the type inference algorithm. So I think this is ok as as short term fix, but I’d like to encourage you to add that handful of type signatures instead.</p></li>
+</ul>
+<p>You may not be very familiar with the code, so it can be tricky to work out what type the local definition should have. (That’s one reason I think that the code is improved by having a type signature!) With this in mind I’ve added a new warning flag <code>-fwarn-missing-local-sigs</code>, which prints a warning, and the type, of any <em>polymorphic</em> local binding that lacks a type signature. So you can follow this procedure: * Compile with <code>-XNoMonoLocalBinds -fwarn-missing-local-sigs</code>. The first flag makes it compile, and the second shows you the types. * Compile with neither flag, getting some errors. * Add type signatures to cure the errors, using the types printed out in the first step.</p>
+<p>Adding the type signature is completely compatible with GHC 6.12 etc, so you shouldn’t need any conditional compilation if you want to compile your code with multiple versions of GHC.</p>
+<h2 id="a-second-bigger-example">A second, bigger example</h2>
+<p>One relatively common situation in which you need a local type signature is when you use <code>runST</code> with some auxiliary definitions.<br />
+Here is a typical example:</p>
+<div class="sourceCode" id="cb6"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb6-1" title="1"><span class="ot">{-# LANGUAGE ScopedTypeVariables #-}</span></a>
+<a class="sourceLine" id="cb6-2" title="2"><span class="kw">module</span> <span class="dt">Test</span> <span class="kw">where</span></a>
+<a class="sourceLine" id="cb6-3" title="3"><span class="kw">import</span> <span class="dt">Control.Monad.ST</span></a>
+<a class="sourceLine" id="cb6-4" title="4"><span class="kw">import</span> <span class="dt">Data.STRef</span></a>
+<a class="sourceLine" id="cb6-5" title="5"></a>
+<a class="sourceLine" id="cb6-6" title="6"><span class="ot">foo ::</span> <span class="kw">forall</span> a<span class="op">.</span> <span class="dt">Bool</span> <span class="ot">-&gt;</span> a <span class="ot">-&gt;</span> a <span class="ot">-&gt;</span> a</a>
+<a class="sourceLine" id="cb6-7" title="7">foo b x y <span class="ot">=</span> runST (<span class="kw">do</span> { r <span class="ot">&lt;-</span> newSTRef x; fill r; readSTRef r })</a>
+<a class="sourceLine" id="cb6-8" title="8">          <span class="kw">where</span></a>
+<a class="sourceLine" id="cb6-9" title="9">            <span class="co">-- fill :: forall s. STRef s a -&gt; ST s ()</span></a>
+<a class="sourceLine" id="cb6-10" title="10">            fill r <span class="ot">=</span> <span class="kw">case</span> b <span class="kw">of</span></a>
+<a class="sourceLine" id="cb6-11" title="11">                       <span class="dt">True</span>  <span class="ot">-&gt;</span> <span class="fu">return</span> ()</a>
+<a class="sourceLine" id="cb6-12" title="12">                       <span class="dt">False</span> <span class="ot">-&gt;</span> writeSTRef r y</a>
+<a class="sourceLine" id="cb6-13" title="13"></a>
+<a class="sourceLine" id="cb6-14" title="14"><span class="co">-- runST :: forall a. (forall s. ST s a) -&gt; a</span></a>
+<a class="sourceLine" id="cb6-15" title="15"><span class="co">-- newSTRef   :: a -&gt; ST s (STRef s a)</span></a>
+<a class="sourceLine" id="cb6-16" title="16"><span class="co">-- readSTRef  :: STRef s a -&gt; ST s a</span></a>
+<a class="sourceLine" id="cb6-17" title="17"><span class="co">-- writeSTRef :: STRef s a -&gt; a -&gt; ST s ()</span></a></code></pre></div>
+<p>The function <code>foo</code> is a bit contrived, but it’s typical of the way in which <code>runST</code> is often used. We allocate a reference cell, containing <code>x</code>, call <code>fill</code>, and then read out what is now in the reference cell.<br />
+All <code>fill</code> does is overwrite the cell if <code>b</code> is <code>False</code>. So <code>foo</code> is really an elaborate <code>if</code> function.</p>
+<p>But in GHC 7.0, with <code>-XMonoLocalBinds</code> (or <code>-XGADTs</code>, <code>-XTypeFamilies</code>), the program will be rejected with this alarming-seeming error message</p>
+<pre><code>Foo.hs:7:11:
+    Couldn't match type `s' with `s1'
+      because this skolem type variable would escape: `s1'
+    This skolem is bound by the polymorphic type `forall s. ST s a'
+    The following variables have types that mention s
+      fill :: STRef s a -&gt; ST s () (bound at Foo.hs:10:11)
+    In the first argument of `runST', namely
+      `(do { r &lt;- newSTRef x; fill r; readSTRef r })'</code></pre>
+<p>Remember, <code>fill</code> has not been generalised, so it gets a monomorphic type. That in turn means that the argument to <code>runST</code> is not polymorphic enough.</p>
+<p>Despite its scariness, in some ways the error message identifies the problem more clearly than the previous example. In particular, the error message identifies <code>fill</code> as the culprit.<br />
+You can fix it the same way as before, by adding a signature for <code>fill</code>; I’ve put it in a comment above.</p>
+<h2 id="why-make-this-change">Why make this change?</h2>
+<p>At first this change seems like retrograde step, so why did we make it? It’s a long story, but the short summary is this: I don’t know how to build a reliable, predictable type inference engine for a type system that has both (a) generalisation of local let/where and (b) local type equality assumptions, such as those introduced by GADTs. The story is told in our paper “<a href="http://research.microsoft.com/en-us/um/people/simonpj/papers/constraints/index.htm">Let should not be generalised</a>” and, at greater length, in the journal version “<a href="http://haskell.org/haskellwiki/Simonpj/Talk:OutsideIn">Modular type inference with local assumptions</a>”.</p>
+
+      </div>
+    </div>
+    <div class="row">
+          </td>
+  </tr>
+</table>
+
+    </div>
+  </div>
+  </body>
+</html>

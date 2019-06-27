@@ -1,0 +1,141 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+  <head>
+    <title>GHC Infrastructure Update — The Glasgow Haskell Compiler</title>
+    <meta http-equiv="Content-Language" content="en-gb">
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css" integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
+    <link href="../ghc.css" rel="stylesheet" type="text/css">
+
+  </head>
+  <body>
+    <header id="header">
+      <span id="header-txt"> GHC </span>
+      <span id="header-name"> The Glasgow Haskell Compiler </span>
+    </header>
+    <div>
+    <div class="row no-gutters">
+      <div id="sidebar" class="col-sm-4">
+       <div class="sticky-top">
+          <div class="navbar-fixed-left">
+	<div class="nav navbar-nav">
+  <span class="nav-title">About GHC</span>
+  <li class="nav-item"> <a class="nav-link" href="../">Home</a> </li>
+  <li class="nav-item"> <a class="nav-link" href="../license.html">License</a> </li>
+  <li class="nav-item"> <a class="nav-link" href="https://haskell.org/haskellwiki/GHC">Documentation</a> </li>
+  <li class="nav-item"> <a class="nav-link" href="../blog.html">Blog</a> </li>
+  <li class="nav-item"> <a class="nav-link" href="../download.html">Download</a> </li>
+  <li class="nav-item"> <a class="nav-link" href="https://gitlab.haskell.org/ghc/ghc/wikis/report-a-bug">Report a bug</a> </li>
+  <li class="nav-item"> <a class="nav-link" href="https://gitlab.haskell.org/ghc/ghc/wikis">Developers Wiki</a> </li>
+  <span class="nav-title">About Haskell</span>
+  <li class="nav-item"> <a class="nav-link" href="https://haskell.org">Haskell.org</a> </li>
+  <li class="nav-item"> <a class="nav-link" href="https://www.haskell.org/haskellwiki/Definition">Haskell 2010 Report</a> </li>
+  <li class="nav-item"> <a class="nav-link" href="https://www.haskell.org/haskellwiki/Mailing_lists">Haskell Mailing Lists</a> </li>
+  <span class="nav-title">Links</span>
+  <li class="nav-item"> <a class="nav-link" href="http://hackage.haskell.org/platform/">Haskell Platform</a> </li>
+  <li class="nav-item"> <a class="nav-link" href="http://hackage.haskell.org/">Hackage</a> </li>
+
+</div>
+</div>
+
+       </div>
+      </div>
+      <div id="content" class="col">
+        <h1>GHC Infrastructure Update</h1>
+<h4 class="text-muted">Ben Gamari - 2019-04-03T12:51:28</h4>
+
+<p>Around five months ago I proposed that we undertake what became a comprehensive rebuild of GHC’s infrastructure. Since November we have been quietly working behind the scenes to make this new infrastructure a reality; this has been a massive project and however I’m happy to say we are now emerging on the other side and we are very happy with the result.</p>
+<p>In this post I want to take this opportunity to describe why this project was needed, what it has entailed, and where it has brought us. Enjoy!</p>
+<h1 id="motivation">Motivation</h1>
+<p>Most of our users are aware that GHC is an old project: the <a href="https://haskell.org/ghc/download_ghc_029.shtml">earliest release</a> I have found is GHC 0.29, released nearly 23 years ago.</p>
+<p>In addition to being old, GHC is also a large project and, like most large projects, has a significant amount of infrastructure to keep things moving smoothly. Before the migation this infrastructure included:</p>
+<ul>
+<li><a href="https://gitolite.com/gitolite/">gitolite</a>, our repository hosting service (<code>git.haskell.org</code>)</li>
+<li>home-grown infrastructure for maintaining git mirrors to and from GitHub our homepage (<code>haskell.org/ghc</code>)</li>
+<li><a href="https://trac.edgewall.org/">Trac</a>, our issue tracker and wiki (<code>ghc.haskell.org/trac/ghc</code>)</li>
+<li>a number of home-grown linting scripts for ensuring code quality and preventing mistakes</li>
+<li><a href="https://phabricator.com/">Phabricator</a>, our code review tool (<code>phabricator.haskell.org</code>)</li>
+<li>our continuous integration services (Phabricator and more recently CircleCI/Appveyor)</li>
+</ul>
+<p>While this all worked reasonably well it was not without its share of pain-points. These issues ranged from minor (e.g. a constant trickle of effort going towards maintaining consistency between Phabricator, <code>git</code>, and Trac) to serious (e.g. our servers stuck on a soon-to-be deprecated Debian release; a need for constant fiddling to keep CI builders running). Nevertheless, none of these issues seemed significant enough to force any immediate change.</p>
+<p>This calculation changed around twelve months ago, when we received word that Rackspace would be ending its open-source software program, which graciously provided hosting for our servers for the last six years (thank you, Rackspace!).</p>
+<p>Our first inclination was to simply rebuild GHC’s existing services on a new hosting provider. However, as I began this process in the summer of 2018 the scale of the challenge became apparent. Not only was our primary server an organic mix of scripts and configuration with varying degrees of documentation, but some of our services ranged from unsupported (e.g. Phabricator, which no longer supported non-paying customers), to infrequently maintained (e.g. many of the plugins used by our Trac instance have not had a release in four years or more), to obsolete (e.g. we still used gitolite v2, which has been deprecated for years),</p>
+<p>In light of this, it seemed clear that simply rebuilding our existing infrastructure would prove to be a mistake: despite requiring a significant investment in resources, the rebuild would solve none of the friction that our existing infrastructure incurred and would likely once again devolve into an difficult-to-maintain jungle of configuration. If there was ever a time to change it was now.</p>
+<p>However, to complicate matters we were already deep in a rebuild of our continuous integration infrastructure, building upon CircleCI and Appveyor, to support our new six-month release cadence. While this change was in many ways a great improvement over our previous CI infrastructure, it also introduced a number of integration challenges (i.e. tying build results back to Phabricator) that we were still in the process of trying to solve.</p>
+<h1 id="planning-the-migration">Planning the migration</h1>
+<p>To replace our infrastructure there were two serious contenders: GitHub and GitLab. Happily, both options would move us towards a more git-centric contribution workflow, addressing one of the greatest concerns that potential contributors expressed in our development priorities survey last fall.</p>
+<p>While other projects (namely Rust) have demonstrated that it is possible to maintain a large-scale open-source project on GitHub, it was far from clear that GHC could pull this off with our comparatively limited resources and significantly larger legacy migration needs (e.g. we concluded early on that any migration must faithfully preserve GHC’s ticket history, including ticket numbers).</p>
+<p>In addition, GitLab was been sucessfully adopted by <a href="https://www.gnome.org/">GNOME</a>, and <a href="https://freedesktop.org/">freedesktop.org</a>, with <a href="https://kde.org/">KDE</a>’s making motions towards a migration as well.</p>
+<p>For these and other reasons that are well-covered <a href="https://mail.haskell.org/pipermail/ghc-devs/2018-October/016425.html">elsewhere</a> GitLab seemed like a better fit for GHC’s needs.</p>
+<p>By early November 2018 there was consensus to move ahead with a migration to move GHC to GitLab. To keep the migration managable, we carefully limited the <a href="https://gitlab.haskell.org/ghc/ghc/wikis/git-lab-migration">project’s scope</a> to migrate code review, repository hosting, ticket tracking, and the wiki, leaving any continuous integration migration for future work.</p>
+<h1 id="starting-work">Starting work</h1>
+<p>In mid-November we started work on the migration as two parallel efforts:</p>
+<ul>
+<li><em>phase 1</em>: migrating repository hosting and code review</li>
+<li><em>phase 2</em>: migrating ticket tracking and the wiki</li>
+</ul>
+<p>Phase 1 was intended to be a small project, allowing us to migrate quickly to our new code review platform and begin the process of decommissioning our old systems.</p>
+<p>Phase 2 was significantly riskier, involving the migration of 16,000 tickets, carrying over 100,000 comments of human-written markup. Thankfully, we had the benefit of being able to <a href="https://gitlab.haskell.org/bgamari/trac-to-remarkup">build upon</a> Matthew Pickering’s <a href="https://mail.haskell.org/pipermail/ghc-devs/2017-January/013500.html">previous</a> prototype infrastructure for migrating Trac tickets to Maniphest, Phabricator’s issue tracker.</p>
+<h1 id="phase-1-and-scope-creep">Phase 1 and scope creep</h1>
+<p>It is sometimes said that no plan survives first contact with reality; GHC’s migration plan was no exception. In early December 2018 we were <a href="https://mail.haskell.org/pipermail/ghc-devops-group/2018-December/000273.html">notified</a> that imminent changes to CircleCI’s pricing model would essentially preclude further use of the platform. While GitLab provided us with a convenient alternative to CircleCI, this development significantly enlarged the previously carefully-bounded scope of our migration plan.</p>
+<p>While CircleCI generously provided us with a two-week extension to our (free) CI plan, the weeks that followed were a scramble to rebuild our CI infrastructure before support vanished.</p>
+<p>Regardless, by late December we had finished phase 1 of the migration, including rudimentary CI support, and designated <a href="https://gitlab.haskell.org/ghc/ghc" class="uri">https://gitlab.haskell.org/ghc/ghc</a> as GHC’s official upstream source repository.</p>
+<p>Throughout this process we were lucky to have the support of GitLab’s director of community relations, David Planella. David has been an invaluable resource, helping us plan our migration and quickly draw attention to the occassional bug report.</p>
+<p>Moreover, GitLab was remarkably responsive to the pain-points that we encountered in our workflow. While many examples can be found via the GHC migration <a href="https://gitlab.com/gitlab-org/gitlab-ce/issues/55039">tracking ticket</a>, one in particular stands out: soon after moving code review to GitLab we quickly found that our use of the “fast-forward only” merge strategy (necessary to preserve bisectability), coupled with our long six-hour CI build times, resulted in a <a href="https://gitlab.com/gitlab-org/gitlab-ce/issues/55039#note_127882246">very poor patch merge workflow</a>. While we adopted <a href="https://github.com/smarkets/marge-bot">marge-bot</a> as a near-term workaround, David and James of GitLab were happy to hear out and reflect on our use-case, using our experience to design the <a href="https://gitlab.com/gitlab-org/gitlab-ee/issues/9186">merge train feature</a> that will be available in a coming GitLab release.</p>
+<h1 id="wiki-and-ticket-migration">Wiki and ticket migration</h1>
+<p>Phase 2 of the migration involved migrating GHC’s tickets and nearly wiki pages to GitLab. For the former we used a relatively straightforward <a href="https://gitlab.haskell.org/bgamari/trac-to-remarkup/blob/master/src/Trac/Parser.hs">parser</a> of Trac’s markup syntax and a simple <a href="https://gitlab.haskell.org/bgamari/trac-to-remarkup/blob/master/src/Trac/Writer.hs">pretty-printer</a>.</p>
+<p>While this worked well enough for ticket descriptions and comments, its performance on Wiki pages was unacceptably poor due to syntactic ambiguity and the significantly richer markup used in wiki pages. To handle this we augmented our conversion script with an HTML parser to back out Markdown from rendered Trac wiki pages. While inelegant, this approach was significantly better in preserving the rich markup found in many wiki pages.</p>
+<p>After several dry-run migrations in Janary and February the conversion quality was deemed acceptable by early March, with the final migration being carried out on 9 March 2019. This was a bit later than our goal of finishing the final import by mid-February, but this wasn’t surprising. given the scale of the task.</p>
+<h1 id="improving-ci-coverage">Improving CI coverage</h1>
+<p>Testing the many configurations supported by GHC has been a challenge on each of the CI platforms we have used. Most recently, while CircleCI offered many benefits, it complicated testing of non-x86-64/Linux targets due to the platform’s limited operating system support, build time limits, and the high cost of build time. In this respect the move to GitLab opened up a number of opportunities.</p>
+<p>Throughout February and March 2019 we focused on extending the CI infrastructure we built in phase 1 to cover these non-standard configurations. As of today, every GHC merge request is tested on over a dozen operating system/architecture/build-parameter configurations, with binary distribution artifacts produced and archived for most of these.</p>
+<p>In addition to plain GHC builds, we have also realized the long-sought goal of regularly testing GHC snapshots against user code. For this we have incorporated Herbert Valerio Riedel’s <a href="http://github.com/hvr/head.hackage">head.hackage</a> patch-set with Matthew Pickering’s <a href="https://github.com/mpickering/ghc-artefact-nix">ghc-artefact-nix</a> nix expression. In conjunction with some glue logic this combination gives us the ability to test CI-produced binary distributions against a several dozen Hackage packages, with more to be added in the future.</p>
+<p>In addition to testing for regressions in correctness, our <code>head.hackage</code> CI records compile-time and allocation metrics, allowing us to track compiler performance on real-world Haskell code. We hope that this will provide better insight into GHC’s compile-time costs and expect to use this insight in future work on improving compiler performance.</p>
+<h1 id="further-automation">Further automation</h1>
+<p>One of the major motivations for the move to GitLab was the promise of consolidating and automating more project management tasks, removing human bottlenecks and increasing GHC’s bus factor. Towards this end we have automated many of the more mundane aspects of GHC’s infrastructure:</p>
+<ul>
+<li>CI-triggered builds of the <a href="https://gitlab.haskell.org/ghc/ci-images">Docker images</a> on which our CI processes are built</li>
+<li>automated deployment of GHC <a href="https://ghc.gitlab.haskell.org/ghc/doc/">documentation snapshots</a></li>
+<li>automated generation and deployment of GHC’s <a href="http://gitlab.haskell.org/ghc/homepage">website</a> (including this blog)</li>
+<li>well-documented, version-controlled, and maintainable configuration for our servers and CI runners built upon <a href="https://nixos.org/">NixOS</a></li>
+</ul>
+<p>While each of these investments is small, we hope that making them now will pay dividends in more development time to work on GHC itself in the years to come.</p>
+<h1 id="documenting-the-development-process">Documenting the development process</h1>
+<p>The move to GitLab has meant that we redesign many of the conventions and protocols used in the course of GHC’s development. In this process we have taken the opportunity to more coherently document these conventions. From GHC’s <a href="https://gitlab.haskell.org/ghc/ghc/wikis/contributing#working-conventions">Working Conventions</a> page contributors will now find links the comprehensive documentation describing GHC’s <a href="https://gitlab.haskell.org/ghc/ghc/wikis/gitlab/issues">ticket triage</a> and <a href="https://gitlab.haskell.org/ghc/ghc/wikis/gitlab/merge-requests">code review</a> protocols.</p>
+<p>We have also rewritten our <a href="https://gitlab.haskell.org/ghc/ghc/wikis/contributing#newcomers-to-ghc">newcomer’s documentation</a>, making it easier for someone new to GHC development to get from forking the compiler to submitting a patch.</p>
+<h1 id="what-remains-to-be-done">What remains to be done</h1>
+<p>While the dust from the migration has started to settle, there is still <a href="https://gitlab.haskell.org/bgamari/gitlab-migration">plenty</a> to be done. While the wiki import is done, there is still a great deal of cleanup that remains. If you have a few idle minutes feel free to <a href="https://gitlab.haskell.org/ghc/ghc/wikis">browse around</a> looking for import mistakes and spurious Trac references.</p>
+<p>There is also much to be done to further improve the state of GHC’s continuous integration jobs. From fixing broken tests on Windows, via contributing a FreeBSD builder, to making the <code>head.hackage</code> job output more legible, there are plenty of ways in which we appreciate helps.</p>
+<p>Additionally for the 8.10 release cycle we would like to greatly increase the size of the package set tested by <code>head.hackage</code> and automate the publication of the <code>head.hackage.org</code> package repository. This will allow all users to easily test their packages against GHC snapshots and prereleases and will further shrink GHC’s development feedback cycle.</p>
+<p>Finally, one of the casualties of the GitLab migration has been the 8.8 release schedule, which was originally slated to culminate with the 8.8.1 in mid-March. However, this is a topic I will leave to discuss in another blog post.</p>
+<h1 id="closing-thoughts">Closing thoughts</h1>
+<p>Needless to say, the last few months have been a whirlwind. However, we think that the result is quite exciting. Not only is GHC’s test infrastructure both more reliable and thorough than it has ever been, but the tools with which the project is developed, released, and maintained are more sustainable and far more inviting to newcomers than they were only six short months ago.</p>
+<p>If you are interested in contributing to GHC, but so far have been intimidated by our tools, we encourage you to give it another go. Start from the <a href="https://gitlab.haskell.org/ghc/ghc/wikis/contributing#newcomers-to-ghc">newcomer’s guide</a>, browse our list of <a href="https://gitlab.haskell.org/ghc/ghc/issues?label_name=newcomer">newcomer-friendly tickets</a>, and pick something that suits your skills. As always, if you ever get stuck or find some documentation that is unclear, just ping us on <code>#ghc</code> on Freenode or on <a href="https://mail.haskell.org/mailman/listinfo/ghc-devs">ghc-devs</a>.</p>
+<h1 id="acknowledgements">Acknowledgements</h1>
+<p>This migration would not have been possible without people both inside and outside of the Haskell community:</p>
+<ul>
+<li>Matthew Pickering for his help in configuring and maintaining our GitLab instance, including many thankless hours debugging <code>marge-bot</code></li>
+<li>Takenobu Tani for his attention to detail in spotting and fixing issues with GHC’s wiki and documentation both before and after the migration</li>
+<li>Tobias Dammers for his work on the import script and help cleaning up the wiki</li>
+<li><a href="https://packet.com/">Packet</a> for generously offering their excellent hosting services</li>
+<li>Google X, Serokell, and Packet for their sponsorship of our CI infrastructure</li>
+<li>Carter Schonwald for his work in looking after our macOS builder</li>
+<li>Davean Scies and Futureice for their donations of GHC’s macOS builders</li>
+<li>The members of the <a href="https://gitlab.haskell.org/ghc/ghc/wikis/dev-ops-group-charter">GHC devops group</a> for their consideration and feedback over the course of the migration.</li>
+<li>David Planella and everyone at GitLab for their help executing the migration</li>
+<li>All of GHC’s users and contributors for their patience while we worked our way through this migration</li>
+</ul>
+
+      </div>
+    </div>
+    <div class="row">
+          </td>
+  </tr>
+</table>
+
+    </div>
+  </div>
+  </body>
+</html>

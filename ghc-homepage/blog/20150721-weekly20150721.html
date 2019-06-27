@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+  <head>
+    <title>GHC Weekly News - 2015/07/21 — The Glasgow Haskell Compiler</title>
+    <meta http-equiv="Content-Language" content="en-gb">
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css" integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
+    <link href="../ghc.css" rel="stylesheet" type="text/css">
+
+  </head>
+  <body>
+    <header id="header">
+      <span id="header-txt"> GHC </span>
+      <span id="header-name"> The Glasgow Haskell Compiler </span>
+    </header>
+    <div>
+    <div class="row no-gutters">
+      <div id="sidebar" class="col-sm-4">
+       <div class="sticky-top">
+          <div class="navbar-fixed-left">
+	<div class="nav navbar-nav">
+  <span class="nav-title">About GHC</span>
+  <li class="nav-item"> <a class="nav-link" href="../">Home</a> </li>
+  <li class="nav-item"> <a class="nav-link" href="../license.html">License</a> </li>
+  <li class="nav-item"> <a class="nav-link" href="https://haskell.org/haskellwiki/GHC">Documentation</a> </li>
+  <li class="nav-item"> <a class="nav-link" href="../blog.html">Blog</a> </li>
+  <li class="nav-item"> <a class="nav-link" href="../download.html">Download</a> </li>
+  <li class="nav-item"> <a class="nav-link" href="https://gitlab.haskell.org/ghc/ghc/wikis/report-a-bug">Report a bug</a> </li>
+  <li class="nav-item"> <a class="nav-link" href="https://gitlab.haskell.org/ghc/ghc/wikis">Developers Wiki</a> </li>
+  <span class="nav-title">About Haskell</span>
+  <li class="nav-item"> <a class="nav-link" href="https://haskell.org">Haskell.org</a> </li>
+  <li class="nav-item"> <a class="nav-link" href="https://www.haskell.org/haskellwiki/Definition">Haskell 2010 Report</a> </li>
+  <li class="nav-item"> <a class="nav-link" href="https://www.haskell.org/haskellwiki/Mailing_lists">Haskell Mailing Lists</a> </li>
+  <span class="nav-title">Links</span>
+  <li class="nav-item"> <a class="nav-link" href="http://hackage.haskell.org/platform/">Haskell Platform</a> </li>
+  <li class="nav-item"> <a class="nav-link" href="http://hackage.haskell.org/">Hackage</a> </li>
+
+</div>
+</div>
+
+       </div>
+      </div>
+      <div id="content" class="col">
+        <h1>GHC Weekly News - 2015/07/21</h1>
+<h4 class="text-muted">bgamari - 2015-07-21T19:20:38</h4>
+
+<p>Hi *,</p>
+<p>Welcome for the latest entry in the GHC Weekly News. Today GHC HQ met to discuss the status of the imminent 7.10.2 release.</p>
+<h1 id="status">7.10.2 Status</h1>
+<p>In the past weeks we have been busily tracking down a number of regressions in the <code>ghc-7.10</code> branch. At this point we have built up an impressive <a href="https://ghc.haskell.org/trac/ghc/wiki/Status/GHC-7.10.2">list</a> of fixes. Thanks to everyone who has helped in this process!</p>
+<p>In addition to resolving a number of simplifier regressions and portability issues (some mentioned in the Weekly News from 6 July), GHC 7.10.2 should be the first release which works out-of-the-box with GHCJS, thanks to a fix from Luite Stegeman. Moreover, we will have support for running in even the most minimal container environment (<a href="https://gitlab.haskell.org/ghc/ghc/issues/10623">#10623</a>).</p>
+<p>At this point we have successfully tested the pre-release against Stackage (thanks for Michael Snoyman and Herbert Valerio Riedel for making this possible) and have found no major issues. A source tarball will be finalized and sent to the binary builders today. With luck we will have releasable binaries by the end of the week.</p>
+<h1 id="things">7.11 Things</h1>
+<h2 id="testing">Testing</h2>
+<p>Thomas Miedema has been doing some amazing work fixing some long-standing validation failures on the <code>master</code> branch. Moreover, he has been examining the viability of enabling <a href="https://phabricator.haskell.org/D1074">larger swaths</a> of the testsuite in Harbormaster validations.</p>
+<p>In addition, Thomas has been doing some great work smoothing over a variety of rough edges in the build system and generally keeping things running smoothly. Thanks Thomas!</p>
+<h2 id="typeable-implementation">Typeable implementation</h2>
+<p>Another subject of discussion in this week’s GHC call was <a href="https://phabricator.haskell.org/D757">Phabricator D757</a>, a long-languishing change which moves the generation of <code>Typeable</code> instances from types’ use sites to their definition sites. This change involves a trade-off as it moves compilation effort to the defining module, which will adversely affect compilation times of modules defining many types. Moreover, in the event that <code>Typeable</code> is never actually used this time is wasted effort. That being said, the current design of generating <code>Typeable</code> instances at the point of use makes the class a bit of a black sheep at the moment.</p>
+<h2 id="runtime-system-matters">Runtime system matters</h2>
+<p>This week Simon Marlow will merge his <a href="https://phabricator.haskell.org/D524">D524</a>, a rework of the runtime system’s allocator which he reports has improved performance significantly in his workloads. This commit splits the concerns of reserving address space and requesting backing memory for this address space. While the former is relatively cheap, the latter can be quite expensive due to page-table setup. Consequently, his rework allocates a large chunk of addressing space up front and then incrementally commits it as needed. Interested readers are encouraged to look at the patch, which offers a nice glimpse into the inner workings of GHC’s memory allocator.</p>
+<p>Simon also has finished Phab:D1076, which should improve garbage collector performance by reworking the logic responsible for scavenging static objects. This work will be merged shortly.</p>
+<p>Also discussed was the profiler mis-attribution issue mentioned in the Weekly News from 6 July 2015 (<a href="https://gitlab.haskell.org/ghc/ghc/issues/10007">#10007</a>). Peter Wortmann is currently looking at this issue, which ends up being due to an infelicity in the semantics implemented by the runtime system. Simon Marlow expressed that he did not know of a way to resolve this that isn’t quite invasive. We will have to see what Peter proposes.</p>
+<h2 id="applicative-do">Applicative <code>do</code></h2>
+<p>For some time now Simon Marlow has been working on <a href="https://phabricator.haskell.org/D729">implementing</a> the [[ApplicativeDo]] proposal. Today in the call we discussed the status of this work and concluded that while some refactoring is likely possible, the work can be merged as-is. Hopefully at some point in the next few weeks this work will land.</p>
+<h2 id="haddock-comments-for-gadt-constructors">Haddock comments for GADT constructors</h2>
+<p>It came to our attention that the GHC parser was unable to parse Haddock comments attached to GADT constructors. As it turns out, this is a rather long-standing problem. Despite this fact, the <a href="https://phabricator.haskell.org/D1086">fix</a> ended up being quite straightforward and will be in 7.12.</p>
+<h1 id="backwards-compatibility">Backwards Compatibility</h1>
+<p>In general one should be able to compile the current GHC <code>master</code> branch with the last two compiler releases. Recently, however, the reality is a bit less clear-cut: while the current <code>ghc-7.10</code> branch GHC will technically <strong>build</strong> with GHC 7.6 and 7.8, the tree does not necessarily pass the <code>validate</code> script due to a variety of imports rendered redundant by AMP and FTP. Moreover, the official policy on backwards compatibility is rather well-hidden on the [[Commentary/CodingStyle]] page.</p>
+<p>This was discussed in today’s meeting and it was decided that we will in the future maintain full validation-compatibility with the previous two releases. To ease this we will relax the use of <code>-Werror</code> when building the stage 1 compiler.</p>
+<p>On a related note, this week Thomas Miedema <a href="https://phabricator.haskell.org/D904">ripped out</a> some <code>#ifdefs</code> for GHC 7.6 compatibility from the <code>master</code> branch. Be aware that you will now need GHC 7.8 or newer to build <code>master</code>.</p>
+<h1 id="mac-os-x-el-capitan-support">Mac OS X El Capitan support</h1>
+<p>It is well-known that the next Mac OS X release, El Capitan, will default to “root-less” mode, a security feature which restricts the operations available to even the <code>root</code> user. As a result of this feature some system calls in the El Capitan developer preview fail with <code>EPERM</code> instead of the usual <code>EACCES</code>. This change uncovered a bug in the <code>unix</code> library where <code>EPERM</code> was not treated similarly to <code>EACCES</code>. This was <a href="https://github.com/haskell/unix/pull/18">fixed</a> in November 2014, a fix which is included in GHC 7.10.1.</p>
+<p>However, there have been a <a href="https://mail.haskell.org/pipermail/ghc-devs/2015-July/009403.html">few calls</a> on <code>ghc-devs</code> for a bugfix release of the 7.8 series including the updated <code>unix</code>. We discussed this in the call today and concluded that we would not make such a release. Given that El Capitan is not yet released and the issue is fixed in 7.10, it doesn’t seem worthwhile to put more developer time into 7.8. We would suggest that any El Capitan user unable to update to GHC 7.10.1 or newer disable root-less mode for the time being. This can be accomplished with,</p>
+<pre><code>sudo nvram boot-args=&quot;rootless=0&quot;</code></pre>
+<h1 id="infrastructure">Infrastructure</h1>
+<p>Recently it came to our attention that one of the build machines used by Harbormaster (Phabricator’s build mechanism) was still running GHC 7.6. If you have seen strange validation issues on Harbormaster builds in the past, this is may be the cause. As of today this is fixed; all Harbormaster validations are now being built with GHC 7.8.4.</p>
+<p>Harbormaster has historically had trouble working with Differentials which changed submodule revisions. This has made testing revisions involving submodules quite tricky. Thanks to a <a href="https://github.com/haskell-infra/phab-ghc-builder/pull/2">patch</a> from Adam Sandberg Eriksson Harbormaster can now grab submodule commits from non-upstream repositories if set in <code>.gitmodules</code>.</p>
+<p>Herbert Valerio Riedel has been making great strides improving the responsiveness of Trac. A Trac upgrade, a move to Postresql, and some fiddling with the WSGI configuration should result in a much better experience for everyone.</p>
+<dl>
+<dt>Have a great week!</dt>
+<dd><p>Ben</p>
+</dd>
+</dl>
+
+      </div>
+    </div>
+    <div class="row">
+          </td>
+  </tr>
+</table>
+
+    </div>
+  </div>
+  </body>
+</html>
