@@ -8,8 +8,43 @@
         <name>Matthew Pickering</name>
         <email>matthewtpickering@gmail.com</email>
     </author>
-    <updated>2019-10-21T00:00:00Z</updated>
+    <updated>2019-11-07T00:00:00Z</updated>
     <entry>
+    <title>Introducing hs-speedscope - a way to visualise time profiles</title>
+    <link href="http://mpickering.github.io/posts/2019-11-07-hs-speedscope.html" />
+    <id>http://mpickering.github.io/posts/2019-11-07-hs-speedscope.html</id>
+    <published>2019-11-07T00:00:00Z</published>
+    <updated>2019-11-07T00:00:00Z</updated>
+    <summary type="html"><![CDATA[<h2> Introducing hs-speedscope - a way to visualise time profiles </h2>
+<p class="text-muted">
+    Posted on November  7, 2019
+    
+</p>
+
+<p>In GHC-8.10 it will become possible to use <a href="https://www.speedscope.app/">speedscope</a> to visualise the performance of a Haskell program. speedscope is an interactive flamegraph visualiser, we can use it to visualise the output of the <code>-p</code> profiling option. Here’s how to use it:</p>
+<ol type="1">
+<li>Run your program with <code>prog +RTS -p -l-au</code>. This will create an eventlog with cost centre stack sample events.</li>
+<li>Convert the eventlog into the speedscope JSON format using <a href="https://github.com/mpickering/hs-speedscope"><code>hs-speedscope</code></a>. The <code>hs-speedscope</code> executable takes an eventlog file as the input and produces the speedscope JSON file.</li>
+<li>Load the resulting <code>prog.eventlog.json</code> file into <a href="http://ww.speedscope.app">speedscope.app</a>.</li>
+</ol>
+<!--more-->
+<h2 id="using-speedscope">Using Speedscope</h2>
+<p>Speedscope then has three modes for viewing the profile. The default mode shows you the executation trace of your program. The call stack extends downwards, the wider the box, the more time was spent in that part of the program. You can select part of the profile by selecting part of the minimap, zoom using <code>+/-</code> or pan using the arrow keys. The follow examples are from profiling GHC building Cabal:</p>
+<p><a href="/images/speedscope1.png"><img src="/images/speedscope1.png" style="width:100.0%" /></a></p>
+<p>The first summarised view is accessed by the “left-heavy” tab. This is like the summarised output of the <code>-p</code> flag. The cost centre stacks which account for the most time will be grouped together at the left of the view. This way you can easily see which executation paths take the longest over the course of the whole executation of the program.</p>
+<p><a href="/images/speedscope2.png"><img src="/images/speedscope2.png" style="width:100.0%" /></a></p>
+<p>Finally, the “sandwich” view tries to work out which specific cost centre is responsible for the most executation time. You can use this to try to understand the functions which take the most time to execute. How useful this view is depends on the resolution of your cost centres in your program. Speedscope attempts to work out the most expensive cost centre by subtracting the total time spent beneath that cost centre from the time spent in the cost centre. For example, if <code>f</code> calls <code>g</code> and <code>h</code>, the cost of in <code>f</code> is calculated by the total time for <code>f</code> minus the time spend in <code>g</code> and <code>h</code>. If the cost of <code>f</code> is high, then there is some computation happening in <code>f</code> which is not captured by any further cost centres.</p>
+<p><a href="/image/speedscope3.png"><img src="../images/speedscope3.png" style="width:100.0%" /></a></p>
+<h2 id="how-is-this-different-to-the-other-profile-visualisers">How is this different to the other profile visualisers?</h2>
+<p>The most important difference is that I didn’t implement the visualiser, it is a generic visualiser which can support many different languages. I don’t have to maintain the visualiser or work out how to make it scale to very big profiles. You can easily load 60mb profiles using speedscope without any rendering problems. All the library does is directly convert the eventlog into the generic speedscope JSON format.</p>
+<h2 id="how-is-this-different-to-the-support-already-in-speedscope">How is this different to the support already in speedscope?</h2>
+<p>If you consult the documentation for speedscope you will see that it claims to support Haskell programs already. Rudimentary support has already been implemented by using the JSON output produced by the <code>-pj</code> flag but the default view which shows an executation trace of your program hasn’t worked correctly because the output of <code>-pj</code> is too generalised. If you program ends up calling the same code path many different times during the executation of the program, they are all identified in the final profile.</p>
+<h2 id="how-does-it-work">How does it work?</h2>
+<p>I <a href="https://gitlab.haskell.org/ghc/ghc/merge_requests/1927">added support</a> to dump the raw output from <code>-p</code> to the eventlog. Now it’s possible to process the raw information in order to produce the format that speedscope requires.</p>
+<h2 id="additional-links">Additional Links</h2>
+]]></summary>
+</entry>
+<entry>
     <title>Announcing Bristol Haskell Hackathon 2020</title>
     <link href="http://mpickering.github.io/posts/2019-10-21-bristol-haskell-2020.html" />
     <id>http://mpickering.github.io/posts/2019-10-21-bristol-haskell-2020.html</id>
@@ -933,69 +968,6 @@ aws s3 sync $1 s3://&lt;bucket-name&gt;</code></pre>
 <li><a href="http://mpickering.github.io/maps.html">Map of orienteering maps</a></li>
 <li><a href="https://github.com/mpickering/rg-map">Source code</a></li>
 <li><a href="https://www.reddit.com/r/haskell/comments/9f7kq9/using_funflow_to_cache_a_nix_based_workflow/">Reddit comments</a></li>
-</ul>
-]]></summary>
-</entry>
-<entry>
-    <title>Specifying how a plugin affects recompilation</title>
-    <link href="http://mpickering.github.io/posts/2018-08-10-plugins-recompilation.html" />
-    <id>http://mpickering.github.io/posts/2018-08-10-plugins-recompilation.html</id>
-    <published>2018-08-10T00:00:00Z</published>
-    <updated>2018-08-10T00:00:00Z</updated>
-    <summary type="html"><![CDATA[<h2> Specifying how a plugin affects recompilation </h2>
-<p class="text-muted">
-    Posted on August 10, 2018
-    
-</p>
-
-<p>Plugins have existed for a long time in GHC. The first plugins were implemented in <a href="http://blog.omega-prime.co.uk/2008/06/15/compiler-plugins-for-ghc-the-first-week/">2008</a> by Max Bolingbroke. They enabled users to modify the optimisation pipeline. They ran after desugaring and hence were called <a href="http://mpickering.github.io/ghc-docs/build-html/users_guide/extending_ghc.html#core-plugins-in-more-detail">“core” plugins</a>. Later, Adam Gundry implemented what I shall refer to as <a href="http://adam.gundry.co.uk/pub/typechecker-plugins/">“constraint solver” plugins</a> which allow users to provide custom solver logic to solve additional constraints. Recently, Boldizsár Németh has extended the number of extension points again with a set of plugins which can inspect and modify the syntax AST. Plugins can run after parsing, renaming or type checking and hence are called <a href="http://mpickering.github.io/ghc-docs/build-html/users_guide/extending_ghc.html#source-plugins">“source” plugins</a>.</p>
-<p>The idea behind plugins was great - a user can extend the compiler in their own specific way without having to modify the source tree and rebuild the compiler from scratch. It is far more convenient to write a plugin than to use a custom compiler. However, if a user wants to use a plugin, they will find that every module where the plugin is enabled is always recompiled, even if the source code didn’t change at all. Why is this? Well, a plugin can do anything, it could read the value from a temperature sensor and insert the room temperature into the program. Thus, we would always need to recompile a module if the temperature reading changed as it would affect what our program did.</p>
-<p>However, there are also “pure” plugins, whose output is only affected by the program which is passed as in input. For these plugins, if the source code doesn’t change then we don’t need to do any recompilation.</p>
-<p>This post is about a new metadata field which I added to the <code>Plugin</code> data type which specifies how a plugin should affect recompilation. This feature will be present in GHC 8.6.</p>
-<!--more-->
-<h1 id="controlling-recompilation">Controlling Recompilation</h1>
-<p>The <code>Plugin</code> data type is a record which contains a field for each of the different types of plugin. There is now also a new field <code>pluginRecompile</code> which specifies how the plugin should affect recompilation.</p>
-<div class="sourceCode" id="cb1"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb1-1" data-line-number="1"><span class="kw">data</span> <span class="dt">Plugin</span> {</a>
-<a class="sourceLine" id="cb1-2" data-line-number="2"><span class="ot">  installCoreToDos ::</span> <span class="dt">CorePlugin</span></a>
-<a class="sourceLine" id="cb1-3" data-line-number="3">  ,<span class="ot"> tcPlugin ::</span> <span class="dt">TcPlugin</span></a>
-<a class="sourceLine" id="cb1-4" data-line-number="4">  , parsedResultAction</a>
-<a class="sourceLine" id="cb1-5" data-line-number="5"><span class="ot">    ::</span> [<span class="dt">CommandLineOption</span>] <span class="ot">-&gt;</span> <span class="dt">ModSummary</span> <span class="ot">-&gt;</span> <span class="dt">HsParsedModule</span></a>
-<a class="sourceLine" id="cb1-6" data-line-number="6">                                         <span class="ot">-&gt;</span> <span class="dt">Hsc</span> <span class="dt">HsParsedModule</span></a>
-<a class="sourceLine" id="cb1-7" data-line-number="7"></a>
-<a class="sourceLine" id="cb1-8" data-line-number="8">  <span class="fu">...</span> omitted fields</a>
-<a class="sourceLine" id="cb1-9" data-line-number="9"></a>
-<a class="sourceLine" id="cb1-10" data-line-number="10">  ,<span class="ot"> pluginRecompile ::</span> [<span class="dt">CommandLineOpts</span>] <span class="ot">-&gt;</span> <span class="dt">IO</span> <span class="dt">PluginRecompile</span></a>
-<a class="sourceLine" id="cb1-11" data-line-number="11">}</a></code></pre></div>
-<p>This function will be run during the recompilation check which happens at the start of every module compilation. It returns a value of the <code>PluginRecompile</code> data type.</p>
-<div class="sourceCode" id="cb2"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb2-1" data-line-number="1"><span class="kw">data</span> <span class="dt">PluginRecompile</span> <span class="fu">=</span> <span class="dt">PurePlugin</span></a>
-<a class="sourceLine" id="cb2-2" data-line-number="2">                     <span class="fu">|</span> <span class="dt">ImpurePlugin</span></a>
-<a class="sourceLine" id="cb2-3" data-line-number="3">                     <span class="fu">|</span> <span class="dt">MaybeRecompile</span> <span class="dt">Fingerprint</span></a></code></pre></div>
-<p>There are three different ways to specify how a plugin affects recompilation.</p>
-<ol type="1">
-<li><code>PurePlugin</code> which means that it doesn’t contribute anything to the recompilation check. We will only recompile a module if we would normally recompile it.</li>
-<li><code>ImpurePlugin</code> which means that should always recompile a module. This is the default as it is backwards compatible.</li>
-<li><code>MaybeRecompile</code>, we compute a <code>Fingerprint</code> which we add to the recompilation check to decide whether we should recompile.</li>
-</ol>
-<h2 id="library-functions">Library Functions</h2>
-<p>The <code>Plugins</code> interface provides some library functions for common configurations.</p>
-<p>We might want to use <code>impurePlugin</code> when our plugin injects some additional impure information into the program such as the result of reading a webpage.</p>
-<div class="sourceCode" id="cb3"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb3-1" data-line-number="1"><span class="ot">impurePlugin ::</span> [<span class="dt">CommandLineOpts</span>] <span class="ot">-&gt;</span> <span class="dt">IO</span> <span class="dt">PluginRecompile</span></a>
-<a class="sourceLine" id="cb3-2" data-line-number="2">impurePlugin _ <span class="fu">=</span> return <span class="dt">ImpurePlugin</span></a></code></pre></div>
-<p>The <code>purePlugin</code> function is useful for static analysis tools which don’t modify the source program at all and just output information. Other plugins which modify the source program in a predictable manner such as the <code>ghc-typelits-natnormalise</code> plugin should also be marked as pure.</p>
-<div class="sourceCode" id="cb4"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb4-1" data-line-number="1"><span class="ot">purePlugin ::</span> [<span class="dt">CommandLineOpts</span>] <span class="ot">-&gt;</span> <span class="dt">IO</span> <span class="dt">PluginRecompile</span></a>
-<a class="sourceLine" id="cb4-2" data-line-number="2">purePlugin _args <span class="fu">=</span> return <span class="dt">NoForceRecompile</span></a></code></pre></div>
-<p>If you have some options which affect the output of the plugin then you might want to use the <code>flagRecompile</code> option which causes recompilation if any of the plugin flags change.</p>
-<div class="sourceCode" id="cb5"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb5-1" data-line-number="1"><span class="ot">flagRecompile ::</span> [<span class="dt">CommandLineOption</span>] <span class="ot">-&gt;</span> <span class="dt">IO</span> <span class="dt">PluginRecompile</span></a>
-<a class="sourceLine" id="cb5-2" data-line-number="2">flagRecompile <span class="fu">=</span></a>
-<a class="sourceLine" id="cb5-3" data-line-number="3">  return <span class="fu">.</span> <span class="dt">MaybeRecompile</span> <span class="fu">.</span> fingerprintFingerprints</a>
-<a class="sourceLine" id="cb5-4" data-line-number="4">    <span class="fu">.</span> map fingerprintString <span class="fu">.</span> sort</a></code></pre></div>
-<p>The nature of this interface is that it is sometimes necessary to be overly conservative when specifying recompilation behaviour. For example, you can’t decide on a per-module basis whether to recompile or not. Perhaps the interface could be extended with this information if user’s found it necessary.</p>
-<h1 id="conclusion">Conclusion</h1>
-<p>There is now a simple mechanism for controlling how plugins should affect recompilation. This solves one of the major problems that large scale usage of plugins has faced. Using a plugin on a 1000 module code base was impractical but now shouldn’t impose any additional inconvenience.</p>
-<h1 id="related-links">Related Links</h1>
-<ul>
-<li><a href="http://mpickering.github.io/ghc-docs/build-html/users_guide/extending_ghc.html#controlling-recompilation">GHC User’s Guide</a></li>
-<li><a href="https://www.reddit.com/r/haskell/comments/967o6k/specifying_how_a_plugin_affects_recompilation/">Reddit comments</a></li>
 </ul>
 ]]></summary>
 </entry>
