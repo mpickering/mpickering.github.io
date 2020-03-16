@@ -33,12 +33,14 @@
               <li>
                 <a href="./eventlog2html">eventlog2html</a>
               </li>
+          <!---
               <li>
-                <a href="./bristol2020.html">Bristol 2020</a>
+                <a href="/bristol2020.html">Bristol 2020</a>
               </li>
               <li>
                 <a href="https://andreaspk.github.io/ghc-week">GHC Week</a>
               </li>
+          --->
               <li>
                 <a href="./maps.html">Maps</a>
               </li>
@@ -54,6 +56,26 @@
 
             <div id="content">
               
+<h2> An IDE implemented using reflex <small class="text-muted"> March 16, 2020 </small> </span> </h2>
+     
+        <p>Around this point last year I set out to reimplement a lot of the backend of <code>haskell-ide-engine</code> in order to make it more easily usable with a wide variety of build tools. This effort was largely a success and my branch was merged just before Christmas thanks to the extensive help of Zubin Duggal, Fendor, Alan Zimmerman, Luke Lau and Javier Neira. The main result was an IDE based on the <code>hie-bios</code> library which abstracts the interface to the different build tools so the IDE itself doesn’t have to worry about how to set up the GHC session.</p>
+<p>Since then, the situation is vastly different with the focus now turning to <code>ghcide</code> and <code>hls</code>. <code>ghcide</code> is generally faster and more robust than <code>haskell-ide-engine</code> because it reimplements certain parts of the GHC API which allow for finer grain recompilation checking. The future extension, <code>hls</code>, will extend <code>ghcide</code> with support for code formatters and other diagnostics. I have found implementing extensions to <code>ghcide</code> much easier and more robust. Both <code>ghcide</code> and <code>hls</code> are built on top of <code>hie-bios</code>.</p>
+<p>At Munihac 2019, Neil Mitchell gave a <a href="https://www.youtube.com/watch?v=cijsaeWNf2E">presentation</a> where he described the motivation for <code>ghcide</code> and a general description of the architecture. In his talk, he describes how you can think of an IDE as a dependency graph, which was greeted by an audience heckle suggesting an FRP library could be used to implement the IDE. The current implementation is based on shake, which has similar properties to an FRP library but with some crucial differences.</p>
+<p>The pull-based model of shake does not scale well to large code bases. All requests scale linearly with the number of dependencies which means that even requests such as hovering can take upwards of 1s on a module with a large number of transitive dependencies. A 1s hover response time was enough to get me interested and after attempting to <a href="https://github.com/digital-asset/ghcide/pull/384">improve the performance</a> I decided that without a fundamental rewrite, the situation could not be improved.</p>
+<p>So spurred on by the heckle and the desire for subsecond reponse times it was time to put the money where my mouth was and attempt to reimplement the backend using <code>reflex</code> instead of <code>shake</code>. Reflex is push-based which means once the network is constructed changes propagate from input events rather than being pulled from samples. This seemed like a better model for an IDE.</p>
+<p>What did I imagine the primary benefits to this project would be?</p>
+<ul>
+<li>I wanted to prove it was possible.</li>
+<li>Using the push-based model means that requests such as hovering can return instantly rather than checking to see if any dependencies have updated.</li>
+<li>Handlers for LSP requests can be written in the same language as the functions which computed the module graph.</li>
+</ul>
+<p>In short, I <a href="https://github.com/mpickering/ghcide/tree/reflex">now have an IDE</a> which works and is completely implemented using reflex which gives you a point to be able to evaluate the costs and benefits to both approaches.</p>
+<p>In this post I will describe some of the basic abstractions which I implemented using <code>reflex</code> which gives writing the IDE a similar feel. The rest of this post is aimed at people who are already familiar with <code>reflex</code> and goes into a reasonable amount of detail about specific things to do with reflex and design decisions I had to make.</p>
+
+        <a href="./posts/2020-03-16-ghcide-reflex.html">Read more</a>
+      
+<hr>
+
 <h2> Introducing hs-speedscope - a way to visualise time profiles <small class="text-muted"> November  7, 2019 </small> </span> </h2>
      
         <p>In GHC-8.10 it will become possible to use <a href="https://www.speedscope.app/">speedscope</a> to visualise the performance of a Haskell program. speedscope is an interactive flamegraph visualiser, we can use it to visualise the output of the <code>-p</code> profiling option. Here’s how to use it:</p>
@@ -116,15 +138,6 @@
 <p>This post is a question about whether the combination of <a href="https://nixos.org/nix/">nix</a>, <a href="https://cachix.org/">Cachix</a>, <a href="https://travis-ci.org/">Travis CI</a>, <a href="https://input-output-hk.github.io/haskell.nix/">haskell.nix</a> and <a href="https://jaspervdj.be/hakyll/">Hakyll</a> was the perfect solution to these constraints or an exercise in overkill.</p>
 
         <a href="./posts/2019-06-24-overkill-or-not.html">Read more</a>
-      
-<hr>
-
-<h2> Tools for working on GHC <small class="text-muted"> June 11, 2019 </small> </span> </h2>
-     
-        <p>In the old days of the Make build system, the only reliable IDE-like feature which was useful whilst working on GHC was a tags file. Even loading GHC into GHCi was not easily possible, the most simple of interactive development workflows. Thankfully now times are changing, there are now build targets to start a GHCi session which enables developers to use tooling such as <a href="https://github.com/ndmitchell/ghcid">ghcid</a> or <a href="https://marketplace.visualstudio.com/items?itemName=dramforever.vscode-ghc-simple">vscode-ghc-simple</a>. Something which is quite important when working on a project with over 500 modules!</p>
-<p>In this post we’ll briefly describe some recent advancements in developer tooling which have been made possible by the move to Hadrian.</p>
-
-        <a href="./posts/2019-06-11-ghc-tools.html">Read more</a>
       
 <hr>
 

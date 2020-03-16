@@ -8,8 +8,240 @@
         <name>Matthew Pickering</name>
         <email>matthewtpickering@gmail.com</email>
     </author>
-    <updated>2019-11-07T00:00:00Z</updated>
+    <updated>2020-03-16T00:00:00Z</updated>
     <entry>
+    <title>An IDE implemented using reflex</title>
+    <link href="http://mpickering.github.io/posts/2020-03-16-ghcide-reflex.html" />
+    <id>http://mpickering.github.io/posts/2020-03-16-ghcide-reflex.html</id>
+    <published>2020-03-16T00:00:00Z</published>
+    <updated>2020-03-16T00:00:00Z</updated>
+    <summary type="html"><![CDATA[<h2> An IDE implemented using reflex </h2>
+<p class="text-muted">
+    Posted on March 16, 2020
+    
+</p>
+
+<p>Around this point last year I set out to reimplement a lot of the backend of <code>haskell-ide-engine</code> in order to make it more easily usable with a wide variety of build tools. This effort was largely a success and my branch was merged just before Christmas thanks to the extensive help of Zubin Duggal, Fendor, Alan Zimmerman, Luke Lau and Javier Neira. The main result was an IDE based on the <code>hie-bios</code> library which abstracts the interface to the different build tools so the IDE itself doesn’t have to worry about how to set up the GHC session.</p>
+<p>Since then, the situation is vastly different with the focus now turning to <code>ghcide</code> and <code>hls</code>. <code>ghcide</code> is generally faster and more robust than <code>haskell-ide-engine</code> because it reimplements certain parts of the GHC API which allow for finer grain recompilation checking. The future extension, <code>hls</code>, will extend <code>ghcide</code> with support for code formatters and other diagnostics. I have found implementing extensions to <code>ghcide</code> much easier and more robust. Both <code>ghcide</code> and <code>hls</code> are built on top of <code>hie-bios</code>.</p>
+<p>At Munihac 2019, Neil Mitchell gave a <a href="https://www.youtube.com/watch?v=cijsaeWNf2E">presentation</a> where he described the motivation for <code>ghcide</code> and a general description of the architecture. In his talk, he describes how you can think of an IDE as a dependency graph, which was greeted by an audience heckle suggesting an FRP library could be used to implement the IDE. The current implementation is based on shake, which has similar properties to an FRP library but with some crucial differences.</p>
+<p>The pull-based model of shake does not scale well to large code bases. All requests scale linearly with the number of dependencies which means that even requests such as hovering can take upwards of 1s on a module with a large number of transitive dependencies. A 1s hover response time was enough to get me interested and after attempting to <a href="https://github.com/digital-asset/ghcide/pull/384">improve the performance</a> I decided that without a fundamental rewrite, the situation could not be improved.</p>
+<p>So spurred on by the heckle and the desire for subsecond reponse times it was time to put the money where my mouth was and attempt to reimplement the backend using <code>reflex</code> instead of <code>shake</code>. Reflex is push-based which means once the network is constructed changes propagate from input events rather than being pulled from samples. This seemed like a better model for an IDE.</p>
+<p>What did I imagine the primary benefits to this project would be?</p>
+<ul>
+<li>I wanted to prove it was possible.</li>
+<li>Using the push-based model means that requests such as hovering can return instantly rather than checking to see if any dependencies have updated.</li>
+<li>Handlers for LSP requests can be written in the same language as the functions which computed the module graph.</li>
+</ul>
+<p>In short, I <a href="https://github.com/mpickering/ghcide/tree/reflex">now have an IDE</a> which works and is completely implemented using reflex which gives you a point to be able to evaluate the costs and benefits to both approaches.</p>
+<p>In this post I will describe some of the basic abstractions which I implemented using <code>reflex</code> which gives writing the IDE a similar feel. The rest of this post is aimed at people who are already familiar with <code>reflex</code> and goes into a reasonable amount of detail about specific things to do with reflex and design decisions I had to make.</p>
+<!--more-->
+<h1 id="implementation">Implementation</h1>
+<p>An early goal of the implementation was to try to reuse as much code as possible from <code>ghcide</code>. The end result was that I could reuse almost all the code for the rule definitions but had to rewrite a lot of the code which dealt with input events. Therefore there are two main parts to the implementation: the specification of rules and the interpretation of rules into a reflex network.</p>
+<h2 id="step-1-what-is-a-rule">Step 1: What is a rule?</h2>
+<p>The program is structured by rules, there is one rule type for each of the different stages of the compilation pipeline. The user provides definitions for these rules and then the rules are combined to form the reflex network.</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb1-1" data-line-number="1"><span class="kw">data</span> <span class="dt">RuleType</span> a <span class="kw">where</span></a>
+<a class="sourceLine" id="cb1-2" data-line-number="2">  <span class="dt">GetFileContents</span><span class="ot"> ::</span> <span class="dt">RuleType</span> (<span class="dt">FileVersion</span>, <span class="dt">Maybe</span> <span class="dt">T.Text</span>)</a>
+<a class="sourceLine" id="cb1-3" data-line-number="3">  <span class="dt">GetParsedModule</span><span class="ot"> ::</span> <span class="dt">RuleType</span> <span class="dt">ParsedModule</span></a>
+<a class="sourceLine" id="cb1-4" data-line-number="4">  <span class="dt">GetLocatedImports</span><span class="ot"> ::</span> <span class="dt">RuleType</span> <span class="dt">LocatedImports</span></a>
+<a class="sourceLine" id="cb1-5" data-line-number="5">  <span class="dt">GetSpanInfo</span><span class="ot"> ::</span> <span class="dt">RuleType</span> <span class="dt">SpansInfo</span></a>
+<a class="sourceLine" id="cb1-6" data-line-number="6">  <span class="dt">GetDependencyInformation</span><span class="ot"> ::</span> <span class="dt">RuleType</span> <span class="dt">DependencyInformation</span></a>
+<a class="sourceLine" id="cb1-7" data-line-number="7">  <span class="dt">GetDependencies</span><span class="ot"> ::</span> <span class="dt">RuleType</span> <span class="dt">TransitiveDependencies</span></a>
+<a class="sourceLine" id="cb1-8" data-line-number="8">  <span class="dt">GetTypecheckedModule</span><span class="ot"> ::</span> <span class="dt">RuleType</span> <span class="dt">TcModuleResult</span></a>
+<a class="sourceLine" id="cb1-9" data-line-number="9">  <span class="dt">ReportImportCycles</span><span class="ot"> ::</span> <span class="dt">RuleType</span> ()</a>
+<a class="sourceLine" id="cb1-10" data-line-number="10">  <span class="dt">GenerateCore</span><span class="ot"> ::</span> <span class="dt">RuleType</span> (<span class="dt">SafeHaskellMode</span>, <span class="dt">CgGuts</span>, <span class="dt">ModDetails</span>)</a>
+<a class="sourceLine" id="cb1-11" data-line-number="11">  <span class="dt">GenerateByteCode</span><span class="ot"> ::</span> <span class="dt">RuleType</span> <span class="dt">Linkable</span></a>
+<a class="sourceLine" id="cb1-12" data-line-number="12">  <span class="dt">GhcSession</span><span class="ot"> ::</span> <span class="dt">RuleType</span> <span class="dt">HscEnvEq</span></a>
+<a class="sourceLine" id="cb1-13" data-line-number="13">  <span class="dt">GetHiFile</span><span class="ot"> ::</span> <span class="dt">RuleType</span> <span class="dt">HiFileResult</span></a>
+<a class="sourceLine" id="cb1-14" data-line-number="14">  <span class="dt">GetModIface</span><span class="ot"> ::</span> <span class="dt">RuleType</span> <span class="dt">HiFileResult</span></a>
+<a class="sourceLine" id="cb1-15" data-line-number="15">  <span class="dt">IsFileOfInterest</span><span class="ot"> ::</span> <span class="dt">RuleType</span> <span class="dt">Bool</span></a></code></pre></div>
+<p>A <code>RuleType</code> is a per-module rule, therefore for each module we can ask to get the parsed module for that module and a bunch of other information. As a first approximation, the result of each rule will be stored in a <code>Dynamic</code>.</p>
+<p>The monad which is used for defining rules is called <code>ActionM</code>, inside the <code>ActionM</code> monad you can do two things.</p>
+<ol type="1">
+<li>Run IO actions using <code>liftIO</code>.</li>
+<li>Request the value of existing rules, using <code>use</code> or <code>use_</code>.</li>
+</ol>
+<p><code>use</code> is a function which allows you to ask what the current value of a specific rule is.</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb2-1" data-line-number="1"><span class="ot">use ::</span> _ <span class="ot">=&gt;</span> <span class="dt">RuleType</span> a</a>
+<a class="sourceLine" id="cb2-2" data-line-number="2">         <span class="ot">-&gt;</span> <span class="dt">NormalizedFilePath</span></a>
+<a class="sourceLine" id="cb2-3" data-line-number="3">         <span class="ot">-&gt;</span> <span class="dt">ActionM</span> t m (<span class="dt">Maybe</span> a)</a></code></pre></div>
+<p>Whenever <code>use</code> is invoked in a rule definition, a dependency is added on the value was was sampled. If the value changes in future, the rule will run again and the result recomputed.</p>
+<p>Rule definition therefore end up looking a lot like the original shake rule definitions.</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb3-1" data-line-number="1"><span class="ot">generateByteCodeRule ::</span> <span class="dt">WRule</span></a>
+<a class="sourceLine" id="cb3-2" data-line-number="2">generateByteCodeRule <span class="fu">=</span></a>
+<a class="sourceLine" id="cb3-3" data-line-number="3">    define <span class="dt">GenerateByteCode</span> <span class="fu">$</span> \file <span class="ot">-&gt;</span> <span class="kw">do</span></a>
+<a class="sourceLine" id="cb3-4" data-line-number="4">      deps <span class="ot">&lt;-</span> use_ <span class="dt">GetDependencies</span> file</a>
+<a class="sourceLine" id="cb3-5" data-line-number="5">      (tm <span class="fu">:</span> tms) <span class="ot">&lt;-</span> uses_ <span class="dt">GetTypecheckedModule</span> (file<span class="fu">:</span> transitiveModuleDeps deps)</a>
+<a class="sourceLine" id="cb3-6" data-line-number="6">      session <span class="ot">&lt;-</span> hscEnv <span class="fu">&lt;$&gt;</span> use_ <span class="dt">GhcSession</span> file</a>
+<a class="sourceLine" id="cb3-7" data-line-number="7">      (_, guts, _) <span class="ot">&lt;-</span> use_ <span class="dt">GenerateCore</span> file</a>
+<a class="sourceLine" id="cb3-8" data-line-number="8">      liftIO <span class="fu">$</span> generateByteCode session [(tmrModSummary x, tmrModInfo x) <span class="fu">|</span> x <span class="ot">&lt;-</span> tms] tm guts</a></code></pre></div>
+<p>The bytecode rule will rerun if the dependencies of the file change, the result of typechecking changes, the current session changes or the generated core changes.</p>
+<h3 id="defining-rules">Defining rules</h3>
+<p>Once the body of a rule definition is defined, there are several ways to specify the definition. The simplest is <code>define</code>, which does not implement early cut-off or external triggering. There are other variants which enable both of these features.</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb4-1" data-line-number="1"><span class="ot">define ::</span> <span class="dt">RuleType</span> a <span class="ot">-&gt;</span> (forall t <span class="fu">.</span> <span class="dt">C</span> t <span class="ot">=&gt;</span> <span class="dt">NormalizedFilePath</span> <span class="ot">-&gt;</span> <span class="dt">ActionM</span> t (<span class="dt">HostFrame</span> t) a) <span class="ot">-&gt;</span> <span class="dt">WRule</span></a></code></pre></div>
+<p>Once a rule is defined, like in shake, you put them all in a list and pass them into the function which creates the reflex network.</p>
+<h2 id="representing-a-node-in-the-network">Representing a node in the network</h2>
+<p>Each rule is implemented by an <code>MDynamic</code>, which is a refined <code>Dynamic</code> which implements early cut-off and lazy initialisation. Early cut-off means that the dynamic will only fire if the value is updated to a new value. Lazy initialisation means that the dynamic will only be populated after it has been demanded once.</p>
+<div class="sourceCode" id="cb5"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb5-1" data-line-number="1"><span class="kw">newtype</span> <span class="dt">MDynamic</span> t a <span class="fu">=</span> <span class="dt">MDynamic</span> {<span class="ot"> getMD ::</span> <span class="dt">Dynamic</span> t (<span class="dt">Early</span> (<span class="dt">Thunk</span> a)) }</a></code></pre></div>
+<p>The combination of both of these features means that less events are propagated in the network, something we really want to avoid in order to avoid running expensive IO computations.</p>
+<h3 id="early-cut-off">Early Cut-off</h3>
+<p>Early cut-off is implemented by using the <code>Early</code> wrapper.</p>
+<div class="sourceCode" id="cb6"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb6-1" data-line-number="1"><span class="kw">data</span> <span class="dt">Early</span> a <span class="fu">=</span> <span class="dt">Early</span> (<span class="dt">Maybe</span> <span class="dt">BS.ByteString</span>) <span class="dt">Int</span> a</a></code></pre></div>
+<p>The data type stores a hash of the current value and an integer which indicates the number of times the value has been updated (this is used for debugging).</p>
+<p>The value in the <code>Early</code> is only updated if either there is no hash or the hash of the new value is different to the hash of the old value.</p>
+<div class="sourceCode" id="cb7"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb7-1" data-line-number="1"><span class="ot">early ::</span> (<span class="dt">Reflex</span> t, <span class="dt">MonadHold</span> t m, <span class="dt">MonadFix</span> m) <span class="ot">=&gt;</span> <span class="dt">Dynamic</span> t (<span class="dt">Maybe</span> <span class="dt">BS.ByteString</span>, a) <span class="ot">-&gt;</span> m (<span class="dt">Dynamic</span> t (<span class="dt">Early</span> a))</a>
+<a class="sourceLine" id="cb7-2" data-line-number="2">early d <span class="fu">=</span> scanDynMaybe (\(h, v) <span class="ot">-&gt;</span> <span class="dt">Early</span> h <span class="dv">0</span> v) upd d</a>
+<a class="sourceLine" id="cb7-3" data-line-number="3">  <span class="kw">where</span></a>
+<a class="sourceLine" id="cb7-4" data-line-number="4">    <span class="co">-- Nothing means there&#39;s no hash, so always update</span></a>
+<a class="sourceLine" id="cb7-5" data-line-number="5">    upd (<span class="dt">Nothing</span>, a) (<span class="dt">Early</span> _ n _) <span class="fu">=</span> <span class="dt">Just</span> (<span class="dt">Early</span> <span class="dt">Nothing</span> (n <span class="fu">+</span> <span class="dv">1</span>) a)</a>
+<a class="sourceLine" id="cb7-6" data-line-number="6">    <span class="co">-- If there&#39;s already a hash, and we get a new hash then update</span></a>
+<a class="sourceLine" id="cb7-7" data-line-number="7">    upd (<span class="dt">Just</span> h, new_a) (<span class="dt">Early</span> (<span class="dt">Just</span> h&#39;) n _) <span class="fu">=</span> <span class="kw">if</span> h <span class="fu">==</span> h&#39;</a>
+<a class="sourceLine" id="cb7-8" data-line-number="8">                                                  <span class="kw">then</span> <span class="dt">Nothing</span></a>
+<a class="sourceLine" id="cb7-9" data-line-number="9">                                                  <span class="kw">else</span> (<span class="dt">Just</span> (<span class="dt">Early</span> (<span class="dt">Just</span> h&#39;) (n <span class="fu">+</span> <span class="dv">1</span>) new_a))</a>
+<a class="sourceLine" id="cb7-10" data-line-number="10">    <span class="co">-- No stored, hash, just update</span></a>
+<a class="sourceLine" id="cb7-11" data-line-number="11">    upd (h, new_a) (<span class="dt">Early</span> <span class="dt">Nothing</span> n _)   <span class="fu">=</span> <span class="dt">Just</span> (<span class="dt">Early</span> h (n <span class="fu">+</span> <span class="dv">1</span>) new_a)</a></code></pre></div>
+<p>Most rules do not use the early cut-off functionality and hence the hash is always <code>Nothing</code>.</p>
+<h3 id="lazy-initialisation">Lazy initialisation</h3>
+<p>Without proper care, when the state for a module is initialised all the information about that module will be computed despite the fact most of it will never be used. For example, you will not need the core for most modules but in early versions of the project the core was always produced because on the first run of the rule, it was observed to depend on the typechecked module and hence was updated when the typechecked module was updated.</p>
+<p>In order to solve this we implement the <code>Thunk</code> data type which has three distinct states:</p>
+<div class="sourceCode" id="cb8"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb8-1" data-line-number="1"><span class="kw">data</span> <span class="dt">Thunk</span> a <span class="fu">=</span> <span class="dt">Value</span> a <span class="fu">|</span> <span class="dt">Awaiting</span> <span class="fu">|</span> <span class="dt">Seed</span> (<span class="dt">IO</span> ()) <span class="kw">deriving</span> <span class="dt">Functor</span></a></code></pre></div>
+<p>A thunk either contains a value, is awaiting a value to be provided to it or is inactive. All thunks start out as inactive and are activated by calling the <code>IO</code> action contained within the <code>Seed</code> constructor.</p>
+<p>When a thunk is sampled, it is activated if it has never been activated before.</p>
+<div class="sourceCode" id="cb9"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb9-1" data-line-number="1"><span class="ot">sampleThunk ::</span> (<span class="dt">Reflex</span> t, <span class="dt">MonadIO</span> m, <span class="dt">MonadSample</span> t m) <span class="ot">=&gt;</span> <span class="dt">Dynamic</span> t (<span class="dt">Thunk</span> a) <span class="ot">-&gt;</span> m (<span class="dt">Maybe</span> a)</a>
+<a class="sourceLine" id="cb9-2" data-line-number="2">sampleThunk d <span class="fu">=</span> <span class="kw">do</span></a>
+<a class="sourceLine" id="cb9-3" data-line-number="3">  t <span class="ot">&lt;-</span> sample (current d)</a>
+<a class="sourceLine" id="cb9-4" data-line-number="4">  <span class="kw">case</span> t <span class="kw">of</span></a>
+<a class="sourceLine" id="cb9-5" data-line-number="5">    <span class="dt">Seed</span> start <span class="ot">-&gt;</span> liftIO start <span class="fu">&gt;&gt;</span> return <span class="dt">Nothing</span></a>
+<a class="sourceLine" id="cb9-6" data-line-number="6">    <span class="dt">Awaiting</span>   <span class="ot">-&gt;</span> return <span class="dt">Nothing</span></a>
+<a class="sourceLine" id="cb9-7" data-line-number="7">    <span class="dt">Value</span> a    <span class="ot">-&gt;</span> return (<span class="dt">Just</span> a)</a></code></pre></div>
+<p>It is also important to implement a version of the <code>improvingMaybe</code> combinator to avoid propagating a lot of updates in the case when the dynamic is repeatedly updated to an <code>Awaiting</code> value. So a thunk can step from a <code>Seed</code> to an <code>Awaiting</code> and from an <code>Awaiting</code> to a <code>Value</code> but never back again.</p>
+<div class="sourceCode" id="cb10"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb10-1" data-line-number="1"><span class="co">-- Like improvingMaybe, but for the Thunk type</span></a>
+<a class="sourceLine" id="cb10-2" data-line-number="2"><span class="ot">improvingResetableThunk  ::</span>  (<span class="dt">MonadFix</span> m, <span class="dt">MonadHold</span> t m, <span class="dt">Reflex</span> t, <span class="dt">MonadIO</span> m, <span class="dt">MonadSample</span> t m) <span class="ot">=&gt;</span> <span class="dt">Dynamic</span> t (<span class="dt">Thunk</span> a) <span class="ot">-&gt;</span> m (<span class="dt">Dynamic</span> t (<span class="dt">Thunk</span> a))</a>
+<a class="sourceLine" id="cb10-3" data-line-number="3">improvingResetableThunk <span class="fu">=</span> scanDynMaybe id upd</a>
+<a class="sourceLine" id="cb10-4" data-line-number="4">  <span class="kw">where</span></a>
+<a class="sourceLine" id="cb10-5" data-line-number="5">    <span class="co">-- ok, if you insist, write the new value</span></a>
+<a class="sourceLine" id="cb10-6" data-line-number="6">    upd (<span class="dt">Value</span> a) _ <span class="fu">=</span> <span class="dt">Just</span> (<span class="dt">Value</span> a)</a>
+<a class="sourceLine" id="cb10-7" data-line-number="7">    <span class="co">-- Wait, once the trigger is pressed</span></a>
+<a class="sourceLine" id="cb10-8" data-line-number="8">    upd <span class="dt">Awaiting</span>  (<span class="dt">Seed</span> {}) <span class="fu">=</span> <span class="dt">Just</span> <span class="dt">Awaiting</span></a>
+<a class="sourceLine" id="cb10-9" data-line-number="9">    upd _ _ <span class="fu">=</span> <span class="dt">Nothing</span></a></code></pre></div>
+<p>It will be good in future to allow resetting thunks in order to implement garbage collection. It is probably that we want to allow reseting from a <code>Just</code> back to a <code>Nothing</code> in order to avoid stale information in the network.</p>
+<h2 id="step-2-what-is-a-global-variable">Step 2: What is a global variable?</h2>
+<p>There is also a global rule type for parts of the IDE state which are not dependent on a specific module.</p>
+<div class="sourceCode" id="cb11"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb11-1" data-line-number="1"><span class="kw">data</span> <span class="dt">GlobalType</span> a <span class="kw">where</span></a>
+<a class="sourceLine" id="cb11-2" data-line-number="2">  <span class="dt">GetHscEnv</span><span class="ot"> ::</span> <span class="dt">GlobalType</span> <span class="dt">SessionMap</span></a>
+<a class="sourceLine" id="cb11-3" data-line-number="3">  <span class="dt">GhcSessionIO</span><span class="ot"> ::</span> <span class="dt">GlobalType</span> <span class="dt">GhcSessionFun</span></a>
+<a class="sourceLine" id="cb11-4" data-line-number="4">  <span class="dt">GetEnv</span><span class="ot"> ::</span> <span class="dt">GlobalType</span> <span class="dt">HscEnv</span></a>
+<a class="sourceLine" id="cb11-5" data-line-number="5">  <span class="dt">GetIdeOptions</span><span class="ot"> ::</span> <span class="dt">GlobalType</span> <span class="dt">IdeOptions</span></a>
+<a class="sourceLine" id="cb11-6" data-line-number="6">  <span class="dt">OfInterestVar</span><span class="ot"> ::</span> <span class="dt">GlobalType</span> (<span class="dt">HashSet</span> <span class="dt">NormalizedFilePath</span>)</a>
+<a class="sourceLine" id="cb11-7" data-line-number="7">  <span class="dt">FileExistsMapVar</span><span class="ot"> ::</span> <span class="dt">GlobalType</span> <span class="dt">FileExistsMap</span></a>
+<a class="sourceLine" id="cb11-8" data-line-number="8">  <span class="dt">GetVFSHandle</span><span class="ot"> ::</span> <span class="dt">GlobalType</span> <span class="dt">VFSHandle</span></a>
+<a class="sourceLine" id="cb11-9" data-line-number="9">  <span class="dt">GetInitFuncs</span><span class="ot"> ::</span> <span class="dt">GlobalType</span> <span class="dt">InitParams</span></a>
+<a class="sourceLine" id="cb11-10" data-line-number="10">  <span class="dt">IdeConfigurationVar</span><span class="ot"> ::</span> <span class="dt">GlobalType</span> <span class="dt">IdeConfiguration</span></a>
+<a class="sourceLine" id="cb11-11" data-line-number="11">  <span class="dt">GetPositionMap</span><span class="ot"> ::</span> <span class="dt">GlobalType</span> <span class="dt">PositionMap</span></a></code></pre></div>
+<p>Module rules can depend on global rules in the same manner as per-module rules. The interface for defining a global rule is slightly different to a local rule because the global variables are usually directly populated from events. For example, the <code>OfInterestVar</code> is modified by the user opening and closing files in their editer and hence it is defined as the combination of these two events.</p>
+<div class="sourceCode" id="cb12"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb12-1" data-line-number="1"><span class="ot">addIdeGlobal ::</span> <span class="dt">GlobalType</span> a <span class="ot">-&gt;</span> (forall t <span class="fu">.</span> <span class="dt">C</span> t <span class="ot">=&gt;</span> (<span class="dt">ReaderT</span> (<span class="dt">REnv</span> t) m (<span class="dt">Dynamic</span> t a))) <span class="ot">-&gt;</span> <span class="dt">WRule</span></a>
+<a class="sourceLine" id="cb12-2" data-line-number="2"></a>
+<a class="sourceLine" id="cb12-3" data-line-number="3"><span class="ot">ofInterestVar ::</span> <span class="dt">WRule</span></a>
+<a class="sourceLine" id="cb12-4" data-line-number="4">ofInterestVar <span class="fu">=</span></a>
+<a class="sourceLine" id="cb12-5" data-line-number="5">  addIdeGlobal <span class="dt">OfInterestVar</span> <span class="fu">$</span> <span class="kw">do</span></a>
+<a class="sourceLine" id="cb12-6" data-line-number="6">    e1 <span class="ot">&lt;-</span> withNotification <span class="fu">&lt;$&gt;</span> getHandlerEvent didOpenTextDocumentNotificationHandler</a>
+<a class="sourceLine" id="cb12-7" data-line-number="7">    e2 <span class="ot">&lt;-</span> withNotification <span class="fu">&lt;$&gt;</span> getHandlerEvent didCloseTextDocumentNotificationHandler</a>
+<a class="sourceLine" id="cb12-8" data-line-number="8">    upd <span class="ot">&lt;-</span> logAction <span class="dt">Info</span> (fmapMaybe check e1)</a>
+<a class="sourceLine" id="cb12-9" data-line-number="9">    upd2 <span class="ot">&lt;-</span> logAction <span class="dt">Info</span> (fmapMaybe check2 e2)</a>
+<a class="sourceLine" id="cb12-10" data-line-number="10">    foldDyn (<span class="fu">$</span>) S.empty (mergeWith (<span class="fu">.</span>) [upd, upd2])</a>
+<a class="sourceLine" id="cb12-11" data-line-number="11">  <span class="kw">where</span></a>
+<a class="sourceLine" id="cb12-12" data-line-number="12">      check (<span class="dt">DidOpenTextDocumentParams</span> <span class="dt">TextDocumentItem</span>{_uri, _version}) <span class="fu">=</span></a>
+<a class="sourceLine" id="cb12-13" data-line-number="13">        whenUriFile _uri <span class="dt">Nothing</span> <span class="fu">$</span> \file <span class="ot">-&gt;</span> <span class="dt">Just</span> (add file, <span class="st">&quot;Opened text document: &quot;</span> <span class="fu">&lt;&gt;</span> getUri _uri)</a>
+<a class="sourceLine" id="cb12-14" data-line-number="14"></a>
+<a class="sourceLine" id="cb12-15" data-line-number="15"></a>
+<a class="sourceLine" id="cb12-16" data-line-number="16">      check2 (<span class="dt">DidCloseTextDocumentParams</span> <span class="dt">TextDocumentIdentifier</span>{_uri}) <span class="fu">=</span></a>
+<a class="sourceLine" id="cb12-17" data-line-number="17">        whenUriFile _uri <span class="dt">Nothing</span> <span class="fu">$</span> \file <span class="ot">-&gt;</span> <span class="dt">Just</span> (remove file, <span class="st">&quot;Closed text document:&quot;</span> <span class="fu">&lt;&gt;</span> getUri _uri)</a>
+<a class="sourceLine" id="cb12-18" data-line-number="18">      add file <span class="fu">=</span> S.insert file</a>
+<a class="sourceLine" id="cb12-19" data-line-number="19">      remove file <span class="fu">=</span> S.delete file</a></code></pre></div>
+<p>A global is defined in an environment with the other global dynamics and must return a dynamic which is created by combining them together.</p>
+<h2 id="definition-3-what-is-an-unit-action">Definition 3: What is an unit action?</h2>
+<p>The third type of definition is the unit action. Unit actions are useful for parts of your program which don’t contribute any state in the form of definitions. For example, hooking up diagnostics to the output, responding to hover requests, logging and progress notifications.</p>
+<p>Unit actions are defined using the <code>unitAction</code> function.</p>
+<div class="sourceCode" id="cb13"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb13-1" data-line-number="1"><span class="ot">unitAction ::</span> (forall t <span class="fu">.</span> <span class="dt">C</span> t <span class="ot">=&gt;</span> <span class="dt">BasicM</span> t (<span class="dt">BasicGuestWrapper</span> t) ())</a>
+<a class="sourceLine" id="cb13-2" data-line-number="2">           <span class="ot">-&gt;</span> <span class="dt">WRule</span></a></code></pre></div>
+<p>A unit action is an action which only operates in a reader environment where it can depend on the value of other dynamics but must eventually return unit. For example, in a unit action you can create a local dynamic which combines different dynamics from the global state together before outputting the result to the user. This is how diagnostics are implemented before being fed into the function which sends output back to the language client.</p>
+<h1 id="evaluating-the-rule-specification">Evaluating the rule specification</h1>
+<p>Once we have a list of module rules, global rules and actions, they are combined together in order to form the reflex network. Each global rule is evaluated and turned into a dynamic, module rules are used to define the per-module state when we discover a new file and finally actions are all evaluated to connect additional parts of the network together.</p>
+<h2 id="evaluating-a-rule">Evaluating a rule</h2>
+<p>The heart of the implementation is in how the rules report their dependencies in the form of an <code>Event</code>, which is then used in order to trigger the action in future. This is elegantly expressed recursively in five lines. The result of the call to performAction is <code>Event t (IdeResult a, [Event t EType])</code>, which is the separated using <code>splitE</code> before the dependency events are combined with <code>mkDepTrigger</code> and then used in order to define <code>rebuild_trigger</code>.</p>
+<div class="sourceCode" id="cb14"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb14-1" data-line-number="1">rule <span class="fu">=</span> mdo</a>
+<a class="sourceLine" id="cb14-2" data-line-number="2">    <span class="co">-- The event which will trigger a rebuild</span></a>
+<a class="sourceLine" id="cb14-3" data-line-number="3">    <span class="kw">let</span> rebuild_trigger <span class="fu">=</span> (fmap (\e <span class="ot">-&gt;</span> leftmost [user_trig&#39;, start_trigger, e]) deps&#39;)</a>
+<a class="sourceLine" id="cb14-4" data-line-number="4">    act_trig <span class="ot">&lt;-</span> switchHoldPromptly start_trigger rebuild_trigger</a>
+<a class="sourceLine" id="cb14-5" data-line-number="5">    <span class="co">-- When the trigger fires, run the rule</span></a>
+<a class="sourceLine" id="cb14-6" data-line-number="6">    pm <span class="ot">&lt;-</span> performAction renv (act f) act_trig</a>
+<a class="sourceLine" id="cb14-7" data-line-number="7">    <span class="co">-- Separate the dependencies from the actual result</span></a>
+<a class="sourceLine" id="cb14-8" data-line-number="8">    <span class="kw">let</span> (act_res, deps) <span class="fu">=</span> splitE pm</a>
+<a class="sourceLine" id="cb14-9" data-line-number="9">    <span class="kw">let</span> deps&#39; <span class="fu">=</span> pushAlways mkDepTrigger deps</a>
+<a class="sourceLine" id="cb14-10" data-line-number="10">    <span class="fu">...</span></a></code></pre></div>
+<p>The use of <code>switchHoldPromptly</code> is absolutely key to the implementation. It is imperative that if in the same frame a dependency fires then we need to immediately rerun the rule. The network is left in an inconsistent state is the simpler <code>switchHold</code> is used.</p>
+<p>Further processing to the returned result is performed to convert it into an <code>MDynamic</code> which is then stored in the state.</p>
+<h2 id="a-note-about-the-module-state">A note about the module state</h2>
+<p>The per-module state is a pair of a map from the rule type to an <code>MDynamic</code> and an event which reports diagnostics for that module.</p>
+<div class="sourceCode" id="cb15"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb15-1" data-line-number="1"><span class="kw">data</span> <span class="dt">ModuleState</span> t <span class="fu">=</span> <span class="dt">ModuleState</span></a>
+<a class="sourceLine" id="cb15-2" data-line-number="2">      {<span class="ot"> rules ::</span> <span class="dt">DMap</span> <span class="dt">RuleType</span> (<span class="dt">MDynamic</span> t)</a>
+<a class="sourceLine" id="cb15-3" data-line-number="3">      ,<span class="ot"> diags ::</span> <span class="dt">Event</span> t (<span class="dt">NL.NonEmpty</span> <span class="dt">DiagsInfo</span>) }</a></code></pre></div>
+<p>The state for all modules is stored in a map from the filepath to one of these module state records.</p>
+<div class="sourceCode" id="cb16"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb16-1" data-line-number="1"><span class="kw">type</span> <span class="dt">ModuleMap</span> t <span class="fu">=</span> <span class="dt">Incremental</span> t (<span class="dt">PatchMap</span> <span class="dt">NormalizedFilePath</span> (<span class="dt">ModuleState</span> t))</a></code></pre></div>
+<p>Using a <code>Dynamic</code> or <code>Incremental</code> here is important because it means values of the map can be altered as the network is evaluated. For our use-case as we do not know the dependencies of a module until we have parsed the module header.</p>
+<p>So when a module rule is attempted to be sampled, there are in fact two possible modes of failure which we can recover from.</p>
+<ol type="1">
+<li>Either the module has never been seen before, so we should initialise the module state for this module.</li>
+<li>The value for the rule has not been computed yet, so we should recompute the rule when it is available.</li>
+</ol>
+<p>In order to report that a sample failed for the first reason, the module map is paired with an action which can be called to trigger the event which adds a new module to the map.</p>
+<div class="sourceCode" id="cb17"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb17-1" data-line-number="1"><span class="kw">data</span> <span class="dt">ModuleMapWithUpdater</span> t <span class="fu">=</span></a>
+<a class="sourceLine" id="cb17-2" data-line-number="2">  <span class="dt">MMU</span> {</a>
+<a class="sourceLine" id="cb17-3" data-line-number="3"><span class="ot">    getMap ::</span> <span class="dt">ModuleMap</span> t</a>
+<a class="sourceLine" id="cb17-4" data-line-number="4">    ,<span class="ot"> updateMap ::</span> [(<span class="dt">D.Some</span> <span class="dt">RuleType</span>, <span class="dt">NormalizedFilePath</span>)] <span class="ot">-&gt;</span> <span class="dt">IO</span> ()</a>
+<a class="sourceLine" id="cb17-5" data-line-number="5">    }</a></code></pre></div>
+<p>The second situation is dealt with by the <code>Thunk</code> mechanism described in the previous situation.</p>
+<p>Note: There is a place where using <code>batchOccurences</code> is very useful because during the initialisation of the network, this trigger can be called hundreds of times and it is much more efficient to collect together as many updates as possible.</p>
+<div class="sourceCode" id="cb18"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb18-1" data-line-number="1">map_update&#39; <span class="ot">&lt;-</span> fmap concat <span class="fu">&lt;$&gt;</span> batchOccurrences <span class="fl">0.1</span> map_update</a></code></pre></div>
+<h1 id="interaction-with-the-language-client">Interaction with the language client</h1>
+<p>In the global environment as well as the global variables as defined by rules, there is a collection of events which correspond to external events.</p>
+<ul>
+<li>One event which fires after the language server is initialised, this populates a few global dynamics.</li>
+<li>A record of events which fire whenever the server recieves a notification of request from the client. For example, when the user opens or modifies a file, the event fires.</li>
+</ul>
+<p>As part of an action definition it is possible to also provide an additional event trigger, constructed from these events, which causes the rule to fire. For example, when a file is saved, the rule which parses a file fires again which causes the changes to propagate through the network.</p>
+<p>Global variables are typically constructed by holding these notification events. It is a much nicer model in my opinion than the style previously found in <code>ghcide</code> where there where some variables were mutated in the handlers and the whole shake graph invalidated.</p>
+<p>Note: The way this handler record is constructed by leveraging the <code>barbies</code> library is <a href="https://github.com/mpickering/ghcide/blob/reflex/src/Development/IDE/Core/Reflex/Service.hs#L257">interesting</a> in its own right.</p>
+<h1 id="evaluation">Evaluation</h1>
+<p>I found it important to be able to inspect certain properties of my network during the implementation process. In particular, there were situations where actions were running more than I expected so I wanted to analyse what was causing each rule to fire. There is unfortunately not an existing framework built into reflex for this but it was possible to instrument the application to get some good information.</p>
+<p>I started by defining a data type which enumerates the different possible ways a rule can fire.</p>
+<div class="sourceCode" id="cb19"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb19-1" data-line-number="1"><span class="co">-- EType is mainly used for debugging why an event is firing too often.</span></a>
+<a class="sourceLine" id="cb19-2" data-line-number="2"><span class="kw">data</span> <span class="dt">EType</span> <span class="fu">=</span> <span class="dt">DepTrigger</span> (<span class="dt">D.Some</span> <span class="dt">RuleType</span>, <span class="dt">NormalizedFilePath</span>)</a>
+<a class="sourceLine" id="cb19-3" data-line-number="3">              <span class="fu">|</span> <span class="dt">MissingTrigger</span> <span class="dt">NormalizedFilePath</span></a>
+<a class="sourceLine" id="cb19-4" data-line-number="4">              <span class="fu">|</span> <span class="dt">StartTrigger</span></a>
+<a class="sourceLine" id="cb19-5" data-line-number="5">              <span class="fu">|</span> <span class="dt">UserTrigger</span></a>
+<a class="sourceLine" id="cb19-6" data-line-number="6">      <span class="kw">deriving</span> <span class="dt">Show</span></a></code></pre></div>
+<p>Then each event which could contribute to an action firing is tagged with one of these constructors. When the event fires I used <code>traceEvent</code> in order to output both the action which was firing and the reason for it. Then by capturing this log and using standard unix commands it was possible to analyse situations where things were happening more often than not.</p>
+<p>This was the method where I realised it was necessary to use <code>headE</code> in order to make sure the <code>StartTrigger</code> event would only fire one time.</p>
+<h1 id="whats-next">What’s next?</h1>
+<p>So we’ve achieved our goal of proving the implementation is possible but there are still a few places the implementation could be improved. I have also not extensively tested the branch, it is likely there are some bugs to do with stale information.</p>
+<h3 id="progress-reporting">Progress Reporting</h3>
+<p>It isn’t clear to me how to implement progress reporting for the IDE at the moment. All changes to the system are driven by push events, which means that when an event fires the amount of work which will be done can not be determined. This is compounded by the fact reflex is a monadic FRP library so how much is left to do depends on the result of running the rules.</p>
+<h3 id="better-profiling">Better Profiling</h3>
+<p>It would be good to have a profiling mode like shake’s profiling mode so the effect of each input event could be analysed in detail. At the moment there is nothing in the reflex ecosystem which can help with this analysis.</p>
+<h3 id="asynchronous-actions">Asynchronous Actions</h3>
+<p>It would be very beneficial if the rules could run in separate threads because currently the whole application blocks whilst IO actions are being computed. The usage of <code>MonadSample</code> is not currently compatible with using <code>performEvent</code> asynchronously.</p>
+<h3 id="dynamic-rule-registration">Dynamic Rule Registration</h3>
+<p>For my own sanity, I decided to use a fixed set of rules, as defined by <code>RuleType</code> in my implementation rather than a dynamic map of rules, as implemented in shake. I have considered a few types going for the dynamic map approach, as it would also be useful for plugins but it has been a low priority for the proof of concept implementation.</p>
+<h1 id="conclusion">Conclusion</h1>
+<p>I had a great time implementing this fork, my second extensive rewrite of a Haskell IDE. I’m looking forward to rewriting an IDE again next year.</p>
+<h2 id="related-links">Related Links</h2>
+<ul>
+<li><a href="https://github.com/mpickering/ghcide/tree/reflex">Project Branch</a></li>
+<li>Reddit discussion</li>
+</ul>
+]]></summary>
+</entry>
+<entry>
     <title>Introducing hs-speedscope - a way to visualise time profiles</title>
     <link href="http://mpickering.github.io/posts/2019-11-07-hs-speedscope.html" />
     <id>http://mpickering.github.io/posts/2019-11-07-hs-speedscope.html</id>
@@ -755,224 +987,6 @@ dockerTools.buildImage {
 <li><a href="https://nixos.org/nixpkgs/manual/#sec-pkgs-dockerTools"><code>dockerTools</code> documentation</a></li>
 <li><a href="https://www.software.ac.uk/blog/2017-10-05-reproducible-environments-nix">Reproducible Environments With Nix - Blair Archibald</a></li>
 <li><a href="https://www.reddit.com/r/haskell/comments/9h6xh2/packaging_a_haskell_library_for_artefact/">Reddit comments</a></li>
-</ul>
-]]></summary>
-</entry>
-<entry>
-    <title>Using funflow to cache a nix based workflow</title>
-    <link href="http://mpickering.github.io/posts/2018-09-12-funflow-nix.html" />
-    <id>http://mpickering.github.io/posts/2018-09-12-funflow-nix.html</id>
-    <published>2018-09-12T00:00:00Z</published>
-    <updated>2018-09-12T00:00:00Z</updated>
-    <summary type="html"><![CDATA[<h2> Using funflow to cache a nix based workflow </h2>
-<p class="text-muted">
-    Posted on September 12, 2018
-    
-</p>
-
-<p>My latest project has been to plot a <a href="http://mpickering.github.io/maps.html">map of orienteering maps</a> in the UK. This post explains the technical aspects behind the project and primarily the use of <a href="https://hackage.haskell.org/package/funflow"><code>funflow</code></a> to turn my assortment of scripts into into a resumable workflow.</p>
-<p>There was nothing wrong with my ad-hoc python and bash scripts but they downloaded and regenerated the whole output every time. The whole generation takes about 2 hours so it’s desirable to only recompute the necessary portions. This is where <code>funflow</code> comes in, by stringing together these scripts in their DSL, you get caching for free. The workflow is also highly parallelisable so in the future I could distribute the work across multiple machines if necessary.</p>
-<p>The code for the project can be found <a href="https://github.com/mpickering/rg-map">here</a>.</p>
-<p><img src="https://i.imgur.com/NVLui01.png" style="width: 50%; margin: auto; display: block" /></p>
-<!--more-->
-<h2 id="funflow"><code>funflow</code></h2>
-<p>There are already two blog posts introducing the concepts of <code>funflow</code>.</p>
-<ol type="1">
-<li><a href="https://www.tweag.io/posts/2018-04-25-funflow.html">Funflow: Typed Resumable Workflows</a></li>
-<li><a href="https://www.tweag.io/posts/2018-07-10-funflow-make.html">Funflow Example: Emulating Make</a></li>
-</ol>
-<p>The main idea is that you specify your workflow (usually a sequence of external scripts) using a DSL and then <code>funflow</code> will automatically cache and schedule the steps.</p>
-<p>My primary motivation for using <code>funflow</code> was the automatic caching. The store is content addressed which means that the location for each file in the store depends on its contents. <code>funflow</code> performs two different types of caching.</p>
-<ol type="1">
-<li>Input-based caching: A flow will only be executed once for each set of inputs.</li>
-<li>Output-based caching: If multiple different steps produce the same output then it will only be stored once in the store. Further steps will not be recomputed.</li>
-</ol>
-<p>The lack of output-based caching is one of the big missing features of nix which makes it unsuitable for this task. A content-addressed store where the address depends on the contents of the file is sometimes known as an <strong>intensional</strong> store. Nix’s store model is <strong>extensional</strong> as the store hash only depends on the inputs to the build.</p>
-<p>An intensional store relies on the program producing deterministic output hashes. It can be quite difficult to track down why a step is not being cached when you are relying on the output’s being identified in the store.</p>
-<h2 id="high-level-architecture">High-level architecture</h2>
-<p>There are two outputs to the project.</p>
-<ol type="1">
-<li>A folder of map tiles rendered at different resolutions.</li>
-<li>A HTML page which contains the javascript to display the map and markers.</li>
-</ol>
-<p>This folder is then uploaded to online storage and served as a static site.</p>
-<p>The processing pipeline is as follows:</p>
-<ol type="1">
-<li>Find all the maps with location information from <a href="http://www.routegadget.co.uk/">routegadget.co.uk</a>.</li>
-<li>Download the metainformation and map image for each map.</li>
-<li>Convert the maps to a common image format.</li>
-<li>Reproject the maps to remove any rotation.</li>
-<li>Merge overlapping maps into groups.</li>
-<li>Generate tiles at all the different resolutions.</li>
-<li>Combine all the tiles groups together.</li>
-<li>Generate the website with the map and location markers.</li>
-</ol>
-<p>As can be seen, the workflow is firstly highly parallelisable as much of the processing pipeline happens independently of other steps. However, the main goal is to avoid computing the tiles as much as possible as this is the step which takes by far the longest. At the time of writing there are about 500 maps to process. In general, there are about 5-10 maps added each week. Only recomputing the changed portions of the map saves a lot of time.</p>
-<h2 id="implementation-using-funflow">Implementation using <code>funflow</code></h2>
-<p>In theory, this is a perfect application for <code>funflow</code> but in order to achieve the perfect caching behaviour I had to rearchitecture several parts of the application.</p>
-<h3 id="using-nix-scripts">Using nix scripts</h3>
-<p>The recommended way to use <code>funflow</code> is to run each step of the flow in a docker container. I didn’t want to do this was my scripts already declared the correct environment to run in by using the <a href="http://iam.travishartwell.net/2015/06/17/nix-shell-shebang/"><code>nix-shell</code> shebang</a>.</p>
-<pre><code>#! /usr/bin/env nix-shell
-#! nix-shell -i bash -p gdal</code></pre>
-<p>By placing these two lines at the top of the file, the script will be run using the <code>bash</code> interpreter with the <code>gdal</code> package available. This is more lightweight and flexible than using a docker image as I don’t have to regenerate a new docker image any time I make a change.</p>
-<p>However, there is no native support for running these kinds of scripts built into <code>funflow</code>. It was easy enough to define my own function in order to run these kinds of scripts using the <code>external'</code> primitive.</p>
-<p><code>nixScript</code> takes a boolean parameter indicating whether the script is pure and should be cached. The name of the script to run, the names of any files the script depends on and finally a function which supplies any additional arguments to the script.</p>
-<pre><code>nixScriptX :: ArrowFlow eff ex arr =&gt; Bool
-                                   -&gt; Path Rel File
-                                   -&gt; [Path Rel File]
-                                   -&gt; (a -&gt; [Param])
-                                   -&gt; arr (Content Dir, a) CS.Item
-nixScriptX impure script scripts params = proc (scriptDir, a) -&gt; do
-  env &lt;- mergeFiles -&lt; absScripts scriptDir
-  external&#39; props (\(s, args) -&gt; ExternalTask
-        { _etCommand = &quot;perl&quot;
-        , _etParams = contentParam (s ^&lt;/&gt; script) : params args
-        , _etWriteToStdOut = NoOutputCapture
-        , _etEnv = [(&quot;NIX_PATH&quot;, envParam &quot;NIX_PATH&quot;)] }) -&lt; (env, a)
-  where
-    props = def { ep_impure = impure }
-    absScripts sd = map (sd ^&lt;/&gt;) (script : scripts)</code></pre>
-<p>The use of <code>perl</code> as the command relies on <a href="http://perldoc.perl.org/perlrun.html">the behaviour</a> of <code>perl</code> that it will execute the <code>#!</code> line if it does not contain the word “perl”. Yes, this <a href="https://askubuntu.com/questions/850384/is-there-a-command-for-running-a-script-according-to-its-shebang-line/850387">is dirty</a>.</p>
-<p>It would be desirable to set <code>NIX_PATH</code> to a fixed <code>nixpkgs</code> checkout by passing a tarball directly but this worked for now.</p>
-<p>All the steps are then defined in terms of <code>nixScriptX</code> indirectly as two helper functions are defined for the two cases of a pure or impure scripts.</p>
-<pre><code>nixScript = nixScriptX False
-impureNixScript = nixScriptX True</code></pre>
-<h2 id="step-1---finding-the-map-information">Step 1 - Finding the map information</h2>
-<p>Now to the nitty gritty details.</p>
-<p>Firstly, I had to decouple the processing of finding the map metainformation from downloading the image. Otherwise, I would end up doing a lot of redundant work downloading images multiple times.</p>
-<p>The python script <code>scraper.py</code> executes a selenium driver to extract the map information. For each map, the metainformation is serialised to its own file in the output directory.</p>
-<pre><code>scrape = impureNixScript [relfile|scraper.py|] [[relfile|shell.nix|]]
-          (\() -&gt; [ outParam ])</code></pre>
-<p>This step is marked as impure as we have to run it every time the flow runs to work out if we need to perform any more work.</p>
-<p>It is important that the filename of the serialised information is the same if the content of the file is the same. Otherwise, <code>funflow</code> will calculate a different hash for the file. As such, we compute our own hash of the metainformation for the name the serialised file.</p>
-<p>In the end the output directory looks like:</p>
-<pre><code>9442c7eaa81f82f7e9889f6ee8382e8d047df76db2d5f6a6983d1c82399a2698.pickle
-5e7e6994db565126a942d66a9435454d8b55cd7d3023dd37f64eca7bbb46df1f.pickle
-...</code></pre>
-<h3 id="gotcha-1-using-listdircontents-defeats-caching">Gotcha 1: Using <code>listDirContents</code> defeats caching</h3>
-<p>Now that we have a directory containing all the metainformation, we want to split it up and then execute the fetching, converting and warping in parallel for all the images. My first attempt was</p>
-<pre><code>meta_dir &lt;- step All &lt;&lt;&lt; scrape -&lt; (script_dir, ())
-keys &lt;- listDirContents -&lt; meta_dir</code></pre>
-<p>but this did not work and even if the keys remained the same, the images would be refetched. The problem was <a href="https://hackage.haskell.org/package/funflow-1.3.2/docs/Control-Funflow-Steps.html#v:listDirContents"><code>listDirContents</code></a> does not have the correct caching behaviour.</p>
-<p><code>listDirContents</code> takes a <code>Content Dir</code> and returns a <code>[Content File]</code> as required but the <code>[Content File]</code> are pointers into places into the <code>Content Dir</code>. This means that if the location of <code>Content Dir</code> changes (if there are any changes or new additions to any files in the directory) then the location of <em>all</em> the <code>[Content File]</code> will also be changed. This means the next stage of recompilation will be triggered despite being unnecessary.</p>
-<p>Instead, we have to put each file in the directory into its own store location so that the its location depends only on itself rather than the other contents of the directory. I defined the <code>splitDir</code> combinator in order to do this.</p>
-<pre><code>splitDir :: ArrowFlow eff ex arr =&gt; arr (Content Dir) ([Content File])
-splitDir = proc dir -&gt; do
-  (_, fs) &lt;- listDirContents -&lt; dir
-  mapA reifyFile -&lt; fs
-
-
--- Put a file, which might be a pointer into a dir, into its own store
--- location.
-reifyFile :: ArrowFlow eff ex arr =&gt; arr (Content File) (Content File)
-reifyFile = proc f -&gt; do
-  file &lt;- getFromStore return -&lt; f
-  putInStoreAt (\d fn -&gt; copyFile fn d) -&lt; (file, CS.contentFilename f)</code></pre>
-<p>It could be improved by using a hardlink rather than <code>copyFile</code>.</p>
-<h2 id="step-2-download-convert-and-warp">Step 2: Download, convert and warp</h2>
-<p>Now we have split the metainformation up into individual components we have to download, convert and warp the map files.</p>
-<p>We define three flows to do this which correspond to three different scripts.</p>
-<pre><code>fetch = nixScript [relfile|fetch.py|] [[relfile|shell.nix|]]
-          (\metadata -&gt; [ outParam, contentParam metadata ])
-
-convertToGif = nixScript [relfile|convert_gif|] []
-                (\dir -&gt; [ pathParam (IPItem dir), outParam ])
-
-warp = nixScript [relfile|do_warp|] []
-        (\dir -&gt; [ pathParam (IPItem dir), outParam ])</code></pre>
-<p>Each script takes an individual input file and produces output in a directory specified by <code>funflow</code>.</p>
-<p><code>fetch.py</code> is a python script whilst <code>convert_gif</code> and <code>do_warp</code> are bash scripts. We can treat them uniformly because of the <code>nix-shell</code> shebang.</p>
-<p>These steps are all cached by default because they are external processes.</p>
-<h2 id="step-3-merge-the-images-together">Step 3: Merge the images together</h2>
-<p>In order to get a good looking result, we need to group together the processed images into groups of overlapping images. This time we will use a python script again invoked in a similar manner. The output is a directory of files which specify the groups, remember:</p>
-<ol type="1">
-<li>We have to be careful naming the files so that the names remain stable across compilation. In my original program the names were supplied by a counter but now they are the hash of the files which were used to create the group.</li>
-<li>We have to use <code>splitDir</code> after creating the output to put each group file into it’s own store location so the next recompilation step will work.</li>
-</ol>
-<pre><code>mergeRasters = nixScript [relfile|merge-rasters.py|] [[relfile|merge-rasters.nix|]]
-                (\rs -&gt; outParam : map contentParam rs )</code></pre>
-<p>This command also relies on <code>merge-rasters.nix</code> which sets up the correct python environment to run the script.</p>
-<h3 id="gotcha-2-mergedirs-can-also-defeat-caching">Gotcha 2: <code>mergeDirs</code> can also defeat caching</h3>
-<p>The original implementation of this used <code>mergeDirs :: arr [Content File] (Content Dir)</code> in order to group together the files and pass a single directory to <code>merge-rasters.py</code>.</p>
-<p>However, this suffers a similar problem to <code>listDirContents</code> as <code>mergeDirs</code> will create a new content store entry which contains all the files in the merge directories. The hash of this store location will then depend on the whole contents of the directory. In this case these file paths ended up in the output so it would cause the next steps to recompile even if nothing had changed.</p>
-<p>In this case, we would prefer a “logical” group which groups the files together with a stable filename which wouldn’t affect caching.</p>
-<p>The workaround for now was to use <code>splitDir</code> again to put each processed image into its own storage path and then pass each filename individually to <code>merge-rasters.py</code> rather than a directory as before.</p>
-<h2 id="step-4-making-the-tiles">Step 4: Making the tiles</h2>
-<p>Making the tiles is another straightforward step which takes each of the groups and makes the necessary tiles for that group.</p>
-<pre><code>makeTiles = nixScript [relfile|make_tiles|] [] (\dir -&gt; [ contentParam dir, outParam, textParam &quot;16&quot; ])</code></pre>
-<h3 id="gotcha-3-mergedirs-doesnt-merge-duplicate-files">Gotcha 3: <code>mergeDirs</code> doesn’t merge duplicate files</h3>
-<p>Once we have made all the tiles we need to merge them all together. This is safe as we already ensured that they didn’t overlap each other. The problem is that <code>mergeDirs</code> will not merge duplicate files. The <code>make_tiles</code> step creates some unnecessary files which we don’t need but would cause <code>mergeDirs</code> to fail as they are contained in the output of each directory.</p>
-<p>The solution was to write my own version of <code>mergeDirs</code> which checks to see whether a file already exists before trying to merge it. It would be more hygienic to ensure that the directories I was trying to merge were properly distinct but this worked well for this use case.</p>
-<h2 id="step-5-creating-the-static-site">Step 5: Creating the static site</h2>
-<p>Our final script is a python script which creates the static site displaying all the markers and the map tiles. It takes the output of processing all the images and the metainformation to produce a single html file.</p>
-<pre><code>leaflet &lt;- step All &lt;&lt;&lt; makeLeaflet -&lt; ( script_dir, (merge_dir, meta_dir))</code></pre>
-<p>The final step then merges together the static page and all the tiles. This is a nice bundle we can directly upload and serve our static site.</p>
-<pre><code>mergeDirs -&lt; [leaflet, tiles]</code></pre>
-<h2 id="putting-it-all-together">Putting it all together</h2>
-<p>The complete flow is shown below:</p>
-<pre><code>mainFlow :: SimpleFlow () (Content Dir)
-mainFlow = proc () -&gt; do
-  cwd &lt;- stepIO (const getCurrentDir) -&lt; ()
-  script_dir &lt;- copyDirToStore -&lt; (DirectoryContent (cwd &lt;/&gt; [reldir|scripts/|]), Nothing)
-
-	# Step 1
-  meta_dir &lt;- step All &lt;&lt;&lt; scrape -&lt; (script_dir, ())
-  keys &lt;- splitDir -&lt; meta_dir
-	# Step 2
-  maps &lt;- mapA (fetch) -&lt; [( script_dir, event) | event &lt;- keys]
-  mapJpgs &lt;- mapA convertToGif -&lt; [(script_dir, m) | m &lt;- maps]
-  merge_dir &lt;- mergeDirs&#39; &lt;&lt;&lt; mapA (step All) &lt;&lt;&lt; mapA warp -&lt; [(script_dir, jpg) | jpg &lt;- mapJpgs ]
-  toMerge &lt;- splitDir -&lt; merge_dir
-	# Step 3
-  vrt_dir &lt;- step All &lt;&lt;&lt; mergeRasters -&lt; (script_dir, toMerge)
-  merged_vrts &lt;- splitDir -&lt; vrt_dir
-	# Step 4
-  tiles &lt;- mergeDirs&#39; &lt;&lt;&lt; mapA (step All) &lt;&lt;&lt; mapA makeTiles -&lt; [(script_dir, vrt) | vrt &lt;- merged_vrts]
-
-	# Step 5
-  leaflet &lt;- step All &lt;&lt;&lt; makeLeaflet -&lt; ( script_dir, (merge_dir, meta_dir))
-
-  mergeDirs -&lt; [leaflet, tiles]</code></pre>
-<p>Once all the kinks are ironed out – it’s quite short but a very powerful specification which avoids a lot of redundant work being carried out.</p>
-<h3 id="gotcha-4-copydirtostore-can-defeat-caching">Gotcha 4: <code>copyDirToStore</code> can defeat caching</h3>
-<p>Using <code>copyDirToStore</code> seems much more convenient than copying each script into the store manually but it can again have confusing caching behaviour. The hash of the store location for <code>script_dir</code> depends on the whole <code>script_dir</code> directory. If you change any file in the directory then the hash of it will change. This means that all steps will recompile if you modify any script!</p>
-<p>This is the reason for the <code>mergeFiles</code> call in <code>nixScriptX</code>. <code>mergeFiles</code> will take the necessary files from <code>script_dir</code> and put them into their own store directory. The hash of this directory will only depend on the files necessary for that step.</p>
-<h2 id="running-the-flow">Running the flow</h2>
-<p>The flow is run with the simple local runner. We pass in a location for the local store to the runner which is just a local directory in this case. The library has support for more complicated runners but I haven’t explored using those yet.</p>
-<pre><code>main :: IO ()
-main = do
-    cwd &lt;- getCurrentDir
-    r &lt;- withSimpleLocalRunner (cwd &lt;/&gt; [reldir|funflow-example/store|]) $ \run -&gt;
-      run (mainFlow &gt;&gt;&gt; storePath) ()
-    case r of
-      Left err -&gt;
-        putStrLn $ &quot;FAILED: &quot; ++ displayException err
-      Right out -&gt; do
-        putStrLn $ &quot;SUCCESS&quot;
-        putStrLn $ toFilePath out</code></pre>
-<h3 id="displaying-the-outpath">Displaying the outpath</h3>
-<p>A nice feature of <code>nix-build</code> is that it displays the path of the final output in the nix store once the build has finished. This is possible to replicate using <code>funflow</code> after defining your own combinator. It would be good to put this in the standard library.</p>
-<pre><code>storePath :: ArrowFlow eff ex arr =&gt; arr (Content Dir) (Path Abs Dir)
-storePath = getFromStore return</code></pre>
-<p>It means that we can run our flow and deploy the site in a single command given we have a script which performs the deployment given an output path.</p>
-<p>Mine looks a bit like:</p>
-<pre><code>#! /usr/bin/env nix-shell
-#! nix-shell -i bash -p awscli
-if [[ $# -eq 0 ]] ; then
-     echo &#39;Must pass output directory&#39;
-     exit 1
-fi
-aws s3 sync $1 s3://&lt;bucket-name&gt;</code></pre>
-<p>Putting them together:</p>
-<pre><code>cabal new-run | ./upload-s3</code></pre>
-<h2 id="conclusion">Conclusion</h2>
-<p>Once everything is set up properly, <code>funflow</code> is a joy to use. It abstracts beautifully away from the annoying problems of scheduling and caching leaving the core logic visible. An unfortunate consequence of the intensional store model is that debugging why a build step is not being cached can be very time consuming and fiddly. When I explain the problems I faced, they are obvious but each one required careful thought and reading the source code to understand the intricacies of each of the different operations.</p>
-<p>It was also very pleasant to combine using <code>nix</code> and <code>funflow</code> rather than the suggested <code>docker</code> support.</p>
-<h2 id="related-links">Related Links</h2>
-<ul>
-<li><a href="http://mpickering.github.io/maps.html">Map of orienteering maps</a></li>
-<li><a href="https://github.com/mpickering/rg-map">Source code</a></li>
-<li><a href="https://www.reddit.com/r/haskell/comments/9f7kq9/using_funflow_to_cache_a_nix_based_workflow/">Reddit comments</a></li>
 </ul>
 ]]></summary>
 </entry>
