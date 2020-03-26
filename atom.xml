@@ -8,8 +8,85 @@
         <name>Matthew Pickering</name>
         <email>matthewtpickering@gmail.com</email>
     </author>
-    <updated>2020-03-16T00:00:00Z</updated>
+    <updated>2020-03-26T00:00:00Z</updated>
     <entry>
+    <title>A Tip for Profiling GHC</title>
+    <link href="http://mpickering.github.io/posts/2020-03-26-tip-for-profiling.html" />
+    <id>http://mpickering.github.io/posts/2020-03-26-tip-for-profiling.html</id>
+    <published>2020-03-26T00:00:00Z</published>
+    <updated>2020-03-26T00:00:00Z</updated>
+    <summary type="html"><![CDATA[<h2> A Tip for Profiling GHC </h2>
+<p class="text-muted">
+    Posted on March 26, 2020
+    
+</p>
+
+<p>GHC developers are often in a situation where we want to profile a new change to GHC to see how it affects memory usage or runtime performance. In this post I will describe quite an ergonomic way of profiling any merge request without having to build the branch yourself from source or in any special mode. We’ll download the bindist from GitLab CI and then compile a simple GHC API application which models the compilation pipeline which we can profile.</p>
+<!--more-->
+<h2 id="step-1-enter-an-environment-with-the-bindist">Step 1: Enter an environment with the bindist</h2>
+<p>I recently wanted to profile one of Sebastian Graf’s great patches, seeing as he put up a merge request on GitLab, CI built his patch and produced a bindist for a large number of platforms. This included a Fedora bindist which can be passed to my tool <a href="https://mpickering.github.io/posts/2019-06-11-ghc-artefact.html"><code>ghc-head-from</code></a> in order to enter an environment with his patched version of GHC available.</p>
+<p>I found the URL for the bindist for his patch by navigating through the GitLab interface.</p>
+<pre><code>ghc-head-from https://gitlab.haskell.org/ghc/ghc/-/jobs/289084/artifacts/raw/ghc-x86_64-fedora27-linux.tar.xz</code></pre>
+<p>Once it has finished downloading and installed, which takes a surprising amount of time, the patched version of GHC will be available.</p>
+<pre><code>&gt; ghc --version
+The Glorious Glasgow Haskell Compilation System, version 8.11.0.20200324</code></pre>
+<h2 id="step-2-the-simple-ghc-api-program">Step 2: The simple GHC API program</h2>
+<p>Now we need the program we are going to profile. This is a simple GHC API program which will read arguments from a file called <code>args</code> and then just compile the modules as specified by the arguments.</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb3-1" data-line-number="1"><span class="kw">module</span> <span class="dt">Main</span> <span class="kw">where</span></a>
+<a class="sourceLine" id="cb3-2" data-line-number="2"></a>
+<a class="sourceLine" id="cb3-3" data-line-number="3"><span class="kw">import</span> <span class="dt">Lib</span></a>
+<a class="sourceLine" id="cb3-4" data-line-number="4"><span class="kw">import</span> <span class="dt">GHC</span> <span class="kw">as</span> <span class="dt">G</span></a>
+<a class="sourceLine" id="cb3-5" data-line-number="5"><span class="kw">import</span> <span class="dt">GHC.Driver.Session</span> <span class="kw">as</span> <span class="dt">G</span></a>
+<a class="sourceLine" id="cb3-6" data-line-number="6"><span class="kw">import</span> <span class="dt">GHC.Driver.Session</span></a>
+<a class="sourceLine" id="cb3-7" data-line-number="7"><span class="kw">import</span> <span class="dt">SrcLoc</span> <span class="kw">as</span> <span class="dt">G</span></a>
+<a class="sourceLine" id="cb3-8" data-line-number="8"></a>
+<a class="sourceLine" id="cb3-9" data-line-number="9"><span class="kw">import</span> <span class="dt">Control.Monad</span></a>
+<a class="sourceLine" id="cb3-10" data-line-number="10"><span class="kw">import</span> <span class="dt">Control.Monad.IO.Class</span></a>
+<a class="sourceLine" id="cb3-11" data-line-number="11"><span class="kw">import</span> <span class="dt">System.Environment</span></a>
+<a class="sourceLine" id="cb3-12" data-line-number="12"><span class="kw">import</span> <span class="dt">System.Mem</span></a>
+<a class="sourceLine" id="cb3-13" data-line-number="13"><span class="kw">import</span> <span class="dt">Control.Concurrent</span></a>
+<a class="sourceLine" id="cb3-14" data-line-number="14"><span class="kw">import</span> <span class="dt">Outputable</span></a>
+<a class="sourceLine" id="cb3-15" data-line-number="15"></a>
+<a class="sourceLine" id="cb3-16" data-line-number="16"><span class="ot">initGhcM ::</span> [<span class="dt">String</span>] <span class="ot">-&gt;</span> <span class="dt">Ghc</span> ()</a>
+<a class="sourceLine" id="cb3-17" data-line-number="17">initGhcM xs <span class="fu">=</span> <span class="kw">do</span></a>
+<a class="sourceLine" id="cb3-18" data-line-number="18">    df1 <span class="ot">&lt;-</span> getSessionDynFlags</a>
+<a class="sourceLine" id="cb3-19" data-line-number="19">    <span class="kw">let</span> cmdOpts <span class="fu">=</span> [<span class="st">&quot;-fforce-recomp&quot;</span>] <span class="fu">++</span> xs</a>
+<a class="sourceLine" id="cb3-20" data-line-number="20">    (df2, leftovers, warns) <span class="ot">&lt;-</span> G.parseDynamicFlags df1 (map G.noLoc cmdOpts)</a>
+<a class="sourceLine" id="cb3-21" data-line-number="21">    setSessionDynFlags df2</a>
+<a class="sourceLine" id="cb3-22" data-line-number="22">    ts <span class="ot">&lt;-</span> mapM (flip G.guessTarget <span class="dt">Nothing</span>) <span class="fu">$</span> map unLoc leftovers</a>
+<a class="sourceLine" id="cb3-23" data-line-number="23">    setTargets ts</a>
+<a class="sourceLine" id="cb3-24" data-line-number="24">    pprTraceM <span class="st">&quot;Starting&quot;</span> (ppr ts)</a>
+<a class="sourceLine" id="cb3-25" data-line-number="25">    void <span class="fu">$</span> G.load <span class="dt">LoadAllTargets</span></a>
+<a class="sourceLine" id="cb3-26" data-line-number="26"></a>
+<a class="sourceLine" id="cb3-27" data-line-number="27"><span class="ot">main ::</span> <span class="dt">IO</span> ()</a>
+<a class="sourceLine" id="cb3-28" data-line-number="28">main <span class="fu">=</span> <span class="kw">do</span></a>
+<a class="sourceLine" id="cb3-29" data-line-number="29">    xs <span class="ot">&lt;-</span> words <span class="fu">&lt;$&gt;</span> readFile <span class="st">&quot;args&quot;</span></a>
+<a class="sourceLine" id="cb3-30" data-line-number="30">    <span class="kw">let</span> libdir <span class="fu">=</span> <span class="st">&quot;/nix/store/c7113gcm42jjjzpgygfmmrivdhrxgvvk-ghc-8.11.0.20200324/lib/ghc-8.11.0.20200324&quot;</span></a>
+<a class="sourceLine" id="cb3-31" data-line-number="31">    runGhc (<span class="dt">Just</span> libdir) <span class="fu">$</span> initGhcM xs</a></code></pre></div>
+<p>In the program you need to set the <code>libdir</code> to the <code>libdir</code> for the version of <code>ghc</code> we just downloaded.</p>
+<pre><code>&gt; ghc --print-libdir
+/nix/store/c7113gcm42jjjzpgygfmmrivdhrxgvvk-ghc-8.11.0.20200324/lib/ghc-8.11.0.20200324</code></pre>
+<p>The <code>args</code> file contains a list of arguments that you would normally pass to GHC. The wrapper is then compiled as normal, passing both the <code>-package</code> and <code>-prof</code> flags.</p>
+<pre><code>ghc Profile.hs -package ghc -prof</code></pre>
+<h2 id="step-3-the-program-you-want-to-profile">Step 3: The program you want to profile</h2>
+<p>Say for this example we want to profile a single compilation of <code>Cabal</code>, how do we know what options we should pass to the wrapper program in order to perform the compilation? The easiest way to work this out is to ask <code>cabal</code> to compile the project and then copy the arguments it uses to invoke GHC. So in the locally cloned <code>Cabal</code> repository, we can compile it like normal and pass the <code>-v2</code> flag to get <code>cabal</code> to print the options it will use to call GHC.</p>
+<pre><code>cabal v2-build -v2 Cabal | tee args</code></pre>
+<p>Then open the <code>args</code> file and delete everything apart from the arguments for the final call to <code>ghc</code>. The final file should contain a single line with just the options you want to pass to GHC to compile the project.</p>
+<p>By using <code>cabal</code> to get the arguments it will also build any necessary dependencies for us.</p>
+<p>Note: You might need to fix some of the include paths if you are running the executable in a different directory.</p>
+<h2 id="step-4-running-the-profile">Step 4: Running the profile</h2>
+<p>So now we have the program to profile and something to compile, we can profile using any of the normal profiling modes.</p>
+<pre><code>-- Run a time profile
+./Profile +RTS -p -l-au
+-- Run a heap profile
+./Profile +RTS -hy -l-au</code></pre>
+<p>Then you can use <a href="https://mpickering.github.io/posts/2019-11-07-hs-speedscope.html"><code>hs-speedscope</code></a> to view the time profile or <a href="https://mpickering.github.io/eventlog2html/"><code>eventlog2html</code></a> to view the heap profile. You will observe that the simplifier is very slow.</p>
+<h1 id="conclusion">Conclusion</h1>
+<p>The main disadvantage of this approach is that you can’t add any cost centres into the build. GHC comes with a limited number of hand written cost centres but not covering a lot of functions.</p>
+<p>It would be nice in future to automate some of these steps to make it even more seamless to profile a specific MR.</p>
+]]></summary>
+</entry>
+<entry>
     <title>An IDE implemented using reflex</title>
     <link href="http://mpickering.github.io/posts/2020-03-16-ghcide-reflex.html" />
     <id>http://mpickering.github.io/posts/2020-03-16-ghcide-reflex.html</id>
@@ -787,209 +864,6 @@ foo4 = [| \x -&gt; [| $(lift x) |] |]</code></pre>
 [| [| $(foo) |] |] =&gt; BrackE [(x, representation of foo)] (representation of x)</code></pre>
 <h1 id="conclusion">Conclusion</h1>
 <p>Those are the details of implementing nested brackets, if you ever need to for your own language. In the end, the patch was quite simple but it took quite a bit of thinking to work out the correct way to propagate the splices and build the correct representation.</p>
-]]></summary>
-</entry>
-<entry>
-    <title>Packaging a Haskell library for artefact evaluation using nix</title>
-    <link href="http://mpickering.github.io/posts/2018-09-19-nix-artefacts.html" />
-    <id>http://mpickering.github.io/posts/2018-09-19-nix-artefacts.html</id>
-    <published>2018-09-19T00:00:00Z</published>
-    <updated>2018-09-19T00:00:00Z</updated>
-    <summary type="html"><![CDATA[<h2> Packaging a Haskell library for artefact evaluation using nix </h2>
-<p class="text-muted">
-    Posted on September 19, 2018
-    
-</p>
-
-<p>This year I packaged two artefacts for the ICFP artefact evaluation process. This post explains the system I used to make it easy to produce the docker images using nix. I hope this documentation will be useful for anyone else submitting a Haskell library for evaluation.</p>
-<p>The end result will be an <code>artefact.nix</code> file which is used to build a docker image to submit. It will be an entirely reproducible process as we will fix the versions of all the dependencies we use.</p>
-<!--more-->
-<h2 id="the-structure-of-the-artefact">The structure of the artefact</h2>
-<p>In this example, I am going to package the artefact from the paper <a href="https://dl.acm.org/citation.cfm?id=3236780">“Generic Deriving of Generic Traversals”</a>. The artefact was a Haskell library and an executable which ran some benchmarks. The resulting artefact will be a docker image which contains:</p>
-<ol type="1">
-<li>The source code of the library</li>
-<li>The source code for the benchmarks</li>
-<li>The executable of the benchmarks</li>
-<li>An environment where it is possible to compile the library and benchmarks</li>
-</ol>
-<p>To start with, I will assume that we have placed the source code and benchmarks code in our current directory. We will add the rest of the files</p>
-<pre><code>&gt;&gt;&gt; ls
-generic-lens-1.0.0.1/
-benchmarks/</code></pre>
-<h2 id="step-1-pinning-nixpkgs">Step 1: Pinning nixpkgs</h2>
-<p>The most important step of the whole process is to “pin” our version of nixpkgs to a specific version so that anyone else trying to build the image will use the same versions of all the libraries and system dependencies.</p>
-<p>Once we have established a commit of nixpkgs that our package builds with. We can use <code>nix-prefetch-git</code> in order to create <code>nixpkgs.json</code> which will provide the information about the pin.</p>
-<pre><code>nix-prefetch-git --rev 651239d5ee66d6fe8e5e8c7b7a0eb54d2f4d8621 --url https://github.com/NixOS/nixpkgs.git &gt; nixpkgs.json</code></pre>
-<p>Now we have a file, <code>nixpkgs.json</code> which specifies which version of nixpkgs we should use.</p>
-<p>We then need to load this file. Some boilerplate, <code>nixpkgs.nix</code>, will do that for us.</p>
-<pre><code>opts:
-let
-   hostPkgs = import &lt;nixpkgs&gt; {};
-   pinnedVersion = hostPkgs.lib.importJSON ./nixpkgs.json;
-   pinnedPkgs = hostPkgs.fetchFromGitHub {
-     owner = &quot;NixOS&quot;;
-     repo = &quot;nixpkgs&quot;;
-     inherit (pinnedVersion) rev sha256;
-   };
-in import pinnedPkgs opts</code></pre>
-<p><code>nixpkgs.nix</code> will be imported in <code>artefact.nix</code> and will determine precisely the version of all dependencies we will use.</p>
-<h2 id="step-2-using-dockertools">Step 2: Using <code>dockerTools</code></h2>
-<p>Now we have specified the set of dependencies we want to use we can go about starting to build our docker image. Nixpkgs provides a convenient set of functions called <code>dockerTools</code> in order to create docker images in a declarative manner. This is the start of our <code>artefact.nix</code> file.</p>
-<pre><code>let
-  pkgs = import ./nixpkgs.nix { };
-in
-with pkgs;
-let
-    debian = dockerTools.pullImage
-      { imageName = &quot;debian&quot;
-      ; imageTag = &quot;9.5&quot;
-      ; sha256 = &quot;1jxci0ph7l5fh0mm66g4apq1dpcm5r7gqfpnm9hqyj7rgnh44crb&quot;; };
-in
-dockerTools.buildImage {
-  name = &quot;generic-lens-artefact&quot;;
-
-  fromImage = debian;
-
-  contents = [  bashInteractive
-                glibcLocales
-             ];
-
-  config = {
-    Env = [&quot;LANG=en_US.UTF-8&quot;
-           &quot;LOCALE_ARCHIVE=${glibcLocales}/lib/locale/locale-archive&quot;];
-    WorkingDir = &quot;/programs&quot;;
-  };
-}</code></pre>
-<p>This is the barebones example we’ll start from. We firstly import <code>nixpkgs.nix</code> which defines the package set we want to use. Our docker file will be based on <code>debian</code>, and so we use the <code>dockerTools.pullImage</code> function to get this base image. The <code>imageName</code> comes from docker hub and the <code>imageTag</code> indicates the specific tag.</p>
-<p>This image is our base image when calling <code>dockerTools.buildImage</code>. For now, we add the basic packages <code>bashInteractive</code> and <code>glibcLocales</code>, in the next step we will add the specific contents that we need for our artefact.</p>
-<p>Setting the <code>LANG</code> and <code>LOCALE_ARCHIVE</code> env vars is important for Haskell programs as otherwise you can run into strange encoding errors.</p>
-<p>This is a complete image which can already be build with <code>nix-build artefact.nix</code>. The result will be a <code>.tar.gz</code> which can be loaded into docker and run as normal.</p>
-<h2 id="step-3-including-the-artefact">Step 3: Including the artefact</h2>
-<p>First we’ll deal with making the executable itself available on the image. Remember that the source code of the benchmarks, which is a normal Haskell package, is located in <code>benchmarks/</code>.</p>
-<p>We need to tell nix how to build the benchmarks. The standard way to do this is to use <code>cabal2nix</code> to generate a package specification which we will pass to <code>haskellPackages.callPackage</code>.</p>
-<pre><code>cabal2nix benchmarks/ &gt; benchmarks.nix</code></pre>
-<p>This will produce a file which looks a bit like</p>
-<pre><code>{ mkDerivation, base, criterion, deepseq, dlist, dump-core
-, generic-lens, geniplate-mirror, haskell-src, lens, mtl, one-liner
-, parallel, plugin, random, stdenv, syb, transformers, uniplate
-, weigh
-}:
-mkDerivation {
-  pname = &quot;benchmarks&quot;;
-  version = &quot;0.1.0.0&quot;;
-  src = ./benchmarks;
-  isLibrary = false;
-  isExecutable = true;
-  executableHaskellDepends = [
-    base criterion deepseq dlist dump-core generic-lens
-    geniplate-mirror haskell-src lens mtl one-liner parallel plugin
-    random syb transformers uniplate weigh
-  ];
-  license = stdenv.lib.licenses.bsd3;
-}</code></pre>
-<p>Now we will add the executable to the docker image. A new definition is created in the let bindings and then we add the executable to the <code>contents</code> of the image.</p>
-<pre><code>run-benchmarks = haskellPackages.callPackage ./benchmarks.nix {};</code></pre>
-<p>So now our <code>contents</code> section will look like:</p>
-<pre><code>  contents = [  bashInteractive
-                glibcLocales
-                run-benchmarks
-                ];</code></pre>
-<p>When we build this image, the executable will be available on the path by default. In our case, the user will type <code>bench</code> and it will run the benchmarks.</p>
-<h2 id="step-4-including-the-source-files">Step 4: Including the source files</h2>
-<p>The next step is to add the source files to the image. To do this we use the <code>runCommand</code> script to make a simple derivation which copies some files into the right place.</p>
-<pre><code>benchmarks-raw = ./benchmarks;
-benchmarks =
-  runCommand &quot;benchmarks&quot; {} &#39;&#39;
-  mkdir -p $out/programs/benchmarks
-  cp -r ${benchmarks-raw}/* $out/programs/benchmarks
-&#39;&#39;;</code></pre>
-<p>All the derivation does is copy the directory into the nix store at a specific path. We then just add this to the <code>contents</code> list again and also do the same for the library itself and the README.</p>
-<pre><code>  contents = [  bashInteractive
-                glibcLocales
-                run-benchmarks
-                benchmarks
-                readme
-                library];</code></pre>
-<p>Now once we build the docker image, we’ll have the executable <code>bench</code> available and also a file called <code>README</code> and two folders containing the library code and benchmarks code.</p>
-<h2 id="step-5-an-environment-to-build-the-source-code">Step 5: An environment to build the source code</h2>
-<p>Finally, we need to do two more things to make it possible to build the source programs in the container.</p>
-<p>Including <code>cabal-install</code> in the contents is the first so that we can use <code>cabal</code> in the container.</p>
-<pre><code>  contents = [  bashInteractive
-                glibcLocales
-                run-benchmarks
-                benchmarks
-                readme
-                library
-                cabal-install ];</code></pre>
-<p>The second is much less obvious, we need to make sure that the necessary dependencies are already installed in the environment so that someone can just use <code>cabal build</code> in order to build the package. The way to achieve this is to modify the <code>benchmarks.nix</code> file and change <code>isLibrary</code> to <code>true</code>.</p>
-<pre><code>-  isLibrary = false;
-+  isLibrary = true;</code></pre>
-<p>This means that all the build inputs for the benchmarks are propagated to the container so all the dependencies for the benchmarks will be available to rebuild them again.</p>
-<h2 id="complete-artefact.nix">Complete <code>artefact.nix</code></h2>
-<p>Here’s the complete <code>artefact.nix</code> that we ended up with. We also generated <code>nixpkgs.json</code>, <code>nixpkgs.nix</code> and <code>benchmarks.nix</code> along the way.</p>
-<pre><code>let
-  pkgs = import ./nixpkgs.nix {};
-in
-with pkgs;
-let
-    debian = dockerTools.pullImage
-      { imageName = &quot;debian&quot;
-      ; imageTag = &quot;9.5&quot;
-      ; sha256 = &quot;1y4k42ljf6nqxfq7glq3ibfaqsq8va6w9nrhghgfj50w36bq1fg5&quot;; };
-
-    benchmarks-raw = ./benchmarks;
-    benchmarks =
-      runCommand &quot;benchmarks&quot; {} &#39;&#39;
-        mkdir -p $out/programs/benchmarks
-        cp -r ${benchmarks-raw}/* $out/programs/benchmarks
-      &#39;&#39;;
-
-    library-raw = ./generic-lens-1.0.0.1;
-    library =
-      runCommand &quot;benchmarks&quot; {} &#39;&#39;
-        mkdir -p $out/programs/library
-        cp -r ${library-raw}/* $out/programs/library
-      &#39;&#39;;
-
-    readme-raw = ./README;
-    readme =
-      runCommand &quot;readme&quot; {} &#39;&#39;
-        mkdir -p $out/programs
-        cp ${readme-raw} $out/programs/README
-      &#39;&#39;;
-
-    run-benchmarks = haskellPackages.callPackage ./benchmarks.nix {};
-
-in
-dockerTools.buildImage {
-  name = &quot;generic-lens-artefact&quot;;
-
-
-  fromImage = debian;
-
-  contents = [  bashInteractive
-                cabal-install
-                glibcLocales
-                run-benchmarks
-                benchmarks
-                readme
-                library];
-
-  config = {
-    Env = [&quot;LANG=en_US.UTF-8&quot;
-           &quot;LOCALE_ARCHIVE=${glibcLocales}/lib/locale/locale-archive&quot;];
-    WorkingDir = &quot;/programs&quot;;
-  };
-}</code></pre>
-<h2 id="conclusion">Conclusion</h2>
-<p>Hopefully this tutorial will be useful for anyone having to package a Haskell library in future. Each artefact is different so you’ll probably have to modify some of the steps in order to make it work perfectly for you. It’s also possible that the <code>dockerTools</code> interface will change but it should be possible to modify the examples here to adapt to any minor changes. If you’re already using nix, you probably know what you’re doing anyway.</p>
-<h2 id="related-links">Related Links</h2>
-<ul>
-<li><a href="https://vaibhavsagar.com/blog/2018/05/27/quick-easy-nixpkgs-pinning/">Quick and Easy Nixpkgs Pinning - Vaibhav Sagar</a></li>
-<li><a href="https://nixos.org/nixpkgs/manual/#sec-pkgs-dockerTools"><code>dockerTools</code> documentation</a></li>
-<li><a href="https://www.software.ac.uk/blog/2017-10-05-reproducible-environments-nix">Reproducible Environments With Nix - Blair Archibald</a></li>
-<li><a href="https://www.reddit.com/r/haskell/comments/9h6xh2/packaging_a_haskell_library_for_artefact/">Reddit comments</a></li>
-</ul>
 ]]></summary>
 </entry>
 
