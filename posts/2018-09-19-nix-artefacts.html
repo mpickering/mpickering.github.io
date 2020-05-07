@@ -1,0 +1,265 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+    <head>
+        <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+        <title>mpickering - Packaging a Haskell library for artefact evaluation using nix</title>
+        <script type="text/javascript" src="http://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML"></script>
+        <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.1.3/css/bootstrap.min.css" integrity="sha384-MCw98/SFnGE8fJT3GXwEOngsV7Zt27NXFoaoApmYm81iuXoPkFOJwJ8ERdknLPMO" crossorigin="anonymous">
+        <script src="https://code.jquery.com/jquery-3.3.1.slim.min.js" integrity="sha384-q8i/X+965DzO0rT7abK41JStQIAqVgRVzpbzo5smXKp4YfRvH+8abtTE1Pi6jizo" crossorigin="anonymous"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.14.3/umd/popper.min.js" integrity="sha384-ZMP7rVo3mIykV+2+9J3UJ46jBk0WLaUAdn689aCwoqbBJiSnjAK/l8WvCWPIPm49" crossorigin="anonymous"></script>
+<script src="https://stackpath.bootstrapcdn.com/bootstrap/4.1.3/js/bootstrap.min.js" integrity="sha384-ChfqqxuZUCnJSK3+MXmPNIyE6ZbWh2IMqE241rYiqJxyMiZ6OW/JmZQ5stwEULTy" crossorigin="anonymous"></script>
+
+        <link rel="stylesheet" type="text/css" href="../css/default.css" />
+        <link href="http://fonts.googleapis.com/css?family=Vollkorn" rel="stylesheet" type="text/css">
+    </head>
+    <body>
+        <div class="container">
+          <div class="row">
+            <div class="col-sm-auto">
+              <ul class="nav flex-column">
+              <li class="nav-item">
+                <a href="../">Home</a>
+              </li>
+              <li class="nav-item">
+                <a href="../about.html">About</a> <br>
+              </li>
+              <li>
+                <a href="../publications.html">Publications</a>
+              </li>
+              <li>
+                <a href="../plugins.html">Plugins</a>
+              </li>
+              <li>
+                <a href="../eventlog2html">eventlog2html</a>
+              </li>
+              <li>
+                <a href="../ide/posts.html">IDE 2020</a>
+              </li>
+          <!---
+              <li>
+                <a href="/bristol2020.html">Bristol 2020</a>
+              </li>
+              <li>
+                <a href="https://andreaspk.github.io/ghc-week">GHC Week</a>
+              </li>
+          --->
+              <li>
+                <a href="../maps.html">Maps</a>
+              </li>
+              <li>
+                <a href="../hurstwood.html">Hurstwood TrailO</a>
+              </li>
+              <li class="nav-item">
+                <a href="../archive.html">Archive</a> <br>
+              </li>
+              <li>
+                <a href="../atom.xml">Feed</a>
+              </li>
+              </ul>
+            </div>
+          <div class="col-md">
+
+            <div id="content">
+              <h2> Packaging a Haskell library for artefact evaluation using nix </h2>
+<p class="text-muted">
+    Posted on September 19, 2018
+    
+</p>
+
+<p>This year I packaged two artefacts for the ICFP artefact evaluation process. This post explains the system I used to make it easy to produce the docker images using nix. I hope this documentation will be useful for anyone else submitting a Haskell library for evaluation.</p>
+<p>The end result will be an <code>artefact.nix</code> file which is used to build a docker image to submit. It will be an entirely reproducible process as we will fix the versions of all the dependencies we use.</p>
+<!--more-->
+<h2 id="the-structure-of-the-artefact">The structure of the artefact</h2>
+<p>In this example, I am going to package the artefact from the paper <a href="https://dl.acm.org/citation.cfm?id=3236780">“Generic Deriving of Generic Traversals”</a>. The artefact was a Haskell library and an executable which ran some benchmarks. The resulting artefact will be a docker image which contains:</p>
+<ol type="1">
+<li>The source code of the library</li>
+<li>The source code for the benchmarks</li>
+<li>The executable of the benchmarks</li>
+<li>An environment where it is possible to compile the library and benchmarks</li>
+</ol>
+<p>To start with, I will assume that we have placed the source code and benchmarks code in our current directory. We will add the rest of the files</p>
+<pre><code>&gt;&gt;&gt; ls
+generic-lens-1.0.0.1/
+benchmarks/</code></pre>
+<h2 id="step-1-pinning-nixpkgs">Step 1: Pinning nixpkgs</h2>
+<p>The most important step of the whole process is to “pin” our version of nixpkgs to a specific version so that anyone else trying to build the image will use the same versions of all the libraries and system dependencies.</p>
+<p>Once we have established a commit of nixpkgs that our package builds with. We can use <code>nix-prefetch-git</code> in order to create <code>nixpkgs.json</code> which will provide the information about the pin.</p>
+<pre><code>nix-prefetch-git --rev 651239d5ee66d6fe8e5e8c7b7a0eb54d2f4d8621 --url https://github.com/NixOS/nixpkgs.git &gt; nixpkgs.json</code></pre>
+<p>Now we have a file, <code>nixpkgs.json</code> which specifies which version of nixpkgs we should use.</p>
+<p>We then need to load this file. Some boilerplate, <code>nixpkgs.nix</code>, will do that for us.</p>
+<pre><code>opts:
+let
+   hostPkgs = import &lt;nixpkgs&gt; {};
+   pinnedVersion = hostPkgs.lib.importJSON ./nixpkgs.json;
+   pinnedPkgs = hostPkgs.fetchFromGitHub {
+     owner = &quot;NixOS&quot;;
+     repo = &quot;nixpkgs&quot;;
+     inherit (pinnedVersion) rev sha256;
+   };
+in import pinnedPkgs opts</code></pre>
+<p><code>nixpkgs.nix</code> will be imported in <code>artefact.nix</code> and will determine precisely the version of all dependencies we will use.</p>
+<h2 id="step-2-using-dockertools">Step 2: Using <code>dockerTools</code></h2>
+<p>Now we have specified the set of dependencies we want to use we can go about starting to build our docker image. Nixpkgs provides a convenient set of functions called <code>dockerTools</code> in order to create docker images in a declarative manner. This is the start of our <code>artefact.nix</code> file.</p>
+<pre><code>let
+  pkgs = import ./nixpkgs.nix { };
+in
+with pkgs;
+let
+    debian = dockerTools.pullImage
+      { imageName = &quot;debian&quot;
+      ; imageTag = &quot;9.5&quot;
+      ; sha256 = &quot;1jxci0ph7l5fh0mm66g4apq1dpcm5r7gqfpnm9hqyj7rgnh44crb&quot;; };
+in
+dockerTools.buildImage {
+  name = &quot;generic-lens-artefact&quot;;
+
+  fromImage = debian;
+
+  contents = [  bashInteractive
+                glibcLocales
+             ];
+
+  config = {
+    Env = [&quot;LANG=en_US.UTF-8&quot;
+           &quot;LOCALE_ARCHIVE=${glibcLocales}/lib/locale/locale-archive&quot;];
+    WorkingDir = &quot;/programs&quot;;
+  };
+}</code></pre>
+<p>This is the barebones example we’ll start from. We firstly import <code>nixpkgs.nix</code> which defines the package set we want to use. Our docker file will be based on <code>debian</code>, and so we use the <code>dockerTools.pullImage</code> function to get this base image. The <code>imageName</code> comes from docker hub and the <code>imageTag</code> indicates the specific tag.</p>
+<p>This image is our base image when calling <code>dockerTools.buildImage</code>. For now, we add the basic packages <code>bashInteractive</code> and <code>glibcLocales</code>, in the next step we will add the specific contents that we need for our artefact.</p>
+<p>Setting the <code>LANG</code> and <code>LOCALE_ARCHIVE</code> env vars is important for Haskell programs as otherwise you can run into strange encoding errors.</p>
+<p>This is a complete image which can already be build with <code>nix-build artefact.nix</code>. The result will be a <code>.tar.gz</code> which can be loaded into docker and run as normal.</p>
+<h2 id="step-3-including-the-artefact">Step 3: Including the artefact</h2>
+<p>First we’ll deal with making the executable itself available on the image. Remember that the source code of the benchmarks, which is a normal Haskell package, is located in <code>benchmarks/</code>.</p>
+<p>We need to tell nix how to build the benchmarks. The standard way to do this is to use <code>cabal2nix</code> to generate a package specification which we will pass to <code>haskellPackages.callPackage</code>.</p>
+<pre><code>cabal2nix benchmarks/ &gt; benchmarks.nix</code></pre>
+<p>This will produce a file which looks a bit like</p>
+<pre><code>{ mkDerivation, base, criterion, deepseq, dlist, dump-core
+, generic-lens, geniplate-mirror, haskell-src, lens, mtl, one-liner
+, parallel, plugin, random, stdenv, syb, transformers, uniplate
+, weigh
+}:
+mkDerivation {
+  pname = &quot;benchmarks&quot;;
+  version = &quot;0.1.0.0&quot;;
+  src = ./benchmarks;
+  isLibrary = false;
+  isExecutable = true;
+  executableHaskellDepends = [
+    base criterion deepseq dlist dump-core generic-lens
+    geniplate-mirror haskell-src lens mtl one-liner parallel plugin
+    random syb transformers uniplate weigh
+  ];
+  license = stdenv.lib.licenses.bsd3;
+}</code></pre>
+<p>Now we will add the executable to the docker image. A new definition is created in the let bindings and then we add the executable to the <code>contents</code> of the image.</p>
+<pre><code>run-benchmarks = haskellPackages.callPackage ./benchmarks.nix {};</code></pre>
+<p>So now our <code>contents</code> section will look like:</p>
+<pre><code>  contents = [  bashInteractive
+                glibcLocales
+                run-benchmarks
+                ];</code></pre>
+<p>When we build this image, the executable will be available on the path by default. In our case, the user will type <code>bench</code> and it will run the benchmarks.</p>
+<h2 id="step-4-including-the-source-files">Step 4: Including the source files</h2>
+<p>The next step is to add the source files to the image. To do this we use the <code>runCommand</code> script to make a simple derivation which copies some files into the right place.</p>
+<pre><code>benchmarks-raw = ./benchmarks;
+benchmarks =
+  runCommand &quot;benchmarks&quot; {} ''
+  mkdir -p $out/programs/benchmarks
+  cp -r ${benchmarks-raw}/* $out/programs/benchmarks
+'';</code></pre>
+<p>All the derivation does is copy the directory into the nix store at a specific path. We then just add this to the <code>contents</code> list again and also do the same for the library itself and the README.</p>
+<pre><code>  contents = [  bashInteractive
+                glibcLocales
+                run-benchmarks
+                benchmarks
+                readme
+                library];</code></pre>
+<p>Now once we build the docker image, we’ll have the executable <code>bench</code> available and also a file called <code>README</code> and two folders containing the library code and benchmarks code.</p>
+<h2 id="step-5-an-environment-to-build-the-source-code">Step 5: An environment to build the source code</h2>
+<p>Finally, we need to do two more things to make it possible to build the source programs in the container.</p>
+<p>Including <code>cabal-install</code> in the contents is the first so that we can use <code>cabal</code> in the container.</p>
+<pre><code>  contents = [  bashInteractive
+                glibcLocales
+                run-benchmarks
+                benchmarks
+                readme
+                library
+                cabal-install ];</code></pre>
+<p>The second is much less obvious, we need to make sure that the necessary dependencies are already installed in the environment so that someone can just use <code>cabal build</code> in order to build the package. The way to achieve this is to modify the <code>benchmarks.nix</code> file and change <code>isLibrary</code> to <code>true</code>.</p>
+<pre><code>-  isLibrary = false;
++  isLibrary = true;</code></pre>
+<p>This means that all the build inputs for the benchmarks are propagated to the container so all the dependencies for the benchmarks will be available to rebuild them again.</p>
+<h2 id="complete-artefact.nix">Complete <code>artefact.nix</code></h2>
+<p>Here’s the complete <code>artefact.nix</code> that we ended up with. We also generated <code>nixpkgs.json</code>, <code>nixpkgs.nix</code> and <code>benchmarks.nix</code> along the way.</p>
+<pre><code>let
+  pkgs = import ./nixpkgs.nix {};
+in
+with pkgs;
+let
+    debian = dockerTools.pullImage
+      { imageName = &quot;debian&quot;
+      ; imageTag = &quot;9.5&quot;
+      ; sha256 = &quot;1y4k42ljf6nqxfq7glq3ibfaqsq8va6w9nrhghgfj50w36bq1fg5&quot;; };
+
+    benchmarks-raw = ./benchmarks;
+    benchmarks =
+      runCommand &quot;benchmarks&quot; {} ''
+        mkdir -p $out/programs/benchmarks
+        cp -r ${benchmarks-raw}/* $out/programs/benchmarks
+      '';
+
+    library-raw = ./generic-lens-1.0.0.1;
+    library =
+      runCommand &quot;benchmarks&quot; {} ''
+        mkdir -p $out/programs/library
+        cp -r ${library-raw}/* $out/programs/library
+      '';
+
+    readme-raw = ./README;
+    readme =
+      runCommand &quot;readme&quot; {} ''
+        mkdir -p $out/programs
+        cp ${readme-raw} $out/programs/README
+      '';
+
+    run-benchmarks = haskellPackages.callPackage ./benchmarks.nix {};
+
+in
+dockerTools.buildImage {
+  name = &quot;generic-lens-artefact&quot;;
+
+
+  fromImage = debian;
+
+  contents = [  bashInteractive
+                cabal-install
+                glibcLocales
+                run-benchmarks
+                benchmarks
+                readme
+                library];
+
+  config = {
+    Env = [&quot;LANG=en_US.UTF-8&quot;
+           &quot;LOCALE_ARCHIVE=${glibcLocales}/lib/locale/locale-archive&quot;];
+    WorkingDir = &quot;/programs&quot;;
+  };
+}</code></pre>
+<h2 id="conclusion">Conclusion</h2>
+<p>Hopefully this tutorial will be useful for anyone having to package a Haskell library in future. Each artefact is different so you’ll probably have to modify some of the steps in order to make it work perfectly for you. It’s also possible that the <code>dockerTools</code> interface will change but it should be possible to modify the examples here to adapt to any minor changes. If you’re already using nix, you probably know what you’re doing anyway.</p>
+<h2 id="related-links">Related Links</h2>
+<ul>
+<li><a href="https://vaibhavsagar.com/blog/2018/05/27/quick-easy-nixpkgs-pinning/">Quick and Easy Nixpkgs Pinning - Vaibhav Sagar</a></li>
+<li><a href="https://nixos.org/nixpkgs/manual/#sec-pkgs-dockerTools"><code>dockerTools</code> documentation</a></li>
+<li><a href="https://www.software.ac.uk/blog/2017-10-05-reproducible-environments-nix">Reproducible Environments With Nix - Blair Archibald</a></li>
+<li><a href="https://www.reddit.com/r/haskell/comments/9h6xh2/packaging_a_haskell_library_for_artefact/">Reddit comments</a></li>
+</ul>
+
+            </div>
+          </div>
+        </div>
+      </div>
+    </body>
+</html>

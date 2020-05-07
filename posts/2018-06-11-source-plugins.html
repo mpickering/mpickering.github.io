@@ -1,0 +1,176 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+    <head>
+        <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+        <title>mpickering - Source Plugins: Four ways to build a typechecked Haskell expression</title>
+        <script type="text/javascript" src="http://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML"></script>
+        <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.1.3/css/bootstrap.min.css" integrity="sha384-MCw98/SFnGE8fJT3GXwEOngsV7Zt27NXFoaoApmYm81iuXoPkFOJwJ8ERdknLPMO" crossorigin="anonymous">
+        <script src="https://code.jquery.com/jquery-3.3.1.slim.min.js" integrity="sha384-q8i/X+965DzO0rT7abK41JStQIAqVgRVzpbzo5smXKp4YfRvH+8abtTE1Pi6jizo" crossorigin="anonymous"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.14.3/umd/popper.min.js" integrity="sha384-ZMP7rVo3mIykV+2+9J3UJ46jBk0WLaUAdn689aCwoqbBJiSnjAK/l8WvCWPIPm49" crossorigin="anonymous"></script>
+<script src="https://stackpath.bootstrapcdn.com/bootstrap/4.1.3/js/bootstrap.min.js" integrity="sha384-ChfqqxuZUCnJSK3+MXmPNIyE6ZbWh2IMqE241rYiqJxyMiZ6OW/JmZQ5stwEULTy" crossorigin="anonymous"></script>
+
+        <link rel="stylesheet" type="text/css" href="../css/default.css" />
+        <link href="http://fonts.googleapis.com/css?family=Vollkorn" rel="stylesheet" type="text/css">
+    </head>
+    <body>
+        <div class="container">
+          <div class="row">
+            <div class="col-sm-auto">
+              <ul class="nav flex-column">
+              <li class="nav-item">
+                <a href="../">Home</a>
+              </li>
+              <li class="nav-item">
+                <a href="../about.html">About</a> <br>
+              </li>
+              <li>
+                <a href="../publications.html">Publications</a>
+              </li>
+              <li>
+                <a href="../plugins.html">Plugins</a>
+              </li>
+              <li>
+                <a href="../eventlog2html">eventlog2html</a>
+              </li>
+              <li>
+                <a href="../ide/posts.html">IDE 2020</a>
+              </li>
+          <!---
+              <li>
+                <a href="/bristol2020.html">Bristol 2020</a>
+              </li>
+              <li>
+                <a href="https://andreaspk.github.io/ghc-week">GHC Week</a>
+              </li>
+          --->
+              <li>
+                <a href="../maps.html">Maps</a>
+              </li>
+              <li>
+                <a href="../hurstwood.html">Hurstwood TrailO</a>
+              </li>
+              <li class="nav-item">
+                <a href="../archive.html">Archive</a> <br>
+              </li>
+              <li>
+                <a href="../atom.xml">Feed</a>
+              </li>
+              </ul>
+            </div>
+          <div class="col-md">
+
+            <div id="content">
+              <h2> Source Plugins: Four ways to build a typechecked Haskell expression </h2>
+<p class="text-muted">
+    Posted on June 11, 2018
+    
+</p>
+
+<p>A source plugin allows users to modify and analyse code after typechecking. They have access to all the features of the compiler to create and modify bindings.</p>
+<p>Sounds great right? GHC is all about creating and modifying bindings so this should be a doddle. However, it isn’t immediately obvious how to make a typechecked binding using the provided API.</p>
+<p>In this post, I’ll demonstrate and explain four different ways of arriving at a typechecked expression which can then be inserted into a program. All these examples are packaged up into a complete plugin on my <a href="https://github.com/mpickering/plugin-constraint">GitHub page</a>.</p>
+<!--more-->
+<h2 id="constructing-expressions">Constructing Expressions</h2>
+<p>The four examples which we order from the most direct to the most indirect. Each has their advantages but in general, directly constructing an already typechecked binding is the most risky but flexible whilst starting from a Template Haskell quote is the safest but most rigid option. In the end we will always end up with a <code>LHsExpr GhcTc</code> but we will start from four different places.</p>
+<ul>
+<li><code>LHsExpr GhcTc</code> - An already typechecked expression</li>
+<li><code>LHsExpr GhcRn</code> - An already renamed expression</li>
+<li><code>LHsExpr GhcPs</code> - A parsed expression</li>
+<li><code>TH.Exp</code> - A quoted expression</li>
+</ul>
+<p>Each example will construct the simple expression <code>print ()</code>. This example is chosen because it demonstrates that we must be concerned with polymorphism and type classes during the process.</p>
+<h2 id="typechecked-expression">Typechecked Expression</h2>
+<p>Constructing a <code>LHsExpr GhcTc</code> by hand is quite annoying as you must be knowledgeable about how the typechecker prepares a program. You must also be quite explicit about types and the compiler won’t tell you that you’re wrong unless you compiler with core lint enabled.</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb1-1" data-line-number="1"><span class="co">-- Creates the already typechecked expression `print ()`</span></a>
+<a class="sourceLine" id="cb1-2" data-line-number="2"><span class="co">--</span></a>
+<a class="sourceLine" id="cb1-3" data-line-number="3"><span class="co">-- There is quite a lot of boilerplate and the compiler won't tell</span></a>
+<a class="sourceLine" id="cb1-4" data-line-number="4"><span class="co">-- you where you went wrong unless -dcore-lint is enabled.</span></a>
+<a class="sourceLine" id="cb1-5" data-line-number="5"><span class="ot">mkNewExprTc ::</span> <span class="dt">TcM</span> (<span class="dt">LHsExpr</span> <span class="dt">GhcTc</span>)</a>
+<a class="sourceLine" id="cb1-6" data-line-number="6">mkNewExprTc <span class="fu">=</span> <span class="kw">do</span></a>
+<a class="sourceLine" id="cb1-7" data-line-number="7">  <span class="co">-- Get the `Id`s that we need, these ones helpfully are already defined</span></a>
+<a class="sourceLine" id="cb1-8" data-line-number="8">  <span class="co">-- in `PrelNames` and `TysWiredIn`.</span></a>
+<a class="sourceLine" id="cb1-9" data-line-number="9">  print_id    <span class="ot">&lt;-</span> tcLookupId printName</a>
+<a class="sourceLine" id="cb1-10" data-line-number="10"></a>
+<a class="sourceLine" id="cb1-11" data-line-number="11">  <span class="co">-- Generate the evidence for `Show ()` which we will pass to `print`</span></a>
+<a class="sourceLine" id="cb1-12" data-line-number="12">  (dict_var, showUnitEv) <span class="ot">&lt;-</span> generateDictionary</a>
+<a class="sourceLine" id="cb1-13" data-line-number="13">  <span class="kw">let</span></a>
+<a class="sourceLine" id="cb1-14" data-line-number="14">    rhs <span class="fu">=</span> mHsApp (mLHsWrap wrapper printExpr) unitExpr)</a>
+<a class="sourceLine" id="cb1-15" data-line-number="15"></a>
+<a class="sourceLine" id="cb1-16" data-line-number="16">    printExpr <span class="fu">=</span> nlHsVar print_id</a>
+<a class="sourceLine" id="cb1-17" data-line-number="17">    unitExpr <span class="fu">=</span> nlHsDataCon unitDataCon</a>
+<a class="sourceLine" id="cb1-18" data-line-number="18"></a>
+<a class="sourceLine" id="cb1-19" data-line-number="19">    <span class="co">-- How we are going to apply the necessary type arguments</span></a>
+<a class="sourceLine" id="cb1-20" data-line-number="20">    wrapper <span class="fu">=</span> mkWpLet showUnitEv <span class="fu">&lt;.&gt;</span> mkWpEvVarApps [dict_var] <span class="fu">&lt;.&gt;</span> mkWpTyApps [unitTy]</a>
+<a class="sourceLine" id="cb1-21" data-line-number="21">  return rhs</a></code></pre></div>
+<p>Notice that in particular, we have to be careful to construct and apply a wrapper which will desugar to type and dictionary applications. We also have to explicitly come up with the correct dictionary for the <code>print</code> function and manually apply it ourselves. This approach gives us a lot of control but leaves many fiddly places to go wrong.</p>
+<h2 id="renamed-binding">Renamed Binding</h2>
+<p>The second approach creates a <code>LHsExpr GhcRn</code> which we will then typecheck using the normal typechecker. This has the advantage that we can be direct about which names we mean but also have the safety that the compiler will emit an error when the plugin is used if we made a mistake.</p>
+<p>We still have to construct the return type of the expression to pass into the typechecker. We use <code>lookupOccRn</code> to find the definition of <code>print</code> which is in scope but can use <code>unitDataCon</code> directly without looking it up as it is already wired into the compiled and defined in <code>PrelNames</code>.</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb2-1" data-line-number="1"><span class="co">-- Creates a `LHsExpr GhcRn` which we then typecheck to turn into</span></a>
+<a class="sourceLine" id="cb2-2" data-line-number="2"><span class="co">-- a `LHsExpr GhcTc`. The compiler will raise an error to the user if you</span></a>
+<a class="sourceLine" id="cb2-3" data-line-number="3"><span class="co">-- made a mistake in constructing the term.</span></a>
+<a class="sourceLine" id="cb2-4" data-line-number="4"><span class="ot">mkNewExprRn ::</span> <span class="dt">TcM</span> (<span class="dt">LHsExpr</span> <span class="dt">GhcTc</span>)</a>
+<a class="sourceLine" id="cb2-5" data-line-number="5">mkNewExprRn <span class="fu">=</span> <span class="kw">do</span></a>
+<a class="sourceLine" id="cb2-6" data-line-number="6">  <span class="co">-- The names we want to use happen to already be in PrelNames so we use</span></a>
+<a class="sourceLine" id="cb2-7" data-line-number="7">  <span class="co">-- them directly.</span></a>
+<a class="sourceLine" id="cb2-8" data-line-number="8">  <span class="kw">let</span> print_occ <span class="fu">=</span> mkRdrUnqual (mkVarOcc <span class="st">&quot;print&quot;</span>)</a>
+<a class="sourceLine" id="cb2-9" data-line-number="9">  print_name <span class="ot">&lt;-</span> lookupOccRn print_occ</a>
+<a class="sourceLine" id="cb2-10" data-line-number="10">  <span class="kw">let</span> raw_expr <span class="fu">=</span> nlHsApp (nlHsVar print_name) (nlHsVar (dataConName unitDataCon))</a>
+<a class="sourceLine" id="cb2-11" data-line-number="11">  io_tycon <span class="ot">&lt;-</span> tcLookupTyCon ioTyConName</a>
+<a class="sourceLine" id="cb2-12" data-line-number="12">  <span class="kw">let</span> exp_type <span class="fu">=</span> mkTyConApp io_tycon [unitTy]</a>
+<a class="sourceLine" id="cb2-13" data-line-number="13">  typecheckExpr exp_type raw_expr</a></code></pre></div>
+<h2 id="parsed-binding">Parsed Binding</h2>
+<p>We sometimes don’t want to specify exactly which names we mean or know which renaming functions to use to find them. It’s easier to let the renamer do that for us. In this example, we construct a <code>LHsExpr GhcPs</code> which we then pass into the renamer and typechecker. Therefore, the compiler will warn us about out of scope variables or type errors in the expression we have created like normal.</p>
+<p>Instead of constructing <code>Name</code>s like before, we are constructing <code>RdrName</code>s. These are conceptually easier to create as we must only consider the namespace the name lives in rather than any other details. The renamer will fill in the rest of the information.</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb3-1" data-line-number="1"><span class="co">-- An example of how to construct a value from a `LHsExpr GhcPs`.</span></a>
+<a class="sourceLine" id="cb3-2" data-line-number="2"><span class="co">-- Making sure things are in the right namespace is sometimes a bit</span></a>
+<a class="sourceLine" id="cb3-3" data-line-number="3"><span class="co">-- awkward.</span></a>
+<a class="sourceLine" id="cb3-4" data-line-number="4"><span class="ot">mkNewExprPs ::</span> <span class="dt">TcM</span> (<span class="dt">LHsExpr</span> <span class="dt">GhcTc</span>)</a>
+<a class="sourceLine" id="cb3-5" data-line-number="5">mkNewExprPs  <span class="fu">=</span> <span class="kw">do</span></a>
+<a class="sourceLine" id="cb3-6" data-line-number="6"></a>
+<a class="sourceLine" id="cb3-7" data-line-number="7">  <span class="kw">let</span></a>
+<a class="sourceLine" id="cb3-8" data-line-number="8">    print_occ <span class="fu">=</span> mkRdrUnqual (mkVarOcc <span class="st">&quot;print&quot;</span>)</a>
+<a class="sourceLine" id="cb3-9" data-line-number="9">    unit_occ <span class="fu">=</span> nameRdrName (dataConName unitDataCon)</a>
+<a class="sourceLine" id="cb3-10" data-line-number="10">    ps_expr <span class="fu">=</span> nlHsApp (nlHsVar print_occ)</a>
+<a class="sourceLine" id="cb3-11" data-line-number="11">                      (nlHsVar unit_occ)</a>
+<a class="sourceLine" id="cb3-12" data-line-number="12"></a>
+<a class="sourceLine" id="cb3-13" data-line-number="13">  io_tycon <span class="ot">&lt;-</span> tcLookupTyCon ioTyConName</a>
+<a class="sourceLine" id="cb3-14" data-line-number="14">  <span class="kw">let</span> exp_type <span class="fu">=</span> mkTyConApp io_tycon [unitTy]</a>
+<a class="sourceLine" id="cb3-15" data-line-number="15">  renameExpr ps_expr <span class="fu">&gt;&gt;=</span> typecheckExpr exp_type</a></code></pre></div>
+<p>Note, I initially tried to use a different definition of <code>unit_occ</code> which didn’t start from the wired in name but it proved tricky to get correct. This is why we start from the more specific <code>Name</code> and turn it into a <code>RdrName</code>. We are also relying more on the context of the module, if the user hasn’t imported <code>print</code> then the plugin will fail.</p>
+<h2 id="constructing-a-binding-from-template-haskell">Constructing a binding from Template Haskell</h2>
+<p>Still, explicitly typing out the syntax tree is quite onerous. We would much prefer type out a Haskell program as normal and then splice it into our program. We can achieve this by using a Template Haskell quasiquoter.</p>
+<p>We first quote the expression we want to insert which creates a <code>TH.Exp</code> which we can convert to a normal <code>HsExpr GhcPs</code> by using the same function that GHC itself uses to deal with Template Haskell. Once we have the parsed expression we can rename it and typecheck it as in the previous examples. This is all quite convenient!</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb4-1" data-line-number="1"><span class="ot">liftQ ::</span> <span class="dt">Q</span> a <span class="ot">-&gt;</span> <span class="dt">TcM</span> a</a>
+<a class="sourceLine" id="cb4-2" data-line-number="2">liftQ <span class="fu">=</span> liftIO <span class="fu">.</span> runQ</a>
+<a class="sourceLine" id="cb4-3" data-line-number="3"></a>
+<a class="sourceLine" id="cb4-4" data-line-number="4"><span class="co">-- Creates a `TH.Exp` using a quasiquoter before renaming</span></a>
+<a class="sourceLine" id="cb4-5" data-line-number="5"><span class="co">-- and typechecking to create an `LHsExpr`. This is convenient as you</span></a>
+<a class="sourceLine" id="cb4-6" data-line-number="6"><span class="co">-- don't have to write out the syntax.</span></a>
+<a class="sourceLine" id="cb4-7" data-line-number="7"><span class="co">-- p</span></a>
+<a class="sourceLine" id="cb4-8" data-line-number="8"><span class="ot">mkNewExprTh ::</span> <span class="dt">TcM</span> (<span class="dt">LHsExpr</span> <span class="dt">GhcTc</span>)</a>
+<a class="sourceLine" id="cb4-9" data-line-number="9">mkNewExprTh <span class="fu">=</span> <span class="kw">do</span></a>
+<a class="sourceLine" id="cb4-10" data-line-number="10">  th_expr <span class="ot">&lt;-</span> liftQ [<span class="fu">|</span> print () <span class="fu">|</span>]</a>
+<a class="sourceLine" id="cb4-11" data-line-number="11">  ps_expr <span class="ot">&lt;-</span> <span class="kw">case</span> convertToHsExpr noSrcSpan th_expr <span class="kw">of</span></a>
+<a class="sourceLine" id="cb4-12" data-line-number="12">    <span class="dt">Left</span> _err <span class="ot">-&gt;</span> error <span class="st">&quot;Bad expression&quot;</span></a>
+<a class="sourceLine" id="cb4-13" data-line-number="13">    <span class="dt">Right</span> res <span class="ot">-&gt;</span> return res</a>
+<a class="sourceLine" id="cb4-14" data-line-number="14"></a>
+<a class="sourceLine" id="cb4-15" data-line-number="15">  io_tycon <span class="ot">&lt;-</span> tcLookupTyCon ioTyConName</a>
+<a class="sourceLine" id="cb4-16" data-line-number="16">  <span class="kw">let</span> exp_type <span class="fu">=</span> mkTyConApp io_tycon [unitTy]</a>
+<a class="sourceLine" id="cb4-17" data-line-number="17">  renameExpr ps_expr <span class="fu">&gt;&gt;=</span> typecheckExpr exp_type</a></code></pre></div>
+<h1 id="conclusion">Conclusion</h1>
+<p>In our experience, the most practical way of constructing expressions is to use Template Haskell. A more in-depth example which creates a complicated expression can be see in the <a href="https://github.com/ocharles/assert-explainer">assert-explainer</a> which I worked on with Ollie Charles at Zurihac 2018.</p>
+<h1 id="addendum-how-can-i-interact-with-the-constraint-solver">Addendum: How can I interact with the constraint solver?</h1>
+<p>The <code>generateDictionary</code> is an example of how to generate some evidence. It might need to be refined further but worked for simple tests.</p>
+<h1 id="addendum-how-can-i-get-the-type-of-an-hsexpr-ghctc">Addendum: How can I get the type of an <code>HsExpr GhcTc</code>?</h1>
+<p>To get the type of an expression, first desugar the expression and then use <code>exprType</code> to find the type of the desugared variant. There is an example in <a href="https://github.com/ocharles/assert-explainer/blob/master/plugin/AssertExplainer.hs#L289">assert-explainer</a>.</p>
+<h1 id="addendum-how-can-i-combine-together-old-and-new-program-fragments">Addendum: How can I combine together old and new program fragments</h1>
+<p>If you want to combine together pieces of new syntax and old syntax then don’t try to do it directly. Construct a lambda with arguments for each of the pieces you want to insert. Finally, apply the lambda to the existing expressions you want to insert.</p>
+
+            </div>
+          </div>
+        </div>
+      </div>
+    </body>
+</html>

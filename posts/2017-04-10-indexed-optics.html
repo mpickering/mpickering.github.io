@@ -1,0 +1,169 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+    <head>
+        <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+        <title>mpickering - Indexed Optics</title>
+        <script type="text/javascript" src="http://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML"></script>
+        <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.1.3/css/bootstrap.min.css" integrity="sha384-MCw98/SFnGE8fJT3GXwEOngsV7Zt27NXFoaoApmYm81iuXoPkFOJwJ8ERdknLPMO" crossorigin="anonymous">
+        <script src="https://code.jquery.com/jquery-3.3.1.slim.min.js" integrity="sha384-q8i/X+965DzO0rT7abK41JStQIAqVgRVzpbzo5smXKp4YfRvH+8abtTE1Pi6jizo" crossorigin="anonymous"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.14.3/umd/popper.min.js" integrity="sha384-ZMP7rVo3mIykV+2+9J3UJ46jBk0WLaUAdn689aCwoqbBJiSnjAK/l8WvCWPIPm49" crossorigin="anonymous"></script>
+<script src="https://stackpath.bootstrapcdn.com/bootstrap/4.1.3/js/bootstrap.min.js" integrity="sha384-ChfqqxuZUCnJSK3+MXmPNIyE6ZbWh2IMqE241rYiqJxyMiZ6OW/JmZQ5stwEULTy" crossorigin="anonymous"></script>
+
+        <link rel="stylesheet" type="text/css" href="../css/default.css" />
+        <link href="http://fonts.googleapis.com/css?family=Vollkorn" rel="stylesheet" type="text/css">
+    </head>
+    <body>
+        <div class="container">
+          <div class="row">
+            <div class="col-sm-auto">
+              <ul class="nav flex-column">
+              <li class="nav-item">
+                <a href="../">Home</a>
+              </li>
+              <li class="nav-item">
+                <a href="../about.html">About</a> <br>
+              </li>
+              <li>
+                <a href="../publications.html">Publications</a>
+              </li>
+              <li>
+                <a href="../plugins.html">Plugins</a>
+              </li>
+              <li>
+                <a href="../eventlog2html">eventlog2html</a>
+              </li>
+              <li>
+                <a href="../ide/posts.html">IDE 2020</a>
+              </li>
+          <!---
+              <li>
+                <a href="/bristol2020.html">Bristol 2020</a>
+              </li>
+              <li>
+                <a href="https://andreaspk.github.io/ghc-week">GHC Week</a>
+              </li>
+          --->
+              <li>
+                <a href="../maps.html">Maps</a>
+              </li>
+              <li>
+                <a href="../hurstwood.html">Hurstwood TrailO</a>
+              </li>
+              <li class="nav-item">
+                <a href="../archive.html">Archive</a> <br>
+              </li>
+              <li>
+                <a href="../atom.xml">Feed</a>
+              </li>
+              </ul>
+            </div>
+          <div class="col-md">
+
+            <div id="content">
+              <h2> Indexed Optics </h2>
+<p class="text-muted">
+    Posted on April 10, 2017
+    
+</p>
+
+<p>What is an indexed optic? It is an optic which gives you access to an index whilst performing updates.</p>
+<p>It is a simple clear generalisation of a lens but the implementation looks quite complicated. This is due to the desire to reuse the same combinators for both non-indexed and indexed variants. We we will start by explaining a simplified implementation of indexed optics before the technique used in order to reuse the same combinators as ordinary optics.</p>
+<!--more-->
+<h1 id="simple-implementation">Simple Implementation</h1>
+<p>As a first approximation, we will augment the updating function with an additional index which we will then subsequently refine.</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb1-1" data-line-number="1"><span class="kw">type</span> <span class="dt">PrimitiveIndexedTraversal</span> i s t a b</a>
+<a class="sourceLine" id="cb1-2" data-line-number="2">  <span class="fu">=</span> forall f <span class="fu">.</span> <span class="dt">Applicative</span> f <span class="ot">=&gt;</span> (i <span class="ot">-&gt;</span> a <span class="ot">-&gt;</span> f b) <span class="ot">-&gt;</span> (s <span class="ot">-&gt;</span> f t)</a></code></pre></div>
+<p>Implementing optics by hand gives a good intuition for the types involved.</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb2-1" data-line-number="1"><span class="ot">pair ::</span> <span class="dt">PrimitiveIndexedTraversal</span> <span class="dt">Int</span> (a, a) (b, b) a b</a>
+<a class="sourceLine" id="cb2-2" data-line-number="2">pair iafb (a0, a1) <span class="fu">=</span> (,) <span class="fu">&lt;$&gt;</span> iafb <span class="dv">0</span> a0 <span class="fu">&lt;*&gt;</span> iafb <span class="dv">1</span> a1</a></code></pre></div>
+<p>The implementation is exactly the same as a normal traversals apart from we also pass an index to each call of the worker function. Note that we have a lot of choice about which indices we choose. We could have indexed each field with a boolean or in the opposite order. For lists, we need to use a helper function which passes an index to each recursive call.</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb3-1" data-line-number="1"><span class="ot">list ::</span> <span class="dt">PrimitiveIndexedTraversal</span> <span class="dt">Int</span> [a] [b] a b</a>
+<a class="sourceLine" id="cb3-2" data-line-number="2">list iafb xs <span class="fu">=</span> go xs <span class="dv">0</span></a>
+<a class="sourceLine" id="cb3-3" data-line-number="3">  <span class="kw">where</span></a>
+<a class="sourceLine" id="cb3-4" data-line-number="4">    go [] _ <span class="fu">=</span> pure []</a>
+<a class="sourceLine" id="cb3-5" data-line-number="5">    go (x<span class="fu">:</span>xs) n <span class="fu">=</span> (<span class="fu">:</span>) <span class="fu">&lt;$&gt;</span> iafb n x <span class="fu">&lt;*&gt;</span> go xs (n<span class="fu">+</span><span class="dv">1</span>)</a></code></pre></div>
+<p>There are all the usual combinators to work with indexed traversals as normal traversals but one of the most useful ones to see what is going on is <code>itoListOf</code> which converts an indexed traversal into a list of index-value pairs.</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb4-1" data-line-number="1"><span class="ot">itoListOf ::</span> ((i <span class="ot">-&gt;</span> a <span class="ot">-&gt;</span> <span class="dt">Const</span> [(i, a)] b) <span class="ot">-&gt;</span> s <span class="ot">-&gt;</span> (<span class="dt">Const</span> [(i, a)] t))</a>
+<a class="sourceLine" id="cb4-2" data-line-number="2">          <span class="ot">-&gt;</span> s <span class="ot">-&gt;</span> [(i, a)]</a>
+<a class="sourceLine" id="cb4-3" data-line-number="3">itoListOf t s <span class="fu">=</span> getConst <span class="fu">$</span> t (\i a <span class="ot">-&gt;</span> <span class="dt">Const</span> [(i, a)]) s</a>
+<a class="sourceLine" id="cb4-4" data-line-number="4"></a>
+<a class="sourceLine" id="cb4-5" data-line-number="5"><span class="fu">&gt;</span> itoListOf pair (<span class="dt">True</span>, <span class="dt">False</span>)</a>
+<a class="sourceLine" id="cb4-6" data-line-number="6">[(<span class="dv">0</span>, <span class="dt">True</span>), (<span class="dv">1</span>, <span class="dt">False</span>)]</a></code></pre></div>
+<p>We monomorphise the argument so that we we don’t have to use a variant of <code>cloneTraversal</code> in order to work around impredicative types.</p>
+<p>We can also turn an ordinary traversal into an indexed traversal by labelling each element with the order in which we traverse it. In order to do so we need to define an applicative functor which when traversed with will perform the labelling ultimately returning an indexed traversal.</p>
+<div class="sourceCode" id="cb5"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb5-1" data-line-number="1"><span class="kw">newtype</span> <span class="dt">Indexing</span> f s <span class="fu">=</span> <span class="dt">Indexing</span> {<span class="ot"> runIndexing ::</span> (<span class="dt">Int</span> <span class="ot">-&gt;</span> (<span class="dt">Int</span>, f s))}</a>
+<a class="sourceLine" id="cb5-2" data-line-number="2"></a>
+<a class="sourceLine" id="cb5-3" data-line-number="3"><span class="kw">instance</span> <span class="dt">Functor</span> f <span class="ot">=&gt;</span> <span class="dt">Functor</span> (<span class="dt">Indexing</span> f) <span class="kw">where</span></a>
+<a class="sourceLine" id="cb5-4" data-line-number="4">  fmap f (<span class="dt">Indexing</span> fn) <span class="fu">=</span> <span class="dt">Indexing</span> (over (_2 <span class="fu">.</span> mapped) f <span class="fu">.</span> fn)</a>
+<a class="sourceLine" id="cb5-5" data-line-number="5"></a>
+<a class="sourceLine" id="cb5-6" data-line-number="6"><span class="kw">instance</span> <span class="dt">Applicative</span> f <span class="ot">=&gt;</span> <span class="dt">Applicative</span> (<span class="dt">Indexing</span> f) <span class="kw">where</span></a>
+<a class="sourceLine" id="cb5-7" data-line-number="7">  pure x <span class="fu">=</span> <span class="dt">Indexing</span> (\i <span class="ot">-&gt;</span> (i, pure x))</a>
+<a class="sourceLine" id="cb5-8" data-line-number="8">  (<span class="dt">Indexing</span> fab) <span class="fu">&lt;*&gt;</span> (<span class="dt">Indexing</span> fa)</a>
+<a class="sourceLine" id="cb5-9" data-line-number="9">    <span class="fu">=</span> <span class="dt">Indexing</span> (\i <span class="ot">-&gt;</span></a>
+<a class="sourceLine" id="cb5-10" data-line-number="10">        <span class="kw">let</span> (i', ab) <span class="fu">=</span> fab i</a>
+<a class="sourceLine" id="cb5-11" data-line-number="11">            (i'', a) <span class="fu">=</span> fa i'</a>
+<a class="sourceLine" id="cb5-12" data-line-number="12">        <span class="kw">in</span> (i'', ab <span class="fu">&lt;*&gt;</span> a))</a></code></pre></div>
+<p>Then traversing with this applicative functor supplies the index to each function call which we can pass to our indexed updating function.</p>
+<div class="sourceCode" id="cb6"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb6-1" data-line-number="1"><span class="ot">indexing ::</span> <span class="dt">Traversal</span> s t a b <span class="ot">-&gt;</span> <span class="dt">PrimitiveIndexedTraversal</span> <span class="dt">Int</span> s t a b</a>
+<a class="sourceLine" id="cb6-2" data-line-number="2">indexing t p s <span class="fu">=</span> snd <span class="fu">$</span> runIndexing</a>
+<a class="sourceLine" id="cb6-3" data-line-number="3">  (t (\a <span class="ot">-&gt;</span> <span class="dt">Indexing</span> (\i <span class="ot">-&gt;</span> (i <span class="fu">+</span> <span class="dv">1</span>, p i a) )) s) <span class="dv">0</span></a></code></pre></div>
+<p>A common pattern is to use <code>indexing</code> and <code>traverse</code> together to create indexed traversals for <code>Traversable</code> functors. It is so common that it is given a special name <code>traversed</code>.</p>
+<div class="sourceCode" id="cb7"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb7-1" data-line-number="1"><span class="ot">traversed ::</span> <span class="dt">Traversable</span> t <span class="ot">=&gt;</span> <span class="dt">PrimitiveIndexedTraversal</span> (t a) (t b) a b</a>
+<a class="sourceLine" id="cb7-2" data-line-number="2">traversed <span class="fu">=</span> indexing traverse</a>
+<a class="sourceLine" id="cb7-3" data-line-number="3"></a>
+<a class="sourceLine" id="cb7-4" data-line-number="4"><span class="fu">&gt;</span> itoListOf traversed (<span class="dt">Just</span> <span class="dv">5</span>)</a>
+<a class="sourceLine" id="cb7-5" data-line-number="5">[(<span class="dv">0</span>, <span class="dv">5</span>)]</a></code></pre></div>
+<p>However, there are two problems with this representation.</p>
+<ol type="1">
+<li>Indexed optics do not compose with ordinary optics.</li>
+<li>We need a different composition operator other than (<code>.</code>) in order to compose indexed optics together.</li>
+</ol>
+<h1 id="composing-indexed-and-ordinary-optics">Composing indexed and ordinary optics</h1>
+<p>Considering the first problem, in order to compose an indexed optic with an ordinary optic using function composition we would need to be able to unify <code>i -&gt; a -&gt; b</code> with <code>s -&gt; t</code>.</p>
+<p>Given an ordinary optic <code>op</code> and an indexed optic <code>iop</code> with the following types:</p>
+<div class="sourceCode" id="cb8"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb8-1" data-line-number="1">op <span class="fu">:</span> (a <span class="ot">-&gt;</span> f b) <span class="ot">-&gt;</span> (s <span class="ot">-&gt;</span> f t)</a>
+<a class="sourceLine" id="cb8-2" data-line-number="2">iop <span class="fu">:</span> (i <span class="ot">-&gt;</span> c <span class="ot">-&gt;</span> f d) <span class="ot">-&gt;</span> (u <span class="ot">-&gt;</span> f v)</a></code></pre></div>
+<p><code>op . iop</code> is the only composition which type checks. It yields an indexed traversal which keeps track of the index of the inner component.</p>
+<div class="sourceCode" id="cb9"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb9-1" data-line-number="1"><span class="fu">&gt;</span> itoListOf (traverse <span class="fu">.</span> list) (<span class="dt">True</span>, [<span class="dv">1</span>,<span class="dv">2</span>,<span class="dv">3</span>])</a>
+<a class="sourceLine" id="cb9-2" data-line-number="2">[(<span class="dv">0</span>, <span class="dv">1</span>), (<span class="dv">1</span>, <span class="dv">2</span>), (<span class="dv">2</span>, <span class="dv">3</span>)]</a></code></pre></div>
+<p>However, composition the other way around doesn’t work and further with this representation indexed optics do not compose together with <code>.</code>. In order to compose indexed optics together with <code>.</code> we need to be able to unify the argument and result type of the lens together. In order to do this, we abstract away from the the indexed argument of the updating function for any <code>Indexable</code> profunctor.</p>
+<div class="sourceCode" id="cb10"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb10-1" data-line-number="1"><span class="kw">class</span> <span class="dt">Indexable</span> i p <span class="kw">where</span></a>
+<a class="sourceLine" id="cb10-2" data-line-number="2"><span class="ot">  index ::</span> p a b <span class="ot">-&gt;</span> i <span class="ot">-&gt;</span> a <span class="ot">-&gt;</span> b</a></code></pre></div>
+<p>Using this class, the type for indexed traversals becomes:</p>
+<div class="sourceCode" id="cb11"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb11-1" data-line-number="1"><span class="kw">type</span> <span class="dt">IndexedTraversal</span> i s t a b <span class="fu">=</span></a>
+<a class="sourceLine" id="cb11-2" data-line-number="2">  forall f p <span class="fu">.</span> (<span class="dt">Applicative</span> f, <span class="dt">Indexable</span> i p) <span class="ot">=&gt;</span> p a (f b) <span class="ot">-&gt;</span> s <span class="ot">-&gt;</span> f t</a></code></pre></div>
+<p>There are instances for the newtype wrapped indexed functions which we were using before</p>
+<div class="sourceCode" id="cb12"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb12-1" data-line-number="1"><span class="kw">newtype</span> <span class="dt">Indexed</span> i a b <span class="fu">=</span> <span class="dt">Indexed</span> {<span class="ot"> runIndexed ::</span> i <span class="ot">-&gt;</span> a <span class="ot">-&gt;</span> b }</a>
+<a class="sourceLine" id="cb12-2" data-line-number="2"></a>
+<a class="sourceLine" id="cb12-3" data-line-number="3"><span class="kw">instance</span> (<span class="dt">Indexable</span> i (<span class="dt">Indexed</span> i)) <span class="kw">where</span></a>
+<a class="sourceLine" id="cb12-4" data-line-number="4">  index (<span class="dt">Indexed</span> p) <span class="fu">=</span> p</a></code></pre></div>
+<p>but also for <code>(-&gt;)</code> which ignores the index. This means that we can seamlessly use optics with or without the index by instantiating <code>p</code> with either <code>Indexed</code> or <code>-&gt;</code>.</p>
+<div class="sourceCode" id="cb13"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb13-1" data-line-number="1"><span class="kw">instance</span> (<span class="dt">Indexable</span> i (<span class="ot">-&gt;</span>)) <span class="kw">where</span></a>
+<a class="sourceLine" id="cb13-2" data-line-number="2">  index f _ <span class="fu">=</span> f</a></code></pre></div>
+<p>Now <code>op . iop</code> yields an indexed traversal, <code>iop . op</code> forces us to instantiate <code>p = (-&gt;)</code> and so yields a traversal which has forgotten the index. Perhaps most surprisingly, the composition <code>iop . iop</code> type-checks as well, but again we loose information as we are forced to instantiate <code>p = (-&gt;)</code> and thus forget about the indexing of the outer traversal.</p>
+<p>This is a double edged sword. Composing using <code>.</code> leads to more code reuse as the same combinators can be used for both indexed and non-indexed optics. On the other hand, composing indexed optics using <code>.</code> is nearly always the wrong thing if you care about the indices.</p>
+<h1 id="a-different-composition-operator">A different composition operator</h1>
+<p>Composing together indexed optics with the normal lens composition operator <code>.</code> leads to unexpected results as the indices are not combined appropriately. The index of the inner-most optic of the composition is preserved whilst the outer indexing is thrown away. It would be more desirable to combine the indices together in order to retain as much information as possible.</p>
+<p>To that end we define <code>&lt;.&gt;</code> which can compose indexed optics together whilst suitably combining their indices.</p>
+<div class="sourceCode" id="cb14"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb14-1" data-line-number="1"><span class="ot">(&lt;.&gt;) ::</span> <span class="dt">Indexable</span> (i, j) p</a>
+<a class="sourceLine" id="cb14-2" data-line-number="2">      <span class="ot">=&gt;</span> (<span class="dt">Indexed</span> i s t <span class="ot">-&gt;</span> r)</a>
+<a class="sourceLine" id="cb14-3" data-line-number="3">      <span class="ot">-&gt;</span> (<span class="dt">Indexed</span> j a b <span class="ot">-&gt;</span> s <span class="ot">-&gt;</span> t)</a>
+<a class="sourceLine" id="cb14-4" data-line-number="4">      <span class="ot">-&gt;</span> p a b <span class="ot">-&gt;</span> r</a>
+<a class="sourceLine" id="cb14-5" data-line-number="5">(istr <span class="fu">&lt;.&gt;</span> jabst) p</a>
+<a class="sourceLine" id="cb14-6" data-line-number="6">  <span class="fu">=</span> istr (<span class="dt">Indexed</span> (\i s <span class="ot">-&gt;</span></a>
+<a class="sourceLine" id="cb14-7" data-line-number="7">      jabst (<span class="dt">Indexed</span> (\j a <span class="ot">-&gt;</span></a>
+<a class="sourceLine" id="cb14-8" data-line-number="8">        indexed p (i, j) a)) s))</a></code></pre></div>
+<p>The definition monomorphises the argument again in order to avoid inpredicativity problems.</p>
+<div class="sourceCode" id="cb15"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb15-1" data-line-number="1"><span class="fu">&gt;</span> itoListOf (list <span class="fu">&lt;.&gt;</span> pair) [(<span class="dv">1</span>,<span class="dv">2</span>), (<span class="dv">2</span>, <span class="dv">3</span>)]</a>
+<a class="sourceLine" id="cb15-2" data-line-number="2">[((<span class="dv">0</span>,<span class="dv">0</span>),<span class="dv">1</span>),((<span class="dv">0</span>,<span class="dv">1</span>),<span class="dv">2</span>),((<span class="dv">1</span>,<span class="dv">0</span>),<span class="dv">2</span>),((<span class="dv">1</span>,<span class="dv">1</span>),<span class="dv">3</span>)]</a></code></pre></div>
+<p>Generalisations are possible which combine indices in other ways but this simple combination function highlights the essence of the approach.</p>
+<h1 id="what-are-indexed-optics-useful-for">What are indexed optics useful for?</h1>
+<p>Now that is a question which I will have to defer to reddit comments. I couldn’t find many libraries which were using the indexing in interesting ways.</p>
+
+            </div>
+          </div>
+        </div>
+      </div>
+    </body>
+</html>

@@ -1,0 +1,125 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+    <head>
+        <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+        <title>mpickering - Specifying how a plugin affects recompilation</title>
+        <script type="text/javascript" src="http://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML"></script>
+        <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.1.3/css/bootstrap.min.css" integrity="sha384-MCw98/SFnGE8fJT3GXwEOngsV7Zt27NXFoaoApmYm81iuXoPkFOJwJ8ERdknLPMO" crossorigin="anonymous">
+        <script src="https://code.jquery.com/jquery-3.3.1.slim.min.js" integrity="sha384-q8i/X+965DzO0rT7abK41JStQIAqVgRVzpbzo5smXKp4YfRvH+8abtTE1Pi6jizo" crossorigin="anonymous"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.14.3/umd/popper.min.js" integrity="sha384-ZMP7rVo3mIykV+2+9J3UJ46jBk0WLaUAdn689aCwoqbBJiSnjAK/l8WvCWPIPm49" crossorigin="anonymous"></script>
+<script src="https://stackpath.bootstrapcdn.com/bootstrap/4.1.3/js/bootstrap.min.js" integrity="sha384-ChfqqxuZUCnJSK3+MXmPNIyE6ZbWh2IMqE241rYiqJxyMiZ6OW/JmZQ5stwEULTy" crossorigin="anonymous"></script>
+
+        <link rel="stylesheet" type="text/css" href="../css/default.css" />
+        <link href="http://fonts.googleapis.com/css?family=Vollkorn" rel="stylesheet" type="text/css">
+    </head>
+    <body>
+        <div class="container">
+          <div class="row">
+            <div class="col-sm-auto">
+              <ul class="nav flex-column">
+              <li class="nav-item">
+                <a href="../">Home</a>
+              </li>
+              <li class="nav-item">
+                <a href="../about.html">About</a> <br>
+              </li>
+              <li>
+                <a href="../publications.html">Publications</a>
+              </li>
+              <li>
+                <a href="../plugins.html">Plugins</a>
+              </li>
+              <li>
+                <a href="../eventlog2html">eventlog2html</a>
+              </li>
+              <li>
+                <a href="../ide/posts.html">IDE 2020</a>
+              </li>
+          <!---
+              <li>
+                <a href="/bristol2020.html">Bristol 2020</a>
+              </li>
+              <li>
+                <a href="https://andreaspk.github.io/ghc-week">GHC Week</a>
+              </li>
+          --->
+              <li>
+                <a href="../maps.html">Maps</a>
+              </li>
+              <li>
+                <a href="../hurstwood.html">Hurstwood TrailO</a>
+              </li>
+              <li class="nav-item">
+                <a href="../archive.html">Archive</a> <br>
+              </li>
+              <li>
+                <a href="../atom.xml">Feed</a>
+              </li>
+              </ul>
+            </div>
+          <div class="col-md">
+
+            <div id="content">
+              <h2> Specifying how a plugin affects recompilation </h2>
+<p class="text-muted">
+    Posted on August 10, 2018
+    
+</p>
+
+<p>Plugins have existed for a long time in GHC. The first plugins were implemented in <a href="http://blog.omega-prime.co.uk/2008/06/15/compiler-plugins-for-ghc-the-first-week/">2008</a> by Max Bolingbroke. They enabled users to modify the optimisation pipeline. They ran after desugaring and hence were called <a href="http://mpickering.github.io/ghc-docs/build-html/users_guide/extending_ghc.html#core-plugins-in-more-detail">“core” plugins</a>. Later, Adam Gundry implemented what I shall refer to as <a href="http://adam.gundry.co.uk/pub/typechecker-plugins/">“constraint solver” plugins</a> which allow users to provide custom solver logic to solve additional constraints. Recently, Boldizsár Németh has extended the number of extension points again with a set of plugins which can inspect and modify the syntax AST. Plugins can run after parsing, renaming or type checking and hence are called <a href="http://mpickering.github.io/ghc-docs/build-html/users_guide/extending_ghc.html#source-plugins">“source” plugins</a>.</p>
+<p>The idea behind plugins was great - a user can extend the compiler in their own specific way without having to modify the source tree and rebuild the compiler from scratch. It is far more convenient to write a plugin than to use a custom compiler. However, if a user wants to use a plugin, they will find that every module where the plugin is enabled is always recompiled, even if the source code didn’t change at all. Why is this? Well, a plugin can do anything, it could read the value from a temperature sensor and insert the room temperature into the program. Thus, we would always need to recompile a module if the temperature reading changed as it would affect what our program did.</p>
+<p>However, there are also “pure” plugins, whose output is only affected by the program which is passed as in input. For these plugins, if the source code doesn’t change then we don’t need to do any recompilation.</p>
+<p>This post is about a new metadata field which I added to the <code>Plugin</code> data type which specifies how a plugin should affect recompilation. This feature will be present in GHC 8.6.</p>
+<!--more-->
+<h1 id="controlling-recompilation">Controlling Recompilation</h1>
+<p>The <code>Plugin</code> data type is a record which contains a field for each of the different types of plugin. There is now also a new field <code>pluginRecompile</code> which specifies how the plugin should affect recompilation.</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb1-1" data-line-number="1"><span class="kw">data</span> <span class="dt">Plugin</span> {</a>
+<a class="sourceLine" id="cb1-2" data-line-number="2"><span class="ot">  installCoreToDos ::</span> <span class="dt">CorePlugin</span></a>
+<a class="sourceLine" id="cb1-3" data-line-number="3">  ,<span class="ot"> tcPlugin ::</span> <span class="dt">TcPlugin</span></a>
+<a class="sourceLine" id="cb1-4" data-line-number="4">  , parsedResultAction</a>
+<a class="sourceLine" id="cb1-5" data-line-number="5"><span class="ot">    ::</span> [<span class="dt">CommandLineOption</span>] <span class="ot">-&gt;</span> <span class="dt">ModSummary</span> <span class="ot">-&gt;</span> <span class="dt">HsParsedModule</span></a>
+<a class="sourceLine" id="cb1-6" data-line-number="6">                                         <span class="ot">-&gt;</span> <span class="dt">Hsc</span> <span class="dt">HsParsedModule</span></a>
+<a class="sourceLine" id="cb1-7" data-line-number="7"></a>
+<a class="sourceLine" id="cb1-8" data-line-number="8">  <span class="fu">...</span> omitted fields</a>
+<a class="sourceLine" id="cb1-9" data-line-number="9"></a>
+<a class="sourceLine" id="cb1-10" data-line-number="10">  ,<span class="ot"> pluginRecompile ::</span> [<span class="dt">CommandLineOpts</span>] <span class="ot">-&gt;</span> <span class="dt">IO</span> <span class="dt">PluginRecompile</span></a>
+<a class="sourceLine" id="cb1-11" data-line-number="11">}</a></code></pre></div>
+<p>This function will be run during the recompilation check which happens at the start of every module compilation. It returns a value of the <code>PluginRecompile</code> data type.</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb2-1" data-line-number="1"><span class="kw">data</span> <span class="dt">PluginRecompile</span> <span class="fu">=</span> <span class="dt">PurePlugin</span></a>
+<a class="sourceLine" id="cb2-2" data-line-number="2">                     <span class="fu">|</span> <span class="dt">ImpurePlugin</span></a>
+<a class="sourceLine" id="cb2-3" data-line-number="3">                     <span class="fu">|</span> <span class="dt">MaybeRecompile</span> <span class="dt">Fingerprint</span></a></code></pre></div>
+<p>There are three different ways to specify how a plugin affects recompilation.</p>
+<ol type="1">
+<li><code>PurePlugin</code> which means that it doesn’t contribute anything to the recompilation check. We will only recompile a module if we would normally recompile it.</li>
+<li><code>ImpurePlugin</code> which means that should always recompile a module. This is the default as it is backwards compatible.</li>
+<li><code>MaybeRecompile</code>, we compute a <code>Fingerprint</code> which we add to the recompilation check to decide whether we should recompile.</li>
+</ol>
+<h2 id="library-functions">Library Functions</h2>
+<p>The <code>Plugins</code> interface provides some library functions for common configurations.</p>
+<p>We might want to use <code>impurePlugin</code> when our plugin injects some additional impure information into the program such as the result of reading a webpage.</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb3-1" data-line-number="1"><span class="ot">impurePlugin ::</span> [<span class="dt">CommandLineOpts</span>] <span class="ot">-&gt;</span> <span class="dt">IO</span> <span class="dt">PluginRecompile</span></a>
+<a class="sourceLine" id="cb3-2" data-line-number="2">impurePlugin _ <span class="fu">=</span> return <span class="dt">ImpurePlugin</span></a></code></pre></div>
+<p>The <code>purePlugin</code> function is useful for static analysis tools which don’t modify the source program at all and just output information. Other plugins which modify the source program in a predictable manner such as the <code>ghc-typelits-natnormalise</code> plugin should also be marked as pure.</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb4-1" data-line-number="1"><span class="ot">purePlugin ::</span> [<span class="dt">CommandLineOpts</span>] <span class="ot">-&gt;</span> <span class="dt">IO</span> <span class="dt">PluginRecompile</span></a>
+<a class="sourceLine" id="cb4-2" data-line-number="2">purePlugin _args <span class="fu">=</span> return <span class="dt">NoForceRecompile</span></a></code></pre></div>
+<p>If you have some options which affect the output of the plugin then you might want to use the <code>flagRecompile</code> option which causes recompilation if any of the plugin flags change.</p>
+<div class="sourceCode" id="cb5"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb5-1" data-line-number="1"><span class="ot">flagRecompile ::</span> [<span class="dt">CommandLineOption</span>] <span class="ot">-&gt;</span> <span class="dt">IO</span> <span class="dt">PluginRecompile</span></a>
+<a class="sourceLine" id="cb5-2" data-line-number="2">flagRecompile <span class="fu">=</span></a>
+<a class="sourceLine" id="cb5-3" data-line-number="3">  return <span class="fu">.</span> <span class="dt">MaybeRecompile</span> <span class="fu">.</span> fingerprintFingerprints</a>
+<a class="sourceLine" id="cb5-4" data-line-number="4">    <span class="fu">.</span> map fingerprintString <span class="fu">.</span> sort</a></code></pre></div>
+<p>The nature of this interface is that it is sometimes necessary to be overly conservative when specifying recompilation behaviour. For example, you can’t decide on a per-module basis whether to recompile or not. Perhaps the interface could be extended with this information if user’s found it necessary.</p>
+<h1 id="conclusion">Conclusion</h1>
+<p>There is now a simple mechanism for controlling how plugins should affect recompilation. This solves one of the major problems that large scale usage of plugins has faced. Using a plugin on a 1000 module code base was impractical but now shouldn’t impose any additional inconvenience.</p>
+<h1 id="related-links">Related Links</h1>
+<ul>
+<li><a href="http://mpickering.github.io/ghc-docs/build-html/users_guide/extending_ghc.html#controlling-recompilation">GHC User’s Guide</a></li>
+<li><a href="https://www.reddit.com/r/haskell/comments/967o6k/specifying_how_a_plugin_affects_recompilation/">Reddit comments</a></li>
+</ul>
+
+            </div>
+          </div>
+        </div>
+      </div>
+    </body>
+</html>

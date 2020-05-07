@@ -1,0 +1,181 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+    <head>
+        <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+        <title>mpickering - A three-stage program you definitely want to write</title>
+        <script type="text/javascript" src="http://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML"></script>
+        <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.1.3/css/bootstrap.min.css" integrity="sha384-MCw98/SFnGE8fJT3GXwEOngsV7Zt27NXFoaoApmYm81iuXoPkFOJwJ8ERdknLPMO" crossorigin="anonymous">
+        <script src="https://code.jquery.com/jquery-3.3.1.slim.min.js" integrity="sha384-q8i/X+965DzO0rT7abK41JStQIAqVgRVzpbzo5smXKp4YfRvH+8abtTE1Pi6jizo" crossorigin="anonymous"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.14.3/umd/popper.min.js" integrity="sha384-ZMP7rVo3mIykV+2+9J3UJ46jBk0WLaUAdn689aCwoqbBJiSnjAK/l8WvCWPIPm49" crossorigin="anonymous"></script>
+<script src="https://stackpath.bootstrapcdn.com/bootstrap/4.1.3/js/bootstrap.min.js" integrity="sha384-ChfqqxuZUCnJSK3+MXmPNIyE6ZbWh2IMqE241rYiqJxyMiZ6OW/JmZQ5stwEULTy" crossorigin="anonymous"></script>
+
+        <link rel="stylesheet" type="text/css" href="../css/default.css" />
+        <link href="http://fonts.googleapis.com/css?family=Vollkorn" rel="stylesheet" type="text/css">
+    </head>
+    <body>
+        <div class="container">
+          <div class="row">
+            <div class="col-sm-auto">
+              <ul class="nav flex-column">
+              <li class="nav-item">
+                <a href="../">Home</a>
+              </li>
+              <li class="nav-item">
+                <a href="../about.html">About</a> <br>
+              </li>
+              <li>
+                <a href="../publications.html">Publications</a>
+              </li>
+              <li>
+                <a href="../plugins.html">Plugins</a>
+              </li>
+              <li>
+                <a href="../eventlog2html">eventlog2html</a>
+              </li>
+              <li>
+                <a href="../ide/posts.html">IDE 2020</a>
+              </li>
+          <!---
+              <li>
+                <a href="/bristol2020.html">Bristol 2020</a>
+              </li>
+              <li>
+                <a href="https://andreaspk.github.io/ghc-week">GHC Week</a>
+              </li>
+          --->
+              <li>
+                <a href="../maps.html">Maps</a>
+              </li>
+              <li>
+                <a href="../hurstwood.html">Hurstwood TrailO</a>
+              </li>
+              <li class="nav-item">
+                <a href="../archive.html">Archive</a> <br>
+              </li>
+              <li>
+                <a href="../atom.xml">Feed</a>
+              </li>
+              </ul>
+            </div>
+          <div class="col-md">
+
+            <div id="content">
+              <h2> A three-stage program you definitely want to write </h2>
+<p class="text-muted">
+    Posted on February 14, 2019
+    
+</p>
+
+<p>Writing programs explicitly in stages gives you guarantees that abstraction will be removed. A guarantee that the optimiser most certainly does not give you.</p>
+<p>After spending the majority of my early 20s inside the optimiser, I decided enough was enough and it was time to gain back control over how my programs were partially evaluated.</p>
+<p>So in this post I’ll give an example of how I took back control and eliminated two levels of abstraction for an interpreter by writing a program which runs in three stages.</p>
+<p>Enter: An applicative interpreter for Hutton’s razor.</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb1-1" data-line-number="1"><span class="kw">data</span> <span class="dt">Expr</span> <span class="fu">=</span> <span class="dt">Val</span> <span class="dt">Int</span> <span class="fu">|</span> <span class="dt">Add</span> <span class="dt">Expr</span> <span class="dt">Expr</span></a>
+<a class="sourceLine" id="cb1-2" data-line-number="2"></a>
+<a class="sourceLine" id="cb1-3" data-line-number="3"><span class="ot">eval ::</span> <span class="dt">Applicative</span> m <span class="ot">=&gt;</span> <span class="dt">Expr</span> <span class="ot">-&gt;</span> m <span class="dt">Int</span></a>
+<a class="sourceLine" id="cb1-4" data-line-number="4">eval (<span class="dt">Val</span> n) <span class="fu">=</span> pure n</a>
+<a class="sourceLine" id="cb1-5" data-line-number="5">eval (<span class="dt">Add</span> e1 e2) <span class="fu">=</span> (<span class="fu">+</span>) <span class="fu">&lt;$&gt;</span> eval e1 <span class="fu">&lt;*&gt;</span> eval e2</a></code></pre></div>
+<p>Written simply at one level, there are two levels of abstraction which could be failed to be eliminated.</p>
+<ol type="1">
+<li>If we statically know the expression we can eliminate <code>Expr</code>.</li>
+<li>If we statically know which <code>Applicative</code> then we can remove the indirection from the typeclass.</li>
+</ol>
+<p>Using typed Template Haskell we’ll work out how to remove both of these layers.</p>
+<!--more-->
+<h2 id="eliminating-the-expression">Eliminating the Expression</h2>
+<p>First we’ll have a look at how to stage the program just to eliminate the expression without discussion the application fragment. This is a two-stage program.</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb2-1" data-line-number="1"><span class="kw">module</span> <span class="dt">Two</span> <span class="kw">where</span></a>
+<a class="sourceLine" id="cb2-2" data-line-number="2"></a>
+<a class="sourceLine" id="cb2-3" data-line-number="3"><span class="kw">import</span> <span class="dt">Language.Haskell.TH</span></a>
+<a class="sourceLine" id="cb2-4" data-line-number="4"></a>
+<a class="sourceLine" id="cb2-5" data-line-number="5"><span class="kw">data</span> <span class="dt">Expr</span> <span class="fu">=</span> <span class="dt">Val</span> <span class="dt">Int</span> <span class="fu">|</span> <span class="dt">Add</span> <span class="dt">Expr</span> <span class="dt">Expr</span></a>
+<a class="sourceLine" id="cb2-6" data-line-number="6"></a>
+<a class="sourceLine" id="cb2-7" data-line-number="7"><span class="ot">eval ::</span> <span class="dt">Expr</span> <span class="ot">-&gt;</span> <span class="dt">TExpQ</span> <span class="dt">Int</span></a>
+<a class="sourceLine" id="cb2-8" data-line-number="8">eval (<span class="dt">Val</span> n) <span class="fu">=</span> [<span class="fu">||</span> n <span class="fu">||</span>]</a>
+<a class="sourceLine" id="cb2-9" data-line-number="9">eval (<span class="dt">Add</span> e1 e2) <span class="fu">=</span> [<span class="fu">||</span> <span class="fu">$$</span>(eval e1) <span class="fu">+</span> <span class="fu">$$</span>(eval e2) <span class="fu">||</span>]</a></code></pre></div>
+<p>The eval function takes an expression and generates code which unrolls the expression that needs to be evaluated.</p>
+<p>Splicing in <code>eval</code> gives us a chain of additions which are computed at run-time.</p>
+<pre><code>$$(eval (Add (Val 1) (Val 2)))
+=&gt; 1 + 2</code></pre>
+<p>By explicitly separating the program into stages we know that there will be no mention of <code>Expr</code> in the resulting program.</p>
+<h2 id="eliminating-the-applicative-functor">Eliminating the Applicative Functor</h2>
+<p>That’s good. Eliminating the <code>Expr</code> data type was easy. We’ll have to work a bit more to eliminate the applicative.</p>
+<p>In the first stage, we will eliminate the expression in the same manner but instead of producing an <code>Int</code>, we will produce a <code>SynApplicative</code> which is a syntactic representation of an applicative. This allows us to inspect the structure of the program in the second stage and remove that overhead as well.</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb4-1" data-line-number="1"><span class="kw">data</span> <span class="dt">SynApplicative</span> a <span class="kw">where</span></a>
+<a class="sourceLine" id="cb4-2" data-line-number="2">  <span class="dt">Return</span><span class="ot"> ::</span> <span class="dt">WithCode</span> a <span class="ot">-&gt;</span> <span class="dt">SynApplicative</span> a</a>
+<a class="sourceLine" id="cb4-3" data-line-number="3">  <span class="dt">App</span><span class="ot">  ::</span> <span class="dt">SynApplicative</span> (a <span class="ot">-&gt;</span> b) <span class="ot">-&gt;</span> <span class="dt">SynApplicative</span> a <span class="ot">-&gt;</span> <span class="dt">SynApplicative</span> b</a>
+<a class="sourceLine" id="cb4-4" data-line-number="4"></a>
+<a class="sourceLine" id="cb4-5" data-line-number="5"><span class="kw">data</span> <span class="dt">WithCode</span> a <span class="fu">=</span> <span class="dt">WithCode</span> {<span class="ot"> _val ::</span> a,<span class="ot"> _code ::</span> <span class="dt">TExpQ</span> a }</a></code></pre></div>
+<p><code>WithCode</code> is a wrapper which pairs a value with a code fragment which was used to produce that value.</p>
+<p>If you notice in the earlier example, this wasn’t necessary when it was known that we needed to persist an <code>Int</code>, as there is a <code>Lift</code> instance for <code>Int</code>. However, in general, not all values can be persisted so using <code>WithCode</code> is more general and flexible, if a bit more verbose.</p>
+<p><code>elimExpr</code> eliminates the first layer of abstraction and returns code which generates a <code>SynApplicative</code>.</p>
+<div class="sourceCode" id="cb5"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb5-1" data-line-number="1"><span class="ot">elimExpr ::</span> <span class="dt">Expr</span> <span class="ot">-&gt;</span> <span class="dt">TExpQ</span> (<span class="dt">SynApplicative</span> <span class="dt">Int</span>)</a>
+<a class="sourceLine" id="cb5-2" data-line-number="2">elimExpr (<span class="dt">Val</span> n) <span class="fu">=</span> [<span class="fu">||</span> <span class="dt">Return</span> (<span class="dt">WithCode</span> n (liftT n)) <span class="fu">||</span>]</a>
+<a class="sourceLine" id="cb5-3" data-line-number="3">elimExpr (<span class="dt">Add</span> e1 e2) <span class="fu">=</span></a>
+<a class="sourceLine" id="cb5-4" data-line-number="4">   [<span class="fu">||</span> <span class="dt">Return</span> (<span class="dt">WithCode</span> (<span class="fu">+</span>) codePlus)</a>
+<a class="sourceLine" id="cb5-5" data-line-number="5">        <span class="ot">`App`</span> <span class="fu">$$</span>(elimExpr e1)</a>
+<a class="sourceLine" id="cb5-6" data-line-number="6">        <span class="ot">`App`</span> <span class="fu">$$</span>(elimExpr e2) <span class="fu">||</span>]</a>
+<a class="sourceLine" id="cb5-7" data-line-number="7"></a>
+<a class="sourceLine" id="cb5-8" data-line-number="8"><span class="ot">liftT ::</span> <span class="dt">Lift</span> a <span class="ot">=&gt;</span> a <span class="ot">-&gt;</span> <span class="dt">TExpQ</span> a</a>
+<a class="sourceLine" id="cb5-9" data-line-number="9">liftT <span class="fu">=</span> unsafeTExpCoerce <span class="fu">.</span> lift</a>
+<a class="sourceLine" id="cb5-10" data-line-number="10"></a>
+<a class="sourceLine" id="cb5-11" data-line-number="11">codePlus <span class="fu">=</span> [<span class="fu">||</span> (<span class="fu">+</span>) <span class="fu">||</span>]</a></code></pre></div>
+<p>In the case for <code>Add</code> we encounter a situation where we would have liked to use nested brackets to persist the value of <code>[|| (+) ||]</code>. Instead you have to lift it to the top level and then persist that identifier.</p>
+<p>Next, it’s time to provide an interpreter to remove the abstraction of the applicative. In order to do this, we need to provide a dictionary which will be used to give the interpretation of the applicative commands.</p>
+<div class="sourceCode" id="cb6"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb6-1" data-line-number="1"><span class="kw">data</span> <span class="dt">ApplicativeDict</span> m <span class="fu">=</span></a>
+<a class="sourceLine" id="cb6-2" data-line-number="2">  <span class="dt">ApplicativeDict</span></a>
+<a class="sourceLine" id="cb6-3" data-line-number="3">    {<span class="ot"> _return ::</span> (forall a <span class="fu">.</span> <span class="dt">WithCode</span> (a <span class="ot">-&gt;</span> m a)),</a>
+<a class="sourceLine" id="cb6-4" data-line-number="4"><span class="ot">      _ap     ::</span> (forall a b <span class="fu">.</span> <span class="dt">WithCode</span> (m (a <span class="ot">-&gt;</span> b) <span class="ot">-&gt;</span> m a <span class="ot">-&gt;</span> m b))</a>
+<a class="sourceLine" id="cb6-5" data-line-number="5">    }</a></code></pre></div>
+<p><code>WithCode</code> is necessary again as it will be used to generate a program so it’s necessary to know how to implement the methods.</p>
+<div class="sourceCode" id="cb7"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb7-1" data-line-number="1">elimApplicative</a>
+<a class="sourceLine" id="cb7-2" data-line-number="2"><span class="ot">  ::</span> <span class="dt">SynApplicative</span> a</a>
+<a class="sourceLine" id="cb7-3" data-line-number="3">  <span class="ot">-&gt;</span> <span class="dt">ApplicativeDict</span> m</a>
+<a class="sourceLine" id="cb7-4" data-line-number="4">  <span class="ot">-&gt;</span> <span class="dt">TExpQ</span> (m a)</a>
+<a class="sourceLine" id="cb7-5" data-line-number="5">elimApplicative (<span class="dt">Return</span> v) d<span class="fu">@</span><span class="dt">ApplicativeDict</span>{<span class="fu">..</span>}</a>
+<a class="sourceLine" id="cb7-6" data-line-number="6">  <span class="fu">=</span> [<span class="fu">||</span> <span class="fu">$$</span>(_code _return) <span class="fu">$$</span>(_code v) <span class="fu">||</span>]</a>
+<a class="sourceLine" id="cb7-7" data-line-number="7">elimApplicative (<span class="dt">App</span> e1 e2) d<span class="fu">@</span><span class="dt">ApplicativeDict</span>{<span class="fu">..</span>}</a>
+<a class="sourceLine" id="cb7-8" data-line-number="8">  <span class="fu">=</span> [<span class="fu">||</span> <span class="fu">$$</span>(_code _ap) <span class="fu">$$</span>(elimApplicative e1 d) <span class="fu">$$</span>(elimApplicative e2 d) <span class="fu">||</span>]</a></code></pre></div>
+<p>This interpretation is very boring as it just amounts to replacing all the constructors with their implementations. However, it is exciting that we have guaranteed the removal of the overhead of the applicative abstraction.</p>
+<h2 id="running-the-splice">Running the Splice</h2>
+<p>Now that we’ve written two functions independently to to eliminate the two layers, they need to be combined together. This is the birth of our three-stage program.</p>
+<div class="sourceCode" id="cb8"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb8-1" data-line-number="1"><span class="kw">import</span> <span class="dt">Three</span></a>
+<a class="sourceLine" id="cb8-2" data-line-number="2"></a>
+<a class="sourceLine" id="cb8-3" data-line-number="3"><span class="ot">elim ::</span> <span class="dt">Identity</span> <span class="dt">Int</span></a>
+<a class="sourceLine" id="cb8-4" data-line-number="4">elim <span class="fu">=</span> <span class="fu">$$</span>(elimApplicative <span class="fu">$$</span>(elimExpr (<span class="dt">Add</span> (<span class="dt">Val</span> <span class="dv">1</span>) (<span class="dt">Val</span> <span class="dv">2</span>))) identityDict)</a>
+<a class="sourceLine" id="cb8-5" data-line-number="5"></a>
+<a class="sourceLine" id="cb8-6" data-line-number="6">identityDict <span class="fu">=</span> <span class="dt">ApplicativeDict</span>{<span class="fu">..</span>}</a>
+<a class="sourceLine" id="cb8-7" data-line-number="7">  <span class="kw">where</span></a>
+<a class="sourceLine" id="cb8-8" data-line-number="8">    _return <span class="fu">=</span> <span class="dt">WithCode</span> <span class="dt">Identity</span> [<span class="fu">||</span> <span class="dt">Identity</span> <span class="fu">||</span>]</a>
+<a class="sourceLine" id="cb8-9" data-line-number="9">    _ap <span class="fu">=</span> <span class="dt">WithCode</span> idAp [<span class="fu">||</span> idAp <span class="fu">||</span>]</a>
+<a class="sourceLine" id="cb8-10" data-line-number="10"></a>
+<a class="sourceLine" id="cb8-11" data-line-number="11"><span class="ot">idAp ::</span> <span class="dt">Identity</span> (a <span class="ot">-&gt;</span> b) <span class="ot">-&gt;</span> <span class="dt">Identity</span> a <span class="ot">-&gt;</span> <span class="dt">Identity</span> b</a>
+<a class="sourceLine" id="cb8-12" data-line-number="12">idAp (<span class="dt">Identity</span> f) (<span class="dt">Identity</span> a) <span class="fu">=</span> <span class="dt">Identity</span> (f a)</a></code></pre></div>
+<p><code>elim</code> is the combination of <code>elimApplicative</code> and <code>elimExpr</code>. The nested splices indicate that the program is more than two levels.</p>
+<p>Using <code>-ddump-splices</code> we can have a look at the program that gets generated.</p>
+<pre><code>Test.hs:10:30-59: Splicing expression
+    elimExpr (Add (Val 1) (Val 2))
+  ======&gt;
+    ((Return ((WithCode (+)) codePlus)
+        `App` Return ((WithCode 1) (liftT 1)))
+       `App` Return ((WithCode 2) (liftT 2)))
+Test.hs:10:11-73: Splicing expression
+    elimApplicative $$(elimExpr (Add (Val 1) (Val 2))) identityDict
+  ======&gt;
+    (idAp ((idAp (Identity (+))) (Identity 1))) (Identity 2)</code></pre>
+<p>Both steps appear in the debug output with the code which was produced at each step. Notice that we had very precise control over what code was generated and that functions like <code>idAp</code> are not inlined. In this case, the compiler will certainly inline <code>idAp</code> and so on but in general it might be useful to generate code which contains calls to <code>GHC.Exts.inline</code> to force even recursive functions to be inlined once.</p>
+<h2 id="conclusion">Conclusion</h2>
+<p>In general, splitting your program up into stages is quite difficult so mechanisms like type class specialisation will be easier to achieve. In controlled situations though, staging gives you the guarantees you need.</p>
+<h2 id="related-links">Related Links</h2>
+<ul>
+<li><a href="https://www.reddit.com/r/haskell/comments/aqkv9k/a_threestage_program_you_definitely_want_to_write/">Reddit Discussion</a></li>
+<li><a href="https://github.com/mpickering/three-level">Code</a></li>
+</ul>
+
+            </div>
+          </div>
+        </div>
+      </div>
+    </body>
+</html>
