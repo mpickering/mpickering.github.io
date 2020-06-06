@@ -1,0 +1,221 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+    <head>
+        <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+        <title>IDE 2020: Getting ghcide into nixpkgs</title>
+        <script type="text/javascript" src="http://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML"></script>
+        <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.1.3/css/bootstrap.min.css" integrity="sha384-MCw98/SFnGE8fJT3GXwEOngsV7Zt27NXFoaoApmYm81iuXoPkFOJwJ8ERdknLPMO" crossorigin="anonymous">
+        <script src="https://code.jquery.com/jquery-3.3.1.slim.min.js" integrity="sha384-q8i/X+965DzO0rT7abK41JStQIAqVgRVzpbzo5smXKp4YfRvH+8abtTE1Pi6jizo" crossorigin="anonymous"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.14.3/umd/popper.min.js" integrity="sha384-ZMP7rVo3mIykV+2+9J3UJ46jBk0WLaUAdn689aCwoqbBJiSnjAK/l8WvCWPIPm49" crossorigin="anonymous"></script>
+<script src="https://stackpath.bootstrapcdn.com/bootstrap/4.1.3/js/bootstrap.min.js" integrity="sha384-ChfqqxuZUCnJSK3+MXmPNIyE6ZbWh2IMqE241rYiqJxyMiZ6OW/JmZQ5stwEULTy" crossorigin="anonymous"></script>
+
+        <link rel="stylesheet" type="text/css" href="../../css/default.css" />
+        <link href="https://fonts.googleapis.com/css?family=Vollkorn" rel="stylesheet" type="text/css">
+    </head>
+    <body>
+        <div class="container">
+          <div class="row">
+            <div class="col-sm-auto">
+              <ul class="nav flex-column">
+              <li class="nav-item">
+                <a href="../../">Home</a>
+              </li>
+              <li class="nav-item">
+                <a href="../../about.html">About</a> <br>
+              </li>
+              <li>
+                <a href="../../publications.html">Publications</a>
+              </li>
+              <li>
+                <a href="../../plugins.html">Plugins</a>
+              </li>
+              <li>
+                <a href="../../eventlog2html">eventlog2html</a>
+              </li>
+              <li>
+                <a href="../../ide/index.html">
+                <img style="height: 0.9em; margin-right: 2px;" src="../../ide/images/haskell-logo.svg" /></span>
+                IDE 2020</a>
+              </li>
+          <!---
+              <li>
+                <a href="/bristol2020.html">Bristol 2020</a>
+              </li>
+              <li>
+                <a href="https://andreaspk.github.io/ghc-week">GHC Week</a>
+              </li>
+          --->
+              <li>
+                <a href="../../maps.html">Maps</a>
+              </li>
+              <li>
+                <a href="../../hurstwood.html">Hurstwood TrailO</a>
+              </li>
+              <li class="nav-item">
+                <a href="../../archive.html">Archive</a> <br>
+              </li>
+              <li>
+                <a href="../../atom.xml">Feed</a>
+              </li>
+              </ul>
+            </div>
+          <div class="col-md">
+
+            <div id="content">
+              <div class="logoandtext">
+  <a style="color: inherit; text-decoration: none;" href="../../ide/index.html">
+    <img src="../../ide/images/haskell-logo.svg" />
+    <h2>IDE 2020</h2>
+  </a>
+</div>
+<ul class="ide-nav nav nav-pills nav-fill">
+  <li class="nav-item">
+    <a class="nav-link" href="../../ide/">Posts</a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link" href="../../ide/about.html">About</a>
+  </li>
+<!--  <li class="nav-item">
+    <a class="nav-link" href="/ide/funding.html">Funding</a>
+  </li>
+-->
+  <li class="nav-item">
+    <a class="nav-link" href="../../ide/contributors.html">Contributors</a>
+  </li>
+</ul>
+
+<h2> Getting ghcide into nixpkgs </h2>
+<p class="text-muted">
+    Posted on June  5, 2020 by <a href="https://github.com/maralorn">Malte Brandy</a>
+    <span class="avatar"><img src="../../ide/images/maralorn.png" /></span>
+</p>
+
+<p>A few weeks ago I got <a href="https://github.com/digital-asset/ghcide">ghcide</a> into <a href="https://nixos.org/nixos">nixpkgs, the package set of the package manager nix and the distribution nixos</a>. Mind you, that was not a brave act of heroism or dark wizardry. Once I grasped the structure of the nixpkgs Haskell ecosystem, it was actually pretty easy. In this post I want to share my experience and tell you what I learned about the nixpkgs Haskell infrastructure and ghcide.</p>
+<p>This post has four parts:</p>
+<ol type="1">
+<li>Why can installing ghcide go wrong?</li>
+<li>How can you install ghcide on nix today?</li>
+<li>The nixpkgs Haskell ecosystem and dependency resolution</li>
+<li>How ghcide got fixed in nixpkgs</li>
+</ol>
+<!--more-->
+<h2 id="why-can-installing-ghcide-go-wrong">1. Why can installing ghcide go wrong?</h2>
+<p>Haskell development tooling setup is infamous for being brittle and hard to setup. Every other day when someone asks on reddit or in the <code>#haskell</code> channel, inescapably there will come at least one answer of the form “It’s not worth the pain. Just use ghcid.” I guess one point of this blog series is that this does not have to be the case anymore.</p>
+<p>So, what were the reasons for this resignation? One is certainly that <a href="https://github.com/ndmitchell/ghcid"><code>ghcid</code></a> is a really great and easy to use tool. I think it‘s clear that a well done language server can leverage you much further and to me <code>ghcide</code> has already proven this.</p>
+<h3 id="compile-your-project-and-ghcide-with-the-same-ghc">Compile your project and ghcide with the same ghc!</h3>
+<p>One source of frustration is likely that successfully setting up a language server that is deeply interwoven with <code>ghc</code> like <code>ghcide</code> has one very important requirement. <strong>You need to compile <code>ghcide</code> with the same <code>ghc</code> (version) as your project.</strong> This shouldn‘t be hard to achieve nowadays - I’ll show how to do it if you use <code>nix</code> in this blogpost and I assume it‘s the default in other setups - but if you fail to meet this requirement you are in for a lot of trouble.</p>
+<p>So why exactly do we need to use “the same ghc” and what does that even mean? Frankly I am not totally sure. I am not a <code>ghcide</code> developer. I guess sometimes you can get away with some slight deviations, but the general recommendation is to use the same <code>ghc</code> version. I can tell you three situations that will cause problems or have caused problems for me:</p>
+<ol type="1">
+<li><p>Using another <code>ghc</code> release. E.g. using <code>ghcide</code> compiled with <code>ghc</code> 8.8 on a <code>ghc</code> 8.6 project I get:</p>
+<pre class="plain"><code>Step 4/6, Cradle 1/1: Loading GHC Session
+ghcide: /nix/store/3ybbc3vag4mpwaqglpdac4v413na3vhl-ghc-8.6.5/lib/ghc-8.6.5/ghc-prim-0.5.3/HSghc-prim-0.5.3.o: unknown symbol `stg_atomicModifyMutVarzh'
+ghcide: ghcide: unable to load package `ghc-prim-0.5.3'</code></pre></li>
+<li><p>Using the same <code>ghc</code> version but linked against different external libraries like <code>glibc</code>. This <a href="https://github.com/digital-asset/ghcide/issues/404">can happen</a> when <a href="https://github.com/digital-asset/ghcide/issues/538">different releases</a> of nixpkgs are involved. This could look like this:</p>
+<pre class="plain"><code>Step 4/6, Cradle 1/1: Loading GHC Session
+ghcide: &lt;command line&gt;: can't load .so/.DLL for: /nix/store/hz3nwwc0k32ygvjn63gw8gm0nf9gprd8-ghc-8.6.5/lib/ghc-8.6.5/ghc-prim-0.5.3/libHSghc-prim-0.5.3-ghc8.6.5.so (/nix/store/6yaj6n8l925xxfbcd65gzqx3dz7idrnn-glibc-2.27/lib/libm.so.6: version `GLIBC_2.29' not found (required by /nix/store/hz3nwwc0k32ygvjn63gw8gm0nf9gprd8-ghc-8.6.5/lib/ghc-8.6.5/ghc-prim-0.5.3/libHSghc-prim-0.5.3-ghc8.6.5.so))</code></pre>
+<p>or like this</p></li>
+</ol>
+<pre class="plain"><code>   Unexpected usage error
+   can't load .so/.DLL for: /nix/store/pnd2kl27sag76h23wa5kl95a76n3k9i3-glibc-2.27/lib/libpthread.so
+   (/nix/store/pnd2kl27sag76h23wa5kl95a76n3k9i3-glibc-2.27/lib/libpthread.so.0: undefined symbol:
+   __libc_vfork, version GLIBC_PRIVATE)</code></pre>
+<ol start="3" type="1">
+<li>Using the same <code>ghc</code> release but with a patch to <code>ghc</code>. This e.g. happened to me while using the <a href="https://github.com/obsidiansystems/obelisk"><code>obelisk</code> framework</a> which uses a modified <code>ghc</code>.</li>
+</ol>
+<p>To sum up, both ghcs should come from the same source and be linked against the same libraries. Your best bet is to use the same binary. But that is not necessary.</p>
+<h2 id="how-can-you-install-ghcide-on-nix-today">2. How can you install ghcide on nix today?</h2>
+<p>When you want to use <code>ghcide</code> with nix you now have two options. Either <a href="https://nixos.org/nixos/packages.html?query=ghcide"><code>haskellPackages.ghcide</code></a> from nixpkgs or <a href="https://github.com/cachix/ghcide-nix"><code>ghcide-nix</code></a> which uses the <a href="https://github.com/input-output-hk/haskell.nix"><code>haskell.nix</code> ecosystem</a>. I will describe both solutions and their pros and cons from my point of view.</p>
+<h3 id="haskellpackages.ghcide">haskellPackages.ghcide</h3>
+<p>First make sure you are on a new enough version of nixpkgs. You can try installing <code>ghcide</code> user or system wide, with e.g. <code>nix-env -iA haskellPackages.ghcide</code> or via your <code>configuration.nix</code> on nixos. But that has a greater danger of being incompatible with the <code>ghc</code> you are using in your specific project. The less brittle and more versatile way is to configure <code>ghcide</code> in your projects <code>shell.nix</code>. You probably already have a list with other dev tools you use in there, like <code>with haskellPackages; [ hlint brittany ghcide ]</code>. Just add <code>ghcide</code> in that list and you are good to go. See e.g. <a href="https://discourse.nixos.org/t/nix-haskell-development-2020/6170">this post for a recent discussion about a Haskell dev setup with nix</a>. If you are stuck with an old nixpkgs version, have a look at the end of part 4.</p>
+<h4 id="pros">Pros</h4>
+<ul>
+<li>Easy to setup</li>
+<li>Builds ghcide with the same ghc binary as your project, so no danger of incompatabilities between ghc and ghcide.</li>
+</ul>
+<h4 id="cons">Cons</h4>
+<ul>
+<li>We only have released versions of ghcide in nixpkgs. If you use nixpkgs-stable it might not even be the last release.</li>
+<li>When you use another <code>ghc</code> version than the default in your nixpkgs version, nix will compile ghcide on your computer because it isn‘t build by hydra. (build times are totally fine though.)</li>
+</ul>
+<h3 id="ghcide-nix">ghcide-nix</h3>
+<p>You can import the <code>ghcide-nix</code> repo as a derivation and install the ghcide from there. Consult the README for more details.</p>
+<h4 id="pros-1">Pros</h4>
+<ul>
+<li>Cached binaries for all supported <code>ghc</code> versions via cachix.</li>
+<li>Always a recent version from the ghcide master branch.</li>
+<li>Definitely recommended when you are already using the <code>haskell.nix</code> infrastructure for your project.</li>
+</ul>
+<h4 id="cons-1">Cons</h4>
+<ul>
+<li>Danger of incompatibilities, when your nixpkgs version and the pinned one of <code>ghcide-nix</code> don‘t match.</li>
+<li>Not compatible with a patched ghc, which is not build for the <code>haskell.nix</code> infrastructure.</li>
+<li>Larger nix store closure.</li>
+</ul>
+<h3 id="configuration-and-setup">Configuration and Setup</h3>
+<p>Of course, after installing you need to test <code>ghcide</code> and possible write a <code>hie.yaml</code> file to get <code>ghcide</code> to work with a specific project. This is not very nix specific and will probably change in the future, so I don‘t dive into it right now. Consult the readmes of <a href="https://github.com/digital-asset/ghcide"><code>ghcide</code></a> and <a href="https://github.com/mpickering/hie-bios"><code>hie-bios</code></a>.</p>
+<p>There is though one point to note here and that is package discovery. <code>ghcide</code> needs to know all the places that <code>ghc</code> uses to lookup dependencies. When (and I think only when) you use the <code>ghc.withPackages</code> function from <code>nixpkgs</code> the dependencies are provided to <code>ghc</code> via environment variables set in a wrapper script. In general <code>ghcide</code> will not know about this variables and fail to find dependencies. E.g.:</p>
+<pre><code>Step 4/6, Cradle 1/2: Loading GHC Session
+ghcide: &lt;command line&gt;: cannot satisfy -package-id aeson-1.4.7.1-5lFE4NI0VYBHwz75Ema9FX</code></pre>
+<p>To prevent this you need to find a way to set those environment variables when starting <code>ghcide</code>. <a href="https://github.com/NixOS/nixpkgs/pull/89450">I have a PR underway</a> which should do this for you if you install <code>ghcide</code> by putting it in the same <code>withPackages</code> list.</p>
+<h2 id="the-nixpkgs-haskell-ecosytem-and-dependency-resolution">3. The nixpkgs Haskell ecosytem and dependency resolution</h2>
+<p>This section might be slightly off-topic here, so feel free to skip it. I think this is really useful to know if you work with Haskell and nixpkgs and I regard it as necessary context to understand the fix outlined in part 4.</p>
+<h3 id="haskell-dependency-resolution-in-general">Haskell dependency resolution in general</h3>
+<p>Dependency resolution problems have a long history in Haskell, but today there are two solutions that both work quite well in general.</p>
+<ol type="1">
+<li>Specify upper and lower bounds for every dependency in your cabal file and let cabal figure out a build plan. The times of cabal hell are over and this works quite well. Notably this is the way ghcide is supposed to be compiled in general.</li>
+<li>Pin a stack LTS release for your dependencies and pin the version for packages not on stackage.</li>
+</ol>
+<p>Now solution two is in some sense less complex to use, because at compile time you don‘t need to construct a build plan. Of course, as I said, today cabal can do this for you very smoothly, which is why I personally prefer the first approach.</p>
+<h3 id="haskell-in-nixpkgs---pkgs.hackagepackages">Haskell in nixpkgs - pkgs.hackagePackages</h3>
+<p>So how does nixpkgs do it? Well basically solution two. Everyday <a href="https://github.com/NixOS/nixpkgs/commit/0a566a5777264e58fbfc259cb6453a9685dc5bfb">a cronjob</a> pulls a list of <strong>all packages from a pinned stack LTS release</strong> and creates a derivation for every one of them. It also pulls <strong>all other packages from hackage</strong> and creates a derivation for the <strong>latest released version</strong> of them. (This happens on the <a href="https://github.com/NixOS/nixpkgs/compare/haskell-updates">haskell-updates branch of nixpkgs</a> which get‘s normally merged into nixpkgs master i.e. unstable <a href="https://github.com/NixOS/nixpkgs/pull/88894">once per week</a>. So then, you ask, how does cabal2nix do dependency resolution? Well the short form is, it doesn‘t. What I mean by that is: It completely ignores any version bounds given in a cabal file or a pinned stack LTS release. It will just <strong>take the one version of every dependency that is present in nixpkgs</strong> by the method I told you above.</p>
+<p>When I first learned about this I thought this was ludicrous. This is prone to fail. And indeed it does. For a large number of packages the build will either fail at compile time or more often cabal will complain that it can‘t create a build plan. What that actually means: cabal says the one build plan we provided it with is invalid because it does not match the given version bounds. duh. So that packages get automatically marked broken after hydra, the nixos build server, fails to build them. And oh boy, <a href="https://github.com/NixOS/nixpkgs/blob/0a566a5777264e58fbfc259cb6453a9685dc5bfb/pkgs/development/haskell-modules/configuration-hackage2nix.yaml#L2647-L10970">there are a lot of Haskell packages broken in nixpkgs</a>.</p>
+<p>Before grasping how this setup comes together, <a href="https://discourse.nixos.org/t/nix-and-the-haskell-eco-system-a-match-made-in-heaven-or-a-difficult-relationship/3314">I was very frustrated by this</a>. And I guess for others casually encountering broken Haskell packages in nixpkgs, without understanding this setup can be annoying.</p>
+<p>What could be a suitable alternative to this for nixpkgs? Tough to say. We could try to use some solution like the go, rust or node ecosystem and check in a build plan for every package. Actually that can be a nice solution and if you are interested in that you should definitely checkout the <code>haskell.nix</code> infrastructure. But that really does not go well together with providing all of hackage in nixpkgs. For starters having every version of every Haskell package in nixpkgs would already be very verbose. And Haskell dependency resolution is structured in a way that in one build all dependencies have to agree on the version of mutual further dependencies. That means two build plans that use the same version of one package might still need different builds of that package. As a result it could very well happen that your project could not profit a lot from the nixpkgs binary cache even when it had precompiled every version of every Haskell package.</p>
+<p>There can probably be said a lot more about this, but I have accepted that the chosen solution in nixpkgs actually has a lot of advantages (mainly fewer compilation work for everyone) and I actually haven‘t encountered a package I couldn‘t get to build with nixpkgs. The truth is the best guess build plan nixpkgs provides us with is normally not very far away from a working build plan. And it actually is a reasonable build plan. As a Haskell developer I think it is a good rule of thumb to always make your project work with the newest versions of all dependencies on hackage. And then it‘s very likely that your package will also work in nixpkgs.</p>
+<p>Above I complained that a lot of Haskell packages are broken in nixpkgs. In truth, all commonly used packages work and most other packages are very easy to fix.</p>
+<h2 id="building-ghcide-with-nixpkgs">4. Building ghcide with nixpkgs</h2>
+<p>So what can we do to fix a broken package on nixpkgs?</p>
+<h3 id="how-to-fix-broken-haskell-builds-in-nixpkgs-in-general">How to fix broken Haskell builds in nixpkgs in general</h3>
+<p><a href="https://www.youtube.com/watch?v=KLhkAEk8I20">(Also watch this video if you are interested in this).</a></p>
+<ol type="1">
+<li>Often the error is actually fixed by an upstream version bound change, so you can always just try to compile the package. If it works make a PR against nixpkgs to remove the broken flag.</li>
+<li>Often the problem is that the package can actually build with the supplied build plan but cabal doesn‘t believe us. So we can do a “jailbreak” and just tell cabal to ignore the version constraints. We don‘t do this by default because even if the package builds, it might now have changed semantics because of a change in a dependency. So a jailbreaked package should be tested and reported upstream so that the cabal restrictions of that package can get fixed.</li>
+<li>If those two don‘t help we can still override the build plan manually to use different versions of the dependencies, not the ones provided by nixpkgs by default.</li>
+</ol>
+<p>And the third option is what needed to be done for ghcide.</p>
+<h3 id="fixing-the-ghcide-build-in-nixpkgs">Fixing the ghcide build in nixpkgs</h3>
+<p>There were the following problems <a href="https://github.com/NixOS/nixpkgs/pull/86659">on nixpkgs-20.03</a>:</p>
+<ul>
+<li><code>hie-bios</code> was broken because of failing tests. Test fails during nix builds are very often false positives, so I disabled the tests.</li>
+<li><code>ghcide</code> needed <code>regex-tdfa</code> and <code>haddock-library</code> newer than in the stack-lts. So I just used newer versions of those two libraries. This was not necessary on the <code>haskell-updates</code> branch because it uses a new enough stack lts release.</li>
+<li><code>ghcide</code> pins the version of <code>haskell-lsp</code> and <code>haskell-lsp-types</code>. This will probably be the reason why maintaining <code>ghcide</code> in nixpkgs will always be a little bit of manual work because, it would have to be by chance <em>exactly</em> the <code>haskell-lsp</code> version from the stack lts release, to work without manual intervention.</li>
+</ul>
+<p>So in summary only very few lines of code were needed to get <code>ghcide</code> to work. If you are curious look at <a href="https://github.com/NixOS/nixpkgs/pull/86765">the commit</a>. It</p>
+<ul>
+<li>enables the generation of <code>haskell-lsp</code> and <code>haskell-lsp-types</code> 0.19.</li>
+<li>uses those packages as dependencies for <code>ghcide</code></li>
+<li>disables test for <code>hie-bios</code></li>
+<li>and marks <code>ghcide</code> and <code>hie-bios</code> as unbroken.</li>
+</ul>
+<h3 id="fixing-the-ghcide-build-via-overrides">Fixing the ghcide build via overrides</h3>
+<p>Sometimes you are stuck with an older nixpkgs version. E.g. I wanted <code>ghcide</code> to work with my obelisk project. Obelisk uses a pinned nixpkgs version <em>and</em> a patched ghc. So what I did was putting the overrides I describe above as overrides into my projects <code>default.nix</code>. That‘s always a nice way to first figure out how to fix a dependency, but of course you help a lot more people if you find a way to upstream the fixes into nixpkgs.</p>
+<p>I had to manually create some of the packages with a function called <code>callHackageDirect</code> because the nixpkgs version in reflex-platform was so old. It’s kinda the last way out, but it is very flexible and should be enough to solve most dependency issues. If nothing else helps, create a build plan with cabal and reproduce it by hand with nix overrides. That actually worked for me, when <a href="https://github.com/obsidiansystems/obelisk/issues/660#issuecomment-594277283">I tried to get ghcide to run with obelisk.</a></p>
+<h2 id="final-remarks">Final remarks</h2>
+<p>Thank you for following me this long. I hope I have illuminated a bit the situation with getting Haskell packages and <code>ghcide</code> specifically to run under nixpkgs. If someday you meet a broken Haskell package in nixpkgs you now hopefully know why, and how to fix it, or at least that fixing it is probably not hard and you should give it a shot.</p>
+<p>Installing <code>ghcide</code> for sure isn’t hard anymore. It even works in fairly custom special case development situations like obelisk. So my recommendation is, set it up right now, you won’t want to work without it anymore.</p>
+<p>In this post I have touched a lot of topics, which could all use more concrete how-to explanations, and on all of them I am far from an expert. So if you think something is amiss or if you don’t understand something feel free to contact me and maybe we can clarify it.</p>
+<p>A big thank you to everyone involved with ghcide, nixpkgs or obelisk who helped me with figuring all of this out! The nice people you meet are what actually makes all of this so much fun.</p>
+<p>I personally am definitely looking forward to the first official release of haskell-language-server and I am sure we can land it in nixpkgs quickly. <a href="https://github.com/NixOS/nixpkgs/pull/89447">ghcide 0.2.0 will probably be merged</a> into <a href="https://github.com/NixOS/nixpkgs/pull/89456">nixpkgs master</a> around the same time that this post is getting released.</p>
+
+<hr>
+<a class="text-muted" href="../../ide/index.html">Index</a>
+
+
+
+            </div>
+          </div>
+        </div>
+      </div>
+    </body>
+</html>
