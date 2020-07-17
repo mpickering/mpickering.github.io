@@ -8,8 +8,86 @@
         <name>Matthew Pickering</name>
         <email>matthewtpickering@gmail.com</email>
     </author>
-    <updated>2020-06-12T00:00:00Z</updated>
+    <updated>2020-07-17T00:00:00Z</updated>
     <entry>
+    <title>2020-07-17-hls-update</title>
+    <link href="http://mpickering.github.io//ide/posts/2020-07-17-hls-update.html" />
+    <id>http://mpickering.github.io//ide/posts/2020-07-17-hls-update.html</id>
+    <published>2020-07-17T00:00:00Z</published>
+    <updated>2020-07-17T00:00:00Z</updated>
+    <summary type="html"><![CDATA[<h2> Haskell Language Server 0.2.0 </h2>
+<p class="text-muted">
+    Posted on July 17, 2020 by <a href="https://github.com/fendor">Fendor</a>
+    <span class="avatar"><img src="/ide/images/fendor.png"/></span>
+</p>
+
+<p>We are back for another update of this summer’s Haskell IDE efforts. Quite some time has passed since our last update, so we have a lot to tell you about! We are going to speak about what is new in the latest release and what other new features are already waiting in the pipeline.</p>
+<h2 id="release-haskell-language-server-0.2.0">Release Haskell Language Server 0.2.0</h2>
+<p>At the start of this month we released a new version of Haskell Language Server! The ChangeLog is <a href="https://github.com/haskell/haskell-language-server/blob/master/ChangeLog.md#02">huge</a> since the last release was quite some time ago! While a lot of these changes are minor, e.g. fix some bug, bump some dependency version, there are also new features! Most of the new features are added to the project <a href="https://github.com/digital-asset/ghcide">ghcide</a> which we rely on, so they actually dont show up in the ChangeLog.</p>
+<h3 id="delete-unused-function-definition">Delete unused function definition</h3>
+<p>There is now a new code-action which allows deletion of unused top-level bindings! To trigger this code-action, you need to enable the warning <code>-Wunused-top-binds</code> in your project. For <code>cabal</code> and <code>stack</code>, you can enable it for your library by modifying your <code>*.cabal</code> file:</p>
+<pre><code>library
+   ...
+   ghc-options: -Wunused-top-binds</code></pre>
+<p>Note, that this warning is implied by <code>-Wall</code>, which you should always use to compile your project!</p>
+<p>A big thank you to @serhiip for implementing this nice code-action!</p>
+<h3 id="add-typeclass-constraint-to-function-declaration">Add Typeclass Constraint to function declaration</h3>
+<p>Another awesome addition that will especially help newcomers: Add a missing typeclass constraint!</p>
+<p>Take this imaginary example:</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb2-1" data-line-number="1"><span class="kw">data</span> <span class="dt">Tree</span> a <span class="fu">=</span> <span class="dt">Leaf</span> a <span class="fu">|</span> <span class="dt">Node</span> (<span class="dt">Tree</span> a) (<span class="dt">Tree</span> a)</a>
+<a class="sourceLine" id="cb2-2" data-line-number="2"></a>
+<a class="sourceLine" id="cb2-3" data-line-number="3"><span class="ot">equal ::</span> <span class="dt">Tree</span> a <span class="ot">-&gt;</span> <span class="dt">Tree</span> a <span class="ot">-&gt;</span> <span class="dt">Bool</span></a>
+<a class="sourceLine" id="cb2-4" data-line-number="4">equal (<span class="dt">Leaf</span> x) (<span class="dt">Leaf</span> y) <span class="fu">=</span> x <span class="fu">==</span> y</a>
+<a class="sourceLine" id="cb2-5" data-line-number="5">equal (<span class="dt">Node</span> x y) (<span class="dt">Node</span> m n) <span class="fu">=</span> equal x y <span class="fu">&amp;&amp;</span> equal m n</a></code></pre></div>
+<p>We essentially just want to check that our trees are structurally identical, but, unfortunately, we forgot to add the constraint <code>Eq a</code> to the head of our function definition.</p>
+<p>The fix is just two clicks away:</p>
+<figure>
+<img src="https://i.imgur.com/TfOqBgI.gif" alt="A cute GIF about adding a typeclass constraint" /><figcaption>A cute GIF about adding a typeclass constraint</figcaption>
+</figure>
+<p>Thanks to @DenisFrezzato, who implemented this feature.</p>
+<h3 id="various-performance-improvements">Various performance improvements</h3>
+<p>This section is a bit vague, but going into more details would be out of the scope of this blogpost.</p>
+<p>Here is a brief summary:</p>
+<ul>
+<li>A name cache for <code>*.HIE</code> files has been added. This ought to power future features such as <code>Go to Type Definition</code>, <code>Go to References</code> and similar.</li>
+<li>Avoid excessive retypechecking of TH codebases.</li>
+<li>Performance improvements for GetSpanInfo.</li>
+</ul>
+<p>Also, not to forget all the performance improvements from previous blogposts that have been merged into upstream repositories step by step.</p>
+<p>With all of these, the overall experience ought to be a little bit smoother than before.</p>
+<h2 id="upcoming-features">Upcoming Features</h2>
+<p>It is always a bit tricky to talk about new features before they are released. There can always be last minute changes or delays and everyone is let down if a feature isn’t in the next release. This is frustrating for us too!</p>
+<p>Nevertheless, I will tease some upcoming improvements, with a disclaimer, that we cannot promise that the features will make it into the next release.</p>
+<h3 id="prebuilt-binaries">Prebuilt Binaries</h3>
+<p>This has been a long requested feature! The first issue I can find about it was created for Haskell IDE Engine in January 2019. Back then, Haskell IDE Engine was facing a number of road blocks, such as data-files that are not easily relocatable and reliance on packages such as <code>ghc-paths</code> which compile important run-time information into the binary. Piece by piece, these issues have been resolved by patching upstream libraries, using alternative APIs and querying the run-time information at, well, run-time. Major changes to <a href="https://github.com/mpickering/hie-bios/">hie-bios</a> were necessary in order to make it possible to find the information we care about.</p>
+<p>Now we are close to being able to offer pre-built binaries for Windows, macOS and Linux.</p>
+<p>A natural extension of this will be to make it possible to download these binaries from your editor extension. This is also in the making, although, for now, only for the vscode extension <code>vscode-hie-server</code>. With prebuilt binaries, we hope to make the setup experience for newcomers easier and faster, without the need to compile everything from scratch, which can take hours and hours.</p>
+<p>As the cherry on top, we plan to integrate these pre-built binaries with the successful tool <a href="https://www.haskell.org/ghcup/">ghcup</a>. This will improve the tooling story for Haskell and setting up from zero to a full-blown development environment will be a matter of minutes.</p>
+<h3 id="simple-eval-plugin">Simple Eval Plugin</h3>
+<p>A new plugin called “Eval” will be added soon to the Haskell Language Server! Its purpose is to automatically execute code in haddock comments to make sure that example code is up-to-date to the actual implementation of the function. This does not replace a proper CI, nor <a href="https://github.com/sol/doctest#readme">doctest</a>, but it is a simple quality of life improvement!</p>
+<p>For example, assume the following piece of code:</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb3-1" data-line-number="1"><span class="kw">module</span> <span class="dt">T4</span> <span class="kw">where</span></a>
+<a class="sourceLine" id="cb3-2" data-line-number="2"></a>
+<a class="sourceLine" id="cb3-3" data-line-number="3"><span class="kw">import</span> <span class="dt">Data.List</span> (unwords)</a>
+<a class="sourceLine" id="cb3-4" data-line-number="4"></a>
+<a class="sourceLine" id="cb3-5" data-line-number="5"><span class="co">-- &gt;&gt;&gt; let evaluation = &quot; evaluation&quot;</span></a>
+<a class="sourceLine" id="cb3-6" data-line-number="6"><span class="co">-- &gt;&gt;&gt; unwords example ++ evaluation</span></a>
+<a class="sourceLine" id="cb3-7" data-line-number="7"><span class="ot">example ::</span> [<span class="dt">String</span>]</a>
+<a class="sourceLine" id="cb3-8" data-line-number="8">example <span class="fu">=</span> [<span class="st">&quot;This&quot;</span>,<span class="st">&quot;is&quot;</span>,<span class="st">&quot;an&quot;</span>,<span class="st">&quot;example&quot;</span>,<span class="st">&quot;of&quot;</span>]</a></code></pre></div>
+<p>Executing these haddock code-examples by hand is a bit tedious. It is way easier to just execute a <em>code lens</em> and see the result. With the “Eval” plugin, it is as easy as a single click to produce the relevant output:</p>
+<figure>
+<img src="https://i.imgur.com/raaTFKr.gif" alt="Evaluate Haddock code comment" /><figcaption>Evaluate Haddock code comment</figcaption>
+</figure>
+<p>And as promised, changes to any of the relevant definitions are picked up and we can update our haddock example:</p>
+<figure>
+<img src="https://i.imgur.com/G6WbAQd.gif" alt="Update Haddock code comment" /><figcaption>Update Haddock code comment</figcaption>
+</figure>
+
+<hr>
+<a class="text-muted" href="/ide/index.html">Index</a>
+]]></summary>
+</entry>
+<entry>
     <title>2020-06-12-performance-of-ghcide-020</title>
     <link href="http://mpickering.github.io//ide/posts/2020-06-12-performance-of-ghcide-020.html" />
     <id>http://mpickering.github.io//ide/posts/2020-06-12-performance-of-ghcide-020.html</id>
