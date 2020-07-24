@@ -94,78 +94,130 @@ has been going on. </p>
 
 
 
-<h4> <a href="../ide/posts/2020-07-17-hls-update.html">Haskell Language Server 0.2.0</a> </h4>
+<h4> <a href="../ide/posts/2020-07-10-ghc-libdir.html">Haskell Language Server, binaries and installation</a> </h4>
 <p class="text-muted">
-    Posted on July 17, 2020 by <a href="https://github.com/fendor">Fendor
-      <span class="avatar"><img src="../ide/images/fendor.png" /></span></a>
+    Posted on July 24, 2020 by <a href="https://github.com/bubba">Luke Lau
+      <span class="avatar"><img src="../ide/images/bubba.png" /></span></a>
 </p>
      
-        <p>We are back for another update of this summer’s Haskell IDE efforts. Quite some time has passed since our last update, so we have a lot to tell you about! We are going to speak about what is new in the latest release and what other new features are already waiting in the pipeline.</p>
-<h2 id="release-haskell-language-server-0.2.0">Release Haskell Language Server 0.2.0</h2>
-<p>At the start of this month we released a new version of Haskell Language Server! The ChangeLog is <a href="https://github.com/haskell/haskell-language-server/blob/master/ChangeLog.md#02">huge</a> since the last release was quite some time ago! While a lot of these changes are minor, e.g. fix some bug, bump some dependency version, there are also new features! Most of the new features are added to the project <a href="https://github.com/digital-asset/ghcide">ghcide</a> which we rely on, so they actually dont show up in the ChangeLog.</p>
-<h3 id="delete-unused-function-definition">Delete unused function definition</h3>
-<p>There is now a new code-action which allows deletion of unused top-level bindings! To trigger this code-action, you need to enable the warning <code>-Wunused-top-binds</code> in your project. For <code>cabal</code> and <code>stack</code>, you can enable it for your library by modifying your <code>*.cabal</code> file:</p>
-<pre><code>library
-   ...
-   ghc-options: -Wunused-top-binds</code></pre>
-<p>Note, that this warning is implied by <code>-Wall</code>, which you should always use to compile your project!</p>
-<p>A big thank you to @serhiip for implementing this nice code-action!</p>
-<h3 id="add-typeclass-constraint-to-function-declaration">Add Typeclass Constraint to function declaration</h3>
-<p>Another awesome addition that will especially help newcomers: Add a missing typeclass constraint!</p>
-<p>Take this imaginary example:</p>
-<div class="sourceCode" id="cb2"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb2-1" data-line-number="1"><span class="kw">data</span> <span class="dt">Tree</span> a <span class="fu">=</span> <span class="dt">Leaf</span> a <span class="fu">|</span> <span class="dt">Node</span> (<span class="dt">Tree</span> a) (<span class="dt">Tree</span> a)</a>
-<a class="sourceLine" id="cb2-2" data-line-number="2"></a>
-<a class="sourceLine" id="cb2-3" data-line-number="3"><span class="ot">equal ::</span> <span class="dt">Tree</span> a <span class="ot">-&gt;</span> <span class="dt">Tree</span> a <span class="ot">-&gt;</span> <span class="dt">Bool</span></a>
-<a class="sourceLine" id="cb2-4" data-line-number="4">equal (<span class="dt">Leaf</span> x) (<span class="dt">Leaf</span> y) <span class="fu">=</span> x <span class="fu">==</span> y</a>
-<a class="sourceLine" id="cb2-5" data-line-number="5">equal (<span class="dt">Node</span> x y) (<span class="dt">Node</span> m n) <span class="fu">=</span> equal x y <span class="fu">&amp;&amp;</span> equal m n</a></code></pre></div>
-<p>We essentially just want to check that our trees are structurally identical, but, unfortunately, we forgot to add the constraint <code>Eq a</code> to the head of our function definition.</p>
-<p>The fix is just two clicks away:</p>
-<figure>
-<img src="https://i.imgur.com/TfOqBgI.gif" alt="A cute GIF about adding a typeclass constraint" /><figcaption>A cute GIF about adding a typeclass constraint</figcaption>
-</figure>
-<p>Thanks to @DenisFrezzato, who implemented this feature.</p>
-<h3 id="various-performance-improvements">Various performance improvements</h3>
-<p>This section is a bit vague, but going into more details would be out of the scope of this blogpost.</p>
-<p>Here is a brief summary:</p>
+        <p>If you’ve ever had to install <em>haskell-ide-engine</em> or <em>haskell-language-server</em>, you might be aware that it is quite a lengthy process. There are several reasons for this, two of the most significant being:</p>
 <ul>
-<li>A name cache for <code>*.HIE</code> files has been added. This ought to power future features such as <code>Go to Type Definition</code>, <code>Go to References</code> and similar.</li>
-<li>Avoid excessive retypechecking of TH codebases.</li>
-<li>Performance improvements for GetSpanInfo.</li>
+<li>Both <em>haskell-ide-engine</em> and <em>haskell-language-server</em> act as a kitchen sink for plugins. These plugins all depend on the corresponding tool from Hackage, and as a result they end up pulling in <strong>a lot</strong> of transient dependencies.</li>
+<li>The GHC API that powers the underlying <em>ghcide</em> session only works on projects that match <strong>the same</strong> GHC version as it was compiled with. This means that in order to support multiple GHC versions (which is quite common with Stack projects that can define a specific version of GHC) the install script needs to build a binary of <em>haskell-ide-engine</em>/<em>haskell-language-server</em> <strong>for every single GHC version</strong> that is supported.</li>
 </ul>
-<p>Also, not to forget all the performance improvements from previous blogposts that have been merged into upstream repositories step by step.</p>
-<p>With all of these, the overall experience ought to be a little bit smoother than before.</p>
-<h2 id="upcoming-features">Upcoming Features</h2>
-<p>It is always a bit tricky to talk about new features before they are released. There can always be last minute changes or delays and everyone is let down if a feature isn’t in the next release. This is frustrating for us too!</p>
-<p>Nevertheless, I will tease some upcoming improvements, with a disclaimer, that we cannot promise that the features will make it into the next release.</p>
-<h3 id="prebuilt-binaries">Prebuilt Binaries</h3>
-<p>This has been a long requested feature! The first issue I can find about it was created for Haskell IDE Engine in January 2019. Back then, Haskell IDE Engine was facing a number of road blocks, such as data-files that are not easily relocatable and reliance on packages such as <code>ghc-paths</code> which compile important run-time information into the binary. Piece by piece, these issues have been resolved by patching upstream libraries, using alternative APIs and querying the run-time information at, well, run-time. Major changes to <a href="https://github.com/mpickering/hie-bios/">hie-bios</a> were necessary in order to make it possible to find the information we care about.</p>
-<p>Now we are close to being able to offer pre-built binaries for Windows, macOS and Linux.</p>
-<p>A natural extension of this will be to make it possible to download these binaries from your editor extension. This is also in the making, although, for now, only for the vscode extension <code>vscode-hie-server</code>. With prebuilt binaries, we hope to make the setup experience for newcomers easier and faster, without the need to compile everything from scratch, which can take hours and hours.</p>
-<p>As the cherry on top, we plan to integrate these pre-built binaries with the successful tool <a href="https://www.haskell.org/ghcup/">ghcup</a>. This will improve the tooling story for Haskell and setting up from zero to a full-blown development environment will be a matter of minutes.</p>
-<h3 id="simple-eval-plugin">Simple Eval Plugin</h3>
-<p>A new plugin called “Eval” will be added soon to the Haskell Language Server! Its purpose is to automatically execute code in haddock comments to make sure that example code is up-to-date to the actual implementation of the function. This does not replace a proper CI, nor <a href="https://github.com/sol/doctest#readme">doctest</a>, but it is a simple quality of life improvement!</p>
-<p>For example, assume the following piece of code:</p>
-<div class="sourceCode" id="cb3"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb3-1" data-line-number="1"><span class="kw">module</span> <span class="dt">T4</span> <span class="kw">where</span></a>
-<a class="sourceLine" id="cb3-2" data-line-number="2"></a>
-<a class="sourceLine" id="cb3-3" data-line-number="3"><span class="kw">import</span> <span class="dt">Data.List</span> (unwords)</a>
-<a class="sourceLine" id="cb3-4" data-line-number="4"></a>
-<a class="sourceLine" id="cb3-5" data-line-number="5"><span class="co">-- &gt;&gt;&gt; let evaluation = &quot; evaluation&quot;</span></a>
-<a class="sourceLine" id="cb3-6" data-line-number="6"><span class="co">-- &gt;&gt;&gt; unwords example ++ evaluation</span></a>
-<a class="sourceLine" id="cb3-7" data-line-number="7"><span class="ot">example ::</span> [<span class="dt">String</span>]</a>
-<a class="sourceLine" id="cb3-8" data-line-number="8">example <span class="fu">=</span> [<span class="st">&quot;This&quot;</span>,<span class="st">&quot;is&quot;</span>,<span class="st">&quot;an&quot;</span>,<span class="st">&quot;example&quot;</span>,<span class="st">&quot;of&quot;</span>]</a></code></pre></div>
-<p>Executing these haddock code-examples by hand is a bit tedious. It is way easier to just execute a <em>code lens</em> and see the result. With the “Eval” plugin, it is as easy as a single click to produce the relevant output:</p>
-<figure>
-<img src="https://i.imgur.com/raaTFKr.gif" alt="Evaluate Haddock code comment" /><figcaption>Evaluate Haddock code comment</figcaption>
-</figure>
-<p>And as promised, changes to any of the relevant definitions are picked up and we can update our haddock example:</p>
-<figure>
-<img src="https://i.imgur.com/G6WbAQd.gif" alt="Update Haddock code comment" /><figcaption>Update Haddock code comment</figcaption>
-</figure>
+<p>The latter is the purpose of the <em>hie-wrapper</em>/<em>haskell-language-server-wrapper</em> executable. The <code>install.hs</code> script will install binaries for every version under <code>haskell-language-server-8.6.5</code>, <code>haskell-language-server-8.8.3</code>, etc. The wrapper is then used in place of the language server, and will detect what version of GHC the project is using and launch the appropriate version of <em>hie</em>/<em>haskell-language-server</em>.</p>
+<p>Building all these different binaries with several different versions of GHC means you need to build every single dependency multiple times over, leading to some hefty build times and chewing through a lot of disk space. On top of this, installation from source is the <em>only</em> supported installation method so far. This isn’t great for newcomers or for those who just want to setup a working IDE in a pinch. So many of us have spent the past month hard at work trying to improve the installation story.</p>
+<h1 id="static-binaries">Static binaries</h1>
+<p>One obvious solution would be to just provide static binaries. This has been a <a href="https://github.com/haskell/haskell-ide-engine/issues/1068">long running discussion</a>, that dates all the way back to <em>haskell-ide-engine</em>. When we say static binaries, we mean a binary that has no dynamically linked libraries. You can test that by running <code>ldd</code>:</p>
+<pre><code>$ ldd haskell-language-server-wrapper
+    linux-vdso.so.1 (0x00007fff185de000)
+    libz.so.1 =&gt; /usr/lib/libz.so.1 (0x00007faa3a937000)
+    libtinfo.so.5 =&gt; /usr/lib/libtinfo.so.5 (0x00007faa3a8d2000)
+    librt.so.1 =&gt; /usr/lib/librt.so.1 (0x00007faa3a8c7000)
+    libutil.so.1 =&gt; /usr/lib/libutil.so.1 (0x00007faa3a8c2000)
+    libdl.so.2 =&gt; /usr/lib/libdl.so.2 (0x00007faa3a8bc000)
+    libpthread.so.0 =&gt; /usr/lib/libpthread.so.0 (0x00007faa3a89a000)
+    libgmp.so.10 =&gt; /usr/lib/libgmp.so.10 (0x00007faa3a7f7000)
+    libm.so.6 =&gt; /usr/lib/libm.so.6 (0x00007faa3a6b2000)
+    libc.so.6 =&gt; /usr/lib/libc.so.6 (0x00007faa3a4eb000)
+    /lib64/ld-linux-x86-64.so.2 =&gt; /usr/lib64/ld-linux-x86-64.so.2 (0x00007faa3a9ab000)</code></pre>
+<p>That’s a lot of linked libraries, all of which will need to be available on the users machine if we were just to ship the binary like that. With cabal-install, we can statically link these with just <code>cabal build --enable-exeutable-static</code>:</p>
+<pre><code>$ ldd haskell-language-server-Linux-8.10.1 
+	not a dynamic executable</code></pre>
+<p>However one big caveat is that this only works on Linux. macOS doesn’t really have a notion of truly static binaries, since the system libraries are only provided as dylibs. The best we can do is just ensure that the only dynamically linked libraries are the ones already provided by the system, which it looks like it was in the first place!</p>
+<pre><code>$ otool -L haskell-language-server
+haskell-language-server:
+	/usr/lib/libncurses.5.4.dylib (compatibility version 5.4.0, current version 5.4.0)
+	/usr/lib/libiconv.2.dylib (compatibility version 7.0.0, current version 7.0.0)
+	/usr/lib/libSystem.B.dylib (compatibility version 1.0.0, current version 1281.100.1)
+	/usr/lib/libcharset.1.dylib (compatibility version 2.0.0, current version 2.0.0)</code></pre>
+<h1 id="static-binaries-that-actually-work-on-other-machines">Static binaries that actually work on other machines</h1>
+<p>Unfortunately, making a static binary is one thing, but having that binary be portable is another. If we want the binary to run on other machines outside of the host, it can’t rely on data-files, which some <a href="https://github.com/haskell/haskell-ide-engine/issues/1143">plugins such as <em>hlint</em> used</a>. And the same goes for any <code>libexec</code> binaries, which <em>cabal-helper</em> took advantage of.</p>
+<p>Once these were <a href="https://github.com/ndmitchell/hlint/pull/824">taken care of upstream</a>, we then had to deal with GHC library directory: This is a directory that comes with your GHC installation, typically in something like <code>/usr/local/lib/ghc-8.10.1/</code> or in <code>~/.stack/programs/x86_64-osx/ghc-8.10.1/lib/ghc-8.10.1/</code> for Stack. Inside it contains all the compiled <a href="https://wiki.haskell.org/Library_submissions#The_Libraries">core libraries</a>, as well as the actual ghc executable itself: Your <code>/usr/bin/ghc</code> is most likely a script that just launches the binary in the library directory!</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode bash"><code class="sourceCode bash"><a class="sourceLine" id="cb4-1" data-line-number="1"><span class="co">#!/bin/sh</span></a>
+<a class="sourceLine" id="cb4-2" data-line-number="2"><span class="va">exedir=</span><span class="st">&quot;/usr/local/lib/ghc-8.10.1/bin&quot;</span></a>
+<a class="sourceLine" id="cb4-3" data-line-number="3"><span class="va">exeprog=</span><span class="st">&quot;ghc-stage2&quot;</span></a>
+<a class="sourceLine" id="cb4-4" data-line-number="4"><span class="va">executablename=</span><span class="st">&quot;</span><span class="va">$exedir</span><span class="st">/</span><span class="va">$exeprog</span><span class="st">&quot;</span></a>
+<a class="sourceLine" id="cb4-5" data-line-number="5"><span class="va">datadir=</span><span class="st">&quot;/usr/local/share&quot;</span></a>
+<a class="sourceLine" id="cb4-6" data-line-number="6"><span class="va">bindir=</span><span class="st">&quot;/usr/local/bin&quot;</span></a>
+<a class="sourceLine" id="cb4-7" data-line-number="7"><span class="va">topdir=</span><span class="st">&quot;/usr/local/lib/ghc-8.10.1&quot;</span></a>
+<a class="sourceLine" id="cb4-8" data-line-number="8"><span class="va">executablename=</span><span class="st">&quot;</span><span class="va">$exedir</span><span class="st">/ghc&quot;</span></a>
+<a class="sourceLine" id="cb4-9" data-line-number="9"><span class="bu">exec</span> <span class="st">&quot;</span><span class="va">$executablename</span><span class="st">&quot;</span> -B<span class="st">&quot;</span><span class="va">$topdir</span><span class="st">&quot;</span> <span class="va">${1+</span><span class="st">&quot;</span><span class="va">$@</span><span class="st">&quot;</span><span class="va">}</span></a></code></pre></div>
+<p>Either way, <em>ghcide</em>/<em>haskell-language-server</em> use the GHC API, which <a href="https://hackage.haskell.org/package/ghc-8.10.1/docs/GHC.html#v:runGhc">needs to know where this directory is</a> to do it’s job:</p>
+<div class="sourceCode" id="cb5"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb5-1" data-line-number="1"><span class="ot">runGhc ::</span> <span class="dt">Maybe</span> FilePath <span class="co">-- ^ The path to the library directory</span></a>
+<a class="sourceLine" id="cb5-2" data-line-number="2">                         <span class="co">-- Sometimes called the top_dir</span></a>
+<a class="sourceLine" id="cb5-3" data-line-number="3">       <span class="ot">-&gt;</span> <span class="dt">Ghc</span> a</a>
+<a class="sourceLine" id="cb5-4" data-line-number="4">       <span class="ot">-&gt;</span> <span class="dt">IO</span> a</a></code></pre></div>
+<p>The most common way to get the path to the library directory is through the <a href="https://github.com/simonmar/ghc-paths/blob/master/Setup.hs"><em>ghc-paths</em></a> package, which uses <a href="https://github.com/simonmar/ghc-paths/blob/master/Setup.hs">some custom <code>Setup.hs</code> magic</a> to work out where the library directory is, for the GHC <strong>that is being used to compile the program</strong>. It bakes in the paths at compile time, which means it’s portable if we share the source and build it on other systems. But if we build it on one system where the library directory is at <code>/usr/local/lib/ghc-8.10.1</code> for example, then when <strong>distributing the binary</strong> to another system it will still try looking for the old path which resides on a completely different machine! For example, if GHC was installed via ghcup on the other system, then the library directory would reside at <code>~/.ghcup/ghc/8.10.1/lib/</code>: a very different location.</p>
+<p>So if we want to be able to distribute these binaries and have them actually run on other systems, <em>ghc-paths</em> is out of the question. This means that we have to somehow get the library directory oureslves <strong>at runtime</strong>. Thankfully, the <code>ghc</code> executable has a handy command for this:</p>
+<pre><code>$ ghc --print-libdir
+/usr/local/lib/ghc-8.10.1</code></pre>
+<p>We could just call this directly. But what if you had a Cabal project, configured with <code>cabal configure -wghc-8.8.3</code> whilst the <code>ghc</code> on your PATH was version 8.10.1? Then the library directories would have mismatching verisons! What we can do instead however is:</p>
+<pre><code>$ cabal exec ghc -- --print-libdir
+Resolving dependencies...
+/usr/local/lib/ghc-8.8.3</code></pre>
+<p>And consider even the case for Stack, where it downloads GHC for you. Well, we can do the same thing as Cabal:</p>
+<pre><code>$ stack exec ghc -- --print-libdir
+/Users/luke/.stack/programs/x86_64-osx/ghc-8.6.5/lib/ghc-8.6.5</code></pre>
+<p>These commands are tool specific, so it only made perfect sense to put this logic into <a href="https://hackage.haskell.org/package/hie-bios"><em>hie-bios</em></a>, our library for interfacing and setting up GHC sessions with various tools. Now there’s an API for cradles to specify how to execute the <code>ghc</code> executable that they use when building themselves.</p>
+<h1 id="automated-builds-with-github-actions">Automated builds with GitHub Actions</h1>
+<p>The build process is automated across a wide range of platforms and GHC versions on GitHub Actions, which gets triggered everytime a release is made. Previously setting up Haskell on Travis CI/CircleCI/AppVeyor used to be pretty fiddly, but the <a href="https://github.com/actions/setup-haskell">setup-haskell</a> action for GitHub has made dramatic strides recently. In just a few lines of yaml we can setup a rather hefty build matrix for all the verisons we support:</p>
+<pre><code>  build:
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        ghc: ['8.10.1', '8.8.3', '8.8.2', '8.6.5', '8.6.4']
+        os: [ubuntu-latest, macOS-latest, windows-latest]
+        exclude:
+          - os: windows-latest
+            ghc: '8.8.3' # fails due to segfault
+          - os: windows-latest
+            ghc: '8.8.2' # fails due to error with Cabal</code></pre>
+<p align="center">
+<img alt="Now that's what I call a build matrix" src="images/github-actions-matrix.png" height="300" />
+</p>
+<p>Unfortunately the story of Haskell on Windows is a bit hairy as usual, so there were a few bumps that needed worked around. The biggest and most annoying one by far was hitting the <code>MAX_PATH</code> limit for file paths whenever we tried to build the <code>haskell-language-server-wrapper</code> executable. Admittedly this is a rather long name for a binary, but a combination of the fact that GitHub actions checks out the source directory in <code>D:\a\haskell-language-server\haskell-language-server</code> and how Cabal’s per-component builds nest build products crazy deep meant that we we’re constantly going over the rather stringent 260 character limit:</p>
+<pre><code>Linking D:\a\haskell-language-server\haskell-language-server\dist-newstyle\build\x86_64-windows\ghc-8.10.1\haskell-language-server-0.1.0.0\x\haskell-language-server-wrapper\build\haskell-language-server-wrapper\haskell-language-server-wrapper.exe ...
+55
+realgcc.exe: error: D:\a\haskell-language-server\haskell-language-server\dist-newstyle\build\x86_64-windows\ghc-8.10.1\haskell-language-server-0.1.0.0\x\haskell-language-server-wrapper\build\haskell-language-server-wrapper\haskell-language-server-wrapper-tmp\Paths_haskell_language_server.o: No such file or directory
+56
+`gcc.exe' failed in phase `Linker'. (Exit code: 1)</code></pre>
+<p>We tried several things including</p>
+<ul>
+<li>Enabling the <a href="https://docs.microsoft.com/en-us/windows/win32/fileio/naming-a-file#enable-long-paths-in-windows-10-version-1607-and-later">LongPathsEnabled registry key</a> to disable this restriction. But it turns out it was already on the entire time and <a href="https://gitlab.haskell.org/ghc/ghc/issues/13373">GHC/GCC aren’t using the right Windows API calls</a></li>
+<li>Checking out the code in a different root directory, but it doesn’t seem to be possible with GitHub actions</li>
+<li>Squashing the build directory with just <code>--build-dir=b</code> – still left us 2 characters over the limit!</li>
+<li>Disabling per-component builds – just fails with another build error</li>
+</ul>
+<p>But at the end of the day, the only reliable solution was just to rename <code>haskell-language-server-wrapper</code> to something shorter whilst building:</p>
+<pre><code>- name: Shorten binary names
+  shell: bash
+  run: |
+    sed -i.bak -e 's/haskell-language-server/hls/g' \
+               -e 's/haskell_language_server/hls/g' \
+               haskell-language-server.cabal
+    sed -i.bak -e 's/Paths_haskell_language_server/Paths_hls/g' \
+               src/**/*.hs exe/*.hs</code></pre>
+<p>There’s still some sporadic issues with <a href="https://github.com/haskell/cabal/issues/6986">Cabal on Windows</a> and GitHub Actions having infrastructure outages so the builds aren’t 100% flake free yet, but it does provide a rather large build matrix with generous amounts of parallelism. <a href="https://github.com/haskell/haskell-language-server/releases/tag/0.2.1">You can check out the first release with binaries here.</a></p>
+<h1 id="the-new-haskell-visual-studio-code-extension">The new Haskell Visual Studio Code extension</h1>
+<p>So you can download the binaries and manually put them on your path, which is fine and dandy, but at the end of the day the ultimate goal was to make the process of setting up a Haskell environment as easy as possible for newcomers. So now the Visual Studio Code now takes full advantage of these binaries by <em>automatically downloading them</em>.</p>
+<p>It first downloads the wrapper, which it can use to detect what GHC version the project is using. Then once it knows what GHC your project needs, it downloads the appropriate <code>haskell-language-server</code> for the matching GHC and platform before spinning it up. That way you only need the binaries for the GHC versions you are using, and the extension will automatically download the latest binaries whenever a new version of <code>haskell-language-server</code> is released. The video below shows it in action:</p>
+<video controls alt="Visual Studio Code demo" style="width: 100%" src="images/vscode-demo.mov"></video>
+<p>Hopefully this one click install will help users get setup a lot more quickly, but it is worth noting that at either GHC, Cabal or Stack still need to be installed depending on the project. They’re needed for both the aforementioned GHC library directory, as well as building dependencies etc. (But someday in the near future, we might be able to automatically download these tools as well!)</p>
+<p>In the coming weeks the Visual Studio Code extension, previously known as <code>vscode-hie-server</code>, will be hosted under the Haskell organisation and become just “Haskell” in the extension marketplace. This should give a new unified, official front for the language server, which is a labour of love of the entire community: The road to these static binaries was the work of many contributors across ghcide, hie-bios and haskell-language-server. Thanks to Javier Neira for ironing out all the kinks on Windows, Brian McKenna and amesgen for making the binaries truly static on Linux, and <a href="https://github.com/haskell/haskell-language-server/issues/158">all those who helped test it out</a>.</p>
       
 <hr>
 
 
 <ul>
+    
+        <li>
+            <a href="../ide/posts/2020-07-10-ghc-libdir.html">Haskell Language Server, binaries and installation</a> - July 24, 2020 -
+            <a href="https://github.com/bubba">Luke Lau</a>
+            <span class="avatar"><img src="../ide/images/bubba.png" /></span>
+        </li>
     
         <li>
             <a href="../ide/posts/2020-07-17-hls-update.html">Haskell Language Server 0.2.0</a> - July 17, 2020 -
