@@ -1,0 +1,252 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+    <head>
+        <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+        <title>IDE 2020: Multiple Home Units for GHC - GSoC Aftermath</title>
+        <script type="text/javascript" src="http://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML"></script>
+        <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.1.3/css/bootstrap.min.css" integrity="sha384-MCw98/SFnGE8fJT3GXwEOngsV7Zt27NXFoaoApmYm81iuXoPkFOJwJ8ERdknLPMO" crossorigin="anonymous">
+        <script src="https://code.jquery.com/jquery-3.3.1.slim.min.js" integrity="sha384-q8i/X+965DzO0rT7abK41JStQIAqVgRVzpbzo5smXKp4YfRvH+8abtTE1Pi6jizo" crossorigin="anonymous"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.14.3/umd/popper.min.js" integrity="sha384-ZMP7rVo3mIykV+2+9J3UJ46jBk0WLaUAdn689aCwoqbBJiSnjAK/l8WvCWPIPm49" crossorigin="anonymous"></script>
+<script src="https://stackpath.bootstrapcdn.com/bootstrap/4.1.3/js/bootstrap.min.js" integrity="sha384-ChfqqxuZUCnJSK3+MXmPNIyE6ZbWh2IMqE241rYiqJxyMiZ6OW/JmZQ5stwEULTy" crossorigin="anonymous"></script>
+
+        <link rel="stylesheet" type="text/css" href="../../css/default.css" />
+        <link href="https://fonts.googleapis.com/css?family=Vollkorn" rel="stylesheet" type="text/css">
+    </head>
+    <body>
+        <div class="container">
+          <div class="row">
+            <div class="col-sm-auto">
+              <ul class="nav flex-column">
+              <li class="nav-item">
+                <a href="../../">Home</a>
+              </li>
+              <li class="nav-item">
+                <a href="../../about.html">About</a> <br>
+              </li>
+              <li>
+                <a href="../../publications.html">Publications</a>
+              </li>
+              <li>
+                <a href="../../plugins.html">Plugins</a>
+              </li>
+              <li>
+                <a href="../../eventlog2html">eventlog2html</a>
+              </li>
+              <li>
+                <a href="../../ide/index.html">
+                <img style="height: 0.9em; margin-right: 2px;" src="../../ide/images/haskell-logo.svg" /></span>
+                IDE 2020</a>
+              </li>
+          <!---
+              <li>
+                <a href="/bristol2020.html">Bristol 2020</a>
+              </li>
+              <li>
+                <a href="https://andreaspk.github.io/ghc-week">GHC Week</a>
+              </li>
+          --->
+              <li>
+                <a href="../../maps.html">Maps</a>
+              </li>
+              <li>
+                <a href="../../hurstwood.html">Hurstwood TrailO</a>
+              </li>
+              <li class="nav-item">
+                <a href="../../archive.html">Archive</a> <br>
+              </li>
+              <li>
+                <a href="../../atom.xml">Feed</a>
+              </li>
+              </ul>
+            </div>
+          <div class="col-md">
+
+            <div id="content">
+              <div class="logoandtext">
+  <a style="color: inherit; text-decoration: none;" href="../../ide/index.html">
+    <img src="../../ide/images/haskell-logo.svg" />
+    <h2>IDE 2020</h2>
+  </a>
+</div>
+<ul class="ide-nav nav nav-pills nav-fill">
+  <li class="nav-item">
+    <a class="nav-link" href="../../ide/">Posts</a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link" href="../../ide/about.html">About</a>
+  </li>
+<!--  <li class="nav-item">
+    <a class="nav-link" href="/ide/funding.html">Funding</a>
+  </li>
+-->
+  <li class="nav-item">
+    <a class="nav-link" href="../../ide/contributors.html">Contributors</a>
+  </li>
+</ul>
+
+<h2> Multiple Home Units for GHC - GSoC Aftermath </h2>
+<p class="text-muted">
+    Posted on October 12, 2020 by <a href="https://github.com/fendor">Fendor</a>
+    <span class="avatar"><img src="../../ide/images/fendor.png" /></span>
+</p>
+
+<p>It has been a great summer for Haskell IDEs. Multiple successful Google Summer of Code projects and lots of contributions to Haskell Language Server. Additionally, Haskell IDE Engine has finally been put to rest! Lots of news, lots to talk about.</p>
+<p>In this blogpost, I will tell you a bit about my own Google Summer of Code project, in the scope of which I tackled bringing multiple home units to GHC. We start by talking about why we chose this project in the first place. This is potentially nothing new for people that read the initial proposal, so you might want to skip over the first part. Then we are going to talk about how far we got in the project itself, what works, what doesn’t, how does it work, and what is left to do. Finally, a word or two about my experience in this Google Summer of Code, what I liked, and whether I would recommend it.</p>
+<!--more-->
+<h2 id="motivation">Motivation</h2>
+<p>As explained in on of my previous <a href="https://mpickering.github.io/ide/posts/2020-05-15-multiple-components.html">blog posts</a>, my motivation for this project was to improve the tooling situation for IDEs as well as build tools such as <code>cabal-install</code> and <code>stack</code>. What am I talking about in particular?</p>
+<p>Take this example:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode bash"><code class="sourceCode bash"><a class="sourceLine" id="cb1-1" data-line-number="1"><span class="co"># Initialise a cabal project</span></a>
+<a class="sourceLine" id="cb1-2" data-line-number="2">$ <span class="ex">cabal</span> init --libandexe --source-dir=src \</a>
+<a class="sourceLine" id="cb1-3" data-line-number="3">   --application-dir=app --main-is=Main.hs -p myexample</a>
+<a class="sourceLine" id="cb1-4" data-line-number="4"><span class="co"># Open a repl session for the executable</span></a>
+<a class="sourceLine" id="cb1-5" data-line-number="5">$ <span class="ex">cabal</span> repl exe:myexample</a>
+<a class="sourceLine" id="cb1-6" data-line-number="6">[<span class="ex">1</span> of 1] Compiling Main             ( app/Main.hs, interpreted )</a>
+<a class="sourceLine" id="cb1-7" data-line-number="7"><span class="ex">Ok</span>, one module loaded.</a>
+<a class="sourceLine" id="cb1-8" data-line-number="8"><span class="ex">Main</span> λ<span class="op">&gt;</span> main</a>
+<a class="sourceLine" id="cb1-9" data-line-number="9"><span class="ex">Hello</span>, Haskell!</a>
+<a class="sourceLine" id="cb1-10" data-line-number="10"><span class="ex">someFunc</span></a>
+<a class="sourceLine" id="cb1-11" data-line-number="11"><span class="ex">Main</span> λ<span class="op">&gt;</span></a>
+<a class="sourceLine" id="cb1-12" data-line-number="12"><span class="co"># Keep the session open</span></a></code></pre></div>
+<p>We keep this interactive session open, since we want to interactively develop our package! Now, if we modify the library module <code>src/MyLib</code>, for example change the implementation of <code>someFunc</code> from</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb2-1" data-line-number="1"><span class="ot">someFunc ::</span> <span class="dt">IO</span> ()</a>
+<a class="sourceLine" id="cb2-2" data-line-number="2">someFunc <span class="fu">=</span> putStrLn <span class="st">&quot;someFunc&quot;</span></a></code></pre></div>
+<p>to</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb3-1" data-line-number="1"><span class="ot">someFunc ::</span> <span class="dt">IO</span> ()</a>
+<a class="sourceLine" id="cb3-2" data-line-number="2">someFunc <span class="fu">=</span> putStrLn <span class="st">&quot;not just someFunc&quot;</span></a></code></pre></div>
+<p>we would like to reflect this change in our interactive repl session. However, executing the following:</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode bash"><code class="sourceCode bash"><a class="sourceLine" id="cb4-1" data-line-number="1"><span class="ex">Main</span> λ<span class="op">&gt;</span> :r</a>
+<a class="sourceLine" id="cb4-2" data-line-number="2"><span class="ex">Ok</span>, one module loaded.</a>
+<a class="sourceLine" id="cb4-3" data-line-number="3"><span class="ex">Main</span> λ<span class="op">&gt;</span> main</a>
+<a class="sourceLine" id="cb4-4" data-line-number="4"><span class="ex">Hello</span>, Haskell!</a>
+<a class="sourceLine" id="cb4-5" data-line-number="5"><span class="ex">someFunc</span></a></code></pre></div>
+<p>Hm. Not what we would have hoped for. What happened?</p>
+<p>Essentially, the problem is that we opened only an interactive session for the executable component. GHC is not aware that other libraries’ definitions and source files might change, so it is not even checking whether something has changed! Therefore, changes in our library will not be visible, until we completely restart our interactive repl session.</p>
+<p>So, can’t we just open both components? Library and executable in the same session? Well, let’s try it:</p>
+<div class="sourceCode" id="cb5"><pre class="sourceCode bash"><code class="sourceCode bash"><a class="sourceLine" id="cb5-1" data-line-number="1">$ <span class="ex">cabal</span> repl exe:myexample lib:myexample</a>
+<a class="sourceLine" id="cb5-2" data-line-number="2"><span class="ex">cabal</span>: Cannot open a repl for multiple components at once. The targets</a>
+<a class="sourceLine" id="cb5-3" data-line-number="3"><span class="st">'myexample'</span> <span class="ex">and</span> <span class="st">'myexample'</span> refer to different components..</a>
+<a class="sourceLine" id="cb5-4" data-line-number="4"></a>
+<a class="sourceLine" id="cb5-5" data-line-number="5"><span class="ex">The</span> reason for this limitation is that current versions of ghci do not support</a>
+<a class="sourceLine" id="cb5-6" data-line-number="6"><span class="ex">loading</span> multiple components as source. Load just one component and when you</a>
+<a class="sourceLine" id="cb5-7" data-line-number="7"><span class="fu">make</span> changes to a dependent component then quit and reload.</a></code></pre></div>
+<p>That did not work. Turns out, such a feature is not implemented.</p>
+<p>Maybe you know about this issue in <code>cabal-install</code> and are now suggesting use <code>stack</code>, where this actually works:</p>
+<div class="sourceCode" id="cb6"><pre class="sourceCode bash"><code class="sourceCode bash"><a class="sourceLine" id="cb6-1" data-line-number="1">$ <span class="ex">stack</span> init  --resolver lts-14.21 <span class="co"># or insert your lts of choice</span></a>
+<a class="sourceLine" id="cb6-2" data-line-number="2">$ <span class="ex">stack</span> ide targets</a>
+<a class="sourceLine" id="cb6-3" data-line-number="3"><span class="ex">myexample</span>:lib</a>
+<a class="sourceLine" id="cb6-4" data-line-number="4"><span class="ex">myexample</span>:exe:myexample</a>
+<a class="sourceLine" id="cb6-5" data-line-number="5">$ <span class="ex">stack</span> repl myexample:lib myexample:exe:myexample</a>
+<a class="sourceLine" id="cb6-6" data-line-number="6">[<span class="ex">1</span> of 2] Compiling MyLib</a>
+<a class="sourceLine" id="cb6-7" data-line-number="7">[<span class="ex">2</span> of 2] Compiling Main</a>
+<a class="sourceLine" id="cb6-8" data-line-number="8"><span class="ex">Ok</span>, two modules loaded.</a>
+<a class="sourceLine" id="cb6-9" data-line-number="9"><span class="ex">*Main</span> MyLib λ<span class="op">&gt;</span></a></code></pre></div>
+<p>Awesome, so end of story? Not quite. <code>Stack</code> accomplishes this feat by essentially merging the compilation options for the library and executable together into a single <code>GHCi</code> invocation. However, it is not hard to come up with situations where merging of <code>GHC</code> options does not yield the desired behaviour.</p>
+<p>For a slightly contrived example, imagine you define a module <code>Data.Map</code> private to your library, while your executable depends on the <code>containers</code> library which exposes the module <code>Data.Map</code>. Importing now <code>Data.Map</code> in your <code>app/Main.hs</code> leads to the following behaviour: on <code>stack build</code>, everything works as expected, but if you do <code>stack repl</code>, suddenly you get import errors or type errors! It actually tries to load your local <code>Data.Map</code>, which is not what you would expect at all! This behaviour occurs, because when <code>stack</code> merges the options, <code>Data.Map</code> from our local package and <code>src/Main.hs</code> are part of the same <code>GHCi</code> session, therefore it is assumed, that we want to use the local module.</p>
+<p>So, in short, the behaviour we desire can hardly be implemented without support from <code>GHC</code>, if at all. Mitigating this requires support for <em>multiple home units</em> in <code>GHC</code>.</p>
+<p>My project was to implement this feature for <code>GHC</code> followed by patching the relevant tools <code>cabal-install</code> and <code>stack</code> and, if there was still time left, to make <code>ghcide</code> use the new capabilities as a tech-preview.</p>
+<h2 id="multiple-home-units">Multiple Home Units</h2>
+<p>First things first, what even is a home unit? Up until before I started working on the project, there was practically no mention of a home unit in <code>GHC</code>. But recently, this has been changed, and this is what the documentation says now:</p>
+<blockquote>
+<p>The home unit is the unit (i.e. compiled package) that contains the module we are compiling/typechecking.</p>
+</blockquote>
+<p>Short and concise, that’s how we like it. So, a <em>unit</em> is a set of modules that we can compile. For example, a library is a unit and so is the executable. Now, the <em>home unit</em> is the unit that <code>GHC</code> is currently compiling in an invocation, e.g. when you perform a simple compilation <code>ghc -O2 Main.hs</code>. In this case <code>Main.hs</code> is our singleton set of <em>home modules</em> and <code>-O2</code> are the compilation options for our <em>home unit</em>.</p>
+<p>We want to lift the restriction of only being able to have a single <em>home unit</em> in <code>GHC</code>. The main part of the change happens in the <code>HscEnv</code> record which is used for compiling single modules as well as storing the linker state. The part we are interested in looks like this:</p>
+<div class="sourceCode" id="cb7"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb7-1" data-line-number="1"><span class="kw">data</span> <span class="dt">HscEnv</span></a>
+<a class="sourceLine" id="cb7-2" data-line-number="2">  <span class="fu">=</span> <span class="dt">HscEnv</span> {</a>
+<a class="sourceLine" id="cb7-3" data-line-number="3"><span class="ot">        hsc_dflags ::</span> <span class="dt">DynFlags</span>,</a>
+<a class="sourceLine" id="cb7-4" data-line-number="4">        <span class="fu">...</span></a>
+<a class="sourceLine" id="cb7-5" data-line-number="5"><span class="ot">        hsc_HPT    ::</span> <span class="dt">HomePackageTable</span>,</a>
+<a class="sourceLine" id="cb7-6" data-line-number="6">        <span class="fu">...</span></a></code></pre></div>
+<p>We are only interested in the two fields <code>hsc_dflags</code> and <code>hsc_HPT</code>, where the former contain compilation information, such as optimisations, dependencies, include directories, etc… and the latter is a set of already compiled <em>home modules</em>. To support multiple home units, we basically need to maintain more than a single tuple of these two, ideally an arbitrary amount of these. This is accomplished by adding new types:</p>
+<div class="sourceCode" id="cb8"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb8-1" data-line-number="1"><span class="kw">type</span> <span class="dt">UnitEnv</span> <span class="fu">=</span> <span class="dt">UnitEnvGraph</span> <span class="dt">InternalUnitEnv</span></a>
+<a class="sourceLine" id="cb8-2" data-line-number="2"></a>
+<a class="sourceLine" id="cb8-3" data-line-number="3"><span class="kw">data</span> <span class="dt">UnitEnvGraph</span> v <span class="fu">=</span> <span class="dt">UnitEnvGraph</span></a>
+<a class="sourceLine" id="cb8-4" data-line-number="4">  {<span class="ot"> unitEnv_graph ::</span> <span class="fu">!</span>(<span class="dt">Map</span> <span class="dt">UnitId</span> v)</a>
+<a class="sourceLine" id="cb8-5" data-line-number="5">  ,<span class="ot"> unitEnv_currentUnit ::</span> <span class="fu">!</span><span class="dt">UnitId</span></a>
+<a class="sourceLine" id="cb8-6" data-line-number="6">  }</a>
+<a class="sourceLine" id="cb8-7" data-line-number="7"></a>
+<a class="sourceLine" id="cb8-8" data-line-number="8"><span class="kw">data</span> <span class="dt">InternalUnitEnv</span> <span class="fu">=</span> <span class="dt">InternalUnitEnv</span></a>
+<a class="sourceLine" id="cb8-9" data-line-number="9">  {<span class="ot"> internalUnitEnv_dflags ::</span> <span class="dt">DynFlags</span></a>
+<a class="sourceLine" id="cb8-10" data-line-number="10">  ,<span class="ot"> internalUnitEnv_homePackageTable ::</span> <span class="dt">HomePackageTable</span></a>
+<a class="sourceLine" id="cb8-11" data-line-number="11">  }</a></code></pre></div>
+<p><strong>Note: Names are subject to bikeshedding</strong> As you can see, <code>InternalUnitEnv</code> is basically just a tuple of <code>hsc_dflags</code> and <code>hsc_HPT</code>, but it might be extended in the future. The <em>important</em> new type is <code>UnitEnv</code> which describes a mapping from <code>UnitId</code> to <code>InternalUnitEnv</code> and represents our support for multiple home units. It is backed by <code>UnitEnvGraph</code> which is parameterised by the actual values, mainly for <code>Traversable</code>, <code>Foldable</code> and <code>Functor</code> instances. Why is it named graph you may ask? Because a home unit might have a dependency on another home unit! Just take our previous example, the simple cabal project, where we have an executable and a library. If we want to have both of these units in a repl session, then the executable and the library are home units, where the former depends on the latter. So, we not only maintain an indefinite amount of home units, we also need to make sure that there are no cyclic dependencies between our home units. The field <code>unitEnv_currentUnit</code> indicates which home unit we are currently “working” on. It is helpful to maintain some form of backwards compatibility, e.g. now <code>hsc_dflags</code> and <code>hsc_HPT</code> are no longer record fields (since there is no longer a single <code>DynFlags</code> or <code>HomePackageTable</code>) but functions, and they use <code>unitEnv_currentUnit</code> to retrieve the appropriate <code>DynFlags</code> and <code>HomePackageTable</code>. These are the core changes. Now, only the rest of <code>GHC</code> needs to be compatible with it! Luckily, guided by the type-system, changes are mostly mechanical and not very interesting. But how does the user interact with it? How can we now load multiple components into the same repl session?</p>
+<h3 id="usage">Usage</h3>
+<p>The existing command line interface of <code>GHC</code> does not suffice to capture the new features satisfactorily. Therefore, we introduce two modes for ghc:</p>
+<div class="sourceCode" id="cb9"><pre class="sourceCode bash"><code class="sourceCode bash"><a class="sourceLine" id="cb9-1" data-line-number="1"><span class="ex">ghc</span> -unit @unitA -unit @unitB ... -unit @unitZ</a></code></pre></div>
+<p>This might look a bit weird to you, but no worries, it is actually quite simple: the argument <code>@unitA</code> uses response file syntax, where <code>unitA</code> is a filepath that contains all the compilation options necessary to compile the home unit. We can produce all sorts of compiler artefacts, such as <code>.hie</code> or <code>.hi</code> files, which can be used for producing binaries.</p>
+<p>A current limitation is, that each unit must supply the <code>-no-link</code> argument, to avoid reading information from disk. Unfortunately, this limitation is currently unlikely to be lifted, since it violates the separation of Cabal and GHC.</p>
+<p>For using multiple home units in <code>GHCi</code>, we can use a similar invocation:</p>
+<div class="sourceCode" id="cb10"><pre class="sourceCode bash"><code class="sourceCode bash"><a class="sourceLine" id="cb10-1" data-line-number="1"><span class="ex">ghc</span> --interactive -unit @unitA -unit @unitB ... -unit @unitZ</a></code></pre></div>
+<p>which drops us into an interactive session.</p>
+<p>Now we come to the tricky part: What definitions should be in scope? Should be the definitions of all home units be in scope at the same time? What happens if you have multiple definitions with the same name? What about module name conflicts? So, there are a lot of open questions. At the time of this writing, we decided to follow a more stateful approach: We choose one home unit that is currently <em>active</em>, e.g. every <code>GHCi</code> query is “relative” to the active home unit. To illustrate this, take the following example:</p>
+<p align="center">
+<img src="https://i.imgur.com/nAG8Ukr.png" alt="Home unit dependency structure where UnitA is active" />
+</p>
+<p>Assume we have three home units, <code>UnitA</code>, <code>UnitB</code> and <code>UnitC</code>, where <code>UnitA</code> has a dependency on the other two. We say that <code>UnitA</code> is <em>active</em>, and so its dependencies (including <code>UnitB</code> and <code>UnitC</code>) are in scope in our interactive session. However, the dependencies of <code>UnitB</code> or <code>UnitC</code> are <strong>not</strong> in scope. When we switch the active home unit to <code>UnitC</code>:</p>
+<p align="center">
+<img src="https://i.imgur.com/0QK9l9m.png" alt="Home unit dependency structure where UnitC is active" />
+</p>
+<p>then <strong>only</strong> the dependencies of <code>UnitC</code> are in scope. In particular, no definition from <code>UnitA</code> or <code>UnitB</code> is in scope.</p>
+<p>As we all know, state is bad. Why are we choosing stateful behaviour for the implementation then? The first and most important reason is, to have something to show that is easy to implement. Secondly, in my opinion it is the more intuitive behaviour. We also examined other ideas:</p>
+<ul>
+<li>Avoid state by making all home units “active” all the time.
+<ul>
+<li>Besides the implementation being way more complex, it felt non-trivial to know which definition is actually being invoked, what home unit a certain module comes from, etc…</li>
+<li>There is also a more practical concern: If you have two home units that have no dependencies on each other, then there is nothing to stop them from having a dependency on the same library… with a different version. If we wanted to import now a module from this dependency, which of the two versions should we pick? This is non-trivial to answer.</li>
+</ul></li>
+<li>Don’t bother with it.
+<ul>
+<li>For one of the main motivations, which is simplifying IDEs, we don’t need <code>GHCi</code> support, so, just don’t implement it. Seems like a reasonable course of action (don’t introduce half-baked features), but it would be a dissappointment for the average user.</li>
+</ul></li>
+</ul>
+<p>However, in the end, the opinion of the community matters the most, and you are welcome to add your personal input to that matter in the <a href="https://gitlab.haskell.org/ghc/ghc/-/merge_requests/3950">Merge Request</a>.</p>
+<h3 id="project-limitations">Project Limitations</h3>
+<p>Unfortunately, there are two open issues that can not be solved within this project and must be taken care of in subsequent work.</p>
+<h4 id="module-visibility">Module visibility</h4>
+<p>Cabal packages usually define private and public modules, and other packages can depend on the latter. Without multiple home units, this does not concern the interactive session, as it is only possible to open a single component and this component can import and use its private modules. Therefore, there was no need for <code>GHC</code> to have an explicit notion of private/public modules and it just assumes that all modules are public. However, with multiple home units, the following situation might arise:</p>
+<p align="center">
+<img src="https://i.imgur.com/nWqbIRR.png" alt="Module Visibility example" />
+</p>
+<p>The important issue is that module <code>D</code> might depend on module <code>C</code>, although <code>C</code> is private to Unit <code>Y</code> and it should not be possible for Unit <code>X</code> to depend on the private modules of Unit <code>Y</code>. Therefore, we might accept programs that are not valid for a cabal package. However, we do not expect real-world problems as long as tools such as cabal make sure a package only imports public modules.</p>
+<p>A potential way to solve this issue, is to make <code>GHC</code> understand module visibility. In particular, we would need to extend the command line interface to specify the visibility of a module and dependency resolution would need to detect invalid imports. In theory, this should not be difficult, as <code>GHC</code> already understands when a user imports private modules from external packages and provides helpful error messages.</p>
+<h4 id="package-imports">Package Imports</h4>
+<p>The language extension <code>PackageImports</code> is used to resolve ambiguous imports from different units. In particular, to help disambiguate importing two modules with the same name from two different units.</p>
+<p>Example:</p>
+<div class="sourceCode" id="cb11"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb11-1" data-line-number="1"><span class="ot">{-# LANGUAGE PackageImports #-}</span></a>
+<a class="sourceLine" id="cb11-2" data-line-number="2"><span class="kw">import</span> &quot;foo&quot; <span class="dt">Data.Foo</span></a>
+<a class="sourceLine" id="cb11-3" data-line-number="3"><span class="kw">import</span> &quot;bar&quot; <span class="dt">Data.Foo</span></a></code></pre></div>
+<p>It uses the package name for the disambiguation. The problem is that the <code>package-name</code> is read from disk (or more precisely, from the package database) and for home units, there is no such information on disk, therefore this feature cannot work at the moment.</p>
+<p>Here is one idea how to solve this: A home unit needs to have its unit-id specified over a command line interface flag and it usually looks like <code>-this-unit-id &lt;unit-name&gt;-&lt;version&gt;-&lt;hash&gt;</code>. I say usually, because there is currently no standard way to specify the unit-id and thus no way to get the name of the package. However, if we are to create a naming-scheme for unit ids, we could obtain the package-name from it, but such a proposal is out of scope for this project.</p>
+<h3 id="whats-next">What’s next?</h3>
+<p>I hope, you now have an overview of what this project is about and what some of the changes might entail for end-users.</p>
+<p>Although I consider this project a success, I am not quite satisfied with the results. In my opinion, I did not reach enough of my goals, and I plan to continue with some of the work until it is finally done. There is still some work left before the proposed changes can be merged into <code>GHC</code>. Some of this work is mainly writing tests and updating documentation, but we need discuss <code>GHCi</code> and its interaction with multiple home units.</p>
+<p>To make this whole project easier to merge, some of its changes have been split into smaller MRs, which have been recently merged into <code>GHC</code>:</p>
+<ul>
+<li><a href="https://gitlab.haskell.org/ghc/ghc/-/merge_requests/3897/pipelines">Move file target parsing from <code>ghc/Main</code> to library</a></li>
+<li><a href="https://gitlab.haskell.org/ghc/ghc/-/merge_requests/3974/pipelines">Add mainModuleNameIs and demote mainModIs</a></li>
+</ul>
+<p>The main MR, that I eventually want to get merged, can be found at:</p>
+<ul>
+<li><a href="https://gitlab.haskell.org/ghc/ghc/-/merge_requests/3950">WIP: Implement Multiple Home Units for GHC</a></li>
+</ul>
+<p>In order to let <code>cabal-install</code> and <code>stack</code> users benefit from multiple home units, the tools themselves still need to be patched. This turned out to be way harder than hoped, since <code>Cabal</code> (the library, not the executable) is designed with single components in mind (what this means exactly is out of scope for this post. In short, we don’t have the relevant information available for multiple components at the same time). As a work-around, to actually test the <code>GHC</code> changes on real projects, we patched <code>cabal-install</code> to support multiple components in the same repl session… by completely ignoring the clean separation between <code>cabal-install</code> and <code>Cabal</code>. This renders the patch virtually useless, as it can never be merged into mainline <code>cabal-install</code>.</p>
+<p>Maybe <code>stack</code> is easier to patch but unfortunately I ran out of time before being able to even look into this part of my project.</p>
+<p>Patching <code>ghcide</code> to compile with <code>GHC HEAD</code> proved to be quite the adventure. The Hackage overlay <code>head.hackage</code> is immensely helpful but the documentation is a bit lacking for first time contributors, and some migrations for relevant packages (such <code>hie-bios</code> and <code>ghc-check</code>) were quite complex. While <code>ghcide</code> now compiles with <code>GHC HEAD</code> (from two months ago), time ran out before multiple home units could be used as a tech-preview.</p>
+<h2 id="conclusion">Conclusion</h2>
+<p>Alright, this was a long blog post. It still does not cover everything that happened during the summer, only the main parts or at least what I consider to be the most interesting parts.</p>
+<p>During this summer, I had the opportunity to work on <code>GHC</code>, learn a lot about the open-source process and as a bonus, I got to present the project at the ICFP Haskell Implementors Workshop. It was insanely exciting! However, more than once I felt like I was not going to make it, that everything would be a catastrophic failure and I should never have attempted to work on a project where I am completely out of my depth. It got worse, when I realised that I would not even meet half of my goals for the project. But in the end, it seems like I made it, thanks to my helpful mentors, and I am really happy that I took this amazing opportunity. Now I am really proud of having preservered and emerged with a better understanding of something that seemed so out of reach when starting this project.</p>
+<p>As a sendoff, I can whole-heartedly recommend to everyone to participate in Google Summer of Code at Haskell.org!</p>
+
+<hr>
+<a class="text-muted" href="../../ide/index.html">Index</a>
+
+
+
+            </div>
+          </div>
+        </div>
+      </div>
+    </body>
+</html>
