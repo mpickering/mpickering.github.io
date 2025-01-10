@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>The Centroid App</title>
+  
+  <!-- Leaflet CSS -->
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+  />
+
+  <!-- Leaflet JS -->
+  <script
+    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+  ></script>
+  
+  <style>
+    /* Basic reset for layout */
+    html, body {
+      margin: 0; 
+      padding: 0; 
+      height: 100%; 
+      font-family: Arial, sans-serif;
+    }
+
+    /* Banner at the top */
+    header {
+      background-color: #f5f5f5;
+      padding: 20px 0;
+      text-align: center;
+      font-size: 24px;
+      font-weight: bold;
+      box-shadow: 0 1px 5px rgba(0,0,0,0.1);
+      position: relative;
+      z-index: 999;
+    }
+
+    /* The map takes up most of the screen */
+    #map {
+      width: 100%;
+      height: calc(100% - 200px); /* make room for header & footer */
+      box-sizing: border-box;
+    }
+
+    /* Controls area */
+    #controls {
+      padding: 10px;
+      text-align: center;
+    }
+    #controls button,
+    #controls input[type="file"] {
+      margin: 5px;
+    }
+
+    /* Footer showing the current centroid */
+    footer {
+      background-color: #f5f5f5;
+      padding: 10px 0;
+      text-align: center;
+      font-size: 16px;
+      box-shadow: 0 -1px 5px rgba(0,0,0,0.1);
+      position: relative;
+      z-index: 999;
+    }
+  </style>
+</head>
+
+<body>
+  <!-- Top banner -->
+  <header>
+    The Centroid App
+  </header>
+
+  <!-- The Leaflet map container -->
+  <div id="map"></div>
+
+  <!-- Controls for CSV export/load -->
+  <div id="controls">
+    <button id="exportBtn">Export to CSV</button>
+    <input type="file" id="fileInput" accept=".csv" />
+    <p>Add markers by clicking anywhere on the map. Then optionally export or load CSV.</p>
+  </div>
+
+  <!-- Footer to show centroid coordinates -->
+  <footer>
+    <span id="centroidCoordinates">No centroid yet</span>
+  </footer>
+
+  <script>
+    // ------------------------------------------------
+    // GLOBAL VARIABLES
+    // ------------------------------------------------
+    let map;
+    let markers = [];      // Each element: { lat, lng, label, marker }
+    let centroidMarker = null;
+
+    // ------------------------------------------------
+    // INITIALIZE MAP
+    // ------------------------------------------------
+    function initMap() {
+      // Create a Leaflet map centered on the Gardeners Rest
+      map = L.map('map').setView([53.39264, -1.47091], 15);
+
+      // Add OpenStreetMap tile layer
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '&copy; OpenStreetMap contributors'
+      }).addTo(map);
+
+      // On click, add a marker
+      map.on('click', onMapClick);
+    }
+
+    // ------------------------------------------------
+    // CLICK HANDLER
+    // ------------------------------------------------
+    function onMapClick(e) {
+      const label = prompt("Enter your friend's name (label for this pin):");
+      if (label === null || label.trim() === '') {
+        return; // If user canceled or left blank
+      }
+
+      const lat = e.latlng.lat;
+      const lng = e.latlng.lng;
+
+      // Create a Leaflet marker
+      const marker = L.marker([lat, lng]).addTo(map);
+      marker.bindPopup(label);
+
+      // Add to our list of markers
+      markers.push({ lat, lng, label, marker });
+
+      // Update the centroid marker
+      updateCentroid();
+    }
+
+    // ------------------------------------------------
+    // UPDATE CENTROID
+    // ------------------------------------------------
+    function updateCentroid() {
+      // If no markers, remove any existing centroid and update footer
+      if (markers.length === 0) {
+        removeCentroid();
+        document.getElementById('centroidCoordinates').textContent = 'No centroid yet';
+        return;
+      }
+
+      // Calculate average lat & lng
+      const sumLat = markers.reduce((acc, m) => acc + m.lat, 0);
+      const sumLng = markers.reduce((acc, m) => acc + m.lng, 0);
+      const avgLat = sumLat / markers.length;
+      const avgLng = sumLng / markers.length;
+
+      // Remove old centroid
+      removeCentroid();
+
+      // Create new centroid marker (red dot)
+      centroidMarker = L.marker([avgLat, avgLng], {
+        icon: L.divIcon({
+          className: 'centroid-icon',
+          html: '<div style="background: red; width: 16px; height: 16px; border-radius: 50%;"></div>'
+        })
+      }).addTo(map);
+
+      centroidMarker.bindPopup(`Centroid of ${markers.length} points`);
+
+      // Update the footer with the coordinates
+      document.getElementById('centroidCoordinates').textContent =
+        `Centroid is at: ${avgLat.toFixed(5)}, ${avgLng.toFixed(5)}`;
+    }
+
+    // ------------------------------------------------
+    // REMOVE CENTROID MARKER
+    // ------------------------------------------------
+    function removeCentroid() {
+      if (centroidMarker) {
+        centroidMarker.remove();
+        centroidMarker = null;
+      }
+    }
+
+    // ------------------------------------------------
+    // EXPORT TO CSV
+    // ------------------------------------------------
+    function exportToCSV() {
+      if (markers.length === 0) {
+        alert("No markers to export!");
+        return;
+      }
+
+      let csvContent = "data:text/csv;charset=utf-8,";
+      csvContent += "lat,lng,label\n"; // header row
+
+      // Add each marker row
+      markers.forEach(m => {
+        csvContent += `${m.lat},${m.lng},${m.label}\n`;
+      });
+
+      // Include a CENTROID row so we can reload it if we want
+      if (centroidMarker) {
+        const sumLat = markers.reduce((acc, m) => acc + m.lat, 0);
+        const sumLng = markers.reduce((acc, m) => acc + m.lng, 0);
+        const avgLat = sumLat / markers.length;
+        const avgLng = sumLng / markers.length;
+        csvContent += `${avgLat},${avgLng},CENTROID\n`;
+      }
+
+      // Create a download link
+      const encodedUri = encodeURI(csvContent);
+      const link = document.createElement("a");
+      link.setAttribute("href", encodedUri);
+      link.setAttribute("download", "friends_and_centroid.csv");
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+
+    // ------------------------------------------------
+    // LOAD FROM CSV
+    // ------------------------------------------------
+    function loadFromCSV(file) {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const csvData = event.target.result;
+        processCSVData(csvData);
+      };
+      reader.readAsText(file);
+    }
+
+    function processCSVData(csvData) {
+      // Clear existing markers
+      markers.forEach(m => map.removeLayer(m.marker));
+      markers = [];
+      removeCentroid();
+
+      const lines = csvData.split(/\r?\n/);
+      // Assume first line is a header: lat,lng,label
+      const dataLines = lines.slice(1);
+
+      dataLines.forEach(line => {
+        if (!line.trim()) return; // skip empty lines
+        const [latStr, lngStr, label] = line.split(",");
+        if (!latStr || !lngStr || !label) return; // skip malformed lines
+
+        const lat = parseFloat(latStr);
+        const lng = parseFloat(lngStr);
+
+        if (label === "CENTROID") {
+          // Place the centroid marker (or skip if you prefer to recalc)
+          centroidMarker = L.marker([lat, lng], {
+            icon: L.divIcon({
+              className: 'centroid-icon',
+              html: '<div style="background: red; width: 16px; height: 16px; border-radius: 50%;"></div>'
+            })
+          }).addTo(map);
+
+          centroidMarker.bindPopup("Centroid (loaded from CSV)");
+
+          // Update the footer text
+          document.getElementById('centroidCoordinates').textContent =
+            `Centroid is at: ${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+
+        } else {
+          // Regular friend’s house marker
+          const marker = L.marker([lat, lng]).addTo(map);
+          marker.bindPopup(label);
+          markers.push({ lat, lng, label, marker });
+        }
+      });
+
+      // If you prefer to recalc the centroid fresh from the loaded pins, do:
+      // updateCentroid();
+    }
+
+    // ------------------------------------------------
+    // SETUP EVENT LISTENERS
+    // ------------------------------------------------
+    window.onload = () => {
+      initMap();
+
+      document.getElementById('exportBtn')
+        .addEventListener('click', exportToCSV);
+
+      document.getElementById('fileInput')
+        .addEventListener('change', (evt) => {
+          const file = evt.target.files[0];
+          if (file) {
+            loadFromCSV(file);
+          }
+        });
+    };
+  </script>
+</body>
+</html>
